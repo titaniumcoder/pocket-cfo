@@ -12,7 +12,7 @@ on:
   pull_request:
 
 concurrency:
-  group: build-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
+  group: build-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:

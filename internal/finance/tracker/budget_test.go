@@ -726,7 +726,13 @@ func TestBudgetForMonthNoOverridesUnaffected(t *testing.T) {
 }
 
 // TestBudgetForMonthSingleZeroOverrideZeroesOnlyThatMonth covers the
-// single-override case (Flight, zeroed only in August).
+// single-override case (Flight, zeroed only in August). August itself now
+// renders as a next-occurrence preview (see nextNonZeroMonth) rather than a
+// bare 0 with no explanation — SpentCents stays 0, but PlannedMonth/
+// PlannedCents point at September, the next month Flight resumes; Overridden
+// on that row describes September's own override status (none), not
+// August's — same convention TestCategoryRowForDated's dated-future branch
+// already uses for what it's previewing.
 func TestBudgetForMonthSingleZeroOverrideZeroesOnlyThatMonth(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithOverrides})
 
@@ -746,8 +752,14 @@ func TestBudgetForMonthSingleZeroOverrideZeroesOnlyThatMonth(t *testing.T) {
 	if augFlight.SpentCents != 0 {
 		t.Errorf("August (zero override): Flight SpentCents = %d, want 0", augFlight.SpentCents)
 	}
-	if !augFlight.Overridden {
-		t.Error("August: Flight.Overridden should be true")
+	if want := eurToCents(400); augFlight.PlannedCents != want {
+		t.Errorf("August: Flight PlannedCents = %d, want %d (September's normal amount)", augFlight.PlannedCents, want)
+	}
+	if augFlight.PlannedMonth != "September 2026" {
+		t.Errorf("August: Flight PlannedMonth = %q, want September 2026 (next non-zero month)", augFlight.PlannedMonth)
+	}
+	if augFlight.Overridden {
+		t.Error("August: Flight.Overridden should be false (describes September, which has no override)")
 	}
 
 	sep, err := b.ForMonth(context.Background(), 2026, time.September, testNow)
@@ -951,6 +963,122 @@ func TestBudgetOverriddenNeverSetInYearView(t *testing.T) {
 	}
 	if rowByName(BudgetView{Groups: view.CompanyGroups}, "Flight").Overridden {
 		t.Error("year view should never set Overridden, even though September has an override")
+	}
+}
+
+// TestNextNonZeroMonthSingleOverride confirms the immediate next month is
+// found when only the viewed month is zero-overridden.
+func TestNextNonZeroMonthSingleOverride(t *testing.T) {
+	date := "2026-08-01"
+	c := budgetdata.Category{Name: "Trip", Amount: 100, Overrides: []budgetdata.Override{{Month: date, Amount: 0}}}
+	ref := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+
+	next, ok := nextNonZeroMonth(c, ref, false)
+	if !ok {
+		t.Fatal("expected a next non-zero month to be found")
+	}
+	if want := time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC); !next.Equal(want) {
+		t.Errorf("next = %v, want %v", next, want)
+	}
+}
+
+// TestNextNonZeroMonthConsecutiveOverridesSkipsAllOfThem confirms the scan
+// walks past multiple consecutive zero-overridden months, not just the next
+// one, and that it correctly crosses a calendar year boundary.
+func TestNextNonZeroMonthConsecutiveOverridesSkipsAllOfThem(t *testing.T) {
+	c := budgetdata.Category{Name: "Trip", Amount: 100, Overrides: []budgetdata.Override{
+		{Month: "2026-11-01", Amount: 0},
+		{Month: "2026-12-01", Amount: 0},
+		{Month: "2027-01-01", Amount: 0},
+	}}
+	ref := time.Date(2026, time.November, 1, 0, 0, 0, 0, time.UTC)
+
+	next, ok := nextNonZeroMonth(c, ref, false)
+	if !ok {
+		t.Fatal("expected a next non-zero month to be found")
+	}
+	if want := time.Date(2027, time.February, 1, 0, 0, 0, 0, time.UTC); !next.Equal(want) {
+		t.Errorf("next = %v, want %v (first month past all three consecutive overrides)", next, want)
+	}
+}
+
+// TestNextNonZeroMonthNonZeroOverrideCounts confirms a future month with a
+// non-zero override (not just a reversion to the normal amount) counts as
+// the next occurrence too.
+func TestNextNonZeroMonthNonZeroOverrideCounts(t *testing.T) {
+	c := budgetdata.Category{Name: "Trip", Amount: 100, Overrides: []budgetdata.Override{
+		{Month: "2026-08-01", Amount: 0},
+		{Month: "2026-09-01", Amount: 250}, // a real, known price for September
+	}}
+	ref := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+
+	next, ok := nextNonZeroMonth(c, ref, false)
+	if !ok {
+		t.Fatal("expected a next non-zero month to be found")
+	}
+	if want := time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC); !next.Equal(want) {
+		t.Errorf("next = %v, want %v", next, want)
+	}
+}
+
+// TestNextNonZeroMonthUsesMinimalAmount confirms minimal-budget mode is
+// honored when deciding whether a future month is "zero" — a category whose
+// minimal_amount is itself 0 should be skipped in minimal mode even without
+// an explicit override for that month.
+func TestNextNonZeroMonthUsesMinimalAmount(t *testing.T) {
+	zero := 0.0
+	c := budgetdata.Category{Name: "Clothes", Amount: 100, MinimalAmount: &zero}
+	ref := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+
+	if _, ok := nextNonZeroMonth(c, ref, true); ok {
+		t.Error("expected no next non-zero month in minimal mode when minimal_amount is 0")
+	}
+	next, ok := nextNonZeroMonth(c, ref, false)
+	if !ok || !next.Equal(time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Errorf("outside minimal mode: next = %v, ok = %v, want September 2026", next, ok)
+	}
+}
+
+// TestCategoryRowForRecurringZeroOverrideShowsNextOccurrence is the direct
+// regression test for the reported bug: a recurring category zeroed out for
+// the viewed month via an override (e.g. "trip skipped this month") must
+// show when it resumes and for how much, not a bare, unexplained 0.
+func TestCategoryRowForRecurringZeroOverrideShowsNextOccurrence(t *testing.T) {
+	ref := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+	trip := budgetdata.Category{Name: "Trip", Amount: 250, Overrides: []budgetdata.Override{{Month: "2026-08-01", Amount: 0}}}
+
+	row, ok := categoryRowFor(trip, 0, true, ref, false)
+	if !ok {
+		t.Fatal("expected the category to still render")
+	}
+	if row.SpentCents != 0 {
+		t.Errorf("SpentCents = %d, want 0", row.SpentCents)
+	}
+	if row.PlannedMonth != "September 2026" {
+		t.Errorf("PlannedMonth = %q, want September 2026", row.PlannedMonth)
+	}
+	if want := eurToCents(250); row.PlannedCents != want {
+		t.Errorf("PlannedCents = %d, want %d", row.PlannedCents, want)
+	}
+}
+
+// TestCategoryRowForRecurringNonOverriddenZeroIsUnreachable documents why
+// categoryRowFor's new branch is gated on overridden, not just spentCents ==
+// 0: a recurring category's normal amount is always > 0 (ValidateBudget), so
+// overridden=false with spentCents==0 shouldn't occur in practice for a
+// recurring category — but if it somehow did (e.g. a future relaxation of
+// that invariant), it must fall through to the plain zero row rather than
+// scanning for a next occurrence that isn't actually meaningful.
+func TestCategoryRowForRecurringNonOverriddenZeroIsUnreachable(t *testing.T) {
+	ref := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+	rent := budgetdata.Category{Name: "Rent", Amount: 900}
+
+	row, ok := categoryRowFor(rent, 0, false, ref, false)
+	if !ok {
+		t.Fatal("expected the category to still render")
+	}
+	if row.PlannedMonth != "" {
+		t.Errorf("PlannedMonth = %q, want empty (overridden=false must not trigger the preview branch)", row.PlannedMonth)
 	}
 }
 

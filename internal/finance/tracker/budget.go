@@ -374,6 +374,27 @@ func categoryAmount(c budgetdata.Category, key string, minimal bool) float64 {
 	return c.Amount
 }
 
+// nextNonZeroMonthLookahead caps how far nextNonZeroMonth scans forward, to
+// guarantee termination even against a pathologically long Overrides list.
+const nextNonZeroMonthLookahead = 24
+
+// nextNonZeroMonth scans forward from ref (exclusive) for the next month
+// c's amount would be non-zero — used when a recurring category's spend for
+// the viewed month is entirely zeroed out by an override (e.g. "trip
+// skipped this month"), so the preview can show when the cost resumes
+// instead of leaving a bare 0 with no explanation. A recurring category's
+// normal amount is always > 0 (ValidateBudget enforces this), so the scan
+// is bounded by however many consecutive zero-overrides it has, plus one.
+func nextNonZeroMonth(c budgetdata.Category, ref time.Time, minimal bool) (time.Time, bool) {
+	for i := 1; i <= nextNonZeroMonthLookahead; i++ {
+		d := time.Date(ref.Year(), ref.Month(), 1, 0, 0, 0, 0, ref.Location()).AddDate(0, i, 0)
+		if categoryAmount(c, monthKey(d.Year(), d.Month()), minimal) > 0 {
+			return d, true
+		}
+	}
+	return time.Time{}, false
+}
+
 // categoryRowFor decides whether/how a category renders as a CategoryRow,
 // given its already-computed spentCents for the period. A recurring
 // category, and any dated category whose due month falls inside the viewed
@@ -395,7 +416,12 @@ func categoryAmount(c budgetdata.Category, key string, minimal bool) float64 {
 // should reflect. overridden marks whether spentCents came from an override
 // of the viewed month (see categoryAmount) — set on the row in the normal
 // branch only; the future-preview branch looks up its own due-month override
-// directly, since it isn't the viewed month.
+// directly, since it isn't the viewed month. A recurring category (c.Date ==
+// nil) can only ever be zero via a 0-amount override for the viewed month
+// (its normal amount is always > 0, see ValidateBudget) — when that happens,
+// this renders the same grayed-out PlannedCents/PlannedMonth preview as the
+// dated-future branch below, pointed at nextNonZeroMonth, instead of a bare
+// 0 with no indication of when the cost resumes.
 func categoryRowFor(c budgetdata.Category, spentCents int, overridden bool, ref time.Time, minimal bool) (CategoryRow, bool) {
 	row := CategoryRow{Name: c.Name}
 	if c.Note != nil {
@@ -403,6 +429,15 @@ func categoryRowFor(c budgetdata.Category, spentCents int, overridden bool, ref 
 	}
 	if c.Url != nil {
 		row.URL = *c.Url
+	}
+	if spentCents == 0 && c.Date == nil && overridden {
+		if next, ok := nextNonZeroMonth(c, ref, minimal); ok {
+			nextKey := monthKey(next.Year(), next.Month())
+			row.PlannedCents = eurToCents(categoryAmount(c, nextKey, minimal))
+			_, row.Overridden = overrideFor(c, nextKey)
+			row.PlannedMonth = next.Format("January 2006")
+			return row, true
+		}
 	}
 	if spentCents > 0 || c.Date == nil {
 		row.SpentCents = spentCents

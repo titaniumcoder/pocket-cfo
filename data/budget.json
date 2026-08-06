@@ -24,6 +24,7 @@
       "categories": [
         { "name": "Clothes & Household", "amount": 120, "minimal_amount": 0 },
         { "name": "Transport", "amount": 60 },
+        { "name": "Gym", "amount": 40, "overrides": [{ "month": "2026-08-01", "amount": 0 }], "note": "Paused for August, resumes September" },
         { "name": "Diverse", "amount": 300, "minimal_amount": 100, "note": "Reserve for unexpected expenses" }
       ]
     },

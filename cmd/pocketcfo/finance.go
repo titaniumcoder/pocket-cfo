@@ -100,15 +100,15 @@ func (s *server) financeSession(w http.ResponseWriter, r *http.Request) (auth.Se
 		tracker.RenderLogin(w, "", false)
 		return sess, false
 	}
-	if !sess.HasPart(users.PartFinance) {
-		if sess.HasPart(users.PartInvoicing) {
-			http.Redirect(w, r, "/invoicing", http.StatusFound)
-			return sess, false
-		}
-		http.Error(w, "you don't have access to the finance tracker", http.StatusForbidden)
+	if s.authenticatedForPart(sess, users.PartFinance) {
+		return sess, true
+	}
+	if sess.HasPart(users.PartInvoicing) {
+		http.Redirect(w, r, "/invoicing", http.StatusFound)
 		return sess, false
 	}
-	return sess, true
+	http.Error(w, "you don't have access to the finance tracker", http.StatusForbidden)
+	return sess, false
 }
 
 // renderFinancePage fills in the session-derived presentation fields

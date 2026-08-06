@@ -32,8 +32,8 @@ import (
 )
 
 const (
-	sessionCookie = "invoicer_session"
-	stateCookie   = "invoicer_oauth_state"
+	sessionCookie = "pocketcfo_session"
+	stateCookie   = "pocketcfo_oauth_state"
 	stateTTL      = 10 * time.Minute
 )
 
@@ -117,7 +117,15 @@ func loadConfig() config {
 		c.env = "development"
 	}
 	if c.repo == "" {
-		c.repo = "titaniumcoder/pocket-cfo"
+		// Harmless in dev/test: currentSession bypasses GitHub auth
+		// entirely outside prod, so c.repo is never actually consulted.
+		// Deliberately NOT defaulted to titaniumcoder/pocket-cfo (the
+		// public code repo) — GITHUB_REPO is required below in prod so a
+		// real deployment can't silently check collaborator permission
+		// against the wrong repo (it should be the private data repo,
+		// e.g. titaniumcoder/pocket-cfo-data — see that repo's own
+		// docker-compose.yml).
+		c.repo = "unset"
 	}
 	if c.port == "" {
 		c.port = "8080"
@@ -133,13 +141,14 @@ func loadConfig() config {
 			"SESSION_SECRET":             c.sessionSecret,
 			"CLIENT_LINK_SECRET":         c.clientLinkSecret,
 			"PUBLIC_BASE_URL":            c.baseURL,
+			"GITHUB_REPO":                os.Getenv("GITHUB_REPO"),
 			"AWS_REGION":                 c.sesRegion,
 			"SES_FROM_EMAIL":             c.sesFromEmail,
 			"OTP_LINK_SECRET":            c.otpLinkSecret,
 		}
 		for name, v := range missing {
 			if v == "" {
-				log.Fatalf("invoicer: %s is not set (see .envrc.example)", name)
+				log.Fatalf("pocketcfo: %s is not set (see .envrc.example)", name)
 			}
 		}
 	}
@@ -339,7 +348,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if !sess.HasPart(users.PartInvoicing) {
+	if !s.authenticatedForPart(sess, users.PartInvoicing) {
 		if sess.HasPart(users.PartFinance) {
 			http.Redirect(w, r, "/", http.StatusFound)
 			return

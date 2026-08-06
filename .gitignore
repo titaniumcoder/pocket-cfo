@@ -11,7 +11,7 @@
 # go build ./... writes a binary to the repo root if only one main package
 # happens to match at build time (e.g. mid-refactor); these are never inputs.
 /invoicectl
-/invoicer
+/pocketcfo
 
 # generated from internal/finance/data/budget.schema.json via go generate —
 # see internal/finance/budgetdata/gen.go

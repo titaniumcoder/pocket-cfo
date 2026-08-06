@@ -1,4 +1,4 @@
-# Invoicer — Architecture
+# PocketCFO — Architecture
 
 Invoicing for **Titanium Coder EOOD** (Varna, Bulgaria). Volume: 1–3 invoices/month.
 
@@ -39,7 +39,7 @@ allocator, no transactions. If something below looks suspiciously simple, that's
 .github/workflows/
   build.yml          push to main → validate, render, index, commit
 cmd/
-  invoicer/          read-only web app
+  pocketcfo/         web app (finance tracker + read-only invoicing)
   invoicectl/        CLI — the whole pipeline, identical locally and in CI
 internal/
   schema/ 
@@ -631,7 +631,7 @@ sending identity — nothing else the app does touches AWS:
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "AllowSESSendFromInvoicer",
+      "Sid": "AllowSESSendFromPocketCFO",
       "Effect": "Allow",
       "Action": "ses:SendEmail",
       "Resource": "arn:aws:ses:<region>:<account-id>:identity/<SES_FROM_EMAIL-or-its-domain>"

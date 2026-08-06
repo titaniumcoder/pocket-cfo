@@ -329,6 +329,9 @@ func TestRenderLogin(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "Continue with GitHub") {
 		t.Error("login page should contain Continue with GitHub")
 	}
+	if !strings.Contains(rec.Body.String(), `href="/auth/login"`) {
+		t.Error("GitHub login link should point at the registered /auth/login route")
+	}
 	if !strings.Contains(rec.Body.String(), "Continue with email") {
 		t.Error("login page should contain Continue with email when showEmailLogin is true")
 	}

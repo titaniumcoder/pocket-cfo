@@ -916,7 +916,7 @@ var templates = `
 <body>
 <main class="login">
   <h1>Finance Tracker</h1>
-  <a class="button" href="/login/github">Continue with GitHub</a>
+  <a class="button" href="/auth/login">Continue with GitHub</a>
   {{if .ShowEmailLogin}}<a class="button" href="/auth/email">Continue with email</a>{{end}}
   {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 </main>

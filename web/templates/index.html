@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Invoicer</title>
+  <link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=block" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #fff; --text: #1c2430; --muted: #6b7684; --border: #e2e5ea;
+      --paid-bg: #e6f7ec; --paid-text: #1f9254;
+      --overdue-bg: #fbe7e8; --overdue-text: #b4232b;
+      --draft-bg: #f1f2f4; --draft-text: #5b6472;
+      --issued-bg: #eef2fa; --issued-text: #3b5bab;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #14181f; --text: #e8ebf0; --muted: #8b96a5; --border: #2a3140;
+        --paid-bg: #16301f; --paid-text: #5fd889;
+        --overdue-bg: #3a1a1c; --overdue-text: #f28b90;
+        --draft-bg: #232833; --draft-text: #9aa4b2;
+        --issued-bg: #1c2740; --issued-text: #8ab0f2;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'PT Sans', 'DejaVu Sans', sans-serif;
+      background: var(--bg); color: var(--text); margin: 0; padding: 32px 44px; font-size: 14px;
+    }
+    header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 24px; }
+    header h1 { font-size: 22px; margin: 0; }
+    header a.logout { color: var(--muted); font-size: 12px; }
+
+    nav.topnav { margin-bottom: 16px; display: flex; gap: 4px; }
+    nav.topnav a {
+      text-decoration: none; color: var(--muted); opacity: .8; font-size: 12px;
+      text-transform: uppercase; letter-spacing: .06em; padding: 4px 12px; border-radius: 999px;
+    }
+    nav.topnav a.active { opacity: 1; background: var(--text); color: var(--bg); }
+
+    nav.years { margin-bottom: 24px; }
+    nav.years a {
+      display: inline-block; margin-right: 8px; padding: 4px 12px;
+      border-radius: 999px; text-decoration: none; color: var(--muted);
+      border: 1px solid var(--border); font-size: 13px;
+    }
+    nav.years a.active { background: var(--text); color: #fff; border-color: var(--text); }
+
+    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 32px 0 8px; }
+
+    table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+    th {
+      text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+      color: var(--muted); border-bottom: 1px solid var(--border); padding: 8px 6px;
+    }
+    td { padding: 8px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th.num, td.num { text-align: right; white-space: nowrap; }
+    td.outstanding-nonzero { color: var(--overdue-text); font-weight: 700; }
+
+    a { color: var(--text); }
+    a.paid-link { color: var(--paid-text); font-size: 12px; margin-left: 6px; }
+
+    .badge {
+      display: inline-block; margin-right: 8px; vertical-align: middle;
+      font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+      padding: 2px 10px; border-radius: 999px;
+    }
+    .badge-draft   { background: var(--draft-bg);   color: var(--draft-text); }
+    .badge-issued  { background: var(--issued-bg);  color: var(--issued-text); }
+    .badge-overdue { background: var(--overdue-bg); color: var(--overdue-text); }
+    .badge-paid    { background: var(--paid-bg);    color: var(--paid-text); }
+
+    .pdf-status {
+      display: inline-block; margin-left: 6px; vertical-align: middle;
+      font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+      padding: 1px 8px; border-radius: 999px;
+    }
+    .pdf-current { background: var(--paid-bg);    color: var(--paid-text); }
+    .pdf-stale   { background: var(--overdue-bg); color: var(--overdue-text); }
+
+    tr.row-draft { opacity: .72; font-style: italic; }
+    tr.row-draft a { color: var(--muted); }
+
+    .table-wrap { overflow-x: auto; }
+
+    @media (max-width: 640px) {
+      body { padding: 16px; }
+      header { flex-direction: column; align-items: flex-start; gap: 8px; }
+      nav.years { margin-bottom: 20px; }
+      nav.years a { padding: 6px 14px; margin-bottom: 6px; }
+      table { min-width: 560px; }
+      th, td { padding: 10px 8px; }
+      a, a.logout, a.paid-link { padding: 2px 0; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Invoicer</h1>
+    <div>
+      <span style="color: var(--muted); font-size: 12px;">{{.Login}}{{if .ReadOnly}} (read-only){{end}}</span>
+      &middot; <a class="logout" href="/auth/logout">Logout</a>
+    </div>
+  </header>
+
+  <nav class="topnav">
+    {{if .ShowFinanceLink}}<a href="/">Finance</a>{{end}}
+    <a class="active" href="/invoicing">Invoicing</a>
+  </nav>
+
+  <nav class="years">
+    <a href="/invoicing"{{if not .SelectedYear}} class="active"{{end}}>All</a>
+    {{$selected := .SelectedYear}}
+    {{range .Years}}
+    <a href="/invoicing?year={{.}}"{{if and $selected (eq . (deref $selected))}} class="active"{{end}}>{{.}}</a>
+    {{end}}
+  </nav>
+
+  <h2>Recipients</h2>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Address</th>
+        <th>Email</th>
+        <th class="num">Total (frame)</th>
+        <th class="num">Outstanding</th>
+        <th>Portal</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Recipients}}
+      <tr>
+        <td>{{.LegalName}}</td>
+        <td>{{.AddressLine}}</td>
+        <td><a href="mailto:{{.Email}}">{{.Email}}</a></td>
+        <td class="num">{{money .TotalInFrame}}</td>
+        <td class="num{{if ne .Outstanding 0}} outstanding-nonzero{{end}}">{{money .Outstanding}}</td>
+        <td>{{with index $.PortalLinks .Number}}<a href="{{.}}">copy portal link</a>{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+
+  <h2>Invoices</h2>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Invoice</th>
+        <th>Recipient</th>
+        <th>Issue date</th>
+        <th>Due date</th>
+        <th>Paid</th>
+        <th class="num">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Invoices}}
+      <tr{{if eq .State "draft"}} class="row-draft"{{end}}>
+        <td>
+          <span class="badge badge-{{.State}}">{{.State}}</span>
+          {{if eq .State "draft"}}
+          <a href="/invoicing/invoices/{{.Number}}-DRAFT.pdf">{{.Number}} &mdash; {{.Title}}</a>
+          {{else}}
+          <a href="/invoicing/invoices/{{.Number}}.pdf">{{.Number}} &mdash; {{.Title}}</a>
+          {{end}}
+          {{if and .Paid (ne .State "draft")}}
+          <a class="paid-link" href="/invoicing/invoices/{{.Number}}-paid.pdf">(paid)</a>
+          {{end}}
+          {{if index $.PDFCurrent .Number}}
+          <span class="pdf-status pdf-current" title="Built PDF matches the current JSON">up to date</span>
+          {{else}}
+          <span class="pdf-status pdf-stale" title="Built PDF does not (yet) match the current JSON">stale</span>
+          {{end}}
+        </td>
+        <td>{{.RecipientName}}</td>
+        <td>{{date .IssueDate}}</td>
+        <td>{{date .DueDate}}</td>
+        <td>{{dateptr .Paid}}</td>
+        <td class="num">{{money .GrandTotal}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+</body>
+</html>

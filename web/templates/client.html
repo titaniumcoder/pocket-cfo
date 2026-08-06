@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Invoicer</title>
+  <link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=block" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #fff; --text: #1c2430; --muted: #6b7684; --border: #e2e5ea;
+      --paid-bg: #e6f7ec; --paid-text: #1f9254;
+      --issued-bg: #eef2fa; --issued-text: #3b5bab;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #14181f; --text: #e8ebf0; --muted: #8b96a5; --border: #2a3140;
+        --paid-bg: #16301f; --paid-text: #5fd889;
+        --issued-bg: #1c2740; --issued-text: #8ab0f2;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'PT Sans', 'DejaVu Sans', sans-serif;
+      background: var(--bg); color: var(--text); margin: 0; padding: 32px 44px; font-size: 14px;
+    }
+    header { margin-bottom: 24px; }
+    header h1 { font-size: 20px; margin: 0 0 4px; }
+    header .sub { color: var(--muted); font-size: 13px; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+      color: var(--muted); border-bottom: 1px solid var(--border); padding: 8px 6px;
+    }
+    td { padding: 8px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th.num, td.num { text-align: right; white-space: nowrap; }
+    a { color: var(--text); }
+
+    .badge {
+      display: inline-block; margin-right: 8px; vertical-align: middle;
+      font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+      padding: 2px 10px; border-radius: 999px;
+    }
+    .badge-issued { background: var(--issued-bg); color: var(--issued-text); }
+    .badge-paid   { background: var(--paid-bg);   color: var(--paid-text); }
+
+    @media (max-width: 640px) {
+      body { padding: 16px; }
+      table { min-width: 480px; }
+      th, td { padding: 10px 8px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>{{.LegalName}}</h1>
+    <div class="sub">Your invoices</div>
+  </header>
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Invoice</th>
+        <th>Issue date</th>
+        <th>Due date</th>
+        <th class="num">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Invoices}}
+      <tr>
+        <td>
+          <span class="badge {{if .Paid}}badge-paid{{else}}badge-issued{{end}}">{{if .Paid}}paid{{else}}issued{{end}}</span>
+          <a href="{{.PDFPath}}">{{.Number}} &mdash; {{.Title}}</a>
+        </td>
+        <td>{{.IssueDate}}</td>
+        <td>{{.DueDate}}</td>
+        <td class="num">{{money .GrandTotal}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+</body>
+</html>

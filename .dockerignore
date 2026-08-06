@@ -1,0 +1,45 @@
+# If you prefer the allow list template instead of the deny list, see community template:
+# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
+#
+# Binaries for programs and plugins
+**/*.exe
+**/*.exe~
+**/*.dll
+**/*.so
+**/*.dylib
+
+# go build ./... writes a binary to the repo root if only one main package
+# happens to match at build time (e.g. mid-refactor); these are never inputs.
+# Anchored to the root (leading /) — unanchored, these would also match
+# and exclude the cmd/invoicectl/ and cmd/invoicer/ source directories.
+/invoicectl
+/invoicer
+
+# Test binary, built with `go test -c`
+**/*.test
+
+# Code coverage profiles and other test artifacts
+**/*.out
+**/coverage.*
+**/*.coverprofile
+**/profile.cov
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+**/go.work
+**/go.work.sum
+
+# env file
+**/.env
+**/.envrc
+
+# air (https://github.com/air-verse/air) hot-reload scratch dir/log
+tmp
+**/build-errors.log
+
+# Editor/IDE
+# .idea/
+# .vscode/
+**/.DS_Store

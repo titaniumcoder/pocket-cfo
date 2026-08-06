@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "regimes": {
+    "eu_b2b_reverse_charge": {
+      "citations": ["ЗДДС чл. 21 ал. 2", "ЗДДС чл. 86 ал. 3"],
+      "text": {
+        "de": "Steuerschuldnerschaft des Leistungsempfängers (Reverse Charge). Keine Umsatzsteuer gemäß Art. 21 Abs. 2 und Art. 86 Abs. 3 ЗДДС.",
+        "bg": "Данъкът не е начислен на основание чл. 21, ал. 2 и чл. 86, ал. 3 ЗДДС. Данъкът е изискуем от получателя (обратно начисляване)."
+      },
+      "mandatory_wording": ["обратно начисляване"],
+      "vies_reportable": true,
+      "reviewed_at": "2026-08-03"
+    },
+    "outside_eu_place_of_supply": {
+      "citations": ["ЗДДС чл. 69 ал. 2"],
+      "text": {
+        "de": "Steuerfreie Leistung gemäß Art. 69 Abs. 2 des bulgarischen Umsatzsteuergesetzes (Leistungsort außerhalb der EU).",
+        "bg": "Данъкът не е начислен на основание чл. 69, ал. 2 от ЗДДС - място на изпълнение извън територията на страната."
+      },
+      "mandatory_wording": [],
+      "vies_reportable": false,
+      "reviewed_at": "2026-08-03"
+    }
+  }
+}

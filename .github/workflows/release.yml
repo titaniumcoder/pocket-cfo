@@ -1,0 +1,57 @@
+# Conventional-commit-driven releases: release-please reads commit messages
+# on every push to main and keeps a "release PR" up to date with the
+# resulting version bump + changelog. Merging that PR (a normal PR merge,
+# so it goes through build.yml's checks like any other) is what actually
+# cuts a GitHub Release + tag, which in turn triggers the image publish
+# below — day-to-day commits to main never publish an image by themselves.
+#
+# See README.md/AGENTS.md for the commit-message format this depends on
+# (Conventional Commits: `feat:`, `fix:`, `feat!:`/`BREAKING CHANGE:`, etc.
+# — anything else is treated as a non-release chore).
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          release-type: go
+
+  publish-image:
+    name: Build and push the Docker image
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ needs.release-please.outputs.tag_name }}
+            ghcr.io/${{ github.repository }}:latest

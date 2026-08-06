@@ -1,0 +1,16 @@
+{
+  "number": 2,
+  "legal_name": "Musterfirma GmbH",
+  "address": {
+    "line1": "Musterstraße 1",
+    "postal_code": "1010",
+    "city": "Wien",
+    "country_code": "AT"
+  },
+  "tax_id": "ATU00000000",
+  "vat_id": "ATU00000000",
+  "is_business": true,
+  "language": "de",
+  "payment_terms_days": 30,
+  "email": "buchhaltung@musterfirma.example"
+}

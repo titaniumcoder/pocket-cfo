@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="{{.Invoice.Language}}">
+<head>
+<meta charset="utf-8">
+<title>{{.Invoice.Number}}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=block&subset=cyrillic,latin-ext" rel="stylesheet">
+<style>
+  :root {
+    --accent: #2454e8;
+    --text: #1c2430;
+    --muted: #6b7684;
+    --border: #e2e5ea;
+    --paid-bg: #e6f7ec;
+    --paid-text: #1f9254;
+    --pay-bg: #f4f9f5;
+    --pay-border: #d9ede0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  @page { size: A4; margin: 0; }
+  body {
+    font-family: 'PT Sans', 'DejaVu Sans', sans-serif;
+    color: var(--text);
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 32px 44px;
+  }
+  header { display: flex; justify-content: space-between; align-items: flex-start; }
+  header .issuer { display: flex; gap: 14px; align-items: flex-start; }
+  header .issuer .logo svg { display: block; width: 44px; height: 44px; }
+  header .issuer h1 { font-size: 20px; margin: 0 0 6px; color: var(--text); }
+  header .issuer .addr { color: var(--muted); margin-bottom: 2px; }
+  header .issuer .ids { color: var(--muted); }
+  header .meta { text-align: right; }
+  header .meta .doctitle { font-size: 20px; font-weight: 700; letter-spacing: .04em; }
+  header .meta .docnumber { color: var(--muted); margin-top: 2px; }
+  header .meta .badge-paid {
+    display: inline-block; margin-top: 10px;
+    background: var(--paid-bg); color: var(--paid-text);
+    font-size: 10px; font-weight: 700; letter-spacing: .04em;
+    padding: 3px 12px; border-radius: 999px;
+  }
+  hr { border: none; border-top: 1px solid var(--border); margin: 14px 0 20px; }
+
+  .parties { display: flex; justify-content: space-between; gap: 32px; margin-bottom: 28px; }
+  .parties .billto { flex: 1; }
+  .parties .label,
+  .summary .label,
+  .notes .label,
+  .payment .label {
+    font-size: 10px; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+  }
+  .parties .billto .name { font-weight: 700; font-size: 13px; margin-bottom: 2px; }
+  .parties .billto .addr,
+  .parties .billto .ids { color: var(--muted); }
+  .parties .billto .contact-gap { height: 8px; }
+  .metabox {
+    min-width: 320px; border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 18px;
+  }
+  .metabox .row { display: flex; justify-content: space-between; padding: 3px 0; }
+  .metabox .row.amountdue {
+    margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--border);
+    font-weight: 700; font-size: 14px;
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+  thead { display: table-header-group; }
+  thead th {
+    text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--muted);
+    border-bottom: 1px solid var(--border); padding: 8px 6px;
+  }
+  tbody td { padding: 10px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th.num, td.num { text-align: right; white-space: nowrap; }
+  .desc-bg { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .desc-bg-inline { color: var(--muted); font-size: inherit; margin-left: 6px; }
+  /* A line item's own row (description + translation line) must never be
+     sliced across a page break — only useful once the header above repeats
+     on the next page too, which table/thead does natively when printed. */
+  tbody tr { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Self-contained bordered cards: if one doesn't fit on the remaining
+     space of the current page, move the whole thing to the next page
+     rather than splitting it. Zahlungsinformationen (.payment) is the
+     literal requirement; .summary/.notes are the same visual pattern. */
+  .summary, .notes, .payment {
+    break-inside: avoid; page-break-inside: avoid;
+  }
+
+  .summary {
+    margin-top: 18px; margin-left: auto; width: 340px;
+    border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px;
+  }
+  .summary .row { display: flex; justify-content: space-between; padding: 4px 0; }
+  .summary .row.discount { color: var(--muted); }
+  .summary .row.total {
+    font-weight: 700; font-size: 14px;
+    border-top: 1px solid var(--border); margin-top: 8px; padding-top: 10px;
+  }
+
+  .notes, .payment {
+    margin-top: 20px; border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px;
+  }
+  .notes p { margin: 0 0 6px; }
+  .notes p.bg { color: var(--muted); }
+  .payment { background: var(--pay-bg); border-color: var(--pay-border); }
+  .payment .row { display: flex; justify-content: space-between; padding: 3px 0; }
+  .payment .row.reference {
+    margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--pay-border);
+  }
+
+  .watermark, .paid-stamp {
+    position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%) rotate(-32deg);
+    text-align: center;
+    white-space: nowrap; pointer-events: none; z-index: 1000;
+  }
+  .watermark {
+    font-size: 52px; font-weight: 700; letter-spacing: .04em;
+    color: rgba(196, 43, 43, 0.16);
+  }
+  .paid-stamp {
+    font-size: 52px; font-weight: 700; letter-spacing: .04em;
+    color: rgba(31, 146, 84, 0.18);
+  }
+  .paid-stamp .stamp-date {
+    font-size: 20px; letter-spacing: .1em; margin-top: 4px;
+  }
+</style>
+</head>
+<body>
+  {{if .IsDraft}}<div class="watermark">ENTWURF &middot; ЧЕРНОВА &middot; DRAFT</div>{{end}}
+  {{if .IsPaid}}<div class="paid-stamp">BEZAHLT &middot; ПЛАТЕНО &middot; PAID<div class="stamp-date">{{dateptr .Invoice.Paid}}</div></div>{{end}}
+  <header>
+    <div class="issuer">
+      {{if .LogoSVG}}<div class="logo">{{.LogoSVG}}</div>{{end}}
+      <div>
+        <h1>{{.Invoice.Issuer.LegalName}}</h1>
+        <div class="addr">{{.Invoice.Issuer.Address.Line1}}{{with str .Invoice.Issuer.Address.Line2}}, {{.}}{{end}}</div>
+        <div class="addr">{{.Invoice.Issuer.Address.PostalCode}} {{.Invoice.Issuer.Address.City}}, {{.Invoice.Issuer.Address.CountryCode}}</div>
+        <div class="ids">{{.Labels.TaxIdLabel}}: {{.Invoice.Issuer.TaxId}} &middot; {{.Labels.VatIdLabel}}: {{.Invoice.Issuer.VatId}}</div>
+      </div>
+    </div>
+    <div class="meta">
+      <div class="doctitle">{{.Labels.DocTitle}}</div>
+      <div class="docnumber">{{.Invoice.Number}}</div>
+      {{if .IsPaid}}<div class="badge-paid">{{.Labels.PaidBadge}}</div>{{end}}
+    </div>
+  </header>
+  <hr>
+
+  <section class="parties">
+    <div class="billto">
+      <div class="label">{{.Labels.BillTo}}</div>
+      <div class="name">{{.Invoice.Recipient.LegalName}}</div>
+      <div class="addr">{{.Invoice.Recipient.Address.Line1}}</div>
+      {{with str .Invoice.Recipient.Address.Line2}}<div class="addr">{{.}}</div>{{end}}
+      <div class="addr">{{$.Invoice.Recipient.Address.PostalCode}} {{$.Invoice.Recipient.Address.City}}</div>
+      <div class="addr">{{country $.Invoice.Recipient.Address.CountryCode}}</div>
+      <div class="contact-gap"></div>
+      {{with str .Invoice.Recipient.VatId}}<div class="ids">{{$.Labels.VatIdLabel}}: {{.}}</div>{{end}}
+    </div>
+    <div class="metabox">
+      <div class="row"><span>{{.Labels.InvoiceDate}}</span><span>{{date .Invoice.IssueDate}}</span></div>
+      <div class="row"><span>{{.Labels.DueDate}}</span><span>{{date .Invoice.DueDate}}</span></div>
+      <div class="row"><span>{{.Labels.Currency}}</span><span>{{.Invoice.Currency}}</span></div>
+      <div class="row amountdue"><span>{{.Labels.AmountDue}}</span><span>{{money .AmountDue}}</span></div>
+    </div>
+  </section>
+
+  <table>
+    <thead>
+      <tr>
+        <th>{{.Labels.DescriptionCol}}</th>
+        <th class="num">{{.Labels.QtyCol}}</th>
+        <th class="num">{{.Labels.UnitPriceCol}}</th>
+        {{if .HasVAT}}<th class="num">{{.Labels.VatCol}}</th>{{end}}
+        <th class="num">{{.Labels.AmountCol}}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Totals.Lines}}
+      {{$b := bilingual .Description $.Invoice.Language}}
+      <tr>
+        <td>
+          {{if $b.Inline}}
+          <div>{{$b.Primary}}{{with $b.Secondary}}<span class="desc-bg-inline">{{.}}</span>{{end}}</div>
+          {{else}}
+          <div>{{$b.Primary}}</div>
+          {{with $b.Secondary}}<div class="desc-bg">{{.}}</div>{{end}}
+          {{end}}
+        </td>
+        <td class="num">{{qty .Quantity}}{{with str .Unit}} {{.}}{{end}}</td>
+        <td class="num">{{money .UnitPrice}}</td>
+        {{if $.HasVAT}}<td class="num">{{.VATRate}}%</td>{{end}}
+        <td class="num">{{money .Amount}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+
+  <div class="summary">
+    <div class="row"><span>{{.Labels.Subtotal}}</span><span>{{money .Totals.Subtotal}}</span></div>
+    {{range .Totals.Discounts}}
+    {{$b := bilingual .Label $.Invoice.Language}}
+    <div class="row discount"><span>{{$b.Primary}}{{with $b.Secondary}} / {{.}}{{end}}{{with percent .Percent}} ({{.}} %){{end}}</span><span>&minus;{{money .Amount}}</span></div>
+    {{end}}
+    {{if .Totals.Discounts}}<div class="row"><span>{{.Labels.Net}}</span><span>{{money .Totals.Net}}</span></div>{{end}}
+    {{range .Totals.VATGroups}}{{if ne .Rate 0}}
+    <div class="row"><span>{{$.Labels.VatCol}} {{.Rate}}%</span><span>{{money .VAT}}</span></div>
+    {{end}}{{end}}
+    <div class="row total"><span>{{.Labels.GrandTotal}}</span><span>{{money .Totals.GrandTotal}}</span></div>
+  </div>
+
+  {{$n := bilingual .Invoice.Tax.Note .Invoice.Language}}
+  {{if $n.Primary}}
+  <div class="notes">
+    <div class="label">{{.Labels.NotesTitle}}</div>
+    <p>{{$n.Primary}}</p>
+    {{with $n.Secondary}}<p class="bg">{{.}}</p>{{end}}
+  </div>
+  {{end}}
+
+  <div class="payment">
+    <div class="label">{{.Labels.PaymentTitle}}</div>
+    <div class="row"><span>{{.Labels.AccountHolder}}</span><span>{{.Invoice.Issuer.LegalName}}</span></div>
+    <div class="row"><span>{{.Labels.Bank}}</span><span>{{.Invoice.Issuer.Bank.Name}}</span></div>
+    <div class="row"><span>{{.Labels.Iban}}</span><span>{{.Invoice.Issuer.Bank.Iban}}</span></div>
+    <div class="row"><span>{{.Labels.Bic}}</span><span>{{.Invoice.Issuer.Bank.Bic}}</span></div>
+    {{with str .Invoice.Issuer.Bank.IntermediaryBic}}<div class="row"><span>{{$.Labels.IntermediaryBic}}</span><span>{{.}}</span></div>{{end}}
+    <div class="row reference"><span>{{.Labels.Reference}}</span><span>{{.Invoice.Number}}</span></div>
+  </div>
+</body>
+</html>

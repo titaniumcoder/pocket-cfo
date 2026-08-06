@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "number": "INV-0000000001",
+  "status": "issued",
+
+  "type": "invoice",
+  "title": "Example Client AG - Support & Development, January 2026",
+  "issue_date": "2026-01-05",
+  "due_date": "2026-01-19",
+  "currency": "EUR",
+  "language": "de",
+
+  "issuer": {
+    "legal_name": "Example Issuer EOOD",
+    "address": {
+      "line1": "Musterstraße 1",
+      "postal_code": "9000",
+      "city": "Varna",
+      "country_code": "BG"
+    },
+    "tax_id": "000000000",
+    "vat_id": "BG000000000",
+    "bank": {
+      "name": "Example Bank",
+      "iban": "DE89370400440532013000",
+      "bic": "COBADEFFXXX"
+    },
+    "logo": "web/static/logo.svg",
+    "default_currency": "EUR"
+  },
+  "recipient": {
+    "number": 1,
+    "legal_name": "Example Client AG",
+    "address": {
+      "line1": "Musterweg 1",
+      "postal_code": "8000",
+      "city": "Zürich",
+      "country_code": "CH"
+    },
+    "tax_id": "CHE-000.000.000",
+    "vat_id": "CHE-000.000.000 MWST",
+    "is_business": true,
+    "language": "de",
+    "payment_terms_days": 14,
+    "email": "buchhaltung@example-client.example"
+  },
+
+  "lines": [
+    {
+      "description": {
+        "de": "Support-Vertrag Jahresabo Beispiel-Software",
+        "bg": "Годишен абонамент за поддръжка на примерен софтуер"
+      },
+      "quantity": 100,
+      "unit_price": 100000,
+      "vat_rate": 0
+    },
+    {
+      "description": {
+        "de": "Individualentwicklung Beispiel-Modul",
+        "bg": "Индивидуална разработка на примерен модул"
+      },
+      "quantity": 600,
+      "unit_price": 10000,
+      "vat_rate": 0
+    },
+    {
+      "description": {
+        "de": "Wartung Beispielsystem: Support für 2 Gerätetypen",
+        "bg": "Поддръжка на примерна система: поддръжка на 2 типа устройства"
+      },
+      "quantity": 300,
+      "unit_price": 100000,
+      "vat_rate": 0
+    }
+  ],
+
+  "tax": {
+    "regime": "outside_eu_place_of_supply",
+    "citations": ["ЗДДС чл. 69 ал. 2"],
+    "note": {
+      "de": "Steuerfreie Leistung gemäß Art. 69 Abs. 2 des bulgarischen Umsatzsteuergesetzes (Leistungsort außerhalb der EU).",
+      "bg": "Данъкът не е начислен на основание чл. 69, ал. 2 от ЗДДС - място на изпълнение извън територията на страната."
+    }
+  },
+
+  "paid": "2026-01-15",
+
+  "annulment": null
+}

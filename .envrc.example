@@ -1,0 +1,74 @@
+# cmd/pocketcfo only enforces GitHub OAuth login when this is exactly "prod" —
+# anything else (including unset) skips auth entirely for local development.
+export ENV=
+
+export API2PDF_KEY=
+# Used by `invoicectl translate` to fill missing Bulgarian text on drafts.
+export DEEPL_API_KEY=
+# base64 PEM cert/key `invoicectl render` certifies each rendered PDF with
+# (DocMDP, no further changes allowed — see internal/sign, ARCHITECTURE.md
+# §6). Leave unset and signing is skipped entirely. `make dev-cert` prints a
+# throwaway self-signed pair for local testing — never the real org cert.
+export SIGN_CERT_B64=
+export SIGN_KEY_B64=
+export SIGN_KEY_PASS=
+
+# GitHub OAuth login, see internal/auth/github.go and ARCHITECTURE.md §8.
+export GITHUB_OAUTH_CLIENT_ID=
+export GITHUB_OAUTH_CLIENT_SECRET=
+export SESSION_SECRET=
+export PUBLIC_BASE_URL=http://localhost:8080
+export GITHUB_REPO=titaniumcoder/pocket-cfo
+
+# Separate from SESSION_SECRET: derives the stateless /invoicing/client/{token}
+# portal links, see cmd/pocketcfo/client.go. A recipient only gets a working
+# link once access_passkey is set on their own data/recipients/NNNN.json.
+export CLIENT_LINK_SECRET=
+
+# Email login (read-only access), see cmd/pocketcfo/email_login.go and
+# ARCHITECTURE.md §8.
+# Signs the self-expiring /auth/email login link, see internal/auth/otp.go.
+# Separate from SESSION_SECRET/CLIENT_LINK_SECRET, same
+# one-secret-per-mechanism convention.
+export OTP_LINK_SECRET=
+# Amazon SES sends the /auth/email login link (internal/mail), via the AWS
+# SDK's default credential chain — set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY
+# (or rely on an attached IAM role) alongside AWS_REGION below. With
+# SES_FROM_EMAIL unset, the link is logged instead of emailed — handy for
+# local testing of the email-login flow without real AWS credentials.
+# SES_FROM_EMAIL must be a verified SES identity (address or domain).
+export AWS_REGION=
+export AWS_ACCESS_KEY_ID=
+export AWS_SECRET_ACCESS_KEY=
+export SES_FROM_EMAIL=
+
+# Finance tracker (internal/finance) — see internal/finance/config.
+# Optional: TOGGL_API_TOKEN/TOGGL_WORKSPACE_ID unset leaves the Toggl
+# tracked-hours layer disabled entirely (predictions still run off the
+# configured hourly rate in config.json — see hourlyRateCents/currency
+# there). API_PASSWORD unset disables GET /api/net-income/... entirely.
+export TOGGL_API_TOKEN=
+export TOGGL_WORKSPACE_ID=
+export API_PASSWORD=
+# Optional. Default to config.json — non-secret finance tunables
+# (hoursPerDay, togglProjectIds, hourlyRateCents, currency, social rates,
+# annualVacationDays). See internal/finance/config.FileConfig.
+# export CONFIG_FILE=
+
+# Optional. Default to data/recipients, data/invoices, build — override to
+# point cmd/pocketcfo/invoicectl at a data checkout outside this repo (e.g. a
+# separate private repo holding real invoicing data).
+# export RECIPIENTS_DIR=
+# export INVOICES_DIR=
+# export BUILD_DIR=
+# Optional. Default to data/users.json — who (beyond GitHub collaborators,
+# who are always full admins) may reach which part(s) of PocketCFO via the
+# email-OTP login. See schemas/users.json, internal/users.
+# export USERS_FILE=
+# Optional. Default to data — directory budget.json is read from at
+# runtime (not embedded — see internal/finance/tracker.Budget).
+# export BUDGET_DIR=
+# Optional. Default to web/templates, web/static — override for a deployment
+# that wants its own branding instead of this repo's own templates/logo.
+# export TEMPLATES_DIR=
+# export STATIC_DIR=

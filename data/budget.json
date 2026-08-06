@@ -1,0 +1,62 @@
+{
+  "$schema": "../internal/finance/data/budget.schema.json",
+  "groups": [
+    {
+      "name": "Housing",
+      "kind": "private",
+      "categories": [
+        { "name": "Rent", "amount": 900 },
+        { "name": "Utilities", "amount": 140, "minimal_amount": 90 },
+        { "name": "Internet + Phone", "amount": 45 }
+      ]
+    },
+    {
+      "name": "Food",
+      "kind": "private",
+      "categories": [
+        { "name": "Groceries", "amount": 350 },
+        { "name": "Restaurants", "amount": 200, "minimal_amount": 80, "note": "Eating out a few times a week" }
+      ]
+    },
+    {
+      "name": "Private Expenses",
+      "kind": "private",
+      "categories": [
+        { "name": "Clothes & Household", "amount": 120, "minimal_amount": 0 },
+        { "name": "Transport", "amount": 60 },
+        { "name": "Diverse", "amount": 300, "minimal_amount": 100, "note": "Reserve for unexpected expenses" }
+      ]
+    },
+    {
+      "name": "Company - Operations",
+      "kind": "company",
+      "categories": [
+        { "name": "Accounting", "amount": 150 },
+        { "name": "Office", "amount": 200 },
+        { "name": "Diverse (Company)", "amount": 150, "minimal_amount": 0 }
+      ]
+    },
+    {
+      "name": "Company - Subscriptions",
+      "kind": "company",
+      "categories": [
+        { "name": "Dev Tools", "amount": 90, "note": "IDE/AI tooling subscriptions" },
+        { "name": "Cloud Hosting", "amount": 40 }
+      ]
+    },
+    {
+      "name": "Company - Equipment",
+      "kind": "company",
+      "categories": [
+        {
+          "name": "Laptop",
+          "amount": 1800,
+          "minimal_amount": 0,
+          "date": "2026-10-01",
+          "note": "Replacement dev machine",
+          "url": "https://example.com/laptop-listing"
+        }
+      ]
+    }
+  ]
+}

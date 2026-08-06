@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://titaniumcoder.com/schemas/notes.json",
+  "title": "Note catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "regimes"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "regimes": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/entry" },
+      "propertyNames": {
+        "enum": ["domestic_standard", "eu_b2b_reverse_charge", "outside_eu_place_of_supply"]
+      }
+    }
+  },
+  "$defs": {
+    "localized_string": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "de": { "type": "string", "minLength": 1 },
+        "en": { "type": "string", "minLength": 1 },
+        "fr": { "type": "string", "minLength": 1 },
+        "bg": { "type": "string", "minLength": 1 }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["citations", "text", "mandatory_wording", "vies_reportable", "reviewed_at"],
+      "properties": {
+        "citations": { "type": "array", "items": { "type": "string" } },
+        "text": { "$ref": "#/$defs/localized_string" },
+        "mandatory_wording": { "type": "array", "items": { "type": "string" } },
+        "vies_reportable": { "type": "boolean" },
+        "reviewed_at": { "type": "string", "format": "date" }
+      }
+    }
+  }
+}

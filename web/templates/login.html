@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Invoicer</title>
+  <link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=block" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'PT Sans', 'DejaVu Sans', sans-serif;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 16px; height: 100vh; margin: 0; background: #f4f9f5; color: #1c2430;
+    }
+    a.login {
+      background: #1c2430; color: #fff; text-decoration: none;
+      padding: 12px 24px; border-radius: 8px; font-weight: 700;
+    }
+    a.email {
+      color: #1c2430; font-size: 14px; text-decoration: underline;
+    }
+    @media (max-width: 640px) {
+      body { padding: 24px; height: auto; min-height: 100vh; }
+      a.login { padding: 16px 28px; font-size: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <a class="login" href="/auth/login">Login with GitHub</a>
+  <a class="email" href="/auth/email">Login via email instead</a>
+</body>
+</html>

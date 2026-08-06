@@ -1,0 +1,43 @@
+# Validates the code only — this repo carries no real invoicing/finance
+# data and no deploy secrets. The private companion repo
+# (titaniumcoder/pocket-cfo-data) holds the real data and references this
+# repo's published Docker image (see release.yml) by tag — it does not
+# embed this repo's code at all. See its own README.md for that side.
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: build-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pipeline:
+    name: Build, test, vet, format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Generate
+        run: go generate ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"

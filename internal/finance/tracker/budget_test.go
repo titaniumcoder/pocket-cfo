@@ -1,0 +1,975 @@
+package tracker
+
+import (
+	"context"
+	"testing"
+	"testing/fstest"
+	"time"
+
+	"github.com/titaniumcoder/pocket-cfo/internal/finance/budgetdata"
+)
+
+const testBudgetJSON = `{
+  "groups": [
+    { "name": "Housing", "kind": "private", "categories": [
+      { "name": "Rent", "amount": 1000 },
+      { "name": "Groceries", "amount": 300 }
+    ]},
+    { "name": "OneOff", "kind": "private", "categories": [
+      { "name": "Desk", "amount": 500, "date": "2026-09-01" }
+    ]}
+  ],
+  "loans": [
+    { "name": "Mom", "amount": 650000 }
+  ]
+}`
+
+// testBudgetJSONWithCompany extends testBudgetJSON's shape with a
+// company-kind group, for tests specifically about the company/private
+// split (see BudgetView.CompanyGroups/CompanyTotalSpentCents).
+const testBudgetJSONWithCompany = `{
+  "groups": [
+    { "name": "Housing", "kind": "private", "categories": [
+      { "name": "Rent", "amount": 1000 }
+    ]},
+    { "name": "Office", "kind": "company", "categories": [
+      { "name": "Accounting", "amount": 200 }
+    ]}
+  ]
+}`
+
+// testNow is a fixed "current time" for tests about a dated category's
+// visibility — anything before Desk's 2026-09-01 date keeps it visible (as
+// "future") rather than hidden.
+var testNow = time.Date(2026, time.July, 15, 0, 0, 0, 0, time.UTC)
+
+// newTestBudget returns a Budget reading from an in-memory fstest.MapFS
+// (keyed by path relative to internal/data, e.g. "budget.json") — Budget's
+// reads come from FS, not GitHub (see internal/tracker/budget.go), so no
+// fake HTTP transport is needed here.
+func newTestBudget(t *testing.T, files map[string]string) *Budget {
+	t.Helper()
+	mfs := fstest.MapFS{}
+	for path, content := range files {
+		mfs[path] = &fstest.MapFile{Data: []byte(content)}
+	}
+	return &Budget{FS: mfs}
+}
+
+func TestBudgetFileFetchAndValidate(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
+
+	bf, err := b.File(context.Background())
+	if err != nil {
+		t.Fatalf("File: %v", err)
+	}
+	if len(bf.Groups) != 2 || bf.Groups[0].Categories[0].Name != "Rent" {
+		t.Errorf("unexpected groups: %+v", bf)
+	}
+}
+
+func TestBudgetFileMissing(t *testing.T) {
+	b := newTestBudget(t, nil)
+	if _, err := b.File(context.Background()); err == nil {
+		t.Fatal("expected an error when budget.json is missing")
+	}
+}
+
+func TestBudgetForMonthRecurringCategoryAlwaysCounts(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
+	view, err := b.ForMonth(context.Background(), 2026, time.January, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth: %v", err)
+	}
+	byName := map[string]CategoryRow{}
+	for _, g := range view.Groups {
+		for _, r := range g.Rows {
+			byName[r.Name] = r
+		}
+	}
+	if want := eurToCents(1000); byName["Rent"].SpentCents != want {
+		t.Errorf("Rent spent = %d, want %d", byName["Rent"].SpentCents, want)
+	}
+	if want := eurToCents(300); byName["Groceries"].SpentCents != want {
+		t.Errorf("Groceries spent = %d, want %d", byName["Groceries"].SpentCents, want)
+	}
+}
+
+func TestBudgetForMonthDatedCategoryCountsOnlyWhenDue(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
+
+	due, err := b.ForMonth(context.Background(), 2026, time.September, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth: %v", err)
+	}
+	if got := rowByName(due, "Desk").SpentCents; got != eurToCents(500) {
+		t.Errorf("Desk spent in its due month = %d, want %d", got, eurToCents(500))
+	}
+
+	notDue, err := b.ForMonth(context.Background(), 2026, time.July, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth: %v", err)
+	}
+	if got := rowByName(notDue, "Desk").SpentCents; got != 0 {
+		t.Errorf("Desk spent outside its due month = %d, want 0", got)
+	}
+}
+
+// TestBudgetForYearCurrentYearOnlyCountsRemainingMonths confirms the year
+// view for the year "now" falls in only sums from now's month through
+// December — testNow is July 15, 2026, so 2026 should be 6 months
+// (Jul-Dec), not 12; months already gone by shouldn't be assumed to still be
+// coming, same spirit as a past one-time category being hidden in month view.
+func TestBudgetForYearCurrentYearOnlyCountsRemainingMonths(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
+	view, err := b.ForYear(context.Background(), 2026, testNow)
+	if err != nil {
+		t.Fatalf("ForYear: %v", err)
+	}
+	if want := eurToCents(6 * 1000); rowByName(view, "Rent").SpentCents != want {
+		t.Errorf("Rent SpentCents = %d, want %d (Jul-Dec only)", rowByName(view, "Rent").SpentCents, want)
+	}
+	if want := eurToCents(6 * 300); rowByName(view, "Groceries").SpentCents != want {
+		t.Errorf("Groceries SpentCents = %d, want %d (Jul-Dec only)", rowByName(view, "Groceries").SpentCents, want)
+	}
+	// Due once in September, still among the remaining months.
+	if want := eurToCents(500); rowByName(view, "Desk").SpentCents != want {
+		t.Errorf("Desk SpentCents = %d, want %d", rowByName(view, "Desk").SpentCents, want)
+	}
+}
+
+// TestBudgetForYearOtherYearsCountAllTwelveMonths confirms the "remaining
+// months only" reduction is specific to the year "now" falls in — any other
+// year (past or future relative to now) is entirely outside "now"'s year, so
+// every month counts, same as before.
+func TestBudgetForYearOtherYearsCountAllTwelveMonths(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
+	for _, year := range []int{2025, 2027} {
+		view, err := b.ForYear(context.Background(), year, testNow)
+		if err != nil {
+			t.Fatalf("ForYear(%d): %v", year, err)
+		}
+		if want := eurToCents(12 * 1000); rowByName(view, "Rent").SpentCents != want {
+			t.Errorf("year %d: Rent SpentCents = %d, want %d (full year)", year, rowByName(view, "Rent").SpentCents, want)
+		}
+	}
+}
+
+func TestBudgetForYearDatedCategoryBeforeNowInCurrentYearContributesNothing(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": `{
+		"groups": [
+			{ "name": "OneOff", "kind": "private", "categories": [
+				{ "name": "OldPurchase", "amount": 500, "date": "2026-03-01" }
+			]}
+		]
+	}`})
+	view, err := b.ForYear(context.Background(), 2026, testNow) // testNow is July 2026
+	if err != nil {
+		t.Fatalf("ForYear: %v", err)
+	}
+	if got := rowByName(view, "OldPurchase").SpentCents; got != 0 {
+		t.Errorf("OldPurchase SpentCents = %d, want 0 (its month, March, is before now)", got)
+	}
+}
+
+func TestBudgetForYearDatedCategoryOutsideYearContributesNothing(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
+	view, err := b.ForYear(context.Background(), 2027, testNow)
+	if err != nil {
+		t.Fatalf("ForYear: %v", err)
+	}
+	if got := rowByName(view, "Desk").SpentCents; got != 0 {
+		t.Errorf("Desk SpentCents in a year it's not due = %d, want 0", got)
+	}
+}
+
+func rowByName(view BudgetView, name string) CategoryRow {
+	for _, g := range view.Groups {
+		for _, r := range g.Rows {
+			if r.Name == name {
+				return r
+			}
+		}
+	}
+	return CategoryRow{}
+}
+
+// TestCategoryRowForDated covers the three cases for a dated category with
+// nothing due this period, compared against now at month granularity:
+// future (shown, grayed out with its configured amount and month — see
+// categoryRowFor), due this period (shown plainly, spentCents > 0), past
+// (hidden entirely).
+func TestCategoryRowForDated(t *testing.T) {
+	now := time.Date(2026, time.July, 15, 0, 0, 0, 0, time.UTC)
+	date := "2026-09-01"
+	amount := 500.0
+	desk := budgetdata.Category{Name: "Desk", Amount: amount, Date: &date}
+
+	t.Run("future date shows grayed out with the amount and month", func(t *testing.T) {
+		row, ok := categoryRowFor(desk, 0, false, now, false)
+		if !ok {
+			t.Fatal("expected a future dated category to still render")
+		}
+		if row.PlannedMonth != "September 2026" {
+			t.Errorf("PlannedMonth = %q, want September 2026", row.PlannedMonth)
+		}
+		if row.PlannedCents != eurToCents(500) {
+			t.Errorf("PlannedCents = %d, want %d", row.PlannedCents, eurToCents(500))
+		}
+		if row.SpentCents != 0 {
+			t.Errorf("SpentCents = %d, want 0", row.SpentCents)
+		}
+	})
+
+	t.Run("due this period shows plainly", func(t *testing.T) {
+		row, ok := categoryRowFor(desk, eurToCents(500), false, now, false)
+		if !ok {
+			t.Fatal("expected a due-this-period category to render")
+		}
+		if row.PlannedMonth != "" {
+			t.Errorf("PlannedMonth = %q, want empty (not grayed out)", row.PlannedMonth)
+		}
+		if row.SpentCents != eurToCents(500) {
+			t.Errorf("SpentCents = %d, want %d", row.SpentCents, eurToCents(500))
+		}
+	})
+
+	t.Run("past date with nothing due this period is hidden entirely", func(t *testing.T) {
+		pastDate := "2026-06-01"
+		pastDesk := budgetdata.Category{Name: "Desk", Amount: amount, Date: &pastDate}
+		if _, ok := categoryRowFor(pastDesk, 0, false, now, false); ok {
+			t.Error("expected a past dated category to be hidden")
+		}
+	})
+
+	t.Run("recurring categories are unaffected by date logic", func(t *testing.T) {
+		rent := budgetdata.Category{Name: "Rent", Amount: 1000}
+		row, ok := categoryRowFor(rent, eurToCents(1000), false, now, false)
+		if !ok {
+			t.Fatal("expected a recurring category to always render")
+		}
+		if row.PlannedMonth != "" {
+			t.Errorf("PlannedMonth = %q, want empty for a recurring category", row.PlannedMonth)
+		}
+	})
+
+	t.Run("future date preview uses minimal_amount when minimal mode is on", func(t *testing.T) {
+		minAmount := 300.0
+		trip := budgetdata.Category{Name: "Trip", Amount: amount, MinimalAmount: &minAmount, Date: &date}
+		row, ok := categoryRowFor(trip, 0, false, now, true)
+		if !ok {
+			t.Fatal("expected a future dated category to still render")
+		}
+		if row.PlannedCents != eurToCents(300) {
+			t.Errorf("PlannedCents = %d, want %d (minimal_amount)", row.PlannedCents, eurToCents(300))
+		}
+	})
+
+	t.Run("future date preview stays at the full amount when minimal mode is off", func(t *testing.T) {
+		minAmount := 300.0
+		trip := budgetdata.Category{Name: "Trip", Amount: amount, MinimalAmount: &minAmount, Date: &date}
+		row, ok := categoryRowFor(trip, 0, false, now, false)
+		if !ok {
+			t.Fatal("expected a future dated category to still render")
+		}
+		if row.PlannedCents != eurToCents(500) {
+			t.Errorf("PlannedCents = %d, want %d (full amount)", row.PlannedCents, eurToCents(500))
+		}
+	})
+}
+
+func TestCategoryRowForCarriesNoteAndURL(t *testing.T) {
+	now := time.Date(2026, time.July, 15, 0, 0, 0, 0, time.UTC)
+	note := "PCB|Rigs Apex RGB BK"
+	url := "https://pcbuild.bg/p-pcb-rigs-apex-rgb-bk-50462"
+	c := budgetdata.Category{Name: "Computer", Amount: 3060, Note: &note, Url: &url}
+
+	row, ok := categoryRowFor(c, eurToCents(3060), false, now, false)
+	if !ok {
+		t.Fatal("expected the category to render")
+	}
+	if row.Note != note {
+		t.Errorf("Note = %q, want %q", row.Note, note)
+	}
+	if row.URL != url {
+		t.Errorf("URL = %q, want %q", row.URL, url)
+	}
+}
+
+func TestBudgetEvictForcesRefetch(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
+	ctx := context.Background()
+
+	bf, err := b.File(ctx)
+	if err != nil {
+		t.Fatalf("File: %v", err)
+	}
+	if len(bf.Groups) != 2 {
+		t.Fatalf("expected 2 groups, got %d", len(bf.Groups))
+	}
+
+	// Change the underlying file — still cached until evicted.
+	b.FS.(fstest.MapFS)["budget.json"] = &fstest.MapFile{Data: []byte(`{"groups":[]}`)}
+	bf, err = b.File(ctx)
+	if err != nil {
+		t.Fatalf("File: %v", err)
+	}
+	if len(bf.Groups) != 2 {
+		t.Fatal("expected the cached result before eviction")
+	}
+
+	b.Evict()
+	bf, err = b.File(ctx)
+	if err != nil {
+		t.Fatalf("File: %v", err)
+	}
+	if len(bf.Groups) != 0 {
+		t.Fatal("expected a fresh fetch to see the now-changed file")
+	}
+}
+
+// TestBudgetSplitsGroupsByKind confirms a company-kind group's categories
+// land in CompanyGroups/CompanyTotalSpentCents, not Groups/TotalSpentCents,
+// and vice versa for private.
+func TestBudgetSplitsGroupsByKind(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithCompany})
+	view, err := b.ForMonth(context.Background(), 2026, time.January, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth: %v", err)
+	}
+	if want := eurToCents(1000); view.TotalSpentCents != want {
+		t.Errorf("TotalSpentCents (private) = %d, want %d", view.TotalSpentCents, want)
+	}
+	if want := eurToCents(200); view.CompanyTotalSpentCents != want {
+		t.Errorf("CompanyTotalSpentCents = %d, want %d", view.CompanyTotalSpentCents, want)
+	}
+	if len(view.Groups) != 1 || view.Groups[0].Name != "Housing" {
+		t.Errorf("Groups = %+v, want just Housing", view.Groups)
+	}
+	if len(view.CompanyGroups) != 1 || view.CompanyGroups[0].Name != "Office" {
+		t.Errorf("CompanyGroups = %+v, want just Office", view.CompanyGroups)
+	}
+}
+
+// TestBudgetGroupAllFutureStillShows confirms a group whose every category is
+// a one-time cost planned for a later month still renders — SpentCents sums
+// to zero for the period, but it's not "empty": it has grayed-out planned
+// rows worth showing as a reminder. Only a group with zero rows at all (see
+// TestBudgetGroupAllPastIsHidden) should be dropped.
+func TestBudgetGroupAllFutureStillShows(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": `{
+		"groups": [
+			{ "name": "Equipment", "kind": "company", "categories": [
+				{ "name": "Desk", "amount": 3000, "date": "2026-09-01" },
+				{ "name": "Monitor", "amount": 500, "date": "2026-09-01" }
+			]}
+		]
+	}`})
+	view, err := b.ForMonth(context.Background(), 2026, time.July, testNow) // testNow is July 2026, due date is September
+	if err != nil {
+		t.Fatalf("ForMonth: %v", err)
+	}
+	if len(view.CompanyGroups) != 1 {
+		t.Fatalf("expected the Equipment group to still render, got %+v", view.CompanyGroups)
+	}
+	eq := view.CompanyGroups[0]
+	if eq.SpentCents != 0 {
+		t.Errorf("SpentCents = %d, want 0 (nothing due yet)", eq.SpentCents)
+	}
+	if len(eq.Rows) != 2 {
+		t.Fatalf("expected 2 planned rows, got %d", len(eq.Rows))
+	}
+	for _, r := range eq.Rows {
+		if r.PlannedMonth != "September 2026" {
+			t.Errorf("%s: PlannedMonth = %q, want September 2026", r.Name, r.PlannedMonth)
+		}
+	}
+}
+
+// TestBudgetGroupAllPastIsHidden confirms a group that's genuinely empty for
+// the period — every category a one-time cost whose month already passed,
+// never logged — is dropped, not shown as a "-0" placeholder.
+func TestBudgetGroupAllPastIsHidden(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": `{
+		"groups": [
+			{ "name": "Equipment", "kind": "company", "categories": [
+				{ "name": "OldDesk", "amount": 3000, "date": "2026-01-01" }
+			]}
+		]
+	}`})
+	view, err := b.ForMonth(context.Background(), 2026, time.July, testNow) // testNow is July 2026, due date was January
+	if err != nil {
+		t.Fatalf("ForMonth: %v", err)
+	}
+	if len(view.CompanyGroups) != 0 {
+		t.Errorf("expected the Equipment group to be hidden (nothing due, nothing planned), got %+v", view.CompanyGroups)
+	}
+}
+
+// TestBudgetForMonthRowVisibilityFollowsViewedMonthNotRealNow confirms
+// ForMonth grades a dated category's past/future status against the *viewed*
+// month, not real current time — browsing month-by-month should show a
+// one-time cost as upcoming, then active in its due month, then gone the
+// month after, even while testNow (a fixed "today") never changes and stays
+// well before all three viewed months.
+func TestBudgetForMonthRowVisibilityFollowsViewedMonthNotRealNow(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": `{
+		"groups": [
+			{ "name": "Equipment", "kind": "company", "categories": [
+				{ "name": "Desk", "amount": 3000, "date": "2026-10-01" }
+			]}
+		]
+	}`})
+	ctx := context.Background()
+
+	// September: still upcoming -> grayed-out reminder.
+	sep, err := b.ForMonth(ctx, 2026, time.September, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth(September): %v", err)
+	}
+	if got := rowByName(BudgetView{Groups: sep.CompanyGroups}, "Desk"); got.PlannedMonth != "October 2026" {
+		t.Errorf("September: PlannedMonth = %q, want October 2026", got.PlannedMonth)
+	}
+
+	// October: due this month -> active, full amount.
+	oct, err := b.ForMonth(ctx, 2026, time.October, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth(October): %v", err)
+	}
+	if got := rowByName(BudgetView{Groups: oct.CompanyGroups}, "Desk").SpentCents; got != eurToCents(3000) {
+		t.Errorf("October: SpentCents = %d, want %d", got, eurToCents(3000))
+	}
+
+	// November: already in the past relative to the viewed month -> the whole
+	// group disappears, even though testNow (a fixed July "today") is well
+	// before November too.
+	nov, err := b.ForMonth(ctx, 2026, time.November, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth(November): %v", err)
+	}
+	if len(nov.CompanyGroups) != 0 {
+		t.Errorf("November: expected Equipment to be hidden (October has passed), got %+v", nov.CompanyGroups)
+	}
+}
+
+// TestBudgetForYearCompanyAlwaysCountsAllTwelveMonths confirms company-kind
+// categories count all twelve months of the viewed year even when it's the
+// current year (unlike private, which only counts remaining months) — see
+// ForYear's doc comment for why: company expenses feed the salary cascade,
+// which projects a full year of company income, so the deduction has to
+// span the same full year to stay consistent.
+func TestBudgetForYearCompanyAlwaysCountsAllTwelveMonths(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithCompany})
+	view, err := b.ForYear(context.Background(), 2026, testNow) // testNow is July 2026
+	if err != nil {
+		t.Fatalf("ForYear: %v", err)
+	}
+	if want := eurToCents(6 * 1000); view.TotalSpentCents != want {
+		t.Errorf("TotalSpentCents (private, remaining months) = %d, want %d", view.TotalSpentCents, want)
+	}
+	if want := eurToCents(12 * 200); view.CompanyTotalSpentCents != want {
+		t.Errorf("CompanyTotalSpentCents (company, full year) = %d, want %d", view.CompanyTotalSpentCents, want)
+	}
+}
+
+func TestBudgetCompanyExpensesByMonth(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithCompany})
+	byMonth, err := b.CompanyExpensesByMonth(context.Background(), 2026)
+	if err != nil {
+		t.Fatalf("CompanyExpensesByMonth: %v", err)
+	}
+	if len(byMonth) != 12 {
+		t.Fatalf("expected all 12 months populated, got %d", len(byMonth))
+	}
+	for m, cents := range byMonth {
+		if cents != eurToCents(200) {
+			t.Errorf("month %v = %d, want %d", m, cents, eurToCents(200))
+		}
+	}
+}
+
+// TestComputeMonthWithBudget exercises the wiring in Tracker.compute that
+// combines Budget's figures with Personal.NetIncomeCents.
+func TestComputeMonthWithBudget(t *testing.T) {
+	trk := fullTracker()
+	trk.Budget = newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
+
+	f := trk.ComputeMonth(context.Background(), 2026, time.March)
+	if f.BudgetErr != "" {
+		t.Fatalf("BudgetErr = %q", f.BudgetErr)
+	}
+	// Rent 1000 + Groceries 300 recur; Desk (due September) doesn't count in March.
+	want := eurToCents(1000 + 300)
+	if f.PrivateTotalSpentCents != want {
+		t.Errorf("BudgetTotalSpentCents = %d, want %d", f.PrivateTotalSpentCents, want)
+	}
+	// Balance now pairs March's expenses with January's funding income (the
+	// viewed month shifted back two calendar months — see
+	// fundingRangeForMonth), not March's own income (that's what
+	// f.Personal, unaffected by this test, still reports — see
+	// TestComputeMonthDeductsCompanyExpensesFromCompanyIncome). fullTracker's
+	// fake Toggl backend only has data dated 2026-03-02, so January 2026 has
+	// no tracked time, and January is far enough in the past (relative to
+	// whenever this test actually runs) that there's no "expected remaining
+	// work" projection for it either — so FundingPersonal.NetIncomeCents is
+	// exactly 0 here.
+	if f.FundingPersonal.Err != "" {
+		t.Fatalf("FundingPersonal.Err = %q", f.FundingPersonal.Err)
+	}
+	if f.FundingPersonal.NetIncomeCents != 0 {
+		t.Errorf("FundingPersonal.NetIncomeCents = %d, want 0 (January has no fake Toggl data)", f.FundingPersonal.NetIncomeCents)
+	}
+	if want := -f.PrivateTotalSpentCents; !f.ShowBalance || f.BalanceCents != want {
+		t.Errorf("ShowBalance/BalanceCents = %v/%d, want true/%d", f.ShowBalance, f.BalanceCents, want)
+	}
+	// Removed loans check since Loans field was removed from Figures struct
+}
+
+// TestComputeMonthDeductsCompanyExpensesFromCompanyIncome confirms company
+// expenses reduce NetIncomeCents (via the salary cascade) rather than being
+// subtracted a second time from PrivateTotalSpentCents/BalanceCents.
+func TestComputeMonthDeductsCompanyExpensesFromCompanyIncome(t *testing.T) {
+	trk := fullTracker()
+	trk.Budget = newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithCompany})
+
+	f := trk.ComputeMonth(context.Background(), 2026, time.March)
+	if f.BudgetErr != "" || f.Personal.Err != "" {
+		t.Fatalf("BudgetErr = %q, Personal.Err = %q", f.BudgetErr, f.Personal.Err)
+	}
+	if want := eurToCents(200); f.Personal.CompanyExpensesCents != want {
+		t.Errorf("Personal.CompanyExpensesCents = %d, want %d", f.Personal.CompanyExpensesCents, want)
+	}
+	if want := eurToCents(1000); f.PrivateTotalSpentCents != want {
+		t.Errorf("PrivateTotalSpentCents = %d, want %d (company expenses shouldn't appear here)", f.PrivateTotalSpentCents, want)
+	}
+	if len(f.Personal.CompanyGroups) != 1 || f.Personal.CompanyGroups[0].Name != "Office" {
+		t.Errorf("Personal.CompanyGroups = %+v, want just Office", f.Personal.CompanyGroups)
+	}
+	direct := trk.Personal.breakdown(float64(f.TotalCents)/100, 200, 1)
+	if f.Personal.NetIncomeCents != direct.NetIncomeCents {
+		t.Errorf("NetIncomeCents = %d, want %d (company income minus 200 company expenses, same cascade as breakdown(_, 200, 1))", f.Personal.NetIncomeCents, direct.NetIncomeCents)
+	}
+}
+
+func TestComputeYearWithBudget(t *testing.T) {
+	trk := fullTracker()
+	trk.Budget = newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
+
+	f := trk.ComputeYear(context.Background(), 2026)
+	if f.FundingPersonal.Err != "" {
+		t.Fatalf("FundingPersonal.Err = %q", f.FundingPersonal.Err)
+	}
+	// Balance pairs the year's expenses with the funding income range (the
+	// viewed year's expense range shifted back two months — see
+	// fundingRangeForYear), not f.Personal.NetIncomeCents (the year's own
+	// income) — see TestComputeMonthWithBudget for why the two now differ.
+	want := f.FundingPersonal.NetIncomeCents - f.PrivateTotalSpentCents
+	if !f.ShowBalance || f.BalanceCents != want {
+		t.Errorf("ShowBalance/BalanceCents = %v/%d, want true/%d", f.ShowBalance, f.BalanceCents, want)
+	}
+}
+
+// TestBudgetMinimalToggleFlipsGlobalState confirms ToggleMinimal/IsMinimal
+// flip a single global flag, not tied to any particular month.
+func TestBudgetMinimalToggleFlipsGlobalState(t *testing.T) {
+	b := &Budget{}
+	if b.IsMinimal() {
+		t.Fatal("expected minimal mode to start off")
+	}
+	if on := b.ToggleMinimal(); !on {
+		t.Error("first toggle should turn minimal mode on")
+	}
+	if !b.IsMinimal() {
+		t.Error("IsMinimal should report on after toggling on")
+	}
+	if on := b.ToggleMinimal(); on {
+		t.Error("second toggle should turn minimal mode back off")
+	}
+	if b.IsMinimal() {
+		t.Error("IsMinimal should report off after toggling back off")
+	}
+}
+
+// testBudgetJSONWithMinimal has a recurring category with a minimal_amount,
+// one without (Rent — a fixed cost that should stay full even in minimal
+// mode), and a one-off dated category with a minimal_amount, for testing
+// ForMonth's minimal-mode substitution.
+const testBudgetJSONWithMinimal = `{
+  "groups": [
+    { "name": "Housing", "kind": "private", "categories": [
+      { "name": "Rent", "amount": 1000 },
+      { "name": "Restaurants", "amount": 500, "minimal_amount": 200 }
+    ]},
+    { "name": "OneOff", "kind": "private", "categories": [
+      { "name": "Trip", "amount": 800, "minimal_amount": 300, "date": "2026-09-01" }
+    ]}
+  ]
+}`
+
+func TestBudgetForMonthFullAmountsWhenMinimalOff(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithMinimal})
+	view, err := b.ForMonth(context.Background(), 2026, time.September, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth: %v", err)
+	}
+	if want := eurToCents(500); rowByName(view, "Restaurants").SpentCents != want {
+		t.Errorf("Restaurants SpentCents = %d, want %d (minimal off)", rowByName(view, "Restaurants").SpentCents, want)
+	}
+}
+
+// TestBudgetForMonthSubstitutesMinimalAmountWhenOn confirms a category with
+// a minimal_amount uses it once minimal mode is toggled on, a category
+// without one (Rent) stays at its full amount, and a dated category due
+// this month also respects minimal mode.
+func TestBudgetForMonthSubstitutesMinimalAmountWhenOn(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithMinimal})
+	b.ToggleMinimal()
+
+	view, err := b.ForMonth(context.Background(), 2026, time.September, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth: %v", err)
+	}
+	if want := eurToCents(200); rowByName(view, "Restaurants").SpentCents != want {
+		t.Errorf("Restaurants SpentCents = %d, want %d (minimal)", rowByName(view, "Restaurants").SpentCents, want)
+	}
+	if want := eurToCents(1000); rowByName(view, "Rent").SpentCents != want {
+		t.Errorf("Rent SpentCents = %d, want %d (no minimal_amount configured, stays full)", rowByName(view, "Rent").SpentCents, want)
+	}
+	if want := eurToCents(300); rowByName(view, "Trip").SpentCents != want {
+		t.Errorf("Trip (dated, due this month) SpentCents = %d, want %d (minimal)", rowByName(view, "Trip").SpentCents, want)
+	}
+}
+
+// TestBudgetForYearIgnoresMinimalMode confirms year view always uses full
+// amounts, even when the global minimal-mode flag is on.
+func TestBudgetForYearIgnoresMinimalMode(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithMinimal})
+	b.ToggleMinimal()
+
+	view, err := b.ForYear(context.Background(), 2027, testNow) // entirely future relative to testNow -> all 12 months count
+	if err != nil {
+		t.Fatalf("ForYear: %v", err)
+	}
+	if want := eurToCents(12 * 500); rowByName(view, "Restaurants").SpentCents != want {
+		t.Errorf("Restaurants SpentCents = %d, want %d (year view unaffected by minimal mode)", rowByName(view, "Restaurants").SpentCents, want)
+	}
+}
+
+// TestComputeMonthMinimalModeFields confirms Figures.MinimalMode/
+// MinimalToggleURL are wired up from the global Budget flag for month view.
+func TestComputeMonthMinimalModeFields(t *testing.T) {
+	trk := fullTracker()
+	trk.Budget = newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
+
+	off := trk.ComputeMonth(context.Background(), 2026, time.March)
+	if off.MinimalMode {
+		t.Error("MinimalMode should start false")
+	}
+	if off.MinimalToggleURL != "/2026/3?minimal=toggle" {
+		t.Errorf("MinimalToggleURL = %q, want /2026/3?minimal=toggle", off.MinimalToggleURL)
+	}
+
+	trk.Budget.ToggleMinimal()
+	on := trk.ComputeMonth(context.Background(), 2026, time.March)
+	if !on.MinimalMode {
+		t.Error("MinimalMode should be true after toggling on")
+	}
+}
+
+// TestComputeYearMinimalModeAlwaysFalse confirms year view never reports
+// minimal mode as on, even when the global flag is toggled on, and doesn't
+// expose a toggle URL (the toggle only lives in month view).
+func TestComputeYearMinimalModeAlwaysFalse(t *testing.T) {
+	trk := fullTracker()
+	trk.Budget = newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
+	trk.Budget.ToggleMinimal()
+
+	f := trk.ComputeYear(context.Background(), 2026)
+	if f.MinimalMode {
+		t.Error("MinimalMode should stay false in year view even when the global flag is on")
+	}
+	if f.MinimalToggleURL != "" {
+		t.Errorf("MinimalToggleURL = %q, want empty in year view", f.MinimalToggleURL)
+	}
+}
+
+// testBudgetJSONWithOverrides covers 0, 1, and 2+ zero-amount overrides in
+// one fixture (the replacement for what excluded_months used to do): Rent
+// has none (baseline), Flight has exactly one (August), Hotel has two
+// (August and December) plus a minimal_amount, for testing that a zero
+// override wins over minimal mode.
+const testBudgetJSONWithOverrides = `{
+  "groups": [
+    { "name": "Housing", "kind": "private", "categories": [
+      { "name": "Rent", "amount": 1000 }
+    ]},
+    { "name": "Trip", "kind": "company", "categories": [
+      { "name": "Flight", "amount": 400, "overrides": [{ "month": "2026-08-01", "amount": 0 }] },
+      { "name": "Hotel", "amount": 200, "minimal_amount": 150, "overrides": [{ "month": "2026-08-01", "amount": 0 }, { "month": "2026-12-01", "amount": 0 }] }
+    ]}
+  ]
+}`
+
+// TestBudgetForMonthNoOverridesUnaffected covers the no-overrides case: a
+// category without the field counts every month as before.
+func TestBudgetForMonthNoOverridesUnaffected(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithOverrides})
+	for _, m := range []time.Month{time.July, time.August, time.December} {
+		view, err := b.ForMonth(context.Background(), 2026, m, testNow)
+		if err != nil {
+			t.Fatalf("ForMonth(%v): %v", m, err)
+		}
+		if want := eurToCents(1000); rowByName(view, "Rent").SpentCents != want {
+			t.Errorf("%v: Rent SpentCents = %d, want %d (no overrides)", m, rowByName(view, "Rent").SpentCents, want)
+		}
+	}
+}
+
+// TestBudgetForMonthSingleZeroOverrideZeroesOnlyThatMonth covers the
+// single-override case (Flight, zeroed only in August).
+func TestBudgetForMonthSingleZeroOverrideZeroesOnlyThatMonth(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithOverrides})
+
+	july, err := b.ForMonth(context.Background(), 2026, time.July, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth(July): %v", err)
+	}
+	if want := eurToCents(400); rowByName(BudgetView{Groups: july.CompanyGroups}, "Flight").SpentCents != want {
+		t.Errorf("July: Flight SpentCents = %d, want %d", rowByName(BudgetView{Groups: july.CompanyGroups}, "Flight").SpentCents, want)
+	}
+
+	aug, err := b.ForMonth(context.Background(), 2026, time.August, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth(August): %v", err)
+	}
+	augFlight := rowByName(BudgetView{Groups: aug.CompanyGroups}, "Flight")
+	if augFlight.SpentCents != 0 {
+		t.Errorf("August (zero override): Flight SpentCents = %d, want 0", augFlight.SpentCents)
+	}
+	if !augFlight.Overridden {
+		t.Error("August: Flight.Overridden should be true")
+	}
+
+	sep, err := b.ForMonth(context.Background(), 2026, time.September, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth(September): %v", err)
+	}
+	sepFlight := rowByName(BudgetView{Groups: sep.CompanyGroups}, "Flight")
+	if want := eurToCents(400); sepFlight.SpentCents != want {
+		t.Errorf("September: Flight SpentCents = %d, want %d (override month is August only)", sepFlight.SpentCents, want)
+	}
+	if sepFlight.Overridden {
+		t.Error("September: Flight.Overridden should be false (no override this month)")
+	}
+}
+
+// TestBudgetForMonthMultipleZeroOverridesZeroEach covers the
+// multiple-overrides case (Hotel, zeroed in both August and December).
+func TestBudgetForMonthMultipleZeroOverridesZeroEach(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithOverrides})
+
+	for _, m := range []time.Month{time.August, time.December} {
+		view, err := b.ForMonth(context.Background(), 2026, m, testNow)
+		if err != nil {
+			t.Fatalf("ForMonth(%v): %v", m, err)
+		}
+		if got := rowByName(BudgetView{Groups: view.CompanyGroups}, "Hotel").SpentCents; got != 0 {
+			t.Errorf("%v (zero override): Hotel SpentCents = %d, want 0", m, got)
+		}
+	}
+	for _, m := range []time.Month{time.July, time.November} {
+		view, err := b.ForMonth(context.Background(), 2026, m, testNow)
+		if err != nil {
+			t.Fatalf("ForMonth(%v): %v", m, err)
+		}
+		if want := eurToCents(200); rowByName(BudgetView{Groups: view.CompanyGroups}, "Hotel").SpentCents != want {
+			t.Errorf("%v (no override): Hotel SpentCents = %d, want %d", m, rowByName(BudgetView{Groups: view.CompanyGroups}, "Hotel").SpentCents, want)
+		}
+	}
+}
+
+// TestBudgetForYearZeroOverridesReduceContribution confirms year view sums a
+// category's overridden months using the override (0 here) rather than its
+// full amount — company categories count all 12 months of the viewed year,
+// so 2 zero-overridden months should mean 10 months' worth, not 12.
+func TestBudgetForYearZeroOverridesReduceContribution(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithOverrides})
+	view, err := b.ForYear(context.Background(), 2026, testNow)
+	if err != nil {
+		t.Fatalf("ForYear: %v", err)
+	}
+	if want := eurToCents(10 * 200); rowByName(BudgetView{Groups: view.CompanyGroups}, "Hotel").SpentCents != want {
+		t.Errorf("Hotel SpentCents = %d, want %d (12 months minus 2 zero-overridden)", rowByName(BudgetView{Groups: view.CompanyGroups}, "Hotel").SpentCents, want)
+	}
+	if want := eurToCents(11 * 400); rowByName(BudgetView{Groups: view.CompanyGroups}, "Flight").SpentCents != want {
+		t.Errorf("Flight SpentCents = %d, want %d (12 months minus 1 zero-overridden)", rowByName(BudgetView{Groups: view.CompanyGroups}, "Flight").SpentCents, want)
+	}
+}
+
+// TestBudgetCompanyExpensesByMonthRespectsOverrides confirms the per-month
+// company-expense breakdown (which feeds the salary cascade for year view)
+// is 0 for zero-overridden months.
+func TestBudgetCompanyExpensesByMonthRespectsOverrides(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithOverrides})
+	byMonth, err := b.CompanyExpensesByMonth(context.Background(), 2026)
+	if err != nil {
+		t.Fatalf("CompanyExpensesByMonth: %v", err)
+	}
+	if got := byMonth[time.August]; got != 0 {
+		t.Errorf("August = %d, want 0 (both Flight and Hotel zero-overridden)", got)
+	}
+	if want := eurToCents(400); byMonth[time.December] != want {
+		t.Errorf("December = %d, want %d (Flight counts, only Hotel zero-overridden)", byMonth[time.December], want)
+	}
+	if want := eurToCents(400 + 200); byMonth[time.July] != want {
+		t.Errorf("July = %d, want %d (neither overridden)", byMonth[time.July], want)
+	}
+}
+
+// TestBudgetZeroOverrideWinsOverMinimalAmount confirms a zero override is 0
+// even when minimal mode is on and the category has a non-zero
+// minimal_amount — an override always wins over minimal mode.
+func TestBudgetZeroOverrideWinsOverMinimalAmount(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithOverrides})
+	b.ToggleMinimal()
+
+	aug, err := b.ForMonth(context.Background(), 2026, time.August, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth(August): %v", err)
+	}
+	if got := rowByName(BudgetView{Groups: aug.CompanyGroups}, "Hotel").SpentCents; got != 0 {
+		t.Errorf("August (zero override, minimal on): Hotel SpentCents = %d, want 0, not minimal_amount", got)
+	}
+
+	july, err := b.ForMonth(context.Background(), 2026, time.July, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth(July): %v", err)
+	}
+	if want := eurToCents(150); rowByName(BudgetView{Groups: july.CompanyGroups}, "Hotel").SpentCents != want {
+		t.Errorf("July (no override, minimal on): Hotel SpentCents = %d, want %d (minimal_amount applies normally)", rowByName(BudgetView{Groups: july.CompanyGroups}, "Hotel").SpentCents, want)
+	}
+}
+
+// TestCategoryRowForFutureDatedOverriddenMonthPreviewIsZero confirms a
+// future-dated one-off category whose due month is itself zero-overridden
+// shows a 0 planned preview, not its configured amount.
+func TestCategoryRowForFutureDatedOverriddenMonthPreviewIsZero(t *testing.T) {
+	now := time.Date(2026, time.July, 15, 0, 0, 0, 0, time.UTC)
+	date := "2026-09-01"
+	desk := budgetdata.Category{Name: "Desk", Amount: 500, Date: &date, Overrides: []budgetdata.Override{{Month: "2026-09-15", Amount: 0}}}
+
+	row, ok := categoryRowFor(desk, 0, false, now, false)
+	if !ok {
+		t.Fatal("expected a future dated category to still render")
+	}
+	if row.PlannedMonth != "September 2026" {
+		t.Errorf("PlannedMonth = %q, want September 2026", row.PlannedMonth)
+	}
+	if row.PlannedCents != 0 {
+		t.Errorf("PlannedCents = %d, want 0 (due month is zero-overridden)", row.PlannedCents)
+	}
+	if !row.Overridden {
+		t.Error("Overridden should be true (due month has an override)")
+	}
+}
+
+// testBudgetJSONWithNonZeroOverride covers a real-price override: Flight's
+// normal amount is 400 with a minimal_amount of 100, but September's real,
+// known price (427.42) overrides both.
+const testBudgetJSONWithNonZeroOverride = `{
+  "groups": [
+    { "name": "Trip", "kind": "company", "categories": [
+      { "name": "Flight", "amount": 400, "minimal_amount": 100, "overrides": [{ "month": "2026-09-01", "amount": 427.42 }] }
+    ]}
+  ]
+}`
+
+// TestBudgetForMonthNonZeroOverrideReplacesRecurringAmount confirms a
+// non-zero override replaces the recurring amount for its month only, and
+// flags the row as Overridden.
+func TestBudgetForMonthNonZeroOverrideReplacesRecurringAmount(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithNonZeroOverride})
+
+	sep, err := b.ForMonth(context.Background(), 2026, time.September, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth(September): %v", err)
+	}
+	sepFlight := rowByName(BudgetView{Groups: sep.CompanyGroups}, "Flight")
+	if want := eurToCents(427.42); sepFlight.SpentCents != want {
+		t.Errorf("September: Flight SpentCents = %d, want %d (override)", sepFlight.SpentCents, want)
+	}
+	if !sepFlight.Overridden {
+		t.Error("September: Flight.Overridden should be true")
+	}
+
+	aug, err := b.ForMonth(context.Background(), 2026, time.August, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth(August): %v", err)
+	}
+	augFlight := rowByName(BudgetView{Groups: aug.CompanyGroups}, "Flight")
+	if want := eurToCents(400); augFlight.SpentCents != want {
+		t.Errorf("August: Flight SpentCents = %d, want %d (no override, normal amount)", augFlight.SpentCents, want)
+	}
+	if augFlight.Overridden {
+		t.Error("August: Flight.Overridden should be false")
+	}
+}
+
+// TestBudgetOverrideWinsOverMinimalMode confirms an override applies
+// unconditionally over minimal-budget mode — the overridden month keeps its
+// override amount, not minimal_amount, while other months still substitute
+// minimal_amount normally.
+func TestBudgetOverrideWinsOverMinimalMode(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithNonZeroOverride})
+	b.ToggleMinimal()
+
+	sep, err := b.ForMonth(context.Background(), 2026, time.September, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth(September): %v", err)
+	}
+	if want := eurToCents(427.42); rowByName(BudgetView{Groups: sep.CompanyGroups}, "Flight").SpentCents != want {
+		t.Errorf("September (minimal on): Flight SpentCents = %d, want %d (override wins)", rowByName(BudgetView{Groups: sep.CompanyGroups}, "Flight").SpentCents, want)
+	}
+
+	aug, err := b.ForMonth(context.Background(), 2026, time.August, testNow)
+	if err != nil {
+		t.Fatalf("ForMonth(August): %v", err)
+	}
+	if want := eurToCents(100); rowByName(BudgetView{Groups: aug.CompanyGroups}, "Flight").SpentCents != want {
+		t.Errorf("August (minimal on, no override): Flight SpentCents = %d, want %d (minimal_amount applies normally)", rowByName(BudgetView{Groups: aug.CompanyGroups}, "Flight").SpentCents, want)
+	}
+}
+
+// TestBudgetOverriddenNeverSetInYearView confirms the Overridden marker is
+// always false in year view, even when one of the summed months has an
+// override — a marker only makes sense for a single viewed month.
+func TestBudgetOverriddenNeverSetInYearView(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithNonZeroOverride})
+	view, err := b.ForYear(context.Background(), 2026, testNow)
+	if err != nil {
+		t.Fatalf("ForYear: %v", err)
+	}
+	if rowByName(BudgetView{Groups: view.CompanyGroups}, "Flight").Overridden {
+		t.Error("year view should never set Overridden, even though September has an override")
+	}
+}
+
+// TestEurToCentsRoundsDecimalAmounts confirms eurToCents rounds to the
+// nearest cent, including cases affected by float64 imprecision.
+func TestEurToCentsRoundsDecimalAmounts(t *testing.T) {
+	cases := []struct {
+		euros float64
+		want  int
+	}{
+		{427.42, 42742},
+		{432, 43200},
+		{19.99, 1999},
+		{11, 1100},
+		{28.90, 2890},
+	}
+	for _, c := range cases {
+		if got := eurToCents(c.euros); got != c.want {
+			t.Errorf("eurToCents(%v) = %d, want %d", c.euros, got, c.want)
+		}
+	}
+}

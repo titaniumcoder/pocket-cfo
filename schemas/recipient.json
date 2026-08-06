@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://titaniumcoder.com/schemas/recipient.json",
+  "title": "Recipient",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "number",
+    "legal_name",
+    "address",
+    "is_business",
+    "language",
+    "payment_terms_days",
+    "email"
+  ],
+  "properties": {
+    "number": { "type": "integer", "minimum": 1 },
+    "legal_name": { "type": "string", "minLength": 1 },
+    "address": { "$ref": "#/$defs/address" },
+    "tax_id": { "type": "string" },
+    "vat_id": { "type": "string" },
+    "is_business": { "type": "boolean" },
+    "language": { "type": "string", "enum": ["de", "en", "fr", "bg"] },
+    "payment_terms_days": { "type": "integer", "minimum": 0 },
+    "email": { "type": "string", "format": "email" },
+    "access_passkey": { "type": "string", "minLength": 1 },
+    "tracking_project_id": {
+      "type": "integer",
+      "description": "This client's project ID in the time-tracking tool (currently Toggl), if tracked there at all. Links an issued invoice for this recipient to that project's tracked/predicted hours in the finance tracker — see internal/finance."
+    }
+  },
+  "$defs": {
+    "address": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["line1", "postal_code", "city", "country_code"],
+      "properties": {
+        "line1": { "type": "string", "minLength": 1 },
+        "line2": { "type": "string" },
+        "postal_code": { "type": "string", "minLength": 1 },
+        "city": { "type": "string", "minLength": 1 },
+        "country_code": { "type": "string", "pattern": "^[A-Z]{2}$" }
+      }
+    }
+  }
+}

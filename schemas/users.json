@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://titaniumcoder.com/schemas/users.json",
+  "title": "Users",
+  "description": "Non-collaborator access control: which part(s) of PocketCFO an email-OTP-authenticated user may reach. GitHub repo collaborators are always full-access admins and are never listed here — see internal/auth and AGENTS.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["users"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "users": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/user" },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "user": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["email", "parts"],
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "parts": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["finance", "invoicing"] },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

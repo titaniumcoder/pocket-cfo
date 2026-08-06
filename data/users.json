@@ -1,0 +1,8 @@
+{
+  "$schema": "../schemas/users.json",
+  "users": [
+    { "email": "finance-viewer@example.com", "parts": ["finance"] },
+    { "email": "invoicing-viewer@example.com", "parts": ["invoicing"] },
+    { "email": "both-viewer@example.com", "parts": ["finance", "invoicing"] }
+  ]
+}

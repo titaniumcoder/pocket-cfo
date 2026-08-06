@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/titaniumcoder/pocket-cfo/internal/finance/data/budget.schema.json",
+  "title": "Budget",
+  "description": "The whole budget in one file: spending categories grouped for display, plus loans. A flat monthly plan, not envelope budgeting — no logged entries, no balances. Every category is just a name and an amount; a category with a date is a one-off cost counted only in that specific month instead of recurring. A category's overrides can replace its amount for specific months with a known real price (or 0, to skip that month entirely). Hand-edited and committed via git.",
+  "type": "object",
+  "required": ["groups"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "groups": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/group" }
+    },
+    "loans": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/loan" }
+    }
+  },
+  "$defs": {
+    "group": {
+      "type": "object",
+      "required": ["name", "kind", "categories"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "kind": {
+          "type": "string",
+          "enum": ["company", "private"],
+          "description": "company: business expenses, not personal spending — deducted from Company income before the employer-social/gross-salary/employee-social/income-tax cascade, since that money never becomes personal salary at all. Shown under Personal income, not Expenses. private: ordinary personal spending, deducted from Net income (after the cascade) for the Balance row, same as before. Every group must declare one explicitly."
+        },
+        "categories": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/category" }
+        }
+      }
+    },
+    "category": {
+      "type": "object",
+      "required": ["name", "amount"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "amount": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Euros, decimals allowed (e.g. 427.42). Counted every month when date is absent (a recurring cost). When date is set, this is a one-off cost counted only in that specific month."
+        },
+        "minimal_amount": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Optional reduced amount used instead of amount when minimal-budget mode is toggled on. The toggle is a global, server-side, in-memory flag (never persisted here) that applies to month view only, including a one-off dated category's due amount and its future \"planned\" preview."
+        },
+        "date": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "Only for a one-off cost: the month it's due (day is informational, e.g. \"2026-09-01\"). Present -> amount is counted only in that YYYY-MM, shown as a grayed-out estimate before it's due and dropped after. Absent -> amount recurs every month."
+        },
+        "overrides": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/override" },
+          "description": "Optional list of per-month overrides: for the listed month, use that override's amount verbatim instead of amount/minimal_amount — including 0, which zeroes the month out entirely (e.g. a recurring cost skipped that month, such as a trip not happening). Wins unconditionally over minimal-budget mode. No duplicate months per category."
+        },
+        "note": {
+          "type": "string",
+          "description": "Free-text context, shown next to the category name. Not used in any computation."
+        },
+        "url": {
+          "type": "string",
+          "description": "Optional link to a product/service page for this category (e.g. a specific PC build listing). When set, the note is shown as a link (opening in a new tab) with an external-link icon. Not used in any computation."
+        }
+      }
+    },
+    "loan": {
+      "type": "object",
+      "required": ["name", "amount"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "amount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Whole euros still owed, right now. Hand-updated directly after each payment (there's no separate principal/paid bookkeeping) — just lower this number."
+        },
+        "note": {
+          "type": "string",
+          "description": "Free-text context. Not used in any computation."
+        }
+      }
+    },
+    "override": {
+      "type": "object",
+      "required": ["month", "amount"],
+      "additionalProperties": false,
+      "properties": {
+        "month": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "The month this override applies to (day is informational/ignored, e.g. \"2026-09-01\", same convention as date)."
+        },
+        "amount": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Euros, decimals allowed. Replaces the category's amount/minimal_amount for this month verbatim — 0 means the category contributes nothing this month."
+        }
+      }
+    }
+  }
+}

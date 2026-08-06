@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://titaniumcoder.com/schemas/issuer.json",
+  "title": "Issuer",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["legal_name", "address", "tax_id", "vat_id", "bank", "default_currency"],
+  "properties": {
+    "legal_name": { "type": "string", "minLength": 1 },
+    "address": { "$ref": "#/$defs/address" },
+    "tax_id": { "type": "string", "minLength": 1 },
+    "vat_id": { "type": "string", "minLength": 1 },
+    "bank": { "$ref": "#/$defs/bank" },
+    "logo": { "type": "string" },
+    "default_currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
+  },
+  "$defs": {
+    "address": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["line1", "postal_code", "city", "country_code"],
+      "properties": {
+        "line1": { "type": "string", "minLength": 1 },
+        "line2": { "type": "string" },
+        "postal_code": { "type": "string", "minLength": 1 },
+        "city": { "type": "string", "minLength": 1 },
+        "country_code": { "type": "string", "pattern": "^[A-Z]{2}$" }
+      }
+    },
+    "bank": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "iban", "bic"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "iban": { "type": "string", "minLength": 1 },
+        "bic": { "type": "string", "minLength": 1 },
+        "intermediary_bic": { "type": "string" }
+      }
+    }
+  }
+}

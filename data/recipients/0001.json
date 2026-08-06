@@ -1,0 +1,17 @@
+{
+  "number": 1,
+  "legal_name": "Example Client AG",
+  "address": {
+    "line1": "Musterweg 1",
+    "postal_code": "8000",
+    "city": "Zürich",
+    "country_code": "CH"
+  },
+  "tax_id": "CHE-000.000.000",
+  "vat_id": "CHE-000.000.000 MWST",
+  "is_business": true,
+  "language": "de",
+  "payment_terms_days": 14,
+  "email": "buchhaltung@example-client.example",
+  "tracking_project_id": 123456
+}

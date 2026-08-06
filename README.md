@@ -30,11 +30,12 @@ README is deliberately short and points there instead of duplicating it.
 
 Directory layout, JSON Schemas, invoice rendering (`internal/money`, `internal/render`,
 `invoicectl render`, original + `-paid.pdf` artifacts), a GitHub Actions build/test
-pipeline (`.github/workflows/build.yml`), conventional-commit-driven releases
-(`.github/workflows/release.yml` — see [`AGENTS.md`](AGENTS.md#releases)), and a
-GitHub-OAuth-gated web app (`cmd/pocketcfo`) covering both the finance tracker and
-invoicing are in place. PDF signing (`internal/sign`, DocMDP-certified via
-`digitorus/pdfsign`) is implemented but inert — no signing secrets are configured yet.
+pipeline (`.github/workflows/build.yml`), conventional-commit-driven releases (cut locally
+via the `release-it` skill, which triggers `.github/workflows/release.yml`'s image publish
+on tag push — see [`AGENTS.md`](AGENTS.md#releases)), and a GitHub-OAuth-gated web app
+(`cmd/pocketcfo`) covering both the finance tracker and invoicing are in place. PDF
+signing (`internal/sign`, DocMDP-certified via `digitorus/pdfsign`) is implemented but
+inert — no signing secrets are configured yet.
 
 ## Prerequisites
 

@@ -32,20 +32,23 @@ conventions established during scaffolding that aren't obvious from the code its
 ## Releases
 
 Commit messages on `main` must follow [Conventional Commits](https://www.conventionalcommits.org/)
-— `feat: ...` / `fix: ...` / `feat!: ...` (or a `BREAKING CHANGE:` footer) / etc. —
-because [release-please](https://github.com/googleapis/release-please) (see
-`.github/workflows/release.yml`) reads them to decide the next version and generate the
-changelog. It keeps a release PR up to date on every push to `main`; merging that PR (a
-normal PR merge, so it goes through `build.yml`'s checks like any other) cuts the actual
-GitHub Release + tag, which triggers `release.yml`'s image-publish job — day-to-day
-commits to `main` never publish an image by themselves. One Docker image
-(`ghcr.io/titaniumcoder/pocket-cfo`) ships both the finance tracker and invoicing, tagged
-with the release version and `latest`.
+— `feat: ...` / `fix: ...` / `feat!: ...` (or a `BREAKING CHANGE:` footer) / etc. — because
+the **`release-it`** skill (`.claude/skills/release-it/SKILL.md`) reads them to propose the
+next version. Releases are cut locally, on request, not automated by GitHub Actions:
+`release-it` analyzes commits since the last tag, categorizes them (feature/fix/breaking),
+proposes a version (semver-derived, or `v0.1.0` for the first release), and — only after
+the user explicitly confirms the proposal — runs the full verify checklist, tags, and
+pushes. Pushing the tag is what triggers `.github/workflows/release.yml`'s image-publish
+job; nothing else does, and day-to-day commits to `main` never publish an image by
+themselves. One Docker image (`ghcr.io/titaniumcoder/pocket-cfo`), containing **both**
+executables (`pocketcfo`, the web server; `invoicectl`, the CLI), ships both the finance
+tracker and invoicing, tagged with the release version and `latest`.
 
 A subtask's own commit message (see the ritual below) doesn't need to be a release-worthy
-`feat`/`fix` itself — only commits that land on `main` do, and even those, release-please
-tolerates a non-conventional one by just not bumping the version for it (not a hard CI
-failure) — but writing them correctly from the start avoids surprises at merge time.
+`feat`/`fix` itself — only commits that land on `main` do, and even those, `release-it`
+tolerates a non-conventional one by just filing it under "other" (no version-bump signal,
+not a hard failure) — but writing them correctly from the start avoids surprises at
+release time.
 
 ## Agentic execution workflow
 

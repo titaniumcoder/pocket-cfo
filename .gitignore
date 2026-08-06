@@ -45,3 +45,6 @@ build-errors.log
 # .idea/
 # .vscode/
 .DS_Store
+
+# Claude Code session-local state, never project content
+.claude/scheduled_tasks.lock

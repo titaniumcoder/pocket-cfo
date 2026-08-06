@@ -100,6 +100,8 @@ air                                             # hot-reload cmd/pocketcfo on fi
 docker build -t pocket-cfo .                    # build the release image locally
 docker run -p 8080:8080 pocket-cfo              # run it standalone against the fabricated
                                                  # sample data baked into the image
+
+docker pull ghcr.io/titaniumcoder/pocket-cfo:latest   # or pull the published image instead
 ```
 
 For a real deployment, mount a real data checkout over `/app/data` (or point the

@@ -14,7 +14,7 @@ import (
 // its own repo (see ARCHITECTURE.md §2). buildDir is kept separate (its own
 // BUILD_DIR override) since rendered PDFs are generated output, not
 // hand-edited data. renderManifestPath is duplicated as a separate var in
-// cmd/invoicectl/render.go (a different `main` package) rather than shared,
+// cmd/pocket-cfo-ctl/render.go (a different `main` package) rather than shared,
 // matching the existing precedent of buildDir/invoicesDir being independently
 // declared per-binary. templatesDir and staticDir default to this repo's own
 // branding — overridable via TEMPLATES_DIR/STATIC_DIR for a deployment that
@@ -60,7 +60,7 @@ type config struct {
 	otpLinkSecret    string
 	// api2pdfKey backs the /info diagnostics page's account-balance section
 	// (see info.go) — optional, that section is simply omitted when unset.
-	// invoicectl reads this same env var independently for actual PDF
+	// pocket-cfo-ctl reads this same env var independently for actual PDF
 	// rendering; the web app previously never needed it at all.
 	api2pdfKey string
 

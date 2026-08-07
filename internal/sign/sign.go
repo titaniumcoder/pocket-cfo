@@ -41,7 +41,7 @@ type PDFSigner struct {
 // (base64-encoded PEM) and an optional SIGN_KEY_PASS if the key PEM is
 // password-encrypted. ok is false, with a nil error, when SIGN_CERT_B64 is
 // unset — the caller then treats signing as a no-op, matching the
-// API2PDF_KEY convention in cmd/invoicectl/render.go.
+// API2PDF_KEY convention in cmd/pocket-cfo-ctl/render.go.
 func NewFromEnv() (signer *PDFSigner, ok bool, err error) {
 	certB64 := os.Getenv("SIGN_CERT_B64")
 	if certB64 == "" {

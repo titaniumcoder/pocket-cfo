@@ -42,7 +42,7 @@ the user explicitly confirms the proposal — runs the full verify checklist, ta
 pushes. Pushing the tag is what triggers `.github/workflows/release.yml`'s two publish
 jobs; nothing else does, and day-to-day commits to `main` never publish anything by
 themselves. One Docker image (`ghcr.io/titaniumcoder/pocket-cfo`), containing **both**
-executables (`pocketcfo`, the web server; `invoicectl`, the CLI), ships both the finance
+executables (`pocketcfo`, the web server; `pocket-cfo-ctl`, the CLI), ships both the finance
 tracker and invoicing, tagged with the release version and `latest`. The same two
 executables are also cross-compiled (no CGO dependencies anywhere in the module, so
 one Linux runner builds every target) and attached directly to the GitHub Release as

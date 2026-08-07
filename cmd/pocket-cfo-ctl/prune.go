@@ -10,11 +10,11 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/render"
 )
 
-// runPrune implements `invoicectl prune [--dry-run]`: removes
+// runPrune implements `pocket-cfo-ctl prune [--dry-run]`: removes
 // build/*-DRAFT.pdf files whose invoice JSON no longer exists under
 // data/invoices — relics from a draft removed by hand (rm/git rm) before
-// `invoicectl delete` existed, or any other manual cleanup that skipped it.
-// Unlike invoicectl delete, prune never touches data/invoices; it only
+// `pocket-cfo-ctl delete` existed, or any other manual cleanup that skipped it.
+// Unlike pocket-cfo-ctl delete, prune never touches data/invoices; it only
 // reconciles build/ against what's actually there, so it's safe for CI to
 // call unconditionally after every render.
 func runPrune(args []string) int {
@@ -27,10 +27,10 @@ func runPrune(args []string) int {
 	entries, err := os.ReadDir(buildDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Println("invoicectl prune: nothing to prune")
+			fmt.Println("pocket-cfo-ctl prune: nothing to prune")
 			return 0
 		}
-		fmt.Fprintln(os.Stderr, "invoicectl prune:", err)
+		fmt.Fprintln(os.Stderr, "pocket-cfo-ctl prune:", err)
 		return 1
 	}
 
@@ -56,7 +56,7 @@ func runPrune(args []string) int {
 		}
 
 		if err := os.Remove(pdfPath); err != nil {
-			fmt.Fprintln(os.Stderr, "invoicectl prune:", err)
+			fmt.Fprintln(os.Stderr, "pocket-cfo-ctl prune:", err)
 			return 1
 		}
 		fmt.Printf("removed %s (no %s)\n", pdfPath, jsonPath)
@@ -65,7 +65,7 @@ func runPrune(args []string) int {
 		if !manifestLoaded {
 			manifest, err = render.LoadManifest(renderManifestPath)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, "invoicectl prune:", err)
+				fmt.Fprintln(os.Stderr, "pocket-cfo-ctl prune:", err)
 				return 1
 			}
 			manifestLoaded = true
@@ -75,13 +75,13 @@ func runPrune(args []string) int {
 
 	if manifestLoaded {
 		if err := manifest.Save(renderManifestPath); err != nil {
-			fmt.Fprintln(os.Stderr, "invoicectl prune:", err)
+			fmt.Fprintln(os.Stderr, "pocket-cfo-ctl prune:", err)
 			return 1
 		}
 	}
 
 	if removed == 0 {
-		fmt.Println("invoicectl prune: nothing to prune")
+		fmt.Println("pocket-cfo-ctl prune: nothing to prune")
 	}
 	return 0
 }

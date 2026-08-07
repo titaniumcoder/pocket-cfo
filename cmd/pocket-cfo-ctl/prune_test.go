@@ -13,7 +13,7 @@ func TestRunPrune_RemovesDraftPDFWithoutJSON(t *testing.T) {
 	mustMkdirAll(t, invoicesDir)
 	mustMkdirAll(t, buildDir)
 
-	// A relic: the JSON is gone (deleted by hand before invoicectl delete
+	// A relic: the JSON is gone (deleted by hand before pocket-cfo-ctl delete
 	// existed) but its -DRAFT.pdf and manifest entry survived.
 	orphanPDF := filepath.Join(buildDir, "INV-0000000009-DRAFT.pdf")
 	if err := os.WriteFile(orphanPDF, []byte("pdf"), 0o644); err != nil {
@@ -89,7 +89,7 @@ func TestRunPrune_IgnoresNonDraftPDFs(t *testing.T) {
 	mustMkdirAll(t, invoicesDir)
 	mustMkdirAll(t, buildDir)
 	// Issued invoice's original PDF, no matching JSON on disk — must never
-	// happen in practice (invoicectl delete refuses non-drafts), but prune
+	// happen in practice (pocket-cfo-ctl delete refuses non-drafts), but prune
 	// must not touch it regardless; it only ever considers *-DRAFT.pdf.
 	issuedPDF := filepath.Join(buildDir, "INV-0000000001.pdf")
 	if err := os.WriteFile(issuedPDF, []byte("pdf"), 0o644); err != nil {

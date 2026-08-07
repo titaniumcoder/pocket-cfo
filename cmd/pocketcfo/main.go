@@ -3,7 +3,7 @@
 // a hand-maintained expense budget) at "/" with a read-only invoicing
 // viewer at "/invoicing". See ARCHITECTURE.md §8. It assumes it is run from
 // the repo root (or, in the deployed image, from wherever the Dockerfile
-// copied web/, data/, and build/ to) — same convention as invoicectl.
+// copied web/, data/, and build/ to) — same convention as pocket-cfo-ctl.
 package main
 
 import (
@@ -272,7 +272,7 @@ func (s *server) loadInvoicingView(r *http.Request, sess auth.Session) (any, err
 // pdfCurrentMap builds the admin-only "does the built PDF still match the
 // current JSON" indicator per invoice number (see ARCHITECTURE.md §5.1's
 // staleness rules and internal/render/staleness.go). The reference hash was
-// precomputed by invoicectl render; this only does the cheap current-side
+// precomputed by pocket-cfo-ctl render; this only does the cheap current-side
 // comparison, never touching api2pdf. Missing/unloadable manifest is
 // treated as "nothing recorded yet" rather than a hard error — the
 // dashboard must still load.

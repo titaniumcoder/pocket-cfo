@@ -40,7 +40,7 @@ allocator, no transactions. If something below looks suspiciously simple, that's
   build.yml          push to main → validate, render, index, commit
 cmd/
   pocketcfo/         web app (finance tracker + read-only invoicing)
-  invoicectl/        CLI — the whole pipeline, identical locally and in CI
+  pocket-cfo-ctl/    CLI — the whole pipeline, identical locally and in CI
 internal/
   schema/ 
   tax/ 
@@ -76,7 +76,7 @@ and `static/` are likewise defaults, overridable via `TEMPLATES_DIR`/
 No sequence file: the next number is `max + 1`, and CI checks the sequence is gapless.
 No hash sidecars, no meta files, no template versions.
 
-`invoicectl` does all the real work, so the whole pipeline runs locally with one command.
+`pocket-cfo-ctl` does all the real work, so the whole pipeline runs locally with one command.
 Debugging a render by pushing commits to CI is misery; don't design yourself into it.
 
 ---
@@ -182,10 +182,10 @@ ths recipients ID is kept as reference to update it for duplicated invoices.
 
 `quantity` is a integer, the real quantity is the amount / 100, so 13600 = 136
 
-`invoicectl new --recipient 7` stubs the file: recipient snapshot, next number, due date
+`pocket-cfo-ctl new --recipient 7` stubs the file: recipient snapshot, next number, due date
 from `payment_terms_days`, resolved tax regime and note. You type only the lines, then
 flip `status` to `issued` when you're happy.
-`invoicectl duplicate --invoice 1` duplicates the given invoice but updates recipient and issuer, invoice next number and due date of course
+`pocket-cfo-ctl duplicate --invoice 1` duplicates the given invoice but updates recipient and issuer, invoice next number and due date of course
 from `payment_terms_days`, resolved tax regime and note. You type only the lines, then
 flip `status` to `issued` when you're happy.
 
@@ -394,9 +394,9 @@ A check here would be redundant.
 ```
 
 ```
-1  invoicectl validate     §4.3
-2  invoicectl render       see staleness rules below
-3  invoicectl index        build/index.json + build/stats.json
+1  pocket-cfo-ctl validate     §4.3
+2  pocket-cfo-ctl render       see staleness rules below
+3  pocket-cfo-ctl index        build/index.json + build/stats.json
 4  commit build/ back using the default GITHUB_TOKEN
 ```
 
@@ -440,10 +440,10 @@ Actions tab.
 Locally:
 
 ```
-invoicectl render                          # everything stale or missing
-invoicectl render INV-0000000002           # one invoice
-invoicectl render INV-0000000002 --force   # overwrite even the original
-invoicectl render --dry-run                # what would render, and why
+pocket-cfo-ctl render                          # everything stale or missing
+pocket-cfo-ctl render INV-0000000002           # one invoice
+pocket-cfo-ctl render INV-0000000002 --force   # overwrite even the original
+pocket-cfo-ctl render --dry-run                # what would render, and why
 ```
 
 `--force` exists only in the CLI. If you ever want it in CI, deleting the file is
@@ -527,7 +527,7 @@ bookmarks and page extraction; there is no signing endpoint.
 after signing breaks the signature in every conforming viewer — that's the
 "unchangeable" mechanism, not encryption or ACLs), plus an RFC3161 timestamp (default
 `https://freetsa.org/tsr`) so validity survives the signing cert's own expiry.
-`invoicectl render` signs every PDF it writes whenever `SIGN_CERT_B64` /
+`pocket-cfo-ctl render` signs every PDF it writes whenever `SIGN_CERT_B64` /
 `SIGN_KEY_B64` (+ optional `SIGN_KEY_PASS` for a password-encrypted key, all base64 PEM)
 are set — and is a complete no-op otherwise, same convention as `API2PDF_KEY`. No repo
 secrets are set today, so CI keeps rendering unsigned. `make dev-cert` prints a
@@ -575,7 +575,7 @@ build step would be more machinery than the data justifies.
 ## 8. Web app — read-only viewer
 
 **Current state**: reads `data/`, `build/` from local disk (`DATA_DIR`/
-`BUILD_DIR`, see §2), same as `invoicectl`. No DB.
+`BUILD_DIR`, see §2), same as `pocket-cfo-ctl`. No DB.
 
 **Planned**: stateless — no disk at all, reading `build/index.json`, `build/stats.json`
 and the PDFs from GitHub via the Contents API instead, cached in memory with an ETag and
@@ -690,18 +690,18 @@ costs money and churns the repo without failing.
 0. **Font spike.** Google Fonts link with `display=block`, `delay: 1500`, POST hardcoded
    Cyrillic + German HTML to api2pdf, look at the PDF. 20 minutes, de-risks the thing
    most likely to eat an afternoon.
-1. Schema + `money` (discounts, VAT grouping) + `invoicectl validate`, with the totals
+1. Schema + `money` (discounts, VAT grouping) + `pocket-cfo-ctl validate`, with the totals
    test against both references.
 2. `tax.Resolve` + catalog + the §4.3 validators. **Get this right before rendering.**
 3. Template; reproduce both references exactly. Golden HTML tests green.
-4. `invoicectl render` → api2pdf → `build/`, with the §5.1 rules, `--force`, `--dry-run`.
+4. `pocket-cfo-ctl render` → api2pdf → `build/`, with the §5.1 rules, `--force`, `--dry-run`.
 5. `build.yml`.
 6. Signing — earlier than you'd think, since it's the only tamper evidence.
-7. `invoicectl index`; app: list, detail, PDF download.
+7. `pocket-cfo-ctl index`; app: list, detail, PDF download.
 8. `paid` date: validators, `-paid.pdf`, stats, dashboard.
 9. Annulment: schema, validators, `-ANUL.pdf`, stats exclusion. Confirm the
    annulment-vs-credit-note split with the accountant when the first one comes up.
-10. `invoicectl new` scaffolding — by then you'll know what you want it to fill in.
+10. `pocket-cfo-ctl new` scaffolding — by then you'll know what you want it to fill in.
 11. DeepL as a PR-opening workflow.
 12. VIES + monthly reports.
 

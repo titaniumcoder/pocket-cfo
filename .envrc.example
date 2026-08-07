@@ -3,9 +3,9 @@
 export ENV=
 
 export API2PDF_KEY=
-# Used by `invoicectl translate` to fill missing Bulgarian text on drafts.
+# Used by `pocket-cfo-ctl translate` to fill missing Bulgarian text on drafts.
 export DEEPL_API_KEY=
-# base64 PEM cert/key `invoicectl render` certifies each rendered PDF with
+# base64 PEM cert/key `pocket-cfo-ctl render` certifies each rendered PDF with
 # (DocMDP, no further changes allowed — see internal/sign, ARCHITECTURE.md
 # §6). Leave unset and signing is skipped entirely. `make dev-cert` prints a
 # throwaway self-signed pair for local testing — never the real org cert.
@@ -56,7 +56,7 @@ export API_PASSWORD=
 # export CONFIG_FILE=
 
 # Local data/build/template layout — override to point cmd/pocketcfo/
-# invoicectl at a data checkout outside this repo (e.g. a separate private
+# pocket-cfo-ctl at a data checkout outside this repo (e.g. a separate private
 # repo holding real invoicing data), or to swap in a deployment's own
 # branding instead of this repo's own templates/logo. DATA_DIR covers
 # recipients/, invoices/, users.json, budget.json together (see

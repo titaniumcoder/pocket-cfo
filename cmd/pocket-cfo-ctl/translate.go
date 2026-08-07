@@ -14,7 +14,7 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/translate"
 )
 
-// runTranslate implements `invoicectl translate`: fills missing Bulgarian
+// runTranslate implements `pocket-cfo-ctl translate`: fills missing Bulgarian
 // text on draft invoices' line descriptions and discount labels via DeepL,
 // so day-to-day authoring only has to happen in one language. Never touches
 // an issued invoice (immutable once sent, per ARCHITECTURE.md §3.7) or the
@@ -23,14 +23,14 @@ import (
 func runTranslate(_ []string) int {
 	apiKey := os.Getenv("DEEPL_API_KEY")
 	if apiKey == "" {
-		fmt.Fprintln(os.Stderr, "invoicectl translate: DEEPL_API_KEY is not set (see .envrc.example)")
+		fmt.Fprintln(os.Stderr, "pocket-cfo-ctl translate: DEEPL_API_KEY is not set (see .envrc.example)")
 		return 1
 	}
 	client := &translate.Client{APIKey: apiKey, HTTPClient: &http.Client{Timeout: 15 * time.Second}}
 
 	entries, err := os.ReadDir(invoicesDir)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "invoicectl translate:", err)
+		fmt.Fprintln(os.Stderr, "pocket-cfo-ctl translate:", err)
 		return 1
 	}
 
@@ -42,7 +42,7 @@ func runTranslate(_ []string) int {
 		path := filepath.Join(invoicesDir, e.Name())
 		changed, err := translateOne(context.Background(), client, path)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "invoicectl translate: %s: %v\n", e.Name(), err)
+			fmt.Fprintf(os.Stderr, "pocket-cfo-ctl translate: %s: %v\n", e.Name(), err)
 			failed++
 			continue
 		}
@@ -51,7 +51,7 @@ func runTranslate(_ []string) int {
 		}
 	}
 	if failed > 0 {
-		fmt.Fprintf(os.Stderr, "invoicectl translate: %d invoice(s) failed\n", failed)
+		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl translate: %d invoice(s) failed\n", failed)
 		return 1
 	}
 	return 0

@@ -11,7 +11,7 @@ import (
 // Manifest records, per rendered PDF filename (e.g. "INV-0000000001.pdf",
 // "INV-0000000004-DRAFT.pdf", "INV-0000000001-paid.pdf"), the hex SHA-256
 // of the HTML that produced it — the precomputed reference value the
-// staleness check (see staleness.go) compares against. invoicectl render
+// staleness check (see staleness.go) compares against. pocket-cfo-ctl render
 // writes this; the web app only ever reads it.
 type Manifest map[string]string
 

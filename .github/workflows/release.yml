@@ -65,7 +65,7 @@ jobs:
       # No CGO dependencies anywhere in the module, so a single Linux
       # runner can cross-compile every target directly - no matrix of
       # OS-specific runners needed. Each archive bundles both executables
-      # (pocketcfo, invoicectl) for one platform, named/extensioned per
+      # (pocketcfo, pocket-cfo-ctl) for one platform, named/extensioned per
       # that platform's convention (.zip + .exe on Windows, .tar.gz
       # elsewhere), and is uploaded straight to this tag's GitHub Release
       # so they're plain top-level download links, not buried in an image.
@@ -80,15 +80,15 @@ jobs:
             ext=""
             [ "$os" = "windows" ] && ext=".exe"
             workdir=$(mktemp -d)
-            for bin in pocketcfo invoicectl; do
+            for bin in pocketcfo pocket-cfo-ctl; do
               echo "Building ${bin} for ${os}/${arch}"
               CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -o "${workdir}/${bin}${ext}" "./cmd/${bin}"
             done
             pkgname="pocketcfo_${version}_${os}_${arch}"
             if [ "$os" = "windows" ]; then
-              (cd "$workdir" && zip -q "${OLDPWD}/dist/${pkgname}.zip" pocketcfo.exe invoicectl.exe)
+              (cd "$workdir" && zip -q "${OLDPWD}/dist/${pkgname}.zip" pocketcfo.exe pocket-cfo-ctl.exe)
             else
-              tar czf "dist/${pkgname}.tar.gz" -C "$workdir" pocketcfo invoicectl
+              tar czf "dist/${pkgname}.tar.gz" -C "$workdir" pocketcfo pocket-cfo-ctl
             fi
             rm -rf "$workdir"
           done

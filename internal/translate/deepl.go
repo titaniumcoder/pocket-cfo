@@ -2,7 +2,7 @@
 // DeepL. It is deliberately narrow: ordinary content only (line
 // descriptions, discount labels) — never the tax note, which is
 // catalog-sourced and human-authored (see catalog/notes.json), and never an
-// issued invoice, which is immutable once sent. See cmd/invoicectl/translate.go
+// issued invoice, which is immutable once sent. See cmd/pocket-cfo-ctl/translate.go
 // for the command that uses this.
 package translate
 

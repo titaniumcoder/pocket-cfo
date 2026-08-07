@@ -37,7 +37,7 @@ func getenv(key, fallback string) string {
 	return fallback
 }
 
-// runRender implements `invoicectl render [NUMBER] [--force] [--dry-run]`.
+// runRender implements `pocket-cfo-ctl render [NUMBER] [--force] [--dry-run]`.
 // See ARCHITECTURE.md §5.
 func runRender(args []string) int {
 	fs := flag.NewFlagSet("render", flag.ContinueOnError)
@@ -49,17 +49,17 @@ func runRender(args []string) int {
 		return 2
 	}
 	if !forceAllowed(*force, explicit) {
-		fmt.Fprintln(os.Stderr, "invoicectl render: --force requires exactly one invoice number (bulk force-render is not allowed)")
+		fmt.Fprintln(os.Stderr, "pocket-cfo-ctl render: --force requires exactly one invoice number (bulk force-render is not allowed)")
 		return 1
 	}
 
 	numbers, err := invoiceNumbers(explicit)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "invoicectl render:", err)
+		fmt.Fprintln(os.Stderr, "pocket-cfo-ctl render:", err)
 		return 1
 	}
 	if len(numbers) == 0 {
-		fmt.Fprintln(os.Stderr, "invoicectl render: no invoices found under", invoicesDir)
+		fmt.Fprintln(os.Stderr, "pocket-cfo-ctl render: no invoices found under", invoicesDir)
 		return 1
 	}
 
@@ -68,7 +68,7 @@ func runRender(args []string) int {
 	if !*dryRun {
 		apiKey := os.Getenv("API2PDF_KEY")
 		if apiKey == "" {
-			fmt.Fprintln(os.Stderr, "invoicectl render: API2PDF_KEY is not set (see .envrc.example)")
+			fmt.Fprintln(os.Stderr, "pocket-cfo-ctl render: API2PDF_KEY is not set (see .envrc.example)")
 			return 1
 		}
 		renderer = render.NewAPI2PDF(apiKey)
@@ -77,7 +77,7 @@ func runRender(args []string) int {
 		var err error
 		signer, ok, err = sign.NewFromEnv()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "invoicectl render:", err)
+			fmt.Fprintln(os.Stderr, "pocket-cfo-ctl render:", err)
 			return 1
 		}
 		if !ok {
@@ -90,7 +90,7 @@ func runRender(args []string) int {
 		var err error
 		manifest, err = render.LoadManifest(renderManifestPath)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "invoicectl render:", err)
+			fmt.Fprintln(os.Stderr, "pocket-cfo-ctl render:", err)
 			return 1
 		}
 	}
@@ -98,20 +98,20 @@ func runRender(args []string) int {
 	failed := 0
 	for _, number := range numbers {
 		if err := renderOne(context.Background(), renderer, signer, number, *force, *dryRun, manifest); err != nil {
-			fmt.Fprintf(os.Stderr, "invoicectl render: %s: %v\n", number, err)
+			fmt.Fprintf(os.Stderr, "pocket-cfo-ctl render: %s: %v\n", number, err)
 			failed++
 		}
 	}
 
 	if !*dryRun {
 		if err := manifest.Save(renderManifestPath); err != nil {
-			fmt.Fprintln(os.Stderr, "invoicectl render:", err)
+			fmt.Fprintln(os.Stderr, "pocket-cfo-ctl render:", err)
 			return 1
 		}
 	}
 
 	if failed > 0 {
-		fmt.Fprintf(os.Stderr, "invoicectl render: %d of %d invoice(s) failed\n", failed, len(numbers))
+		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl render: %d of %d invoice(s) failed\n", failed, len(numbers))
 		return 1
 	}
 	return 0

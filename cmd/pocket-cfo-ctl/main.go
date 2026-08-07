@@ -1,4 +1,4 @@
-// Command invoicectl drives the invoicing pipeline (creating, validating,
+// Command pocket-cfo-ctl drives the invoicing pipeline (creating, validating,
 // rendering, and indexing invoices — see ARCHITECTURE.md for the full
 // design) plus validate, which checks every data file PocketCFO reads at
 // runtime (invoicing and finance alike — see validate.go), since this is
@@ -48,18 +48,18 @@ func run(args []string) int {
 
 	cmd, ok := commands[name]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "invoicectl: unknown command %q\n", name)
-		fmt.Fprintln(os.Stderr, "Run 'invoicectl help' for usage.")
+		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl: unknown command %q\n", name)
+		fmt.Fprintln(os.Stderr, "Run 'pocket-cfo-ctl help' for usage.")
 		return 1
 	}
 	return cmd(args[1:])
 }
 
 func runHelp(_ []string) int {
-	fmt.Println("invoicectl — invoicing pipeline CLI")
+	fmt.Println("pocket-cfo-ctl — invoicing pipeline CLI")
 	fmt.Println()
 	fmt.Println("Usage:")
-	fmt.Println("  invoicectl <command> [arguments]")
+	fmt.Println("  pocket-cfo-ctl <command> [arguments]")
 	fmt.Println()
 	fmt.Println("Commands:")
 	fmt.Println("  help        show this help message")

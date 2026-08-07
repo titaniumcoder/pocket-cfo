@@ -11,8 +11,8 @@
 # go build ./... writes a binary to the repo root if only one main package
 # happens to match at build time (e.g. mid-refactor); these are never inputs.
 # Anchored to the root (leading /) — unanchored, these would also match
-# and exclude the cmd/invoicectl/ and cmd/pocketcfo/ source directories.
-/invoicectl
+# and exclude the cmd/pocket-cfo-ctl/ and cmd/pocketcfo/ source directories.
+/pocket-cfo-ctl
 /pocketcfo
 
 # Test binary, built with `go test -c`

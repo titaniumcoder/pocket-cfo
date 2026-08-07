@@ -7,7 +7,7 @@ RUN go mod download && go mod verify
 COPY . .
 RUN go generate ./...
 RUN go build -o /out/pocketcfo ./cmd/pocketcfo
-RUN go build -o /out/invoicectl ./cmd/invoicectl
+RUN go build -o /out/pocket-cfo-ctl ./cmd/pocket-cfo-ctl
 
 FROM debian:bookworm as runtime
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
@@ -15,11 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 
 WORKDIR /app
 # Two executables: pocketcfo (the web server, the default CMD below) and
-# invoicectl (the invoicing CLI — render/validate/etc., run ad hoc against
+# pocket-cfo-ctl (the invoicing CLI — render/validate/etc., run ad hoc against
 # the same mounted data, e.g. `docker run --rm -v ./data:/app/data <image>
-# invoicectl validate data`). One image, both entrypoints.
+# pocket-cfo-ctl validate data`). One image, both entrypoints.
 COPY --from=builder /out/pocketcfo /usr/local/bin/pocketcfo
-COPY --from=builder /out/invoicectl /usr/local/bin/invoicectl
+COPY --from=builder /out/pocket-cfo-ctl /usr/local/bin/pocket-cfo-ctl
 COPY --from=builder /usr/src/app/templates ./templates
 COPY --from=builder /usr/src/app/static ./static
 COPY --from=builder /usr/src/app/config.json ./config.json

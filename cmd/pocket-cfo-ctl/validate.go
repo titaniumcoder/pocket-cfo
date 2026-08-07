@@ -49,10 +49,10 @@ func runValidate(args []string) int {
 	})
 
 	if problems > 0 {
-		fmt.Fprintf(os.Stderr, "invoicectl validate: %d problem(s) found\n", problems)
+		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: %d problem(s) found\n", problems)
 		return 1
 	}
-	fmt.Println("invoicectl validate: OK")
+	fmt.Println("pocket-cfo-ctl validate: OK")
 	return 0
 }
 
@@ -65,7 +65,7 @@ func validateDir(dir string, check func([]byte) error) int {
 		if os.IsNotExist(err) {
 			return 0
 		}
-		fmt.Fprintf(os.Stderr, "invoicectl validate: read %s: %v\n", dir, err)
+		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: read %s: %v\n", dir, err)
 		return 1
 	}
 	problems := 0
@@ -86,11 +86,11 @@ func validateFile(path string, check func([]byte) error) int {
 		if os.IsNotExist(err) {
 			return 0
 		}
-		fmt.Fprintf(os.Stderr, "invoicectl validate: read %s: %v\n", path, err)
+		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: read %s: %v\n", path, err)
 		return 1
 	}
 	if err := check(b); err != nil {
-		fmt.Fprintf(os.Stderr, "invoicectl validate: %s: %v\n", path, err)
+		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: %s: %v\n", path, err)
 		return 1
 	}
 	return 0

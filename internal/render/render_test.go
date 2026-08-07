@@ -47,7 +47,7 @@ func TestHTML_RendersReferenceInvoices(t *testing.T) {
 			noteDe, _ := inv.Tax.Note.Get(invoice.InvoiceJsonLanguageDe)
 			noteBg, _ := inv.Tax.Note.Get(invoice.InvoiceJsonLanguageBg)
 			// HTML() reads templates/invoice.html.tmpl and the logo SVG
-			// relative to the repo root, so chdir there like invoicectl does.
+			// relative to the repo root, so chdir there like pocket-cfo-ctl does.
 			wd, _ := os.Getwd()
 			t.Cleanup(func() { os.Chdir(wd) })
 			if err := os.Chdir(filepath.Join("..", "..")); err != nil {

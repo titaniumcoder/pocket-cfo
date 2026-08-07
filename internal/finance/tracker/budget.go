@@ -24,7 +24,7 @@ func monthKey(year int, month time.Month) string {
 // memory, mirroring Toggl's cache-forever-until-evicted pattern (the
 // existing Reload link, Tracker.EvictMonth/EvictYear, evicts it the same
 // way it evicts Toggl data). FS is read fresh from disk at runtime — a real
-// directory via os.DirFS (see cmd/pocketcfo's BUDGET_DIR wiring), same
+// directory via os.DirFS (see cmd/pocketcfo's DATA_DIR wiring), same
 // "hand-edited, read fresh, never embedded" convention as
 // data/recipients, data/invoices, data/users.json — not baked into the
 // binary at build time the way schemas/*.json is.

@@ -16,16 +16,16 @@ import (
 // baseline hash for them from the current JSON — without re-rendering or
 // otherwise touching the existing PDF file.
 func TestRenderOne_BackfillsManifestWithoutTouchingExistingPDF(t *testing.T) {
-	// render.HTML reads web/templates/invoice.html.tmpl relative to the
-	// repo root, so the temp dir needs a symlink to it before chdir'ing —
-	// same constraint as internal/render's own fixture-loading tests.
+	// render.HTML reads templates/invoice.html.tmpl relative to the repo
+	// root, so the temp dir needs a symlink to it before chdir'ing — same
+	// constraint as internal/render's own fixture-loading tests.
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
 	repoRoot := filepath.Join(wd, "..", "..")
 	tmp := t.TempDir()
-	if err := os.Symlink(filepath.Join(repoRoot, "web"), filepath.Join(tmp, "web")); err != nil {
+	if err := os.Symlink(filepath.Join(repoRoot, "templates"), filepath.Join(tmp, "templates")); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(tmp)

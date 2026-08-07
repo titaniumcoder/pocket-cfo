@@ -17,14 +17,15 @@ import (
 )
 
 // invoicesDir and buildDir default to the layout described in
-// ARCHITECTURE.md §2, overridable via INVOICES_DIR/BUILD_DIR — e.g. to point
+// ARCHITECTURE.md §2, overridable via DATA_DIR/BUILD_DIR — e.g. to point
 // this binary at a data checkout that lives outside its own repo.
 // renderManifestPath is duplicated as a separate var in cmd/pocketcfo/main.go
 // (a different `main` package) rather than shared, matching the existing
 // buildDir/invoicesDir precedent of independently declaring the same
 // repo-root-relative paths per binary.
 var (
-	invoicesDir        = getenv("INVOICES_DIR", "data/invoices")
+	dataDir            = getenv("DATA_DIR", "data")
+	invoicesDir        = dataDir + "/invoices"
 	buildDir           = getenv("BUILD_DIR", "build")
 	renderManifestPath = buildDir + "/render-manifest.json"
 )

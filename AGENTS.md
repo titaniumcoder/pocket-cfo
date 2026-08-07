@@ -15,10 +15,10 @@ conventions established during scaffolding that aren't obvious from the code its
   under `schemas/` (`issuer.json`, `recipient.json`, `invoice.json`, `notes.json`,
   `users.json`) plus `internal/finance/data/budget.schema.json`. This does not apply to
   `data/**` (recipients, invoices, `users.json`, `budget.json`), which is hand-edited and
-  read fresh from disk on every request/check (see `RECIPIENTS_DIR`/`INVOICES_DIR`/
-  `BUILD_DIR`/`USERS_FILE`/`BUDGET_DIR` in README.md; reading it via the GitHub Contents
-  API instead is a documented future direction, not current behavior — see
-  ARCHITECTURE.md §8), nor to `web/templates`/`web/static`, which are read from disk
+  read fresh from disk on every request/check (see `DATA_DIR`/`BUILD_DIR` in
+  README.md; reading it via the GitHub Contents API instead is a documented
+  future direction, not current behavior — see ARCHITECTURE.md §8), nor to
+  `templates`/`static`, which are read from disk
   since `embed` can't cross outside a package's own directory tree anyway. Every schema
   gets generated Go types via `go-jsonschema` (`internal/schema/<model>/`,
   `internal/finance/budgetdata/`) — never a hand-written struct for a *data* shape, even

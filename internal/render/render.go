@@ -19,7 +19,7 @@ import (
 // templatePath defaults to this repo's own invoice template, overridable via
 // TEMPLATES_DIR (shared with cmd/pocketcfo, which reads its own web templates
 // from the same directory) — e.g. for a deployment with its own branding.
-var templatePath = getenv("TEMPLATES_DIR", "web/templates") + "/invoice.html.tmpl"
+var templatePath = getenv("TEMPLATES_DIR", "templates") + "/invoice.html.tmpl"
 
 func getenv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
@@ -41,7 +41,7 @@ type View struct {
 }
 
 // HTML renders inv to a self-contained HTML document. templatePath is read
-// from disk relative to the repo root, like web/templates elsewhere — see
+// from disk relative to the repo root, like templates/ elsewhere — see
 // AGENTS.md.
 //
 // showPaid decides whether the paid badge/stamp and zeroed amount-due are
@@ -142,7 +142,7 @@ func FormatMoney(minor int64) string {
 }
 
 // loadLogoSVG reads an SVG file from disk (relative to the repo root, like
-// web/templates elsewhere — see AGENTS.md) and strips the leading XML
+// templates/ elsewhere — see AGENTS.md) and strips the leading XML
 // declaration, which isn't valid as a literal token inside an HTML
 // document. The rest of the markup, including any Inkscape/sodipodi
 // metadata attributes, is left untouched — browsers ignore what they don't

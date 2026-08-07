@@ -13,13 +13,13 @@ import (
 
 // loadFixture reads a real invoice from data/invoices. Defaults to the repo
 // root relative to internal/render (two directories up) — the layout when
-// code and data live in the same repo — but respects INVOICES_DIR like the
-// app itself does, for the split layout where a companion repo runs these
-// tests against its own real data via env var, code living in a submodule.
+// code and data live in the same repo — but respects DATA_DIR like the app
+// itself does, for the split layout where a companion repo runs these tests
+// against its own real data via env var, code living in a submodule.
 func loadFixture(t *testing.T, number string) *invoice.InvoiceJson {
 	t.Helper()
-	dir := getenv("INVOICES_DIR", filepath.Join("..", "..", "data", "invoices"))
-	path := filepath.Join(dir, number+".json")
+	dir := getenv("DATA_DIR", filepath.Join("..", "..", "data"))
+	path := filepath.Join(dir, "invoices", number+".json")
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
@@ -46,7 +46,7 @@ func TestHTML_RendersReferenceInvoices(t *testing.T) {
 			}
 			noteDe, _ := inv.Tax.Note.Get(invoice.InvoiceJsonLanguageDe)
 			noteBg, _ := inv.Tax.Note.Get(invoice.InvoiceJsonLanguageBg)
-			// HTML() reads web/templates/invoice.html.tmpl and the logo SVG
+			// HTML() reads templates/invoice.html.tmpl and the logo SVG
 			// relative to the repo root, so chdir there like invoicectl does.
 			wd, _ := os.Getwd()
 			t.Cleanup(func() { os.Chdir(wd) })

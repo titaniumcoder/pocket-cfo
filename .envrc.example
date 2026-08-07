@@ -55,20 +55,13 @@ export API_PASSWORD=
 # annualVacationDays). See internal/finance/config.FileConfig.
 # export CONFIG_FILE=
 
-# Optional. Default to data/recipients, data/invoices, build — override to
-# point cmd/pocketcfo/invoicectl at a data checkout outside this repo (e.g. a
-# separate private repo holding real invoicing data).
-# export RECIPIENTS_DIR=
-# export INVOICES_DIR=
-# export BUILD_DIR=
-# Optional. Default to data/users.json — who (beyond GitHub collaborators,
-# who are always full admins) may reach which part(s) of PocketCFO via the
-# email-OTP login. See schemas/users.json, internal/users.
-# export USERS_FILE=
-# Optional. Default to data — directory budget.json is read from at
-# runtime (not embedded — see internal/finance/tracker.Budget).
-# export BUDGET_DIR=
-# Optional. Default to web/templates, web/static — override for a deployment
-# that wants its own branding instead of this repo's own templates/logo.
-# export TEMPLATES_DIR=
-# export STATIC_DIR=
+# Local data/build/template layout — override to point cmd/pocketcfo/
+# invoicectl at a data checkout outside this repo (e.g. a separate private
+# repo holding real invoicing data), or to swap in a deployment's own
+# branding instead of this repo's own templates/logo. DATA_DIR covers
+# recipients/, invoices/, users.json, budget.json together (see
+# schemas/users.json, internal/users, internal/finance/tracker.Budget).
+export BUILD_DIR=build
+export DATA_DIR=data
+export TEMPLATES_DIR=templates
+export STATIC_DIR=static

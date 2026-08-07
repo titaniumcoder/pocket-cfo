@@ -63,15 +63,15 @@ build/
   INV-0000000002-paid.pdf
   INV-0000000003-ANUL.pdf
   index.json                        all invoices, one fetch for the app
-web/templates/  
-web/static/
+templates/
+static/
 testdata/
 ```
 
-`data/` and `build/` above are defaults — `RECIPIENTS_DIR`/`INVOICES_DIR`/`BUILD_DIR`
-override them, e.g. to point at a data checkout that lives outside this repo.
-`web/templates/` and `web/static/` are likewise defaults, overridable via
-`TEMPLATES_DIR`/`STATIC_DIR` for a deployment that wants its own branding.
+`data/` and `build/` above are defaults — `DATA_DIR`/`BUILD_DIR` override them,
+e.g. to point at a data checkout that lives outside this repo. `templates/`
+and `static/` are likewise defaults, overridable via `TEMPLATES_DIR`/
+`STATIC_DIR` for a deployment that wants its own branding.
 
 No sequence file: the next number is `max + 1`, and CI checks the sequence is gapless.
 No hash sidecars, no meta files, no template versions.
@@ -95,7 +95,7 @@ BIC), logo, default currency. Example shape:
   "tax_id": "000000000",
   "vat_id": "BG000000000",
   "bank": { "name": "Example Bank", "iban": "DE89 3704 0044 0532 0130 00", "bic": "COBADEFFXXX" },
-  "logo": "web/static/logo.svg",
+  "logo": "static/logo.svg",
   "default_currency": "EUR"
 }
 ```
@@ -574,8 +574,8 @@ build step would be more machinery than the data justifies.
 
 ## 8. Web app — read-only viewer
 
-**Current state**: reads `data/`, `build/` from local disk (`RECIPIENTS_DIR`/
-`INVOICES_DIR`/`BUILD_DIR`, see §2), same as `invoicectl`. No DB.
+**Current state**: reads `data/`, `build/` from local disk (`DATA_DIR`/
+`BUILD_DIR`, see §2), same as `invoicectl`. No DB.
 
 **Planned**: stateless — no disk at all, reading `build/index.json`, `build/stats.json`
 and the PDFs from GitHub via the Contents API instead, cached in memory with an ETag and

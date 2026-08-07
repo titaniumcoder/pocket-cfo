@@ -12,7 +12,7 @@ import (
 )
 
 // chdirRepoRoot points the test at the repo root, like render_test.go's
-// fixture-loading tests — render.HTML reads web/templates/invoice.html.tmpl
+// fixture-loading tests — render.HTML reads templates/invoice.html.tmpl
 // relative to the repo root.
 func chdirRepoRoot(t *testing.T) {
 	t.Helper()

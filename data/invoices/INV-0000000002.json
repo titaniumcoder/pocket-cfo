@@ -25,7 +25,7 @@
       "iban": "DE89370400440532013000",
       "bic": "COBADEFFXXX"
     },
-    "logo": "web/static/logo.svg",
+    "logo": "static/logo.svg",
     "default_currency": "EUR"
   },
   "recipient": {

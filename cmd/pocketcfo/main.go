@@ -53,11 +53,11 @@ type server struct {
 // stays nil (the tracked-hours layer disabled) when TOGGL_API_TOKEN/
 // TOGGL_WORKSPACE_ID aren't set, per PocketCFO's "Toggl is optional,
 // config-toggled" plan; Budget reads budget.json fresh from budgetDir at
-// runtime (BUDGET_DIR, default "data") — a real directory, not embedded, so
-// a volume mount at that path (or RECIPIENTS_DIR/INVOICES_DIR/USERS_FILE's
-// containing directory) can swap in real data without a rebuild. Invoiced
-// is left nil here — trackerForRequest fills it in fresh per request from
-// real invoice data.
+// runtime (DATA_DIR, default "data") — a real directory, not embedded, so a
+// volume mount at that path can swap in real data (recipients/, invoices/,
+// users.json, budget.json all together) without a rebuild. Invoiced is left
+// nil here — trackerForRequest fills it in fresh per request from real
+// invoice data.
 func buildTracker(cfg financeconfig.Config, httpClient *http.Client, budgetDir string) *tracker.Tracker {
 	var togglClient *tracker.Toggl
 	if cfg.TogglToken != "" && cfg.TogglWorkspace != "" {

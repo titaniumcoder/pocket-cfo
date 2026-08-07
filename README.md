@@ -68,14 +68,14 @@ otherwise `source .envrc` before running `invoicectl render` or `cmd/pocketcfo`.
 | `PUBLIC_BASE_URL` | `cmd/pocketcfo`, prod only | `http://localhost:8080` locally, the deployed URL in prod |
 | `GITHUB_REPO` | `cmd/pocketcfo`, prod only | `owner/repo` collaborator permission is checked against |
 | `OTP_LINK_SECRET` | `cmd/pocketcfo`, prod only | any random string; signs the self-expiring `/auth/email` login link |
-| `USERS_FILE` | `cmd/pocketcfo`, optional | default `data/users.json` — who (beyond GitHub collaborators, always full admins) may reach which part(s) via the email-OTP login; see `internal/users`, `schemas/users.json` |
+| `DATA_DIR` | `cmd/pocketcfo`/`invoicectl`, optional | default `data` — recipients/, invoices/, users.json, budget.json all live under here; override to point at a data checkout outside this repo (e.g. the mounted private data repo in a real deployment). Who (beyond GitHub collaborators, always full admins) may reach which part(s) via the email-OTP login is `$DATA_DIR/users.json`; see `internal/users`, `schemas/users.json` |
 | `AWS_REGION` / `SES_FROM_EMAIL` | `cmd/pocketcfo`, prod only | Amazon SES sends the `/auth/email` login link; `SES_FROM_EMAIL` must be a verified SES identity, unset logs the link instead of emailing it, for local testing |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `cmd/pocketcfo`, prod only | AWS credentials for SES, read by the AWS SDK's default credential chain (not by this app's own config) — needs only `ses:SendEmail` on the `SES_FROM_EMAIL` identity, see ARCHITECTURE.md §8 |
 | `TOGGL_API_TOKEN` / `TOGGL_WORKSPACE_ID` | `cmd/pocketcfo`, optional | Toggl credentials for the finance tracker's tracked-hours layer; unset leaves it disabled, predictions still run off the configured hourly rate |
 | `API_PASSWORD` | `cmd/pocketcfo`, optional | gates `GET /api/net-income/...`; unset disables that endpoint entirely |
 | `CONFIG_FILE` | `cmd/pocketcfo`, optional | default `config.json` — non-secret finance tunables (hourly rate, currency, social rates, `hoursPerDay`, ...); see `internal/finance/config` |
-| `RECIPIENTS_DIR` / `INVOICES_DIR` / `BUILD_DIR` / `BUDGET_DIR` | `cmd/pocketcfo`/`invoicectl` | optional, default to `data/recipients` / `data/invoices` / `build` / `data`; override to point at a data checkout outside this repo (e.g. the mounted private data repo in a real deployment) |
-| `TEMPLATES_DIR` / `STATIC_DIR` | `cmd/pocketcfo`; `TEMPLATES_DIR` also `invoicectl render` | optional, default to `web/templates` / `web/static`; override for a deployment with its own branding |
+| `BUILD_DIR` | `cmd/pocketcfo`/`invoicectl` | optional, default `build` — rendered PDFs (generated output, kept separate from `DATA_DIR`'s hand-edited data) |
+| `TEMPLATES_DIR` / `STATIC_DIR` | `cmd/pocketcfo`; `TEMPLATES_DIR` also `invoicectl render` | optional, default to `templates` / `static`; override for a deployment with its own branding |
 
 ## Building and running
 

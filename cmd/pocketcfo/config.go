@@ -8,10 +8,12 @@ import (
 	financeconfig "github.com/titaniumcoder/pocket-cfo/internal/finance/config"
 )
 
-// recipientsDir, invoicesDir, and buildDir default to the layout described in
-// ARCHITECTURE.md §2, overridable via RECIPIENTS_DIR/INVOICES_DIR/BUILD_DIR —
-// e.g. to point this binary at a data checkout that lives outside its own
-// repo. renderManifestPath is duplicated as a separate var in
+// dataDir is the one override point for this binary's hand-edited data —
+// recipients/, invoices/, users.json, budget.json — overridable via
+// DATA_DIR, e.g. to point this binary at a data checkout that lives outside
+// its own repo (see ARCHITECTURE.md §2). buildDir is kept separate (its own
+// BUILD_DIR override) since rendered PDFs are generated output, not
+// hand-edited data. renderManifestPath is duplicated as a separate var in
 // cmd/invoicectl/render.go (a different `main` package) rather than shared,
 // matching the existing precedent of buildDir/invoicesDir being independently
 // declared per-binary. templatesDir and staticDir default to this repo's own
@@ -24,16 +26,17 @@ import (
 // entirely (see (*server).authorized); it's only consulted for the
 // email-OTP tier below.
 var (
-	recipientsDir      = getenv("RECIPIENTS_DIR", "data/recipients")
-	invoicesDir        = getenv("INVOICES_DIR", "data/invoices")
+	dataDir            = getenv("DATA_DIR", "data")
+	recipientsDir      = dataDir + "/recipients"
+	invoicesDir        = dataDir + "/invoices"
+	usersFile          = dataDir + "/users.json"
 	buildDir           = getenv("BUILD_DIR", "build")
 	renderManifestPath = buildDir + "/render-manifest.json"
-	templatesDir       = getenv("TEMPLATES_DIR", "web/templates")
-	staticDir          = getenv("STATIC_DIR", "web/static")
-	usersFile          = getenv("USERS_FILE", "data/users.json")
+	templatesDir       = getenv("TEMPLATES_DIR", "templates")
+	staticDir          = getenv("STATIC_DIR", "static")
 	// budgetDir holds budget.json for the finance tracker (see buildTracker)
-	// — same override convention as the vars above.
-	budgetDir = getenv("BUDGET_DIR", "data")
+	// — same directory as the rest of dataDir's hand-edited data.
+	budgetDir = dataDir
 )
 
 func getenv(key, fallback string) string {

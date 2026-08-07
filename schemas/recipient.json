@@ -24,9 +24,9 @@
     "payment_terms_days": { "type": "integer", "minimum": 0 },
     "email": { "type": "string", "format": "email" },
     "access_passkey": { "type": "string", "minLength": 1 },
-    "tracking_project_id": {
+    "tracking_client_id": {
       "type": "integer",
-      "description": "This client's project ID in the time-tracking tool (currently Toggl), if tracked there at all. Links an issued invoice for this recipient to that project's tracked/predicted hours in the finance tracker — see internal/finance."
+      "description": "This client's client ID in the time-tracking tool (currently Toggl), if tracked there at all — a Toggl client can span multiple Toggl projects, all grouped under this one ID. Links an issued invoice for this recipient to that client's tracked/predicted hours in the finance tracker — see internal/finance."
     }
   },
   "$defs": {

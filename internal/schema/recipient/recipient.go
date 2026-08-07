@@ -92,11 +92,11 @@ type RecipientJson struct {
 	// TaxId corresponds to the JSON schema field "tax_id".
 	TaxId *string `json:"tax_id,omitempty,omitzero" yaml:"tax_id,omitempty" mapstructure:"tax_id,omitempty"`
 
-	// This client's project ID in the time-tracking tool (currently Toggl), if
-	// tracked there at all. Links an issued invoice for this recipient to that
-	// project's tracked/predicted hours in the finance tracker — see
-	// internal/finance.
-	TrackingProjectId *int `json:"tracking_project_id,omitempty,omitzero" yaml:"tracking_project_id,omitempty" mapstructure:"tracking_project_id,omitempty"`
+	// This client's client ID in the time-tracking tool (currently Toggl), if tracked
+	// there at all — a Toggl client can span multiple Toggl projects, all grouped
+	// under this one ID. Links an issued invoice for this recipient to that client's
+	// tracked/predicted hours in the finance tracker — see internal/finance.
+	TrackingClientId *int `json:"tracking_client_id,omitempty,omitzero" yaml:"tracking_client_id,omitempty" mapstructure:"tracking_client_id,omitempty"`
 
 	// VatId corresponds to the JSON schema field "vat_id".
 	VatId *string `json:"vat_id,omitempty,omitzero" yaml:"vat_id,omitempty" mapstructure:"vat_id,omitempty"`

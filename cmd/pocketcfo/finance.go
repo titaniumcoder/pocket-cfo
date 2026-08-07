@@ -37,8 +37,8 @@ func buildInvoicedFacts() ([]tracker.InvoicedFact, error) {
 
 	projectIDByRecipient := map[int]int{}
 	for _, r := range recipients {
-		if r.TrackingProjectId != nil {
-			projectIDByRecipient[r.Number] = *r.TrackingProjectId
+		if r.TrackingClientId != nil {
+			projectIDByRecipient[r.Number] = *r.TrackingClientId
 		}
 	}
 

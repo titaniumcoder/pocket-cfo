@@ -13,5 +13,5 @@
   "language": "de",
   "payment_terms_days": 14,
   "email": "buchhaltung@example-client.example",
-  "tracking_project_id": 123456
+  "tracking_client_id": 123456
 }

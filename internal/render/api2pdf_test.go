@@ -147,6 +147,35 @@ func TestAPI2PDF_Balance_UnexpectedShapeStillReturnsRaw(t *testing.T) {
 	}
 }
 
+// TestAPI2PDF_Balance_FormatsEveryNumericRawField is the practical case:
+// api2pdf's real field names aren't documented, so the key that actually
+// carries the money is quite likely one we don't recognize as "the"
+// balance. Whatever it's called, it must not surface as a bare Go float
+// next to properly formatted figures.
+func TestAPI2PDF_Balance_FormatsEveryNumericRawField(t *testing.T) {
+	renderer := &API2PDF{
+		APIKey: "test-key",
+		Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return newResponse(http.StatusOK, `{"remainingCredits":1234.5,"used":0.75,"plan":"pro"}`), nil
+		})},
+	}
+
+	info, err := renderer.Balance(context.Background())
+	if err != nil {
+		t.Fatalf("Balance: %v", err)
+	}
+	nbsp := " "
+	if want := "1" + nbsp + "234,50"; info.Raw["remainingCredits"] != want {
+		t.Errorf("Raw[remainingCredits] = %q, want %q", info.Raw["remainingCredits"], want)
+	}
+	if want := "0,75"; info.Raw["used"] != want {
+		t.Errorf("Raw[used] = %q, want %q", info.Raw["used"], want)
+	}
+	if info.Raw["plan"] != "pro" {
+		t.Errorf("Raw[plan] = %q, want the string left alone", info.Raw["plan"])
+	}
+}
+
 func TestAPI2PDF_Balance_EmptyAPIKey(t *testing.T) {
 	renderer := &API2PDF{Client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		t.Fatal("must not make a request with an empty API key")

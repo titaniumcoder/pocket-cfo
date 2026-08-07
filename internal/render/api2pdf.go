@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -150,7 +151,17 @@ func (r *API2PDF) Balance(ctx context.Context) (BalanceInfo, error) {
 
 	info := BalanceInfo{Raw: make(map[string]string, len(raw))}
 	for k, v := range raw {
-		info.Raw[k] = fmt.Sprintf("%v", v)
+		// Every numeric field is formatted here, not just the one we
+		// recognize as the balance: api2pdf's real field names aren't
+		// documented, so whichever key actually carries the money is very
+		// likely one we didn't anticipate — and printing it as a bare Go
+		// float ("12.5") next to properly formatted figures is exactly the
+		// inconsistency this avoids.
+		if f, ok := v.(float64); ok {
+			info.Raw[k] = FormatAmount(int64(math.Round(f * 100)))
+		} else {
+			info.Raw[k] = fmt.Sprintf("%v", v)
+		}
 		if !info.HasBalance && strings.EqualFold(k, "balance") {
 			if f, ok := v.(float64); ok {
 				info.Balance = f

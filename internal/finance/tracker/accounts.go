@@ -177,11 +177,18 @@ func (a *Accounts) Snapshot(ctx context.Context) (AccountSnapshot, bool) {
 	return snapshotFor(af)
 }
 
-// maxRollForwardMonths caps how far a snapshot is carried. A balance read
-// years ago has drifted so far from reality that showing it as today's
-// opening figure would be worse than showing nothing — and the cap also
-// bounds the per-month work below, which is not free.
-const maxRollForwardMonths = 24
+// maxRollForwardMonths is a guard against a mistyped year, NOT a staleness
+// policy. However long you've gone without reading your bank, the balance
+// is still carried and still shown — the 40-day note (see staleAfterDays)
+// is what says you're overdue, and the extra per-month arithmetic that
+// carrying costs is not a reason to withhold the figure.
+//
+// A typo like "1999-07-31" is a different matter: the loop below spans one
+// iteration per month, and each new calendar year it crosses pulls that
+// year's Toggl report and holiday list, so a century-wide span would fan
+// out into hundreds of external API calls. Ten years is far past any
+// balance anyone means to roll forward.
+const maxRollForwardMonths = 120
 
 // privateOpeningCents is the balance carried forward to the START of viewed:
 // the snapshot itself in the month it opens, otherwise the previous month's
@@ -190,7 +197,8 @@ const maxRollForwardMonths = 24
 func (t *Tracker) privateOpeningCents(ctx context.Context, snap AccountSnapshot, viewed yearMonth, now time.Time, rateCents int) (int, error) {
 	elapsed := viewed.ordinal() - snap.OpensMonth.ordinal()
 	if elapsed > maxRollForwardMonths {
-		return 0, fmt.Errorf("accounts: balance is %d months stale (last read before %s) — update accounts.json", elapsed, snap.OpensMonth)
+		return 0, fmt.Errorf("accounts: as_of is %d months before this month (%s) — check the date in accounts.json, that looks like a typo",
+			elapsed, snap.LatestAsOf.Format("2006-01-02"))
 	}
 
 	opening := snap.Cents

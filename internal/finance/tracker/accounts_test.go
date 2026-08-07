@@ -255,19 +255,40 @@ func TestStaleNoteAppearsOnlyWhenOverdue(t *testing.T) {
 	}
 }
 
-// TestPrivateBalanceStaleSnapshotErrors covers the roll-forward cap: a
-// balance read years ago has drifted too far to present as this month's
-// opening figure, so it reports instead of quietly showing fiction.
-func TestPrivateBalanceStaleSnapshotErrors(t *testing.T) {
+// TestVeryStaleBalanceStillComputes is the point of the whole layer: going
+// a long time without reading your bank makes the figure *nag*, never makes
+// it disappear. A balance last read years ago is still carried forward and
+// still shown — with the note attached.
+func TestVeryStaleBalanceStillComputes(t *testing.T) {
 	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Ancient","balance":2000,"as_of":"2020-01-31"}
+		{"name":"Neglected","balance":2000,"as_of":"2024-01-31"}
+	]}`)
+	f := trk.ComputeMonth(context.Background(), 2026, time.August)
+
+	if f.AccountsErr != "" {
+		t.Fatalf("AccountsErr = %q — a stale balance must still be carried, not withheld", f.AccountsErr)
+	}
+	if !f.ShowOpeningBalance {
+		t.Error("expected the opening balance to still render for a long-stale snapshot")
+	}
+	if f.AccountsStaleNote == "" {
+		t.Error("expected the staleness note on a years-old balance")
+	}
+}
+
+// TestImplausibleAsOfDateErrors covers the one case that still refuses: a
+// mistyped year, which would otherwise fan out into an external API call
+// per calendar year spanned.
+func TestImplausibleAsOfDateErrors(t *testing.T) {
+	trk := accountsTracker(t, `{"accounts":[
+		{"name":"Typo","balance":2000,"as_of":"1999-01-31"}
 	]}`)
 	f := trk.ComputeMonth(context.Background(), 2026, time.August)
 	if f.AccountsErr == "" {
-		t.Error("expected a staleness error for a snapshot far beyond the roll-forward cap")
+		t.Error("expected an error for an as_of date decades in the past")
 	}
 	if f.ShowOpeningBalance {
-		t.Error("a stale snapshot must not still render an opening balance")
+		t.Error("an implausible date must not still render an opening balance")
 	}
 }
 

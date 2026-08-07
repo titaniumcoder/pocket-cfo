@@ -38,6 +38,14 @@ jobs:
             ghcr.io/${{ github.repository }}:${{ github.ref_name }}
             ghcr.io/${{ github.repository }}:latest
 
+      - name: Notify pocket-cfo-data
+        env:
+          GH_TOKEN: ${{ secrets.POCKET_CFO_DATA_DISPATCH_TOKEN }}
+        run: |
+          gh api repos/titaniumcoder/pocket-cfo-data/dispatches \
+            -f event_type=pocket-cfo-released \
+            -f "client_payload[tag]=${{ github.ref_name }}"
+
   publish-binaries:
     name: Build and attach release binaries
     runs-on: ubuntu-latest

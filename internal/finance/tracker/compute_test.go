@@ -289,6 +289,31 @@ func TestRenderPageHidesEmptyTrackedAndTotalWhenNoVacation(t *testing.T) {
 	}
 }
 
+// TestRenderPageInvoicedRowShowsNumber guards against a template/struct
+// mismatch: InvoicedRow used to carry Project, now carries Number — a
+// html/template range over a nonexistent field fails only at execution
+// time, not at go build, so this needs its own explicit coverage.
+func TestRenderPageInvoicedRowShowsNumber(t *testing.T) {
+	f := Figures{
+		LastUpdated: "—",
+		Mode:        "month",
+		Currency:    "€",
+		Invoiced:    []InvoicedRow{{Number: "0001", AmountCents: 500000}},
+		Personal:    PersonalView{},
+	}
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+
+	body := rec.Body.String()
+	if !strings.Contains(body, ">0001<") {
+		t.Errorf("expected the invoice number 0001 to render, got: %s", body)
+	}
+	if strings.Contains(body, "500000") {
+		// sanity: eur formats cents, so the raw int shouldn't appear literally
+		t.Error("AmountCents should render formatted, not as a raw integer")
+	}
+}
+
 func TestRenderPageShowsExpectedTotalWithVacation(t *testing.T) {
 	f := Figures{
 		LastUpdated:           "—",
@@ -365,7 +390,7 @@ func TestInvoiceSuppressesTrackedAndAddsUsableIncome(t *testing.T) {
 	rows := `[{"project_id":1,"hourly_rate_in_cents":7500,"billable_amount_in_cents":150000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"2026-07-10T09:00:00+00:00"}]}]`
 	b := &fakeBackend{
 		detailed: func(page int) (string, string, string) { return rows, "", "" },
-		projects: `[{"id":1,"name":"Alpha"}]`,
+		projects: `[{"id":1,"name":"Alpha","client_id":1}]`,
 	}
 	client := b.transport()
 	trk := &Tracker{
@@ -388,7 +413,7 @@ func TestInvoiceSuppressesTrackedAndAddsUsableIncome(t *testing.T) {
 	}
 
 	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
-		{ClientID: 1, IssueDate: date(2026, 8, 5), DueDate: date(2026, 8, 19), TotalCents: 500000},
+		{ClientID: 1, Number: "0001", IssueDate: date(2026, 8, 5), DueDate: date(2026, 8, 19), TotalCents: 500000},
 	})
 
 	july := trk.ComputeMonth(context.Background(), 2026, time.July)
@@ -408,14 +433,105 @@ func TestInvoiceSuppressesTrackedAndAddsUsableIncome(t *testing.T) {
 	if len(september.Invoiced) != 1 || september.Invoiced[0].AmountCents != 500000 {
 		t.Fatalf("September Invoiced = %+v, want one row of 500000", september.Invoiced)
 	}
-	if september.Invoiced[0].Project != "Alpha" {
-		t.Errorf("September Invoiced[0].Project = %q, want Alpha", september.Invoiced[0].Project)
+	if september.Invoiced[0].Number != "0001" {
+		t.Errorf("September Invoiced[0].Number = %q, want 0001", september.Invoiced[0].Number)
 	}
 	if september.InvoicedCents != 500000 {
 		t.Errorf("September InvoicedCents = %d, want 500000", september.InvoicedCents)
 	}
 	if september.TotalCents < 500000 {
 		t.Errorf("September TotalCents = %d, want at least the 500000 invoiced", september.TotalCents)
+	}
+}
+
+// TestInvoiceSuppressesMultipleProjectsUnderSameClient covers the reason for
+// resolving suppression via Toggl client rather than Toggl project: a client
+// with several Toggl projects must have all of them suppressed together once
+// invoiced, not just the one project a bare project-ID key would have
+// happened to match.
+func TestInvoiceSuppressesMultipleProjectsUnderSameClient(t *testing.T) {
+	rows := `[
+	  {"project_id":1,"hourly_rate_in_cents":7500,"billable_amount_in_cents":150000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"2026-07-10T09:00:00+00:00"}]},
+	  {"project_id":2,"hourly_rate_in_cents":8000,"billable_amount_in_cents":80000,"currency":"EUR","time_entries":[{"seconds":3600,"start":"2026-07-11T09:00:00+00:00"}]}
+	]`
+	b := &fakeBackend{
+		detailed: func(page int) (string, string, string) { return rows, "", "" },
+		projects: `[{"id":1,"name":"Alpha","client_id":42},{"id":2,"name":"Beta","client_id":42}]`,
+	}
+	client := b.transport()
+	trk := &Tracker{
+		Toggl:       &Toggl{WorkspaceID: "ws", HTTP: client},
+		Holidays:    &Holidays{HTTP: client},
+		HoursPerDay: 8,
+		Loc:         time.UTC,
+		Personal: PersonalParams{
+			EmployerRate: 0.1892, EmployeeRate: 0.1378,
+			MaxInsurableMonthly: 2112, IncomeTaxRate: 0.10,
+		},
+	}
+	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
+		{ClientID: 42, Number: "0001", IssueDate: date(2026, 8, 5), DueDate: date(2026, 8, 19), TotalCents: 500000},
+	})
+
+	july := trk.ComputeMonth(context.Background(), 2026, time.July)
+	if len(july.Tracked) != 0 {
+		t.Errorf("July Tracked = %+v, want empty — both projects share client 42, both suppressed by the 5 Aug invoice", july.Tracked)
+	}
+}
+
+// TestUnscopedInvoiceAddsIncomeWithoutSuppressingTrackedHours covers an
+// invoice for a recipient with no tracking_client_id (or Toggl not
+// configured at all): it must still count as income, but must never
+// suppress a real client's tracked hours since it isn't scoped to any one
+// client.
+func TestUnscopedInvoiceAddsIncomeWithoutSuppressingTrackedHours(t *testing.T) {
+	rows := `[{"project_id":1,"hourly_rate_in_cents":7500,"billable_amount_in_cents":150000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"2026-07-10T09:00:00+00:00"}]}]`
+	b := &fakeBackend{
+		detailed: func(page int) (string, string, string) { return rows, "", "" },
+		projects: `[{"id":1,"name":"Alpha","client_id":1}]`,
+	}
+	client := b.transport()
+	trk := &Tracker{
+		Toggl:       &Toggl{WorkspaceID: "ws", HTTP: client},
+		Holidays:    &Holidays{HTTP: client},
+		HoursPerDay: 8,
+		Loc:         time.UTC,
+		Personal: PersonalParams{
+			EmployerRate: 0.1892, EmployeeRate: 0.1378,
+			MaxInsurableMonthly: 2112, IncomeTaxRate: 0.10,
+		},
+	}
+	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
+		{ClientID: UnscopedClientID, Number: "0002", IssueDate: date(2026, 8, 5), DueDate: date(2026, 8, 19), TotalCents: 200000},
+	})
+
+	july := trk.ComputeMonth(context.Background(), 2026, time.July)
+	if len(july.Tracked) != 1 || july.Tracked[0].AmountCents != 150000 {
+		t.Errorf("July Tracked = %+v, want the real tracked hours untouched by the unscoped invoice", july.Tracked)
+	}
+
+	september := trk.ComputeMonth(context.Background(), 2026, time.September)
+	if len(september.Invoiced) != 1 || september.Invoiced[0].AmountCents != 200000 || september.Invoiced[0].Number != "0002" {
+		t.Fatalf("September Invoiced = %+v, want the unscoped invoice's 200000 under number 0002", september.Invoiced)
+	}
+}
+
+// TestComputeSpendableOnlySetWhenHasHours is a direct unit test (bypassing
+// ComputeMonth's real-wall-clock-dependent computeExpected) for the
+// hasHours gate: SpendableLabel/URL describe the hours-based portion of
+// Income specifically, and must stay empty for a period funded purely by
+// invoices.
+func TestComputeSpendableOnlySetWhenHasHours(t *testing.T) {
+	var withHours Figures
+	withHours.computeSpendable(1, 2026, date(2026, 7, 1), true)
+	if withHours.SpendableLabel == "" || withHours.SpendableURL == "" {
+		t.Errorf("hasHours=true: SpendableLabel/URL = %q/%q, want both set", withHours.SpendableLabel, withHours.SpendableURL)
+	}
+
+	var noHours Figures
+	noHours.computeSpendable(1, 2026, date(2026, 7, 1), false)
+	if noHours.SpendableLabel != "" || noHours.SpendableURL != "" {
+		t.Errorf("hasHours=false: SpendableLabel/URL = %q/%q, want both empty (pure-invoice period)", noHours.SpendableLabel, noHours.SpendableURL)
 	}
 }
 

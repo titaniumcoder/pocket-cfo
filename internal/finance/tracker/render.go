@@ -212,7 +212,7 @@ var templates = `
 
       {{if .Invoiced}}
       <h2>Invoiced</h2>
-      {{range .Invoiced}}<div class="row"><span class="label">{{.Project}}</span><span class="mid"></span><span class="amt">{{eur .AmountCents}}</span></div>{{end}}
+      {{range .Invoiced}}<div class="row"><span class="label">{{.Number}}</span><span class="mid"></span><span class="amt">{{eur .AmountCents}}</span></div>{{end}}
       {{end}}
 
       <h2>Expected</h2>

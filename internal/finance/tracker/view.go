@@ -46,12 +46,18 @@ type TrackedRow struct {
 	AmountCents int
 }
 
-// InvoicedRow is one project's real invoiced income that became usable in
-// the viewed period (see InvoicedClient.Usable) — shown separately
-// from Tracked since it's realized income, not a Toggl-derived figure.
+// InvoicedRow is one issued invoice's real income that became usable in the
+// viewed period (see InvoicedClient.Usable) — shown separately from Tracked
+// since it's realized income, not a Toggl-derived figure. Number is the bare
+// invoice number (e.g. "0001") — deliberately never the client name or
+// invoice title, so this is safe to show even to a viewer without invoicing
+// rights. URL is filled in by the HTTP layer (cmd/pocketcfo), and only for a
+// session that actually has invoicing rights — left empty otherwise, in
+// which case the template renders Number as plain text instead of a link.
 type InvoicedRow struct {
-	Project     string
+	Number      string
 	AmountCents int
+	URL         string
 }
 
 type HolidayView struct {
@@ -117,7 +123,7 @@ type Figures struct {
 	TrackedErr string
 
 	// Real invoiced income that became usable this period (see
-	// InvoicedClient.Usable) — one row per project, folded into
+	// InvoicedClient.Usable) — one row per invoice, folded into
 	// TotalCents alongside Tracked/Expected.
 	Invoiced      []InvoicedRow
 	InvoicedCents int
@@ -148,12 +154,16 @@ type Figures struct {
 	TotalCents int
 	TotalErr   string
 
-	// SpendableLabel/SpendableURL identify when this period's own Income
-	// (TotalCents above) actually becomes available to spend — the viewed
-	// period shifted forward two calendar months (the mirror of
+	// SpendableLabel/SpendableURL identify when this period's hours-based
+	// income (tracked + expected) actually becomes available to spend — the
+	// viewed period shifted forward two calendar months (the mirror of
 	// FundingPersonal.FundingLabel/URL below; see spendRangeForMonth/Year) —
 	// rendered inline next to "Income" as "(for September 2026)", a link
-	// forward to the Expenses panel it will eventually fund.
+	// forward to the Expenses panel it will eventually fund. Left empty
+	// whenever the period has no hours-based income at all (e.g. a month
+	// funded purely by invoices) — that generic label describes the hours
+	// portion specifically, not the Invoiced rows above, which already carry
+	// their own per-invoice identity.
 	SpendableLabel string // e.g. "September 2026"
 	SpendableURL   string
 
@@ -234,7 +244,7 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	// billable-day set; filter it to the period in question.
 	yd, terr := t.Toggl.Year(ctx, year)
 	aggs := aggregatesInRange(yd, start, end, func(pid int, m time.Month) bool {
-		return t.invoiceSuppresses(pid, yearMonth{year, m})
+		return t.invoiceSuppresses(projects[pid].ClientID, yearMonth{year, m})
 	})
 	todayErr := terr // today's status shares the yearly fetch's fate
 	todayTracked := isCurrentPeriod && terr == nil && yd.Days[today.Format("2006-01-02")]
@@ -255,7 +265,7 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 
 	trackedHours, trackedCents, monthlyCompanyCents := result.computeTrackedRows(t, projects, aggs, yd, terr, perr, year, start, end)
 
-	result.computeInvoicedRows(t, projects, year, start, end)
+	result.computeInvoicedRows(t, year, start, end)
 
 	rateCents, currency := t.RateCents, t.RateCurrency
 	if currency != "" {
@@ -287,7 +297,7 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 
 	result.computePersonal(t, ctx, year, months, monthlyCompanyCents, bv)
 
-	result.computeSpendable(months, year, start)
+	result.computeSpendable(months, year, start, trackedHours > 0 || expectedNetHours > 0)
 
 	result.computeFundingBalance(t, ctx, year, start, now, months, rateCents, bv)
 
@@ -344,7 +354,7 @@ func (f *Figures) computeTrackedRows(t *Tracker, projects map[int]Project, aggs 
 	for m := start.Month(); m <= end.Month(); m++ {
 		ym := yearMonth{year, m}
 		for _, a := range yd.Months[m] {
-			if t.invoiceSuppresses(a.ProjectID, ym) {
+			if t.invoiceSuppresses(projects[a.ProjectID].ClientID, ym) {
 				continue
 			}
 			monthlyCompanyCents[m] += a.AmountCents
@@ -373,31 +383,17 @@ func (f *Figures) computeTrackedRows(t *Tracker, projects map[int]Project, aggs 
 // computeInvoicedRows fills in the real invoiced income that became usable
 // during the viewed period (see Tracker.Invoiced/InvoicedClient.Usable) —
 // independent of the Toggl fetch above, since it comes from real invoice
-// data, not a Toggl fetch.
-//
-// TODO(subtask 4): rewrite to one row per invoice via
-// t.invoicedInvoicesForMonth, dropping the (now client-ID-keyed, not
-// project-ID-keyed) projects[pid].Name lookup below — kept only to keep the
-// build green after invoiced.go's client-keyed redesign.
-func (f *Figures) computeInvoicedRows(t *Tracker, projects map[int]Project, year int, start, end time.Time) {
-	for pid, ip := range t.Invoiced {
-		var cents int
-		for m := start.Month(); m <= end.Month(); m++ {
-			for _, inv := range ip.Usable[yearMonth{year, m}] {
-				cents += inv.Cents
-			}
+// data, not a Toggl fetch. One row per invoice (not per client) — URL is
+// left empty here; the HTTP layer fills it in only for sessions with
+// invoicing rights (see cmd/pocketcfo's renderFinancePage).
+func (f *Figures) computeInvoicedRows(t *Tracker, year int, start, end time.Time) {
+	for m := start.Month(); m <= end.Month(); m++ {
+		for _, inv := range t.invoicedInvoicesForMonth(yearMonth{year, m}) {
+			f.Invoiced = append(f.Invoiced, InvoicedRow{Number: inv.Number, AmountCents: inv.Cents})
+			f.InvoicedCents += inv.Cents
 		}
-		if cents == 0 {
-			continue
-		}
-		name := projects[pid].Name
-		if name == "" {
-			name = "(no project)"
-		}
-		f.Invoiced = append(f.Invoiced, InvoicedRow{Project: name, AmountCents: cents})
-		f.InvoicedCents += cents
 	}
-	sort.Slice(f.Invoiced, func(i, j int) bool { return f.Invoiced[i].AmountCents > f.Invoiced[j].AmountCents })
+	sort.Slice(f.Invoiced, func(i, j int) bool { return f.Invoiced[i].Number < f.Invoiced[j].Number })
 }
 
 // computeExpected fills in the expected (not-yet-tracked) work remaining in
@@ -546,15 +542,18 @@ func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months 
 	f.Personal.CompanyGroups = bv.CompanyGroups
 }
 
-// computeSpendable fills in SpendableLabel/URL: when this period's own Income
-// (TotalCents) actually becomes spendable — the viewed period shifted forward
-// two calendar months (the mirror of the funding shift in
-// computeFundingBalance), rendered inline as "Income (for September 2026)".
-// Pure calendar arithmetic on the viewed period, so it can't fail once Total
-// itself is available, and independent of Budget/Personal — it's a property
-// of Income alone.
-func (f *Figures) computeSpendable(months, year int, start time.Time) {
-	if f.TotalErr != "" {
+// computeSpendable fills in SpendableLabel/URL: when this period's
+// hours-based Income (tracked + expected) actually becomes spendable — the
+// viewed period shifted forward two calendar months (the mirror of the
+// funding shift in computeFundingBalance), rendered inline as "Income (for
+// September 2026)". Pure calendar arithmetic on the viewed period, so it
+// can't fail once Total itself is available, and independent of
+// Budget/Personal — it's a property of Income alone. Left unset when
+// hasHours is false — a period with only invoiced income has no "hours
+// become spendable" story of its own; the invoices themselves already carry
+// their own identity (see computeInvoicedRows/InvoicedRow).
+func (f *Figures) computeSpendable(months, year int, start time.Time, hasHours bool) {
+	if f.TotalErr != "" || !hasHours {
 		return
 	}
 	var spendStart, spendEnd yearMonth

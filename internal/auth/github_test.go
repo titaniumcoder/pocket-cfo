@@ -74,7 +74,7 @@ func TestExchangeCode(t *testing.T) {
 	}
 }
 
-func TestExchangeCode_GitHubError(t *testing.T) {
+func TestExchangeCodeGitHubError(t *testing.T) {
 	client := &http.Client{Transport: fakeTransport{t: t, handler: func(t *testing.T, req *http.Request) *http.Response {
 		return jsonResponse(http.StatusOK, `{"error":"bad_verification_code","error_description":"nope"}`)
 	}}}
@@ -121,7 +121,7 @@ func TestCollaboratorPermission(t *testing.T) {
 	}
 }
 
-func TestCollaboratorPermission_NotACollaborator(t *testing.T) {
+func TestCollaboratorPermissionNotACollaborator(t *testing.T) {
 	client := &http.Client{Transport: fakeTransport{t: t, handler: func(t *testing.T, req *http.Request) *http.Response {
 		return jsonResponse(http.StatusNotFound, `{"message":"Not Found"}`)
 	}}}

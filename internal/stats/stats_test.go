@@ -27,7 +27,7 @@ func writeFixture(t *testing.T, dir, name, content string) {
 	}
 }
 
-func TestLoadInvoices_IncludesDraftsExcludesAnnulled(t *testing.T) {
+func TestLoadInvoicesIncludesDraftsExcludesAnnulled(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "issued.json", `{
 		"schema_version": 1, "number": "INV-0000000001", "status": "issued", "type": "invoice",
@@ -189,7 +189,7 @@ func TestAggregate(t *testing.T) {
 // yet. Only the ledger totals (TotalInFrame, Outstanding) stay restricted to
 // issued invoices — a recipient whose only invoice ever is a draft must
 // still appear, just with a zeroed row.
-func TestAggregate_DraftOnlyRecipientShownWithZeroedLedger(t *testing.T) {
+func TestAggregateDraftOnlyRecipientShownWithZeroedLedger(t *testing.T) {
 	recipients := []recipient.RecipientJson{
 		{Number: 1, LegalName: "Carol Inc", Email: "carol@example.com", Address: recipient.Address{
 			Line1: "Street 3", PostalCode: "3000", City: "Plovdiv", CountryCode: "BG",
@@ -231,7 +231,7 @@ func TestAggregate_DraftOnlyRecipientShownWithZeroedLedger(t *testing.T) {
 	}
 }
 
-func TestAggregate_RecipientWithNoInvoicesAtAllNotShown(t *testing.T) {
+func TestAggregateRecipientWithNoInvoicesAtAllNotShown(t *testing.T) {
 	recipients := []recipient.RecipientJson{
 		{Number: 1, LegalName: "Dave LLC", Email: "dave@example.com", Address: recipient.Address{
 			Line1: "Street 4", PostalCode: "4000", City: "Burgas", CountryCode: "BG",

@@ -169,10 +169,11 @@ func TestCompute_DiscountBelowZero(t *testing.T) {
 	}
 }
 
-// TestLabelOf covers the de-then-bg-then-empty fallback — used only for an
-// error message, not a rendering guarantee, so it tolerates a partially
-// filled LocalizedString that render.HTML's stricter Require would reject.
-func TestLabelOf(t *testing.T) {
+// TestLabelOf_Fallback covers the de-then-bg-then-empty fallback — used
+// only for an error message, not a rendering guarantee, so it tolerates a
+// partially filled LocalizedString that render.HTML's stricter Require
+// would reject.
+func TestLabelOf_Fallback(t *testing.T) {
 	tests := []struct {
 		name string
 		ls   invoice.LocalizedString

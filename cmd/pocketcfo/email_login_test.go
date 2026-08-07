@@ -69,7 +69,7 @@ func TestNormalizeEmail(t *testing.T) {
 	}
 }
 
-func TestAllowEmailRequest_Cooldown(t *testing.T) {
+func TestAllowEmailRequestCooldown(t *testing.T) {
 	s := &server{emailRequestedAt: map[string]time.Time{}}
 
 	if !s.allowEmailRequest("person@example.com") {
@@ -107,7 +107,7 @@ func newTestServer(t *testing.T) *server {
 	}
 }
 
-func TestHandleEmailLoginRequest_SameResponseRegardlessOfAllowlist(t *testing.T) {
+func TestHandleEmailLoginRequestSameResponseRegardlessOfAllowlist(t *testing.T) {
 	s := newTestServer(t)
 
 	for _, email := range []string{"person@example.com", "stranger@example.com", "not-an-email"} {
@@ -127,7 +127,7 @@ func TestHandleEmailLoginRequest_SameResponseRegardlessOfAllowlist(t *testing.T)
 	}
 }
 
-func TestHandleEmailLoginCallback_ValidTokenIssuesReadOnlySession(t *testing.T) {
+func TestHandleEmailLoginCallbackValidTokenIssuesReadOnlySession(t *testing.T) {
 	s := newTestServer(t)
 	token, err := auth.GenerateLoginToken(s.cfg.otpLinkSecret, "person@example.com", time.Hour)
 	if err != nil {
@@ -154,7 +154,7 @@ func TestHandleEmailLoginCallback_ValidTokenIssuesReadOnlySession(t *testing.T) 
 	}
 }
 
-func TestHandleEmailLoginCallback_RejectsExpiredOrTamperedToken(t *testing.T) {
+func TestHandleEmailLoginCallbackRejectsExpiredOrTamperedToken(t *testing.T) {
 	s := newTestServer(t)
 
 	expired, err := auth.GenerateLoginToken(s.cfg.otpLinkSecret, "person@example.com", -time.Minute)
@@ -181,7 +181,7 @@ func TestHandleEmailLoginCallback_RejectsExpiredOrTamperedToken(t *testing.T) {
 	}
 }
 
-func TestHandleEmailLoginCallback_RejectsNoLongerAllowlistedEmail(t *testing.T) {
+func TestHandleEmailLoginCallbackRejectsNoLongerAllowlistedEmail(t *testing.T) {
 	s := newTestServer(t)
 	token, err := auth.GenerateLoginToken(s.cfg.otpLinkSecret, "removed@example.com", time.Hour)
 	if err != nil {

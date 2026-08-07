@@ -50,7 +50,7 @@ func TestLoadFileConfig_Parses(t *testing.T) {
 	}
 }
 
-func TestLoadDefaults(t *testing.T) {
+func TestLoad_Defaults(t *testing.T) {
 	cfg := Load(FileConfig{})
 	if cfg.HoursPerDay != 8 {
 		t.Errorf("HoursPerDay = %v, want default 8", cfg.HoursPerDay)
@@ -72,7 +72,7 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
-func TestLoadOverridesFromFileConfig(t *testing.T) {
+func TestLoad_OverridesFromFileConfig(t *testing.T) {
 	rate := 6000
 	currency := "GBP"
 	days := 30
@@ -96,7 +96,7 @@ func TestLoadOverridesFromFileConfig(t *testing.T) {
 	}
 }
 
-func TestLoadTogglFromEnv(t *testing.T) {
+func TestLoad_TogglFromEnv(t *testing.T) {
 	t.Setenv("TOGGL_API_TOKEN", "tok")
 	t.Setenv("TOGGL_WORKSPACE_ID", "ws")
 	t.Setenv("API_PASSWORD", "pw")

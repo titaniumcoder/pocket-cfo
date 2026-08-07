@@ -176,7 +176,7 @@ func newTestClientServer(t *testing.T) *server {
 	return &server{cfg: config{clientLinkSecret: "secret"}, clientTmpl: tmpl}
 }
 
-func TestHandleClientPortal_DraftsExcluded(t *testing.T) {
+func TestHandleClientPortalDraftsExcluded(t *testing.T) {
 	s := newTestClientServer(t)
 	t.Chdir(t.TempDir())
 	writeFixtures(t)
@@ -205,7 +205,7 @@ func TestHandleClientPortal_DraftsExcluded(t *testing.T) {
 	}
 }
 
-func TestHandleClientPortal_UnknownTokenIs404(t *testing.T) {
+func TestHandleClientPortalUnknownTokenIs404(t *testing.T) {
 	s := newTestClientServer(t)
 	t.Chdir(t.TempDir())
 	writeFixtures(t)

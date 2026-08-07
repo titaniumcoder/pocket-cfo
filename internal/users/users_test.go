@@ -32,13 +32,13 @@ func TestLoad(t *testing.T) {
 	}
 }
 
-func TestLoad_missingFile(t *testing.T) {
+func TestLoadMissingFile(t *testing.T) {
 	if _, err := Load(filepath.Join(t.TempDir(), "does-not-exist.json")); err == nil {
 		t.Fatal("expected an error for a missing file, got nil")
 	}
 }
 
-func TestLoad_rejectsUnknownPart(t *testing.T) {
+func TestLoadRejectsUnknownPart(t *testing.T) {
 	path := writeUsersFile(t, `{"users": [{"email": "a@example.com", "parts": ["accounting"]}]}`)
 	if _, err := Load(path); err == nil {
 		t.Fatal("expected an error for an unrecognized part, got nil")

@@ -126,52 +126,69 @@ func deriveState(inv *invoice.InvoiceJson, today time.Time) string {
 // explicit requirement. now is the request-time clock used to derive
 // overdue/open state (ARCHITECTURE.md §3.8: computed at request time, never
 // stored) — callers pass time.Now(), tests pass a fixed clock.
-//
-// A recipient appears in recipientRows when they have activity — any
-// invoice, draft included — in the selected year (or ever, for "All"). A
-// draft is activity even though it isn't money yet; only the ledger totals
-// (TotalInFrame, Outstanding) stay restricted to issued invoices, since an
-// unsent, mutable draft isn't a receivable.
 func Aggregate(invoices []*invoice.InvoiceJson, recipients []recipient.RecipientJson, year *int, now time.Time) (years []int, recipientRows []RecipientRow, invoiceRows []InvoiceRow, err error) {
 	today := now.UTC()
 	today = time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC)
 
-	type computed struct {
-		inv   *invoice.InvoiceJson
-		total int64
-		state string
+	all, years, err := computeAll(invoices, today)
+	if err != nil {
+		return nil, nil, nil, err
 	}
-	all := make([]computed, 0, len(invoices))
+
+	inFrame := func(c computedInvoice) bool {
+		return year == nil || c.inv.IssueDate.Year() == *year
+	}
+
+	recipientRows = aggregateRecipientRows(recipients, all, inFrame)
+	invoiceRows = aggregateInvoiceRows(all, inFrame)
+
+	return years, recipientRows, invoiceRows, nil
+}
+
+// computedInvoice pairs a loaded invoice with its computed total/ledger
+// state, computed once up front so both aggregateRecipientRows and
+// aggregateInvoiceRows can reuse it without recomputing money.Compute.
+type computedInvoice struct {
+	inv   *invoice.InvoiceJson
+	total int64
+	state string
+}
+
+// computeAll computes each invoice's total/state and collects every
+// distinct issue-date year present, for the nav (always unfiltered by the
+// year selector).
+func computeAll(invoices []*invoice.InvoiceJson, today time.Time) (all []computedInvoice, years []int, err error) {
+	all = make([]computedInvoice, 0, len(invoices))
 	yearSet := map[int]bool{}
 	for _, inv := range invoices {
 		totals, err := money.Compute(inv)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("compute totals for %s: %w", inv.Number, err)
+			return nil, nil, fmt.Errorf("compute totals for %s: %w", inv.Number, err)
 		}
-		all = append(all, computed{inv: inv, total: totals.GrandTotal, state: deriveState(inv, today)})
+		all = append(all, computedInvoice{inv: inv, total: totals.GrandTotal, state: deriveState(inv, today)})
 		yearSet[inv.IssueDate.Year()] = true
 	}
-
 	for y := range yearSet {
 		years = append(years, y)
 	}
 	sort.Sort(sort.Reverse(sort.IntSlice(years)))
+	return all, years, nil
+}
 
-	inFrame := func(c computed) bool {
-		return year == nil || c.inv.IssueDate.Year() == *year
-	}
-
-	// byRecipient holds every non-annulled invoice, draft included — a
-	// recipient is shown when they have activity in the selected year, and a
-	// draft is activity even though it isn't money yet. Ledger totals below
-	// still only accumulate issued invoices; a draft is unsent and mutable,
-	// not a receivable.
-	byRecipient := map[int][]computed{}
+// aggregateRecipientRows groups all by recipient and computes the ledger
+// totals the dashboard shows. A recipient appears when they have activity —
+// any invoice, draft included — inFrame (or ever, for "All"). A draft is
+// activity even though it isn't money yet; only the ledger totals
+// (TotalInFrame, Outstanding) stay restricted to issued invoices, since an
+// unsent, mutable draft isn't a receivable.
+func aggregateRecipientRows(recipients []recipient.RecipientJson, all []computedInvoice, inFrame func(computedInvoice) bool) []RecipientRow {
+	byRecipient := map[int][]computedInvoice{}
 	for _, c := range all {
 		n := c.inv.Recipient.Number
 		byRecipient[n] = append(byRecipient[n], c)
 	}
 
+	var rows []RecipientRow
 	for _, r := range recipients {
 		cs, ok := byRecipient[r.Number]
 		if !ok {
@@ -206,17 +223,24 @@ func Aggregate(invoices []*invoice.InvoiceJson, recipients []recipient.Recipient
 				row.Outstanding += c.total
 			}
 		}
-		recipientRows = append(recipientRows, row)
+		rows = append(rows, row)
 	}
-	sort.Slice(recipientRows, func(i, j int) bool {
-		return recipientRows[i].LegalName < recipientRows[j].LegalName
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].LegalName < rows[j].LegalName
 	})
+	return rows
+}
 
+// aggregateInvoiceRows builds the invoice list table for the invoices
+// inFrame, newest issue date first (ties broken by invoice number,
+// descending).
+func aggregateInvoiceRows(all []computedInvoice, inFrame func(computedInvoice) bool) []InvoiceRow {
+	var rows []InvoiceRow
 	for _, c := range all {
 		if !inFrame(c) {
 			continue
 		}
-		invoiceRows = append(invoiceRows, InvoiceRow{
+		rows = append(rows, InvoiceRow{
 			Number:        c.inv.Number,
 			Title:         c.inv.Title,
 			RecipientName: c.inv.Recipient.LegalName,
@@ -227,14 +251,13 @@ func Aggregate(invoices []*invoice.InvoiceJson, recipients []recipient.Recipient
 			State:         c.state,
 		})
 	}
-	sort.Slice(invoiceRows, func(i, j int) bool {
-		if !invoiceRows[i].IssueDate.Equal(invoiceRows[j].IssueDate.Time) {
-			return invoiceRows[i].IssueDate.After(invoiceRows[j].IssueDate.Time)
+	sort.Slice(rows, func(i, j int) bool {
+		if !rows[i].IssueDate.Equal(rows[j].IssueDate.Time) {
+			return rows[i].IssueDate.After(rows[j].IssueDate.Time)
 		}
-		return invoiceRows[i].Number > invoiceRows[j].Number
+		return rows[i].Number > rows[j].Number
 	})
-
-	return years, recipientRows, invoiceRows, nil
+	return rows
 }
 
 func formatAddress(a recipient.Address) string {

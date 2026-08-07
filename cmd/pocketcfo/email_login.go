@@ -104,10 +104,12 @@ func (s *server) handleEmailLoginCallback(w http.ResponseWriter, r *http.Request
 }
 
 // emailParts reports the part(s) email is allowed on this deployment's
-// users.json (see internal/users), and whether it's listed with "invoicing"
-// access at all — this binary only ever serves the invoicing part, so any
-// other listed part(s) are irrelevant here but still carried into the
-// session for forward compatibility with a merged binary. A read failure
+// users.json (see internal/users), and whether it's listed at all — for
+// *any* part, not just invoicing: this binary serves both the finance
+// tracker and invoicing (see financeSession/checkInvoicingAccess), so a
+// user listed with only "finance" must still be able to request a login
+// link. Which page(s) they can actually reach is enforced downstream by
+// each route's own sess.HasPart check, not here. A read failure
 // (missing/malformed users.json) fails closed, denying access, same as an
 // unlisted email.
 func (s *server) emailParts(email string) ([]string, bool) {
@@ -116,11 +118,7 @@ func (s *server) emailParts(email string) ([]string, bool) {
 		log.Printf("users: loading %s failed: %v", usersFile, err)
 		return nil, false
 	}
-	parts, ok := users.PartsFor(u, email)
-	if !ok || !users.HasPart(u, email, users.PartInvoicing) {
-		return nil, false
-	}
-	return parts, true
+	return users.PartsFor(u, email)
 }
 
 // allowEmailRequest applies emailRequestCooldown per address so repeatedly

@@ -107,6 +107,78 @@ func newTestServer(t *testing.T) *server {
 	}
 }
 
+// TestEmailParts_AllowsAnyListedPartNotJustInvoicing is a regression test:
+// emailParts used to additionally require users.HasPart(..., PartInvoicing),
+// which meant a user listed with only "finance" access could never
+// request a login link at all (this binary serves both finance and
+// invoicing — see financeSession/checkInvoicingAccess — so that extra
+// requirement was simply wrong).
+func TestEmailParts_AllowsAnyListedPartNotJustInvoicing(t *testing.T) {
+	s := &server{}
+	t.Chdir(t.TempDir())
+	mustMkdirAll(t, filepath.Dir(usersFile))
+	mustWriteFile(t, usersFile, `{"users":[
+		{"email":"finance-only@example.com","parts":["finance"]},
+		{"email":"invoicing-only@example.com","parts":["invoicing"]},
+		{"email":"both@example.com","parts":["finance","invoicing"]}
+	]}`)
+
+	tests := []struct {
+		email     string
+		wantOK    bool
+		wantParts []string
+	}{
+		{"finance-only@example.com", true, []string{"finance"}},
+		{"invoicing-only@example.com", true, []string{"invoicing"}},
+		{"both@example.com", true, []string{"finance", "invoicing"}},
+		{"unlisted@example.com", false, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.email, func(t *testing.T) {
+			parts, ok := s.emailParts(tt.email)
+			if ok != tt.wantOK {
+				t.Errorf("emailParts(%q) ok = %v, want %v", tt.email, ok, tt.wantOK)
+			}
+			if ok && (len(parts) != len(tt.wantParts) || parts[0] != tt.wantParts[0]) {
+				t.Errorf("emailParts(%q) parts = %v, want %v", tt.email, parts, tt.wantParts)
+			}
+		})
+	}
+}
+
+// TestHandleEmailLoginCallback_FinanceOnlyUserCanLogIn is the end-to-end
+// regression test for the same bug: a finance-only user must be able to
+// complete the full login-link flow, not just pass the emailParts check in
+// isolation.
+func TestHandleEmailLoginCallback_FinanceOnlyUserCanLogIn(t *testing.T) {
+	s := newTestServer(t)
+	mustWriteFile(t, usersFile, `{"users":[{"email":"finance-only@example.com","parts":["finance"]}]}`)
+
+	token, err := auth.GenerateLoginToken(s.cfg.otpLinkSecret, "finance-only@example.com", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/auth/email/callback?token="+token, nil)
+	w := httptest.NewRecorder()
+	s.handleEmailLoginCallback(w, r)
+
+	if w.Code != http.StatusFound || w.Header().Get("Location") != "/" {
+		t.Fatalf("want redirect to /, got %d %q", w.Code, w.Header().Get("Location"))
+	}
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != sessionCookie {
+		t.Fatalf("want a %s cookie to be set, got %+v", sessionCookie, cookies)
+	}
+	sess, err := auth.Decode(s.cfg.sessionSecret, cookies[0].Value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sess.HasPart("finance") {
+		t.Errorf("session parts = %v, want finance", sess.Parts)
+	}
+}
+
 func TestHandleEmailLoginRequestSameResponseRegardlessOfAllowlist(t *testing.T) {
 	s := newTestServer(t)
 

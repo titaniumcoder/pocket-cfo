@@ -30,12 +30,8 @@ func TestRenderOne_BackfillsManifestWithoutTouchingExistingPDF(t *testing.T) {
 	}
 	t.Chdir(tmp)
 
-	if err := os.MkdirAll(invoicesDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(buildDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	mustMkdirAll(t, invoicesDir)
+	mustMkdirAll(t, buildDir)
 
 	inv := draftInvoiceFixture(t, "INV-0000000001", strp("Arbeit"), nil)
 	inv.Status = "issued"                        // renderOne's backfill path only applies to write-once (non-draft) targets

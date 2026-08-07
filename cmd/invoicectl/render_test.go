@@ -117,9 +117,7 @@ func TestTargetsFor(t *testing.T) {
 func TestRemoveStaleDraftPDF(t *testing.T) {
 	t.Run("issued invoice removes a leftover draft PDF", func(t *testing.T) {
 		t.Chdir(t.TempDir())
-		if err := os.MkdirAll(buildDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
+		mustMkdirAll(t, buildDir)
 		stale := filepath.Join(buildDir, "INV-0000000009-DRAFT.pdf")
 		if err := os.WriteFile(stale, []byte("pdf"), 0o644); err != nil {
 			t.Fatal(err)
@@ -136,9 +134,7 @@ func TestRemoveStaleDraftPDF(t *testing.T) {
 
 	t.Run("dry-run leaves the file in place", func(t *testing.T) {
 		t.Chdir(t.TempDir())
-		if err := os.MkdirAll(buildDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
+		mustMkdirAll(t, buildDir)
 		stale := filepath.Join(buildDir, "INV-0000000009-DRAFT.pdf")
 		if err := os.WriteFile(stale, []byte("pdf"), 0o644); err != nil {
 			t.Fatal(err)
@@ -155,9 +151,7 @@ func TestRemoveStaleDraftPDF(t *testing.T) {
 
 	t.Run("draft invoice is left alone", func(t *testing.T) {
 		t.Chdir(t.TempDir())
-		if err := os.MkdirAll(buildDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
+		mustMkdirAll(t, buildDir)
 		stale := filepath.Join(buildDir, "INV-0000000009-DRAFT.pdf")
 		if err := os.WriteFile(stale, []byte("pdf"), 0o644); err != nil {
 			t.Fatal(err)

@@ -78,9 +78,7 @@ func writeInvoiceFixture(t *testing.T, dir string, inv invoice.InvoiceJson) stri
 
 func TestTranslateOne_FillsMissingBgOnDraft(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := os.MkdirAll(invoicesDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	mustMkdirAll(t, invoicesDir)
 	inv := draftInvoiceFixture(t, "INV-0000000001", strp("Arbeit"), strp("Rabatt"))
 	path := writeInvoiceFixture(t, invoicesDir, inv)
 
@@ -124,9 +122,7 @@ func TestTranslateOne_FillsMissingBgOnDraft(t *testing.T) {
 
 func TestTranslateOne_IssuedInvoiceUntouched(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := os.MkdirAll(invoicesDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	mustMkdirAll(t, invoicesDir)
 	inv := draftInvoiceFixture(t, "INV-0000000002", strp("Arbeit"), nil)
 	inv.Status = invoice.InvoiceJsonStatusIssued
 	path := writeInvoiceFixture(t, invoicesDir, inv)

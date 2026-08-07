@@ -153,7 +153,7 @@ func mustWriteFile(t *testing.T, path, content string) {
 	}
 }
 
-func writeJSON(t *testing.T, path string, v interface{}) {
+func writeJSON(t *testing.T, path string, v any) {
 	t.Helper()
 	b, err := json.Marshal(v)
 	if err != nil {

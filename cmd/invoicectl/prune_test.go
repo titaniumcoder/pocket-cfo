@@ -10,12 +10,8 @@ import (
 
 func TestRunPrune_RemovesDraftPDFWithoutJSON(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := os.MkdirAll(invoicesDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(buildDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	mustMkdirAll(t, invoicesDir)
+	mustMkdirAll(t, buildDir)
 
 	// A relic: the JSON is gone (deleted by hand before invoicectl delete
 	// existed) but its -DRAFT.pdf and manifest entry survived.
@@ -46,12 +42,8 @@ func TestRunPrune_RemovesDraftPDFWithoutJSON(t *testing.T) {
 
 func TestRunPrune_LeavesLiveDraftAlone(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := os.MkdirAll(invoicesDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(buildDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	mustMkdirAll(t, invoicesDir)
+	mustMkdirAll(t, buildDir)
 
 	inv := draftInvoiceFixture(t, "INV-0000000009", strp("Arbeit"), nil)
 	writeInvoiceFixture(t, invoicesDir, inv)
@@ -70,12 +62,8 @@ func TestRunPrune_LeavesLiveDraftAlone(t *testing.T) {
 
 func TestRunPrune_DryRunTouchesNothing(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := os.MkdirAll(invoicesDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(buildDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	mustMkdirAll(t, invoicesDir)
+	mustMkdirAll(t, buildDir)
 	orphanPDF := filepath.Join(buildDir, "INV-0000000009-DRAFT.pdf")
 	if err := os.WriteFile(orphanPDF, []byte("pdf"), 0o644); err != nil {
 		t.Fatal(err)
@@ -98,12 +86,8 @@ func TestRunPrune_NoBuildDirIsANoOp(t *testing.T) {
 
 func TestRunPrune_IgnoresNonDraftPDFs(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := os.MkdirAll(invoicesDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(buildDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	mustMkdirAll(t, invoicesDir)
+	mustMkdirAll(t, buildDir)
 	// Issued invoice's original PDF, no matching JSON on disk — must never
 	// happen in practice (invoicectl delete refuses non-drafts), but prune
 	// must not touch it regardless; it only ever considers *-DRAFT.pdf.

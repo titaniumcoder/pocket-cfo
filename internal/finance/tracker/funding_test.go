@@ -60,11 +60,10 @@ func TestFundingRangeForMonth(t *testing.T) {
 }
 
 func TestFundingRangeForYearSameYear(t *testing.T) {
-	// Viewing the current year, "now" mid-year (July) -> expense range is
-	// July-December (unaffected by this change), so funding range is the
+	// Viewing the current year, testNow is mid-year (July) -> expense range
+	// is July-December (unaffected by this change), so funding range is the
 	// same shifted back two months: May-October, no year crossing.
-	now := time.Date(2026, time.July, 15, 0, 0, 0, 0, time.UTC)
-	start, end := fundingRangeForYear(2026, now)
+	start, end := fundingRangeForYear(2026, testNow)
 	if start != (yearMonth{2026, time.May}) {
 		t.Errorf("start = %+v, want May 2026", start)
 	}
@@ -97,18 +96,16 @@ func TestFundingRangeForYearCrossesIntoPreviousYear(t *testing.T) {
 }
 
 func TestFundingRangeForYearOtherViewedYear(t *testing.T) {
-	// A year other than "now"'s own is entirely "remaining" relative to
+	// A year other than testNow's own is entirely "remaining" relative to
 	// itself (see Budget.ForYear/privateExpenseStartMonth), so the expense
 	// range is always the full January-December, and the funding range is
-	// always November(year-1)-October(year), regardless of "now".
-	now := time.Date(2026, time.July, 15, 0, 0, 0, 0, time.UTC)
-
-	pastStart, pastEnd := fundingRangeForYear(2024, now)
+	// always November(year-1)-October(year), regardless of testNow.
+	pastStart, pastEnd := fundingRangeForYear(2024, testNow)
 	if pastStart != (yearMonth{2023, time.November}) || pastEnd != (yearMonth{2024, time.October}) {
 		t.Errorf("past year range = %+v..%+v, want Nov 2023..Oct 2024", pastStart, pastEnd)
 	}
 
-	futureStart, futureEnd := fundingRangeForYear(2028, now)
+	futureStart, futureEnd := fundingRangeForYear(2028, testNow)
 	if futureStart != (yearMonth{2027, time.November}) || futureEnd != (yearMonth{2028, time.October}) {
 		t.Errorf("future year range = %+v..%+v, want Nov 2027..Oct 2028", futureStart, futureEnd)
 	}

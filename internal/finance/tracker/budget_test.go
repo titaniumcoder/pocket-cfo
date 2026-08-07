@@ -200,13 +200,12 @@ func rowByName(view BudgetView, name string) CategoryRow {
 // categoryRowFor), due this period (shown plainly, spentCents > 0), past
 // (hidden entirely).
 func TestCategoryRowForDated(t *testing.T) {
-	now := time.Date(2026, time.July, 15, 0, 0, 0, 0, time.UTC)
 	date := "2026-09-01"
 	amount := 500.0
 	desk := budgetdata.Category{Name: "Desk", Amount: amount, Date: &date}
 
 	t.Run("future date shows grayed out with the amount and month", func(t *testing.T) {
-		row, ok := categoryRowFor(desk, 0, false, now, false)
+		row, ok := categoryRowFor(desk, 0, false, testNow, false)
 		if !ok {
 			t.Fatal("expected a future dated category to still render")
 		}
@@ -222,7 +221,7 @@ func TestCategoryRowForDated(t *testing.T) {
 	})
 
 	t.Run("due this period shows plainly", func(t *testing.T) {
-		row, ok := categoryRowFor(desk, eurToCents(500), false, now, false)
+		row, ok := categoryRowFor(desk, eurToCents(500), false, testNow, false)
 		if !ok {
 			t.Fatal("expected a due-this-period category to render")
 		}
@@ -237,14 +236,14 @@ func TestCategoryRowForDated(t *testing.T) {
 	t.Run("past date with nothing due this period is hidden entirely", func(t *testing.T) {
 		pastDate := "2026-06-01"
 		pastDesk := budgetdata.Category{Name: "Desk", Amount: amount, Date: &pastDate}
-		if _, ok := categoryRowFor(pastDesk, 0, false, now, false); ok {
+		if _, ok := categoryRowFor(pastDesk, 0, false, testNow, false); ok {
 			t.Error("expected a past dated category to be hidden")
 		}
 	})
 
 	t.Run("recurring categories are unaffected by date logic", func(t *testing.T) {
 		rent := budgetdata.Category{Name: "Rent", Amount: 1000}
-		row, ok := categoryRowFor(rent, eurToCents(1000), false, now, false)
+		row, ok := categoryRowFor(rent, eurToCents(1000), false, testNow, false)
 		if !ok {
 			t.Fatal("expected a recurring category to always render")
 		}
@@ -256,7 +255,7 @@ func TestCategoryRowForDated(t *testing.T) {
 	t.Run("future date preview uses minimal_amount when minimal mode is on", func(t *testing.T) {
 		minAmount := 300.0
 		trip := budgetdata.Category{Name: "Trip", Amount: amount, MinimalAmount: &minAmount, Date: &date}
-		row, ok := categoryRowFor(trip, 0, false, now, true)
+		row, ok := categoryRowFor(trip, 0, false, testNow, true)
 		if !ok {
 			t.Fatal("expected a future dated category to still render")
 		}
@@ -268,7 +267,7 @@ func TestCategoryRowForDated(t *testing.T) {
 	t.Run("future date preview stays at the full amount when minimal mode is off", func(t *testing.T) {
 		minAmount := 300.0
 		trip := budgetdata.Category{Name: "Trip", Amount: amount, MinimalAmount: &minAmount, Date: &date}
-		row, ok := categoryRowFor(trip, 0, false, now, false)
+		row, ok := categoryRowFor(trip, 0, false, testNow, false)
 		if !ok {
 			t.Fatal("expected a future dated category to still render")
 		}
@@ -279,12 +278,11 @@ func TestCategoryRowForDated(t *testing.T) {
 }
 
 func TestCategoryRowForCarriesNoteAndURL(t *testing.T) {
-	now := time.Date(2026, time.July, 15, 0, 0, 0, 0, time.UTC)
 	note := "PCB|Rigs Apex RGB BK"
 	url := "https://pcbuild.bg/p-pcb-rigs-apex-rgb-bk-50462"
 	c := budgetdata.Category{Name: "Computer", Amount: 3060, Note: &note, Url: &url}
 
-	row, ok := categoryRowFor(c, eurToCents(3060), false, now, false)
+	row, ok := categoryRowFor(c, eurToCents(3060), false, testNow, false)
 	if !ok {
 		t.Fatal("expected the category to render")
 	}
@@ -866,11 +864,10 @@ func TestBudgetZeroOverrideWinsOverMinimalAmount(t *testing.T) {
 // future-dated one-off category whose due month is itself zero-overridden
 // shows a 0 planned preview, not its configured amount.
 func TestCategoryRowForFutureDatedOverriddenMonthPreviewIsZero(t *testing.T) {
-	now := time.Date(2026, time.July, 15, 0, 0, 0, 0, time.UTC)
 	date := "2026-09-01"
 	desk := budgetdata.Category{Name: "Desk", Amount: 500, Date: &date, Overrides: []budgetdata.Override{{Month: "2026-09-15", Amount: 0}}}
 
-	row, ok := categoryRowFor(desk, 0, false, now, false)
+	row, ok := categoryRowFor(desk, 0, false, testNow, false)
 	if !ok {
 		t.Fatal("expected a future dated category to still render")
 	}

@@ -12,12 +12,8 @@ import (
 func setupDeleteFixture(t *testing.T, number string, withManifestEntry bool) {
 	t.Helper()
 	t.Chdir(t.TempDir())
-	if err := os.MkdirAll(invoicesDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(buildDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	mustMkdirAll(t, invoicesDir)
+	mustMkdirAll(t, buildDir)
 
 	inv := draftInvoiceFixture(t, number, strp("Arbeit"), nil)
 	writeInvoiceFixture(t, invoicesDir, inv)

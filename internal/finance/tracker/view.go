@@ -20,11 +20,12 @@ import (
 // convention as Budget below — and every Toggl method degrades to an empty,
 // error-free result for a nil receiver, so compute needs no separate
 // tracking-disabled branch of its own. Invoiced (see invoiced.go) is that
-// second layer: once a real invoice covers a linked project's period, its
-// total replaces that project's Toggl-derived contribution to
-// Tracked/(funding) income, keyed off Aggregate's existing ProjectID — a nil
-// Invoiced map behaves exactly like "no invoices exist yet", same
-// nil-means-"not configured" convention as Toggl/Budget.
+// second layer: once a real invoice covers a linked client's period, its
+// total replaces that client's Toggl-derived contribution to
+// Tracked/(funding) income, keyed off the invoice recipient's resolved Toggl
+// client ID (or UnscopedClientID) — a nil Invoiced map behaves exactly like
+// "no invoices exist yet", same nil-means-"not configured" convention as
+// Toggl/Budget.
 type Tracker struct {
 	Toggl        *Toggl
 	Holidays     *Holidays
@@ -32,10 +33,10 @@ type Tracker struct {
 	HoursPerDay  float64
 	Loc          *time.Location
 	Personal     PersonalParams
-	VacationDays int                     // annual paid-leave allowance, used in the year view
-	RateCents    int                     // configured hourly rate used to project Expected work
-	RateCurrency string                  // ISO code for RateCents, e.g. "EUR"; "" defaults to EUR (see CurrencySymbol)
-	Invoiced     map[int]InvoicedProject // Toggl project ID -> its invoicing state, see invoiced.go
+	VacationDays int                    // annual paid-leave allowance, used in the year view
+	RateCents    int                    // configured hourly rate used to project Expected work
+	RateCurrency string                 // ISO code for RateCents, e.g. "EUR"; "" defaults to EUR (see CurrencySymbol)
+	Invoiced     map[int]InvoicedClient // Toggl client ID (or UnscopedClientID) -> its invoicing state, see invoiced.go
 }
 
 type TrackedRow struct {
@@ -46,7 +47,7 @@ type TrackedRow struct {
 }
 
 // InvoicedRow is one project's real invoiced income that became usable in
-// the viewed period (see InvoicedProject.UsableCents) — shown separately
+// the viewed period (see InvoicedClient.Usable) — shown separately
 // from Tracked since it's realized income, not a Toggl-derived figure.
 type InvoicedRow struct {
 	Project     string
@@ -116,7 +117,7 @@ type Figures struct {
 	TrackedErr string
 
 	// Real invoiced income that became usable this period (see
-	// InvoicedProject.UsableCents) — one row per project, folded into
+	// InvoicedClient.Usable) — one row per project, folded into
 	// TotalCents alongside Tracked/Expected.
 	Invoiced      []InvoicedRow
 	InvoicedCents int
@@ -370,14 +371,21 @@ func (f *Figures) computeTrackedRows(t *Tracker, projects map[int]Project, aggs 
 }
 
 // computeInvoicedRows fills in the real invoiced income that became usable
-// during the viewed period (see Tracker.Invoiced/InvoicedProject.UsableCents)
-// — independent of the Toggl fetch above, since it comes from real invoice
+// during the viewed period (see Tracker.Invoiced/InvoicedClient.Usable) —
+// independent of the Toggl fetch above, since it comes from real invoice
 // data, not a Toggl fetch.
+//
+// TODO(subtask 4): rewrite to one row per invoice via
+// t.invoicedInvoicesForMonth, dropping the (now client-ID-keyed, not
+// project-ID-keyed) projects[pid].Name lookup below — kept only to keep the
+// build green after invoiced.go's client-keyed redesign.
 func (f *Figures) computeInvoicedRows(t *Tracker, projects map[int]Project, year int, start, end time.Time) {
 	for pid, ip := range t.Invoiced {
 		var cents int
 		for m := start.Month(); m <= end.Month(); m++ {
-			cents += ip.UsableCents[yearMonth{year, m}]
+			for _, inv := range ip.Usable[yearMonth{year, m}] {
+				cents += inv.Cents
+			}
 		}
 		if cents == 0 {
 			continue

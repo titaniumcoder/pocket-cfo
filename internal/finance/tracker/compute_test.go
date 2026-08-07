@@ -388,7 +388,7 @@ func TestInvoiceSuppressesTrackedAndAddsUsableIncome(t *testing.T) {
 	}
 
 	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
-		{ProjectID: 1, IssueDate: date(2026, 8, 5), DueDate: date(2026, 8, 19), TotalCents: 500000},
+		{ClientID: 1, IssueDate: date(2026, 8, 5), DueDate: date(2026, 8, 19), TotalCents: 500000},
 	})
 
 	july := trk.ComputeMonth(context.Background(), 2026, time.July)

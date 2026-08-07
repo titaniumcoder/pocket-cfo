@@ -56,7 +56,7 @@ func buildInvoicedFacts() ([]tracker.InvoicedFact, error) {
 			continue // a malformed invoice shouldn't take down the whole dashboard
 		}
 		facts = append(facts, tracker.InvoicedFact{
-			ProjectID:  pid,
+			ClientID:   pid,
 			IssueDate:  inv.IssueDate.Time,
 			DueDate:    inv.DueDate.Time,
 			TotalCents: int(totals.GrandTotal),

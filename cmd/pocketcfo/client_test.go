@@ -162,18 +162,19 @@ func writeJSON(t *testing.T, path string, v any) {
 	mustWriteFile(t, path, string(b))
 }
 
-// newTestClientServer builds a server with the real client.html template
-// (resolved to an absolute path before the caller chdirs into a temp test
-// fixture directory) and a fixed CLIENT_LINK_SECRET.
+// newTestClientServer builds a server with the real client.html and
+// index.html templates (resolved to absolute paths before the caller
+// chdirs into a temp test fixture directory) and a fixed CLIENT_LINK_SECRET.
 func newTestClientServer(t *testing.T) *server {
 	t.Helper()
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
-	templatePath := filepath.Join(wd, "..", "..", "web", "templates", "client.html")
-	tmpl := template.Must(template.New("client.html").Funcs(templateFuncs).ParseFiles(templatePath))
-	return &server{cfg: config{clientLinkSecret: "secret"}, clientTmpl: tmpl}
+	templatesPath := filepath.Join(wd, "..", "..", "web", "templates")
+	clientTmpl := template.Must(template.New("client.html").Funcs(templateFuncs).ParseFiles(filepath.Join(templatesPath, "client.html")))
+	indexTmpl := template.Must(template.New("index.html").Funcs(templateFuncs).ParseFiles(filepath.Join(templatesPath, "index.html")))
+	return &server{cfg: config{clientLinkSecret: "secret"}, clientTmpl: clientTmpl, indexTmpl: indexTmpl}
 }
 
 func TestHandleClientPortalDraftsExcluded(t *testing.T) {

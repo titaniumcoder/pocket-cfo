@@ -175,6 +175,10 @@ func (t *Tracker) fundingLaborIncomeEUR(ctx context.Context, months []yearMonth,
 	}
 	years := distinctYears(months)
 
+	projects, err := t.Toggl.Projects(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("funding: toggl projects: %w", err)
+	}
 	ydByYear, err := t.fetchYearDataByYear(ctx, years)
 	if err != nil {
 		return nil, err
@@ -188,7 +192,7 @@ func (t *Tracker) fundingLaborIncomeEUR(ctx context.Context, months []yearMonth,
 
 	incomeEUR := make([]float64, len(months))
 	for i, ym := range months {
-		incomeEUR[i] = t.monthLaborIncome(ym, ydByYear[ym.Year], holidaysByYear[ym.Year], today, rateCents)
+		incomeEUR[i] = t.monthLaborIncome(ym, projects, ydByYear[ym.Year], holidaysByYear[ym.Year], today, rateCents)
 	}
 
 	return incomeEUR, nil
@@ -234,24 +238,26 @@ func (t *Tracker) fetchHolidaysByYear(ctx context.Context, years []int) (map[int
 // month relative to today (same workdayInfo-driven formula Tracker.compute
 // uses, minus the vacation-day deduction, which is tied to the *viewed*
 // year's annual allowance and doesn't apply to an unrelated funding period).
-func (t *Tracker) monthLaborIncome(ym yearMonth, yd *YearData, holidays map[string]bool, today time.Time, rateCents int) float64 {
+func (t *Tracker) monthLaborIncome(ym yearMonth, projects map[int]Project, yd *YearData, holidays map[string]bool, today time.Time, rateCents int) float64 {
 	monthStart := time.Date(ym.Year, ym.Month, 1, 0, 0, 0, 0, t.Loc)
 	monthEnd := monthStart.AddDate(0, 1, -1)
 
 	var trackedCents int
 	for _, a := range yd.Months[ym.Month] {
-		if t.invoiceSuppresses(a.ProjectID, ym) {
+		if t.invoiceSuppresses(projects[a.ProjectID].ClientID, ym) {
 			continue
 		}
 		trackedCents += a.AmountCents
 	}
-	// Real invoiced income that became usable in this funding month —
-	// same UsableCents lookup Tracker.compute's own Invoiced section
-	// uses, added directly here rather than through the generic
-	// fundingShiftMonths shift: an invoice's "usable in the month
-	// after its due date" timing is already the real answer, not
-	// something to shift again.
-	trackedCents += t.invoicedCentsForMonth(ym)
+	// ym is a funding month, reached via fundingRangeForMonth(viewed) =
+	// viewed.addMonths(fundingShiftMonths) — i.e. ym = viewed - 2. The
+	// viewed month it funds is therefore ym.addMonths(-fundingShiftMonths) =
+	// ym + 2. An invoice's UsableCents is already keyed by the real
+	// calendar month it becomes usable in (due date + 1, see invoiced.go) —
+	// that's the VIEWED month, not ym — so look it up at ym+2, not at ym
+	// itself. Looking it up at ym directly double-shifts an already-correct
+	// due-date-derived timing by another two months.
+	trackedCents += t.invoicedCentsForMonth(ym.addMonths(-fundingShiftMonths))
 
 	// workdayInfo naturally returns remaining=0 for a month wholly in
 	// the past (nothing in [monthStart,monthEnd] is after today) and

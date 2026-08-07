@@ -266,6 +266,52 @@ func TestFundingIncomeCrossesYearBoundary(t *testing.T) {
 	}
 }
 
+// TestFundingIncomeInvoicedUsesCorrectMonthNotDoubleShifted is a regression
+// test for a real bug: monthLaborIncome looked up invoicedCentsForMonth at
+// the already-shifted funding month instead of the viewed month it funds,
+// double-applying fundingShiftMonths on top of the invoice's own
+// due-date-derived usable month. An invoice due 2026-08-31 is usable in
+// September 2026 (due date + 1 month, see invoiced.go); the fix must make it
+// show up when VIEWING September (funding month = July, July+2 = September)
+// and NOT when viewing November (funding month = September; the buggy code
+// looked up invoicedCentsForMonth(September) directly there too, wrongly
+// finding the same September-keyed entry a second time).
+func TestFundingIncomeInvoicedUsesCorrectMonthNotDoubleShifted(t *testing.T) {
+	b := &fakeBackend{
+		detailed: func(page int) (string, string, string) { return `[]`, "", "" },
+		projects: `[{"id":1,"name":"Alpha","client_id":1}]`,
+	}
+	client := b.transport()
+	newTrk := func() *Tracker {
+		return &Tracker{
+			Toggl: &Toggl{WorkspaceID: "ws", HTTP: client}, Holidays: &Holidays{HTTP: client},
+			HoursPerDay: 8, Loc: time.UTC, RateCents: 7500, RateCurrency: "EUR",
+			Personal: PersonalParams{EmployerRate: 0.1892, EmployeeRate: 0.1378, MaxInsurableMonthly: 2112, IncomeTaxRate: 0.10},
+		}
+	}
+	invoiced := ComputeInvoiced([]InvoicedFact{
+		{ClientID: 1, Number: "0001", IssueDate: date(2026, 8, 5), DueDate: date(2026, 8, 31), TotalCents: 500000},
+	})
+
+	before := newTrk().ComputeMonth(context.Background(), 2026, time.September)
+	withInvoice := newTrk()
+	withInvoice.Invoiced = invoiced
+	after := withInvoice.ComputeMonth(context.Background(), 2026, time.September)
+	if after.FundingPersonal.NetIncomeCents <= before.FundingPersonal.NetIncomeCents {
+		t.Errorf("viewing September: FundingPersonal.NetIncomeCents with invoice (%d) should exceed without (%d) — the invoice becomes usable in September",
+			after.FundingPersonal.NetIncomeCents, before.FundingPersonal.NetIncomeCents)
+	}
+
+	beforeNov := newTrk().ComputeMonth(context.Background(), 2026, time.November)
+	withInvoiceNov := newTrk()
+	withInvoiceNov.Invoiced = invoiced
+	afterNov := withInvoiceNov.ComputeMonth(context.Background(), 2026, time.November)
+	if afterNov.FundingPersonal.NetIncomeCents != beforeNov.FundingPersonal.NetIncomeCents {
+		t.Errorf("viewing November: FundingPersonal.NetIncomeCents changed (%d -> %d) even though the invoice isn't usable until September (bug: double-shifted two months late)",
+			beforeNov.FundingPersonal.NetIncomeCents, afterNov.FundingPersonal.NetIncomeCents)
+	}
+}
+
 // testBudgetJSONCompanyDated has one company-kind one-off cost, "Computer",
 // due 2026-09-01 — used to pin down that a company expense's due date is
 // evaluated against the VIEWED period, never the shifted funding period.

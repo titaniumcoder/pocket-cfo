@@ -297,9 +297,7 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	// One yearly fetch feeds tracked rows, the rate, today's status and the
 	// billable-day set; filter it to the period in question.
 	yd, terr := t.Toggl.Year(ctx, year)
-	aggs := aggregatesInRange(yd, start, end, func(pid int, m time.Month) bool {
-		return t.invoiceSuppresses(projects[pid].ClientID, yearMonth{year, m})
-	})
+	aggs := aggregatesInRange(yd, start, end)
 	todayErr := terr // today's status shares the yearly fetch's fate
 	todayTracked := isCurrentPeriod && terr == nil && yd.Days[today.Format("2006-01-02")]
 	// Fetched for the whole year (not just the viewed period) so the
@@ -408,14 +406,9 @@ func (f *Figures) computeTrackedRows(t *Tracker, projects map[int]Project, aggs 
 		return 0, 0, monthlyCompanyCents
 	}
 	for m := start.Month(); m <= end.Month(); m++ {
-		ym := yearMonth{year, m}
 		for _, a := range yd.Months[m] {
-			if t.invoiceSuppresses(projects[a.ProjectID].ClientID, ym) {
-				continue
-			}
 			monthlyCompanyCents[m] += a.AmountCents
 		}
-		monthlyCompanyCents[m] += t.invoicedCentsForMonth(ym)
 	}
 	sort.Slice(aggs, func(i, j int) bool { return aggs[i].Seconds > aggs[j].Seconds })
 	for _, a := range aggs {
@@ -525,16 +518,16 @@ func (f *Figures) computeExpected(t *Tracker, year int, start, end, today time.T
 	return expectedNetHours, expectedNetCentsByMonth, true
 }
 
-// computeTotal fills in Total = tracked + expected + invoiced. TotalHours/
-// TotalRate stay hours-based (Tracked+Expected only) — invoiced income is a
-// real lump sum with no meaningful hours figure of its own, by design (an
-// invoice replaces predicted/tracked hours with a real total, not a real
-// hours count).
+// computeTotal fills in Total = tracked + expected: the work this period
+// represents, hours times rate. Invoiced money is deliberately absent — it
+// belongs to the Rolling budget panel, which answers a different question
+// (how much money is available), and counting it here as well would show
+// the same euros twice on one page.
 func (f *Figures) computeTotal(trackedHours float64, trackedCents int, expectedNetHours float64, expectedOK bool, rateCents int) {
 	if f.TrackedErr == "" && expectedOK {
 		f.TotalHours = formatHM(trackedHours + expectedNetHours)
 		f.TotalRate = formatNum(float64(rateCents) / 100)
-		f.TotalCents = trackedCents + f.ExpectedNetCents + f.InvoicedCents
+		f.TotalCents = trackedCents + f.ExpectedNetCents
 	} else {
 		f.TotalErr = "unavailable"
 	}
@@ -842,12 +835,14 @@ func aggHours(a Aggregate) float64 {
 // aggregatesInRange merges the per-month aggregates of yd for every month the
 // inclusive period [start, end] touches, re-summing per project + rate.
 // Returns nil when yd is nil (a failed yearly fetch). start and end lie in
-// the same year. suppress (see Tracker.invoiceSuppresses), if non-nil,
-// drops a given month's aggregates for a project an issued invoice has
-// already superseded — checked per source month, before merging, so a
-// range straddling a project's invoice horizon still splits correctly
-// instead of being suppressed (or not) as an all-or-nothing unit.
-func aggregatesInRange(yd *YearData, start, end time.Time, suppress func(projectID int, m time.Month) bool) []Aggregate {
+// the same year.
+//
+// Invoices deliberately do NOT suppress anything here: the Income panel is a
+// record of work done and still to come, and an invoice doesn't un-work
+// those hours. Superseding tracked/predicted hours with an invoice's real
+// total is the Rolling budget panel's job, where the question is how much
+// money is actually available — see Tracker.monthLaborIncome.
+func aggregatesInRange(yd *YearData, start, end time.Time) []Aggregate {
 	if yd == nil {
 		return nil
 	}
@@ -856,9 +851,6 @@ func aggregatesInRange(yd *YearData, start, end time.Time, suppress func(project
 	var order []key
 	for m := start.Month(); m <= end.Month(); m++ {
 		for _, a := range yd.Months[m] {
-			if suppress != nil && suppress(a.ProjectID, m) {
-				continue
-			}
 			k := key{a.ProjectID, a.RateCents}
 			cur := acc[k]
 			if cur == nil {

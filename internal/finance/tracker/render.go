@@ -199,11 +199,6 @@ var templates = `
       {{else}}{{range .Tracked}}<div class="row"><span class="label">{{.Project}}</span><span class="mid">{{.Hours}} h &times; {{.Rate}}</span><span class="amt">{{eur .AmountCents}}<span class="hrs-m">({{.Hours}}h)</span></span></div>{{end}}{{end}}
       {{end}}
 
-      {{if .Invoiced}}
-      <h2>Invoiced</h2>
-      {{range .Invoiced}}<div class="row"><span class="label">{{if .URL}}<a href="{{.URL}}">{{.Number}}</a>{{else}}{{.Number}}{{end}}</span><span class="mid"></span><span class="amt">{{eur .AmountCents}}</span></div>{{end}}
-      {{end}}
-
       {{if or .ShowExpected .ExpectedErr}}
       <h2>Expected</h2>
       {{if .ExpectedErr}}<div class="row"><span class="error">{{.ExpectedErr}}</span></div>
@@ -224,9 +219,9 @@ var templates = `
     </div>
   </section>
 
-  <section class="panel expenses-panel">
+  <section class="panel budget-panel">
     <div class="panel-title-row">
-      <h2 class="panel-title">Expenses</h2>
+      <h2 class="panel-title">Rolling budget</h2>
       {{if eq .Mode "month"}}
       <a class="minimal-toggle no-print{{if .MinimalMode}} active{{end}}" href="{{.MinimalToggleURL}}" role="switch" aria-checked="{{if .MinimalMode}}true{{else}}false{{end}}">
         <span class="minimal-toggle-track"><span class="minimal-toggle-thumb"></span></span>
@@ -240,7 +235,9 @@ var templates = `
       {{with .FundingPersonal}}
       {{if .Err}}<div class="row"><span class="error">{{.Err}}</span></div>
       {{else}}
-      <div class="row net gap-below"><span class="label">Company income{{if .FundingLabel}} <small>(from {{if .FundingURL}}<a class="period-link" href="{{.FundingURL}}">{{.FundingLabel}}</a>{{else}}{{.FundingLabel}}{{end}})</small>{{end}}</span><span class="mid"></span><span class="amt goodamt">{{eur .CompanyIncomeCents}}</span></div>
+      <div class="row net{{if not $.Invoiced}} gap-below{{end}}"><span class="label">Company income{{if .FundingLabel}} <small>(from {{if .FundingURL}}<a class="period-link" href="{{.FundingURL}}">{{.FundingLabel}}</a>{{else}}{{.FundingLabel}}{{end}})</small>{{end}}</span><span class="mid"></span><span class="amt goodamt">{{eur .CompanyIncomeCents}}</span></div>
+      {{range $.Invoiced}}<div class="row acct"><span class="label">{{if .URL}}<a href="{{.URL}}">{{.Number}}</a>{{else}}{{.Number}}{{end}} <span class="note">invoiced, usable this month</span></span><span class="mid"></span><span class="amt">{{eur .AmountCents}}</span></div>{{end}}
+      {{if $.Invoiced}}<div class="row gap-below"></div>{{end}}
       {{template "categoryGroups" .CompanyGroups}}
       <div class="row{{if .CompanyGroups}} gap-above{{end}}"><span class="label">Employer social ({{.EmployerPct}}%)</span><span class="mid"></span><span class="amt neg">&minus;{{eur .EmployerContribCents}}</span></div>
       <div class="row sub"><span class="label">Gross salary</span><span class="mid"></span><span class="amt total">{{eur .GrossSalaryCents}}</span></div>

@@ -320,48 +320,50 @@ func TestRenderPageHidesEmptyTrackedAndTotalWhenNoVacation(t *testing.T) {
 	}
 }
 
-// TestRenderPageInvoicedRowShowsNumber guards against a template/struct
-// mismatch: InvoicedRow used to carry Project, now carries Number — a
-// html/template range over a nonexistent field fails only at execution
-// time, not at go build, so this needs its own explicit coverage.
-func TestRenderPageInvoicedRowShowsNumber(t *testing.T) {
-	f := Figures{
+// TestRenderPageInvoicedRowsLiveInTheBudgetPanel pins both the placement
+// and the privacy gate. Placement: an invoice is money, not work, so it
+// renders in the Rolling budget panel and never in the Income panel.
+// Privacy: the PDF link only appears when the HTTP layer filled in a URL
+// (a session with invoicing rights — see cmd/pocketcfo's fillInvoiceLinks);
+// otherwise the bare number still shows, which a finance-only viewer is
+// entitled to.
+func TestRenderPageInvoicedRowsLiveInTheBudgetPanel(t *testing.T) {
+	base := Figures{
 		LastUpdated: "—",
 		Mode:        "month",
 		Currency:    "€",
-		Invoiced:    []InvoicedRow{{Number: "0001", AmountCents: 500000}},
 		Personal:    PersonalView{},
 	}
-	rec := httptest.NewRecorder()
-	RenderPage(rec, f)
 
+	plain := base
+	plain.Invoiced = []InvoicedRow{{Number: "0001", AmountCents: 500000}}
+	rec := httptest.NewRecorder()
+	RenderPage(rec, plain)
 	body := rec.Body.String()
-	if !strings.Contains(body, ">0001<") {
-		t.Errorf("expected the invoice number 0001 to render as plain text (no URL set), got: %s", body)
+
+	if !strings.Contains(body, "0001") {
+		t.Fatalf("invoice number missing from the page: %s", body)
+	}
+	budgetAt := strings.Index(body, `class="panel budget-panel"`)
+	if budgetAt < 0 {
+		t.Fatal("missing the rolling-budget panel")
+	}
+	if strings.Index(body, "0001") < budgetAt {
+		t.Error("invoice rendered before the rolling-budget panel — it must not appear in the Income panel")
+	}
+	if strings.Contains(body, "<a href=") && strings.Contains(body, ">0001</a>") {
+		t.Error("no URL was set, so the number must render as plain text, not a link")
 	}
 	if strings.Contains(body, "500000") {
-		// sanity: eur formats cents, so the raw int shouldn't appear literally
 		t.Error("AmountCents should render formatted, not as a raw integer")
 	}
-}
 
-// TestRenderPageInvoicedRowLinksWhenURLSet confirms an InvoicedRow with a
-// URL (a session with invoicing rights, see cmd/pocketcfo's
-// fillInvoiceLinks) renders as a link to that URL, not just plain text.
-func TestRenderPageInvoicedRowLinksWhenURLSet(t *testing.T) {
-	f := Figures{
-		LastUpdated: "—",
-		Mode:        "month",
-		Currency:    "€",
-		Invoiced:    []InvoicedRow{{Number: "0001", AmountCents: 500000, URL: "/invoicing/invoices/0001.pdf"}},
-		Personal:    PersonalView{},
-	}
-	rec := httptest.NewRecorder()
-	RenderPage(rec, f)
-
-	body := rec.Body.String()
-	if !strings.Contains(body, `<a href="/invoicing/invoices/0001.pdf">0001</a>`) {
-		t.Errorf("expected a link to the invoice PDF, got: %s", body)
+	linked := base
+	linked.Invoiced = []InvoicedRow{{Number: "0001", AmountCents: 500000, URL: "/invoicing/invoices/0001.pdf"}}
+	rec2 := httptest.NewRecorder()
+	RenderPage(rec2, linked)
+	if !strings.Contains(rec2.Body.String(), `<a href="/invoicing/invoices/0001.pdf">0001</a>`) {
+		t.Errorf("expected a link to the invoice PDF, got: %s", rec2.Body.String())
 	}
 }
 
@@ -429,16 +431,13 @@ func TestRenderLogin(t *testing.T) {
 	}
 }
 
-// TestInvoiceSuppressesTrackedAndAddsUsableIncome is an end-to-end
-// regression test for PocketCFO's plan §2.3: "an invoice from 5.8 removes
-// all previous hours/estimations till end of July; the money is usable in
-// the month following the due date." Project 1 has real Toggl-tracked
-// hours in July; an invoice issued 5 August (due 19 August) for that same
-// project should make July's Tracked row disappear (superseded) while
-// leaving August itself untouched (after the horizon), and should show up
-// as real income only in September (due date's following month) — not in
-// August, and not as an hours figure anywhere.
-func TestInvoiceSuppressesTrackedAndAddsUsableIncome(t *testing.T) {
+// TestInvoiceLeavesIncomePanelAloneAndLandsInTheBudget pins the division of
+// labour between the two panels. The Income panel is a record of work: an
+// invoice doesn't un-work those hours, so July's tracked row stays exactly
+// as it was and no invoice ever appears there. The Rolling budget panel is
+// where the money question lives — that's where the invoice shows up, in
+// the month it becomes usable (due date's following month).
+func TestInvoiceLeavesIncomePanelAloneAndLandsInTheBudget(t *testing.T) {
 	rows := `[{"project_id":1,"hourly_rate_in_cents":7500,"billable_amount_in_cents":150000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"2026-07-10T09:00:00+00:00"}]}]`
 	b := &fakeBackend{
 		detailed: func(page int) (string, string, string) { return rows, "", "" },
@@ -458,29 +457,30 @@ func TestInvoiceSuppressesTrackedAndAddsUsableIncome(t *testing.T) {
 		},
 	}
 
-	// Before any invoice exists, July shows the real tracked hours.
 	beforeInvoice := trk.ComputeMonth(context.Background(), 2026, time.July)
 	if len(beforeInvoice.Tracked) != 1 || beforeInvoice.Tracked[0].AmountCents != 150000 {
 		t.Fatalf("before invoicing: Tracked = %+v, want one row of 150000", beforeInvoice.Tracked)
 	}
+	beforeTotal := beforeInvoice.TotalCents
 
 	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
 		{ClientID: 1, Number: "0001", IssueDate: date(2026, 8, 5), DueDate: date(2026, 8, 19), TotalCents: 500000},
 	})
 
+	// The work record is untouched by the invoice, in the covered month...
 	july := trk.ComputeMonth(context.Background(), 2026, time.July)
-	if len(july.Tracked) != 0 {
-		t.Errorf("July Tracked = %+v, want empty (superseded by the 5 Aug invoice)", july.Tracked)
+	if len(july.Tracked) != 1 || july.Tracked[0].AmountCents != 150000 {
+		t.Errorf("July Tracked = %+v, want the real hours left alone by the invoice", july.Tracked)
 	}
-	if july.InvoicedCents != 0 {
-		t.Errorf("July InvoicedCents = %d, want 0 (not yet usable)", july.InvoicedCents)
+	if july.TotalCents != beforeTotal {
+		t.Errorf("July Income total = %d, want %d — unchanged by the invoice", july.TotalCents, beforeTotal)
 	}
-
-	august := trk.ComputeMonth(context.Background(), 2026, time.August)
-	if august.InvoicedCents != 0 {
-		t.Errorf("August InvoicedCents = %d, want 0 (usable starts September)", august.InvoicedCents)
+	if len(july.Invoiced) != 0 {
+		t.Errorf("July Invoiced = %+v, want none (not usable until September)", july.Invoiced)
 	}
 
+	// ...and in the month the money actually arrives, where the invoice is
+	// listed but still never counted into the hours-based Income total.
 	september := trk.ComputeMonth(context.Background(), 2026, time.September)
 	if len(september.Invoiced) != 1 || september.Invoiced[0].AmountCents != 500000 {
 		t.Fatalf("September Invoiced = %+v, want one row of 500000", september.Invoiced)
@@ -488,20 +488,23 @@ func TestInvoiceSuppressesTrackedAndAddsUsableIncome(t *testing.T) {
 	if september.Invoiced[0].Number != "0001" {
 		t.Errorf("September Invoiced[0].Number = %q, want 0001", september.Invoiced[0].Number)
 	}
-	if september.InvoicedCents != 500000 {
-		t.Errorf("September InvoicedCents = %d, want 500000", september.InvoicedCents)
+	sepNoInvoice := *trk
+	sepNoInvoice.Invoiced = nil
+	if want := sepNoInvoice.ComputeMonth(context.Background(), 2026, time.September).TotalCents; september.TotalCents != want {
+		t.Errorf("September Income total = %d, want %d — the invoice must not inflate the hours-based total", september.TotalCents, want)
 	}
-	if september.TotalCents < 500000 {
-		t.Errorf("September TotalCents = %d, want at least the 500000 invoiced", september.TotalCents)
+	// The money does reach the budget side, via the funding calc.
+	if september.FundingPersonal.CompanyIncomeCents < 500000 {
+		t.Errorf("September funding company income = %d, want at least the 500000 invoiced", september.FundingPersonal.CompanyIncomeCents)
 	}
 }
 
-// TestInvoiceSuppressesMultipleProjectsUnderSameClient covers the reason for
-// resolving suppression via Toggl client rather than Toggl project: a client
-// with several Toggl projects must have all of them suppressed together once
-// invoiced, not just the one project a bare project-ID key would have
-// happened to match.
-func TestInvoiceSuppressesMultipleProjectsUnderSameClient(t *testing.T) {
+// TestInvoiceSuppressesClientHoursInTheBudgetOnly covers the reason
+// suppression resolves by Toggl client rather than project: a client with
+// several Toggl projects is superseded as one unit once invoiced. That
+// substitution happens only on the budget side — the Income panel keeps
+// showing every tracked hour.
+func TestInvoiceSuppressesClientHoursInTheBudgetOnly(t *testing.T) {
 	rows := `[
 	  {"project_id":1,"hourly_rate_in_cents":7500,"billable_amount_in_cents":150000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"2026-07-10T09:00:00+00:00"}]},
 	  {"project_id":2,"hourly_rate_in_cents":8000,"billable_amount_in_cents":80000,"currency":"EUR","time_entries":[{"seconds":3600,"start":"2026-07-11T09:00:00+00:00"}]}
@@ -511,23 +514,39 @@ func TestInvoiceSuppressesMultipleProjectsUnderSameClient(t *testing.T) {
 		projects: `[{"id":1,"name":"Alpha","client_id":42},{"id":2,"name":"Beta","client_id":42}]`,
 	}
 	client := b.transport()
-	trk := &Tracker{
-		Toggl:       &Toggl{WorkspaceID: "ws", HTTP: client},
-		Holidays:    &Holidays{HTTP: client},
-		HoursPerDay: 8,
-		Loc:         time.UTC,
-		Personal: PersonalParams{
-			EmployerRate: 0.1892, EmployeeRate: 0.1378,
-			MaxInsurableMonthly: 2112, IncomeTaxRate: 0.10,
-		},
+	newTrk := func() *Tracker {
+		return &Tracker{
+			Toggl:       &Toggl{WorkspaceID: "ws", HTTP: client},
+			Holidays:    &Holidays{HTTP: client},
+			HoursPerDay: 8,
+			Loc:         time.UTC,
+			Personal: PersonalParams{
+				EmployerRate: 0.1892, EmployeeRate: 0.1378,
+				MaxInsurableMonthly: 2112, IncomeTaxRate: 0.10,
+			},
+		}
 	}
-	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
+	invoiced := ComputeInvoiced([]InvoicedFact{
 		{ClientID: 42, Number: "0001", IssueDate: date(2026, 8, 5), DueDate: date(2026, 8, 19), TotalCents: 500000},
 	})
 
+	trk := newTrk()
+	trk.Invoiced = invoiced
 	july := trk.ComputeMonth(context.Background(), 2026, time.July)
-	if len(july.Tracked) != 0 {
-		t.Errorf("July Tracked = %+v, want empty — both projects share client 42, both suppressed by the 5 Aug invoice", july.Tracked)
+	if len(july.Tracked) != 2 {
+		t.Errorf("July Tracked = %+v, want both projects still listed — the Income panel is a work record", july.Tracked)
+	}
+
+	// September's funding month is July, whose hours the August invoice
+	// supersedes for BOTH of client 42's projects — so the budget side must
+	// not also count them on top of the invoice.
+	plain := newTrk()
+	withInvoice := newTrk()
+	withInvoice.Invoiced = invoiced
+	base := plain.ComputeMonth(context.Background(), 2026, time.September).FundingPersonal.CompanyIncomeCents
+	got := withInvoice.ComputeMonth(context.Background(), 2026, time.September).FundingPersonal.CompanyIncomeCents
+	if want := base - 230000 + 500000; got != want {
+		t.Errorf("September funding company income = %d, want %d (both projects' 2 300 replaced by the 5 000 invoice)", got, want)
 	}
 }
 

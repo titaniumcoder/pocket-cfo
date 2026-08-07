@@ -254,6 +254,14 @@ table.data tr.row-draft a { color: var(--muted); }
 
 a.paid-link { color: var(--good-strong); font-size: .8rem; margin-left: .4rem; }
 
+/* A whole panel section that folds away — the Configuration block starts
+   collapsed, since it's reference material you look up rather than read. */
+details.section-collapse > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: .5rem; }
+details.section-collapse > summary::-webkit-details-marker { display: none; }
+details.section-collapse > summary::before { content: "\25b8"; opacity: .5; transition: transform .15s ease; }
+details.section-collapse[open] > summary::before { transform: rotate(90deg); }
+details.section-collapse > summary h2.section-title { margin: 0; }
+
 /* Info page's Configuration panel. */
 h3.config-group { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 1.25rem 0 .35rem; font-weight: 700; }
 h3.config-group:first-of-type { margin-top: .25rem; }

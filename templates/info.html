@@ -12,23 +12,25 @@
   {{template "sitehead" .Header}}
 
   <section class="panel">
-    <h2 class="section-title">Configuration</h2>
-    <p class="section-note">What this running process actually resolved, env vars merged with config.json — not what any file currently says on disk. Credentials are masked to their first three and last two characters.</p>
-    {{range .ConfigGroups}}
-    <h3 class="config-group">{{.Name}}</h3>
-    <div class="table-wrap">
-    <table class="data">
-      <tbody>
-        {{range .Rows}}
-        <tr>
-          <td class="config-name">{{.Name}}</td>
-          <td class="code{{if .Secret}} config-secret{{end}}">{{.Value}}</td>
-        </tr>
-        {{end}}
-      </tbody>
-    </table>
-    </div>
-    {{end}}
+    <details class="card section-collapse">
+      <summary><h2 class="section-title">Configuration</h2></summary>
+      <p class="section-note">What this running process actually resolved, env vars merged with config.json — not what any file currently says on disk. Credentials are masked to their first three and last two characters.</p>
+      {{range .ConfigGroups}}
+      <h3 class="config-group">{{.Name}}</h3>
+      <div class="table-wrap">
+      <table class="data">
+        <tbody>
+          {{range .Rows}}
+          <tr>
+            <td class="config-name">{{.Name}}</td>
+            <td class="code{{if .Secret}} config-secret{{end}}">{{.Value}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+      </div>
+      {{end}}
+    </details>
   </section>
 
   <section class="panel">

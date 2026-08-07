@@ -388,12 +388,12 @@ func TestRenderPageTwoPanelsAndLinks(t *testing.T) {
 	if !strings.Contains(body, `class="panel income-panel"`) {
 		t.Error("missing income panel")
 	}
-	if !strings.Contains(body, `class="panel expenses-panel"`) {
-		t.Error("missing expenses panel")
+	if !strings.Contains(body, `class="panel budget-panel"`) {
+		t.Error("missing rolling-budget panel")
 	}
 
-	incomePanel := body[strings.Index(body, `class="panel income-panel"`):strings.Index(body, `class="panel expenses-panel"`)]
-	expensesPanel := body[strings.Index(body, `class="panel expenses-panel"`):]
+	incomePanel := body[strings.Index(body, `class="panel income-panel"`):strings.Index(body, `class="panel budget-panel"`)]
+	expensesPanel := body[strings.Index(body, `class="panel budget-panel"`):]
 
 	// Income panel: Tracked + Expected, ending in an "Income" total row —
 	// no Company-income/salary cascade here at all.

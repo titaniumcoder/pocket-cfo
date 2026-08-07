@@ -81,19 +81,22 @@ func TestHasPart(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	cases := []struct {
+	tests := []struct {
+		name  string
 		email string
 		part  string
 		want  bool
 	}{
-		{"finance-only@example.com", PartFinance, true},
-		{"finance-only@example.com", PartInvoicing, false},
-		{"both@example.com", PartInvoicing, true},
-		{"nobody@example.com", PartFinance, false},
+		{"listed for finance", "finance-only@example.com", PartFinance, true},
+		{"not listed for invoicing", "finance-only@example.com", PartInvoicing, false},
+		{"listed for both, checking invoicing", "both@example.com", PartInvoicing, true},
+		{"unknown email", "nobody@example.com", PartFinance, false},
 	}
-	for _, tc := range cases {
-		if got := HasPart(u, tc.email, tc.part); got != tc.want {
-			t.Errorf("HasPart(%q, %q) = %v, want %v", tc.email, tc.part, got, tc.want)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := HasPart(u, tt.email, tt.part); got != tt.want {
+				t.Errorf("HasPart(%q, %q) = %v, want %v", tt.email, tt.part, got, tt.want)
+			}
+		})
 	}
 }

@@ -173,7 +173,7 @@ func TestCompute_DiscountBelowZero(t *testing.T) {
 // error message, not a rendering guarantee, so it tolerates a partially
 // filled LocalizedString that render.HTML's stricter Require would reject.
 func TestLabelOf(t *testing.T) {
-	cases := []struct {
+	tests := []struct {
 		name string
 		ls   invoice.LocalizedString
 		want string
@@ -182,10 +182,10 @@ func TestLabelOf(t *testing.T) {
 		{"de absent, bg present", invoice.LocalizedString{Bg: strp("Отстъпка")}, "Отстъпка"},
 		{"neither present", invoice.LocalizedString{}, ""},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := labelOf(c.ls); got != c.want {
-				t.Errorf("labelOf(%+v) = %q, want %q", c.ls, got, c.want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := labelOf(tt.ls); got != tt.want {
+				t.Errorf("labelOf(%+v) = %q, want %q", tt.ls, got, tt.want)
 			}
 		})
 	}

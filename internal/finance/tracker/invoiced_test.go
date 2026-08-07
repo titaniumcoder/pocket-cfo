@@ -92,18 +92,21 @@ func TestInvoiceSuppressesOnOrBeforeHorizon(t *testing.T) {
 		{ProjectID: 1, IssueDate: date(2026, 8, 5), DueDate: date(2026, 8, 19), TotalCents: 500000},
 	})}
 
-	cases := []struct {
+	tests := []struct {
+		name string
 		ym   yearMonth
 		want bool
 	}{
-		{yearMonth{2026, time.June}, true},
-		{yearMonth{2026, time.July}, true}, // the horizon month itself
-		{yearMonth{2026, time.August}, false},
+		{"before horizon", yearMonth{2026, time.June}, true},
+		{"horizon month itself", yearMonth{2026, time.July}, true},
+		{"after horizon", yearMonth{2026, time.August}, false},
 	}
-	for _, c := range cases {
-		if got := trk.invoiceSuppresses(1, c.ym); got != c.want {
-			t.Errorf("invoiceSuppresses(1, %+v) = %v, want %v", c.ym, got, c.want)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := trk.invoiceSuppresses(1, tt.ym); got != tt.want {
+				t.Errorf("invoiceSuppresses(1, %+v) = %v, want %v", tt.ym, got, tt.want)
+			}
+		})
 	}
 }
 

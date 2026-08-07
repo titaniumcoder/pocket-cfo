@@ -14,30 +14,31 @@ func TestCombinedLabels_Bulgarian(t *testing.T) {
 }
 
 func TestCombinedLabels_NonBulgarian(t *testing.T) {
-	cases := []struct {
+	tests := []struct {
+		name string
 		lang invoice.InvoiceJsonLanguage
 		want Labels
 	}{
-		{invoice.InvoiceJsonLanguageDe, labelsDE},
-		{invoice.InvoiceJsonLanguageEn, labelsEN},
-		{invoice.InvoiceJsonLanguageFr, labelsFR},
+		{"German", invoice.InvoiceJsonLanguageDe, labelsDE},
+		{"English", invoice.InvoiceJsonLanguageEn, labelsEN},
+		{"French", invoice.InvoiceJsonLanguageFr, labelsFR},
 	}
-	for _, c := range cases {
-		t.Run(string(c.lang), func(t *testing.T) {
-			got := CombinedLabels(c.lang)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CombinedLabels(tt.lang)
 
 			checks := map[string]struct{ got, wantPrimary, wantBg string }{
-				"DocTitle":   {got.DocTitle, c.want.DocTitle, labelsBG.DocTitle},
-				"BillTo":     {got.BillTo, c.want.BillTo, labelsBG.BillTo},
-				"PaidBadge":  {got.PaidBadge, c.want.PaidBadge, labelsBG.PaidBadge},
-				"AmountDue":  {got.AmountDue, c.want.AmountDue, labelsBG.AmountDue},
-				"TaxIdLabel": {got.TaxIdLabel, c.want.TaxIdLabel, labelsBG.TaxIdLabel},
-				"VatIdLabel": {got.VatIdLabel, c.want.VatIdLabel, labelsBG.VatIdLabel},
+				"DocTitle":   {got.DocTitle, tt.want.DocTitle, labelsBG.DocTitle},
+				"BillTo":     {got.BillTo, tt.want.BillTo, labelsBG.BillTo},
+				"PaidBadge":  {got.PaidBadge, tt.want.PaidBadge, labelsBG.PaidBadge},
+				"AmountDue":  {got.AmountDue, tt.want.AmountDue, labelsBG.AmountDue},
+				"TaxIdLabel": {got.TaxIdLabel, tt.want.TaxIdLabel, labelsBG.TaxIdLabel},
+				"VatIdLabel": {got.VatIdLabel, tt.want.VatIdLabel, labelsBG.VatIdLabel},
 			}
-			for field, c := range checks {
-				want := c.wantPrimary + " / " + c.wantBg
-				if c.got != want {
-					t.Errorf("%s = %q, want %q", field, c.got, want)
+			for field, chk := range checks {
+				want := chk.wantPrimary + " / " + chk.wantBg
+				if chk.got != want {
+					t.Errorf("%s = %q, want %q", field, chk.got, want)
 				}
 			}
 		})

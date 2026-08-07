@@ -14,46 +14,52 @@ import (
 
 func TestPermissionTiers(t *testing.T) {
 	s := &server{}
-	cases := []struct {
+	tests := []struct {
+		name                     string
 		permission               string
 		authorized, readOnly, ok bool
 	}{
-		{"push", true, false, true},
-		{"admin", true, false, true},
-		{"readonly", false, true, true},
-		{"", false, false, false},
-		{"triage", false, false, false},
+		{"push", "push", true, false, true},
+		{"admin", "admin", true, false, true},
+		{"readonly", "readonly", false, true, true},
+		{"empty", "", false, false, false},
+		{"triage", "triage", false, false, false},
 	}
-	for _, c := range cases {
-		sess := auth.Session{Permission: c.permission}
-		if got := s.authorized(sess); got != c.authorized {
-			t.Errorf("authorized(%q) = %v, want %v", c.permission, got, c.authorized)
-		}
-		if got := s.readOnly(sess); got != c.readOnly {
-			t.Errorf("readOnly(%q) = %v, want %v", c.permission, got, c.readOnly)
-		}
-		if got := s.authenticated(sess); got != c.ok {
-			t.Errorf("authenticated(%q) = %v, want %v", c.permission, got, c.ok)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sess := auth.Session{Permission: tt.permission}
+			if got := s.authorized(sess); got != tt.authorized {
+				t.Errorf("authorized(%q) = %v, want %v", tt.permission, got, tt.authorized)
+			}
+			if got := s.readOnly(sess); got != tt.readOnly {
+				t.Errorf("readOnly(%q) = %v, want %v", tt.permission, got, tt.readOnly)
+			}
+			if got := s.authenticated(sess); got != tt.ok {
+				t.Errorf("authenticated(%q) = %v, want %v", tt.permission, got, tt.ok)
+			}
+		})
 	}
 }
 
 func TestValidEmail(t *testing.T) {
-	cases := []struct {
+	tests := []struct {
+		name  string
 		email string
 		want  bool
 	}{
-		{"person@example.com", true},
-		{"", false},
-		{"no-at-sign", false},
-		{"@example.com", false},
-		{"person@", false},
-		{"has space@example.com", false},
+		{"valid", "person@example.com", true},
+		{"empty", "", false},
+		{"no at sign", "no-at-sign", false},
+		{"missing local part", "@example.com", false},
+		{"missing domain", "person@", false},
+		{"space in local part", "has space@example.com", false},
 	}
-	for _, c := range cases {
-		if got := validEmail(c.email); got != c.want {
-			t.Errorf("validEmail(%q) = %v, want %v", c.email, got, c.want)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := validEmail(tt.email); got != tt.want {
+				t.Errorf("validEmail(%q) = %v, want %v", tt.email, got, tt.want)
+			}
+		})
 	}
 }
 

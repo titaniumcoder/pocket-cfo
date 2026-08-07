@@ -7,39 +7,45 @@ import "testing"
 // character like U+00A0, so assert the literal bytes.
 func TestFormatMoney(t *testing.T) {
 	nbsp := " "
-	cases := []struct {
+	tests := []struct {
+		name  string
 		minor int64
 		want  string
 	}{
-		{0, "0,00 €"},
-		{5, "0,05 €"},
-		{100, "1,00 €"},
-		{99999, "999,99 €"},
-		{100000, "1" + nbsp + "000,00 €"},
-		{102025, "1" + nbsp + "020,25 €"},
-		{102000000, "1" + nbsp + "020" + nbsp + "000,00 €"},
-		{-150000, "-1" + nbsp + "500,00 €"},
+		{"zero", 0, "0,00 €"},
+		{"cents only", 5, "0,05 €"},
+		{"one euro", 100, "1,00 €"},
+		{"just under a thousand", 99999, "999,99 €"},
+		{"thousands separator", 100000, "1" + nbsp + "000,00 €"},
+		{"thousands with cents", 102025, "1" + nbsp + "020,25 €"},
+		{"millions", 102000000, "1" + nbsp + "020" + nbsp + "000,00 €"},
+		{"negative", -150000, "-1" + nbsp + "500,00 €"},
 	}
-	for _, c := range cases {
-		if got := FormatMoney(c.minor); got != c.want {
-			t.Errorf("FormatMoney(%d) = %q, want %q", c.minor, got, c.want)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := FormatMoney(tt.minor); got != tt.want {
+				t.Errorf("FormatMoney(%d) = %q, want %q", tt.minor, got, tt.want)
+			}
+		})
 	}
 }
 
 func TestCountryName(t *testing.T) {
-	cases := []struct {
+	tests := []struct {
+		name string
 		code string
 		want string
 	}{
-		{"AT", "Austria"},
-		{"CH", "Switzerland"},
-		{"BG", "Bulgaria"},
-		{"ZZ", "ZZ"}, // unknown code falls back to itself
+		{"Austria", "AT", "Austria"},
+		{"Switzerland", "CH", "Switzerland"},
+		{"Bulgaria", "BG", "Bulgaria"},
+		{"unknown code falls back to itself", "ZZ", "ZZ"},
 	}
-	for _, c := range cases {
-		if got := CountryName(c.code); got != c.want {
-			t.Errorf("CountryName(%q) = %q, want %q", c.code, got, c.want)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CountryName(tt.code); got != tt.want {
+				t.Errorf("CountryName(%q) = %q, want %q", tt.code, got, tt.want)
+			}
+		})
 	}
 }

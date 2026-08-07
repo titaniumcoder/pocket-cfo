@@ -1082,19 +1082,22 @@ func TestCategoryRowForRecurringNonOverriddenZeroIsUnreachable(t *testing.T) {
 // TestEurToCentsRoundsDecimalAmounts confirms eurToCents rounds to the
 // nearest cent, including cases affected by float64 imprecision.
 func TestEurToCentsRoundsDecimalAmounts(t *testing.T) {
-	cases := []struct {
+	tests := []struct {
+		name  string
 		euros float64
 		want  int
 	}{
-		{427.42, 42742},
-		{432, 43200},
-		{19.99, 1999},
-		{11, 1100},
-		{28.90, 2890},
+		{"two decimals", 427.42, 42742},
+		{"whole number", 432, 43200},
+		{"float64 imprecision near .99", 19.99, 1999},
+		{"single digit", 11, 1100},
+		{"trailing zero decimal", 28.90, 2890},
 	}
-	for _, c := range cases {
-		if got := eurToCents(c.euros); got != c.want {
-			t.Errorf("eurToCents(%v) = %d, want %d", c.euros, got, c.want)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := eurToCents(tt.euros); got != tt.want {
+				t.Errorf("eurToCents(%v) = %d, want %d", tt.euros, got, tt.want)
+			}
+		})
 	}
 }

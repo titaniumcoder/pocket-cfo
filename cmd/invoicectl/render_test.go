@@ -17,7 +17,7 @@ import (
 // README.md document) must still be recognized as --force, not swallowed as
 // a second invoice number.
 func TestSplitFlags(t *testing.T) {
-	cases := []struct {
+	tests := []struct {
 		name           string
 		args           []string
 		wantFlags      []string
@@ -30,21 +30,21 @@ func TestSplitFlags(t *testing.T) {
 		{"number before flag", []string{"INV-0000000001", "--force"}, []string{"--force"}, []string{"INV-0000000001"}},
 		{"number between flags", []string{"--dry-run", "INV-0000000001", "--force"}, []string{"--dry-run", "--force"}, []string{"INV-0000000001"}},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			gotFlags, gotPositional := splitFlags(c.args)
-			if !reflect.DeepEqual(gotFlags, c.wantFlags) {
-				t.Errorf("flags = %v, want %v", gotFlags, c.wantFlags)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotFlags, gotPositional := splitFlags(tt.args)
+			if !reflect.DeepEqual(gotFlags, tt.wantFlags) {
+				t.Errorf("flags = %v, want %v", gotFlags, tt.wantFlags)
 			}
-			if !reflect.DeepEqual(gotPositional, c.wantPositional) {
-				t.Errorf("positional = %v, want %v", gotPositional, c.wantPositional)
+			if !reflect.DeepEqual(gotPositional, tt.wantPositional) {
+				t.Errorf("positional = %v, want %v", gotPositional, tt.wantPositional)
 			}
 		})
 	}
 }
 
 func TestForceAllowed(t *testing.T) {
-	cases := []struct {
+	tests := []struct {
 		name     string
 		force    bool
 		explicit []string
@@ -56,10 +56,10 @@ func TestForceAllowed(t *testing.T) {
 		{"force, no invoice (bulk)", true, nil, false},
 		{"force, many invoices", true, []string{"INV-0000000001", "INV-0000000002"}, false},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := forceAllowed(c.force, c.explicit); got != c.want {
-				t.Errorf("forceAllowed(%v, %v) = %v, want %v", c.force, c.explicit, got, c.want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := forceAllowed(tt.force, tt.explicit); got != tt.want {
+				t.Errorf("forceAllowed(%v, %v) = %v, want %v", tt.force, tt.explicit, got, tt.want)
 			}
 		})
 	}

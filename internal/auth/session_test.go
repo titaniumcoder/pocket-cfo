@@ -6,50 +6,81 @@ import (
 	"time"
 )
 
-func TestEncodeDecode_RoundTrip(t *testing.T) {
-	s := NewSession("octocat", "push", TTL)
-
-	encoded, err := Encode("test-secret", s)
-	if err != nil {
-		t.Fatal(err)
+func TestEncodeDecode(t *testing.T) {
+	tests := []struct {
+		name       string
+		encoded    func(t *testing.T) string
+		verifyWith string
+		wantErr    bool
+		wantLogin  string
+		wantPerm   string
+	}{
+		{
+			name: "round trip",
+			encoded: func(t *testing.T) string {
+				encoded, err := Encode("test-secret", NewSession("octocat", "push", TTL))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return encoded
+			},
+			verifyWith: "test-secret",
+			wantLogin:  "octocat",
+			wantPerm:   "push",
+		},
+		{
+			name: "wrong secret",
+			encoded: func(t *testing.T) string {
+				encoded, err := Encode("secret-a", NewSession("octocat", "push", TTL))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return encoded
+			},
+			verifyWith: "secret-b",
+			wantErr:    true,
+		},
+		{
+			name: "expired",
+			encoded: func(t *testing.T) string {
+				expired := Session{Login: "octocat", Permission: "push", ExpiresAt: time.Now().Add(-time.Minute)}
+				encoded, err := Encode("test-secret", expired)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return encoded
+			},
+			verifyWith: "test-secret",
+			wantErr:    true,
+		},
+		{
+			name: "tampered",
+			encoded: func(t *testing.T) string {
+				encoded, err := Encode("test-secret", NewSession("octocat", "push", TTL))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return strings.Replace(encoded, encoded[len(encoded)-4:], "AAAA", 1)
+			},
+			verifyWith: "test-secret",
+			wantErr:    true,
+		},
 	}
-	got, err := Decode("test-secret", encoded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Login != s.Login || got.Permission != s.Permission {
-		t.Errorf("got %+v, want %+v", got, s)
-	}
-}
-
-func TestDecode_WrongSecret(t *testing.T) {
-	encoded, err := Encode("secret-a", NewSession("octocat", "push", TTL))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Decode("secret-b", encoded); err == nil {
-		t.Fatal("expected an error decoding with the wrong secret, got nil")
-	}
-}
-
-func TestDecode_Expired(t *testing.T) {
-	expired := Session{Login: "octocat", Permission: "push", ExpiresAt: time.Now().Add(-time.Minute)}
-	encoded, err := Encode("test-secret", expired)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Decode("test-secret", encoded); err == nil {
-		t.Fatal("expected an error decoding an expired session, got nil")
-	}
-}
-
-func TestDecode_Tampered(t *testing.T) {
-	encoded, err := Encode("test-secret", NewSession("octocat", "push", TTL))
-	if err != nil {
-		t.Fatal(err)
-	}
-	tampered := strings.Replace(encoded, encoded[len(encoded)-4:], "AAAA", 1)
-	if _, err := Decode("test-secret", tampered); err == nil {
-		t.Fatal("expected an error decoding a tampered value, got nil")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Decode(tt.verifyWith, tt.encoded(t))
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error decoding a %s value, got nil", tt.name)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Login != tt.wantLogin || got.Permission != tt.wantPerm {
+				t.Errorf("got %+v, want Login=%q Permission=%q", got, tt.wantLogin, tt.wantPerm)
+			}
+		})
 	}
 }

@@ -21,6 +21,26 @@ func TestLocalizedStringGet(t *testing.T) {
 	}
 }
 
+func TestLocalizedStringIsEmpty(t *testing.T) {
+	tests := []struct {
+		name string
+		ls   LocalizedString
+		want bool
+	}{
+		{"nothing set", LocalizedString{}, true},
+		{"only de set", LocalizedString{De: strp("Hallo")}, false},
+		{"only bg set", LocalizedString{Bg: strp("Здравей")}, false},
+		{"fully populated", LocalizedString{De: strp("Hallo"), En: strp("Hello"), Fr: strp("Bonjour"), Bg: strp("Здравей")}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.ls.IsEmpty(); got != tt.want {
+				t.Errorf("IsEmpty() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLocalizedStringRequire(t *testing.T) {
 	t.Run("bg-language invoice needs only bg", func(t *testing.T) {
 		ls := LocalizedString{Bg: strp("Здравей")}

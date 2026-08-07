@@ -38,14 +38,6 @@ jobs:
             ghcr.io/${{ github.repository }}:${{ github.ref_name }}
             ghcr.io/${{ github.repository }}:latest
 
-      - name: Notify pocket-cfo-data
-        env:
-          GH_TOKEN: ${{ secrets.POCKET_CFO_DATA_DISPATCH_TOKEN }}
-        run: |
-          gh api repos/titaniumcoder/pocket-cfo-data/dispatches \
-            -f event_type=pocket-cfo-released \
-            -f "client_payload[tag]=${{ github.ref_name }}"
-
   publish-binaries:
     name: Build and attach release binaries
     runs-on: ubuntu-latest
@@ -98,3 +90,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ github.ref_name }}" dist/*.tar.gz dist/*.zip --clobber --repo "${{ github.repository }}"
+
+  # Fires only once BOTH publish jobs have finished, so everything the
+  # dispatch promises actually exists by the time it arrives. This used to
+  # be a step inside publish-image, which raced publish-binaries: on v0.5.1
+  # the notification won, and pocket-cfo-data's bump-image.yml failed with
+  # "no assets to download" trying to fetch the pocket-cfo-ctl archive it
+  # validates data/ with. Keep the needs: — the consumer depends on the
+  # release binaries, not just the image.
+  notify-data-repo:
+    name: Notify pocket-cfo-data
+    runs-on: ubuntu-latest
+    needs: [publish-image, publish-binaries]
+    steps:
+      - name: Notify pocket-cfo-data
+        env:
+          GH_TOKEN: ${{ secrets.POCKET_CFO_DATA_DISPATCH_TOKEN }}
+        run: |
+          gh api repos/titaniumcoder/pocket-cfo-data/dispatches \
+            -f event_type=pocket-cfo-released \
+            -f "client_payload[tag]=${{ github.ref_name }}"

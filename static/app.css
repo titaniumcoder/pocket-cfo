@@ -71,69 +71,39 @@ main.login { max-width: 760px; }
   table.data td.address, table.data th.address { display: none; }
 }
 
-@media (max-width: 600px) {
-  .income-panel .ledger {
-    grid-template-columns: 1fr auto;
-    column-gap: 1rem;
-  }
-  .income-panel .mid {
-    display: none;
-  }
-  .income-panel .amt {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-  }
-  .income-panel .hrs-m {
-    display: block;
-    font-size: .8em;
-    font-weight: 400;
-    opacity: .6;
-  }
-  .group-rows .row .label {
-    padding-left: 1.5rem;
-  }
-  .mid:empty,
-  .amt:empty {
-    display: none;
-  }
-  .side-col.holidays .debts-section {
-    margin-top: 2rem;
-  }
-  .panel {
-    margin-bottom: 1.5rem;
-  }
-  main { padding: 1.25rem .85rem; }
-  header { flex-wrap: wrap; row-gap: .5rem; }
-  .periodnav { grid-template-columns: 1fr; justify-items: center; row-gap: .6rem; }
-  .periodnav-left, .periodnav-right { justify-self: center; }
-}
 .main-col { min-width: 0; }
 .side-col.holidays { position: sticky; top: 2rem; }
 /* The bottom margin lives on header itself, not on its h1 — the h1 is a
    flex child here, so its own margin can't separate the header from the
    content below it. */
-header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem 1.5rem; flex-wrap: wrap; margin-bottom: 1.75rem; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 1rem 1.5rem; flex-wrap: wrap; margin-bottom: 1.75rem; }
 .topnav { display: flex; gap: .25rem; flex-wrap: wrap; }
 .topnav a { text-decoration: none; color: inherit; opacity: .55; font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; padding: .3rem .8rem; border-radius: 999px; white-space: nowrap; }
 .topnav a:hover { opacity: .9; }
 .topnav a.active { opacity: 1; background: var(--blue); color: #fff; }
-.topnav form { display: contents; }
-.topnav-logout {
-  background: none; border: 0; cursor: pointer; font: inherit; color: inherit; opacity: .55;
-  font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; padding: .3rem .8rem;
-  border-radius: 999px; white-space: nowrap;
-}
-.topnav-logout:hover { opacity: .9; background: var(--hover-bg); }
 h1 { font-size: 1.6rem; margin: 0 0 1.5rem; }
 h1 small { font-weight: 400; opacity: .6; font-size: 1rem; }
 header h1 { margin: 0; font-size: 1.5rem; }
+/* Lives inside .main-col, so its thirds measure against the content box —
+   the holidays sidebar must not pull the centre off-centre. */
 .periodnav { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: .75rem; margin: 0 0 1.5rem; }
 .periodnav-left { justify-self: start; }
-.periodnav-center { display: flex; align-items: center; justify-content: center; gap: .75rem; flex-wrap: wrap; }
-.periodnav-right { justify-self: end; display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; justify-content: flex-end; }
+.periodnav-center { display: flex; align-items: center; justify-content: center; gap: .5rem; }
+.periodnav-right { justify-self: end; display: flex; flex-direction: column; align-items: flex-end; gap: .15rem; }
+
+/* Month | Year as one control rather than two loose pills. */
+.segmented { display: inline-flex; border: 1px solid var(--input-border); border-radius: 999px; overflow: hidden; }
+.segmented a {
+  text-decoration: none; color: inherit; opacity: .6; font-size: .8rem; text-transform: uppercase;
+  letter-spacing: .06em; padding: .35rem .9rem; white-space: nowrap;
+}
+.segmented a:hover { opacity: .9; background: var(--hover-bg); }
+.segmented a.active { opacity: 1; background: var(--blue); color: #fff; }
 .monthnav { display: flex; align-items: center; justify-content: center; gap: .75rem; margin: 0 0 1.5rem; flex-wrap: wrap; }
-.periodnav .arrow, .monthnav .arrow { text-decoration: none; font-size: 1.4rem; line-height: 1; opacity: .6; padding: .2rem .5rem; border-radius: 6px; color: inherit; }
+.periodnav .arrow, .monthnav .arrow {
+  display: inline-flex; align-items: center; justify-content: center;
+  text-decoration: none; line-height: 1; opacity: .6; padding: .25rem; border-radius: 6px; color: inherit;
+}
 .periodnav a.arrow:hover, .monthnav a.arrow:hover { opacity: 1; background: var(--hover-bg); }
 .periodnav .arrow.disabled, .monthnav .arrow.disabled { opacity: .22; cursor: default; }
 .periodnav select, .monthnav select { padding: .4rem .5rem; border-radius: 8px; border: 1px solid var(--input-border); background: transparent; color: inherit; font-size: 1rem; font-variant-numeric: tabular-nums; }
@@ -213,8 +183,23 @@ main h2.panel-title { font-size: 1.05rem; text-transform: none; letter-spacing: 
 .holidays li.hday-current .hday-date { opacity: .8; }
 .muted { opacity: .6; }
 .not-configured { opacity: .6; font-style: italic; font-size: .9rem; }
-.hdr-right { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
-.login-email { color: var(--muted); font-size: .8rem; }
+.hdr-right { display: flex; align-items: center; gap: .5rem; flex: 0 0 auto; }
+/* Avatar: initials sit underneath, the picture covers them when it loads,
+   so a missing or failed image degrades to something readable instead of a
+   broken-image icon. */
+.avatar {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; border-radius: 50%; overflow: hidden; flex: 0 0 auto;
+  background: var(--hover-bg); color: var(--fg);
+}
+.avatar-initials { font-size: .72rem; font-weight: 700; letter-spacing: .02em; opacity: .75; }
+.avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.icon-button {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; padding: 0; border: 0; border-radius: 50%;
+  background: none; color: inherit; opacity: .55; cursor: pointer;
+}
+.icon-button:hover { opacity: 1; background: var(--hover-bg); }
 .updated { font-size: .8rem; opacity: .55; font-variant-numeric: tabular-nums; }
 a.link { color: inherit; opacity: .6; text-decoration: underline; font-size: .9rem; }
 a.link:hover { opacity: 1; }
@@ -254,7 +239,8 @@ table.data td { padding: .6rem .4rem; border-bottom: 1px solid var(--panel-borde
 table.data tbody tr:last-child td { border-bottom: 0; }
 table.data th.num, table.data td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 table.data th.code, table.data td.code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: .85rem; }
-table.data td.outstanding-nonzero { color: var(--danger); font-weight: 700; }
+table.data td.outstanding-nonzero, .outstanding-nonzero { color: var(--danger); font-weight: 700; }
+.money-stack { display: none; }
 table.data tr.row-draft { opacity: .65; font-style: italic; }
 table.data tr.row-draft a { color: var(--muted); }
 
@@ -328,8 +314,75 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
    This block sits at the end deliberately — .badge and .pdf-status set
    their own display later in the file, and at equal specificity the last
    rule wins, so declaring the hide earlier silently did nothing. */
+@media (max-width: 900px) {
+  table.data td.address, table.data th.address { display: none; }
+}
+
 @media (max-width: 600px) {
+  .income-panel .ledger {
+    grid-template-columns: 1fr auto;
+    column-gap: 1rem;
+  }
+  .income-panel .mid {
+    display: none;
+  }
+  .income-panel .amt {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+  .income-panel .hrs-m {
+    display: block;
+    font-size: .8em;
+    font-weight: 400;
+    opacity: .6;
+  }
+  .group-rows .row .label {
+    padding-left: 1.5rem;
+  }
+  .mid:empty,
+  .amt:empty {
+    display: none;
+  }
+  .side-col.holidays .debts-section {
+    margin-top: 2rem;
+  }
+  .panel {
+    margin-bottom: 1.5rem;
+  }
+  main { padding: 1.25rem .85rem; }
+  header { flex-wrap: wrap; row-gap: .5rem; }
+  .periodnav { grid-template-columns: 1fr; justify-items: center; row-gap: .75rem; }
+  .periodnav-left, .periodnav-right { justify-self: center; }
+  .periodnav-right { flex-direction: row; align-items: center; gap: 1.25rem; }
   .col-secondary { display: none; }
+  /* Two figures, one column, two lines — the phone has no room for both
+     side by side, and dropping one of them loses real information. */
+  .col-wide { display: none; }
+  table.data th.money-stack, table.data td.money-stack { display: table-cell; }
+  /* The address is gone and the figures have moved into one column; the
+     email is the only thing left that can still push the row off-screen,
+     so it gets a hard ceiling and everything tightens up to fit 390px
+     without a sideways scroll. */
+  table.data { font-size: .82rem; }
+  table.data th, table.data td { padding: .5rem .25rem; }
+  /* Proportional widths rather than tuned pixel ceilings: whatever the
+     handset, the four remaining columns divide the width they have and the
+     email absorbs the slack by ellipsizing. */
+  table.recipients { table-layout: fixed; }
+  table.recipients th:nth-child(1), table.recipients td:nth-child(1) { width: 28%; }
+  table.recipients th.email, table.recipients td.email { width: 29%; }
+  /* Wide enough for a five-figure amount plus the currency symbol — the
+     figures are the reason this column exists, so they get the room. */
+  table.recipients th.money-stack, table.recipients td.money-stack { width: 32%; }
+  table.recipients th:last-child, table.recipients td:last-child { width: 11%; }
+  table.recipients th, table.recipients td { overflow: hidden; }
+  /* The portal button has to fit the sliver of column left over. */
+  table.recipients .icon-button { width: 1.6rem; height: 1.6rem; }
+  table.data td.email a {
+    display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  table.data th.money-stack, table.data td.money-stack { white-space: nowrap; }
   /* With only number and amount left there is nothing to ration, and the
      fixed widths above were sized for the full set of columns. */
   table.invoices { table-layout: auto; min-width: 0; }

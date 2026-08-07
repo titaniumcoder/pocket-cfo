@@ -22,15 +22,16 @@
   <section class="panel">
     <h2 class="section-title">Recipients</h2>
     <div class="table-wrap">
-    <table class="data">
+    <table class="data recipients">
       <thead>
         <tr>
           <th>Name</th>
           <th class="address">Address</th>
-          <th>Email</th>
-          <th class="num">Total (frame)</th>
-          <th class="num">Outstanding</th>
-          <th>Portal</th>
+          <th class="email">Email</th>
+          <th class="num col-wide">Total (frame)</th>
+          <th class="num col-wide">Outstanding</th>
+          <th class="num money-stack">Total</th>
+          <th><span class="col-secondary">Portal</span></th>
         </tr>
       </thead>
       <tbody>
@@ -38,10 +39,14 @@
         <tr>
           <td>{{.LegalName}}</td>
           <td class="address">{{.AddressLine}}</td>
-          <td><a href="mailto:{{.Email}}">{{.Email}}</a></td>
-          <td class="num">{{money .TotalInFrame}}</td>
-          <td class="num{{if ne .Outstanding 0}} outstanding-nonzero{{end}}">{{money .Outstanding}}</td>
-          <td>{{with index $.PortalLinks .Number}}<a href="{{.}}">copy portal link</a>{{end}}</td>
+          <td class="email"><a href="mailto:{{.Email}}" title="{{.Email}}">{{.Email}}</a></td>
+          <td class="num col-wide">{{money .TotalInFrame}}</td>
+          <td class="num col-wide{{if ne .Outstanding 0}} outstanding-nonzero{{end}}">{{money .Outstanding}}</td>
+          <td class="num money-stack">
+            <div>{{money .TotalInFrame}}</div>
+            <div{{if ne .Outstanding 0}} class="outstanding-nonzero"{{end}}>{{money .Outstanding}}</div>
+          </td>
+          <td>{{with index $.PortalLinks .Number}}<a class="icon-button" href="{{.}}" title="Copy portal link" aria-label="Copy portal link"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></a>{{end}}</td>
         </tr>
         {{end}}
       </tbody>

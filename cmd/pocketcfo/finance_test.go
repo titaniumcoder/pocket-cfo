@@ -294,25 +294,25 @@ func TestFinanceCurrentMonth_SinglePartSessionHasNoNav(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
 	}
-	if links := navLinks(t, w.Body.String()); links != 0 {
-		t.Errorf("finance-only session has nowhere else to go — want no page links in the nav, got %d", links)
+	if links := navLinks(w.Body.String()); links != 0 {
+		t.Errorf("finance-only session has nowhere else to go — want no page menu, got %d links", links)
 	}
-	if !strings.Contains(w.Body.String(), "Logout") {
-		t.Error("Logout must still be present even without a page menu")
+	if !strings.Contains(w.Body.String(), `action="/auth/logout"`) {
+		t.Error("logging out must stay possible even without a page menu")
 	}
 }
 
-// navLinks counts the page links inside the header nav — Logout is a form
-// button, not a link, so it isn't counted.
-func navLinks(t *testing.T, body string) int {
-	t.Helper()
+// navLinks counts the page links in the header menu. The menu is omitted
+// entirely when there is nowhere to navigate, so a missing nav counts as
+// zero rather than failing — logging out lives in the header proper, not
+// in the menu.
+func navLinks(body string) int {
 	start := strings.Index(body, `<nav class="topnav">`)
 	if start < 0 {
-		t.Fatal("no topnav in the rendered page")
+		return 0
 	}
 	nav := body[start:]
-	nav = nav[:strings.Index(nav, "</nav>")]
-	return strings.Count(nav, "<a")
+	return strings.Count(nav[:strings.Index(nav, "</nav>")], "<a")
 }
 
 // TestFinanceCurrentMonth_BothPartsSessionShowsInvoicingNavButNotInfo
@@ -490,11 +490,11 @@ func TestHandleIndex_InvoicingOnlySessionHasNoNav(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
 	}
-	if links := navLinks(t, w.Body.String()); links != 0 {
-		t.Errorf("invoicing-only session has nowhere else to go — want no page links in the nav, got %d", links)
+	if links := navLinks(w.Body.String()); links != 0 {
+		t.Errorf("invoicing-only session has nowhere else to go — want no page menu, got %d links", links)
 	}
-	if !strings.Contains(w.Body.String(), "Logout") {
-		t.Error("Logout must still be present even without a page menu")
+	if !strings.Contains(w.Body.String(), `action="/auth/logout"`) {
+		t.Error("logging out must stay possible even without a page menu")
 	}
 }
 

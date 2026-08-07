@@ -33,7 +33,8 @@ conventions established during scaffolding that aren't obvious from the code its
 
 Commit messages on `main` must follow [Conventional Commits](https://www.conventionalcommits.org/)
 — `feat: ...` / `fix: ...` / `feat!: ...` (or a `BREAKING CHANGE:` footer) / etc. — because
-the **`release-it`** skill (`.claude/skills/release-it/SKILL.md`) reads them to propose the
+the **`release-it`** skill (`.agents/skills/release-it/SKILL.md`, symlinked from
+`.claude/skills/` for Claude Code's discovery) reads them to propose the
 next version. Releases are cut locally, on request, not automated by GitHub Actions:
 `release-it` analyzes commits since the last tag, categorizes them (feature/fix/breaking),
 proposes a version (semver-derived, or `v0.1.0` for the first release), and — only after
@@ -55,7 +56,7 @@ release time.
 - **Plan in small, complete subtasks.** Break any non-trivial task into a sequence of
   small subtasks, each one a complete, independently-verifiable unit of work — not a
   batch of unrelated changes.
-- **Per-subtask ritual.** Run the `ship-it` skill (`.claude/skills/ship-it/SKILL.md`) to
+- **Per-subtask ritual.** Run the `ship-it` skill (`.agents/skills/ship-it/SKILL.md`) to
   close out a subtask — it runs the full checklist (fmt/generate/vet/build/test/
   manual-test/docker-build) and creates exactly one commit for it. Do not push yet.
 - **End of plan.** Once every subtask in the plan is done, push, then watch the GitHub

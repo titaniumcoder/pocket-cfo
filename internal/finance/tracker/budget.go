@@ -39,7 +39,7 @@ type Budget struct {
 	FS fs.FS
 
 	mu        sync.Mutex
-	val       *budgetResult
+	cache     *budgetResult
 	minimalOn bool // minimal-budget mode — see ToggleMinimal/IsMinimal
 }
 
@@ -63,8 +63,8 @@ func (b *Budget) IsMinimal() bool {
 }
 
 type budgetResult struct {
-	val budgetdata.BudgetFile
-	err error
+	file budgetdata.BudgetFile
+	err  error
 }
 
 func (b *Budget) fsys() fs.FS {
@@ -75,16 +75,16 @@ func (b *Budget) fsys() fs.FS {
 // use.
 func (b *Budget) File(ctx context.Context) (budgetdata.BudgetFile, error) {
 	b.mu.Lock()
-	if b.val != nil {
-		v := b.val
+	if b.cache != nil {
+		cached := b.cache
 		b.mu.Unlock()
-		return v.val, v.err
+		return cached.file, cached.err
 	}
 	b.mu.Unlock()
 
 	log.Printf("budget: %s — fetching…", budgetPath)
 	t0 := time.Now()
-	val, err := b.fetch()
+	bf, err := b.fetch()
 	elapsed := time.Since(t0).Round(time.Millisecond)
 	if err != nil {
 		log.Printf("budget: %s — failed after %s: %v", budgetPath, elapsed, err)
@@ -93,9 +93,9 @@ func (b *Budget) File(ctx context.Context) (budgetdata.BudgetFile, error) {
 	}
 
 	b.mu.Lock()
-	b.val = &budgetResult{val: val, err: err}
+	b.cache = &budgetResult{file: bf, err: err}
 	b.mu.Unlock()
-	return val, err
+	return bf, err
 }
 
 func (b *Budget) fetch() (budgetdata.BudgetFile, error) {
@@ -121,7 +121,7 @@ func (b *Budget) fetch() (budgetdata.BudgetFile, error) {
 func (b *Budget) Evict() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.val = nil
+	b.cache = nil
 }
 
 // CategoryRow is one category's figure for a period, in cents.
@@ -395,33 +395,28 @@ func nextNonZeroMonth(c budgetdata.Category, ref time.Time, minimal bool) (time.
 }
 
 // categoryRowFor decides whether/how a category renders as a CategoryRow,
-// given its already-computed spentCents for the period. A recurring
-// category, and any dated category whose due month falls inside the viewed
-// period (spentCents > 0), always renders normally. A dated category whose
-// month isn't in the viewed period instead depends on comparing its date to
-// ref at month granularity: not shown at all once its month is before ref —
-// dwelling on it is just clutter — shown with PlannedCents/PlannedMonth set
-// (the template grays it out and shows its configured amount and month —
-// "3,000 (September 2026)" — instead of a spent figure) while its month is
-// after ref. ref means different things depending on the caller: ForMonth
-// passes the viewed month itself (so browsing month-by-month shows a
-// one-time cost as upcoming right up to its due month and gone the month
-// after, regardless of today's real date); ForYear passes real current time
-// (its own "remaining months" logic already depends on real now, so the
-// per-row decision stays consistent with that rather than the viewed year).
-// minimal substitutes in minimal_amount for the PlannedCents preview too —
-// since the minimal-budget flag is global (not tied to a specific month),
-// there's no ambiguity about which month's toggle state a future preview
-// should reflect. overridden marks whether spentCents came from an override
-// of the viewed month (see categoryAmount) — set on the row in the normal
-// branch only; the future-preview branch looks up its own due-month override
-// directly, since it isn't the viewed month. A recurring category (c.Date ==
-// nil) can only ever be zero via a 0-amount override for the viewed month
-// (its normal amount is always > 0, see ValidateBudget) — when that happens,
-// this renders the same grayed-out PlannedCents/PlannedMonth preview as the
-// dated-future branch below, pointed at nextNonZeroMonth, instead of a bare
-// 0 with no indication of when the cost resumes.
+// given its already-computed spentCents for the period. minimal substitutes
+// in minimal_amount for any PlannedCents preview below — since the
+// minimal-budget flag is global (not tied to a specific month), there's no
+// ambiguity about which month's toggle state a future preview should
+// reflect.
 func categoryRowFor(c budgetdata.Category, spentCents int, overridden bool, ref time.Time, minimal bool) (CategoryRow, bool) {
+	row := baseCategoryRow(c)
+
+	if spentCents == 0 && c.Date == nil && overridden {
+		if preview, ok := zeroedRecurringPreview(c, row, ref, minimal); ok {
+			return preview, true
+		}
+	}
+	if spentCents > 0 || c.Date == nil {
+		return normalRow(row, spentCents, overridden), true
+	}
+	return datedCategoryRow(c, row, spentCents, overridden, ref, minimal)
+}
+
+// baseCategoryRow fills in the fields every CategoryRow carries regardless
+// of which branch below decides its Spent/Planned figures.
+func baseCategoryRow(c budgetdata.Category) CategoryRow {
 	row := CategoryRow{Name: c.Name}
 	if c.Note != nil {
 		row.Note = *c.Note
@@ -429,20 +424,54 @@ func categoryRowFor(c budgetdata.Category, spentCents int, overridden bool, ref 
 	if c.Url != nil {
 		row.URL = *c.Url
 	}
-	if spentCents == 0 && c.Date == nil && overridden {
-		if next, ok := nextNonZeroMonth(c, ref, minimal); ok {
-			nextKey := monthKey(next.Year(), next.Month())
-			row.PlannedCents = eurToCents(categoryAmount(c, nextKey, minimal))
-			_, row.Overridden = overrideFor(c, nextKey)
-			row.PlannedMonth = next.Format("January 2006")
-			return row, true
-		}
+	return row
+}
+
+// zeroedRecurringPreview handles a recurring category (c.Date == nil) whose
+// spend for the viewed month is entirely zeroed out by an override (e.g.
+// "trip skipped this month") — a recurring category's normal amount is
+// always > 0 (ValidateBudget enforces this), so a zero here can only come
+// from an override. Rather than a bare 0 with no explanation, this previews
+// when the cost resumes (see nextNonZeroMonth), the same grayed-out
+// PlannedCents/PlannedMonth preview as datedCategoryRow's future branch.
+// Returns ok=false when no future month is non-zero within the lookahead
+// window, so the caller falls through to the normal render instead.
+func zeroedRecurringPreview(c budgetdata.Category, row CategoryRow, ref time.Time, minimal bool) (CategoryRow, bool) {
+	next, ok := nextNonZeroMonth(c, ref, minimal)
+	if !ok {
+		return CategoryRow{}, false
 	}
-	if spentCents > 0 || c.Date == nil {
-		row.SpentCents = spentCents
-		row.Overridden = overridden
-		return row, true
-	}
+	nextKey := monthKey(next.Year(), next.Month())
+	row.PlannedCents = eurToCents(categoryAmount(c, nextKey, minimal))
+	_, row.Overridden = overrideFor(c, nextKey)
+	row.PlannedMonth = next.Format("January 2006")
+	return row, true
+}
+
+// normalRow renders a recurring category, or any dated category whose due
+// month falls inside the viewed period (spentCents > 0) — the common case.
+// overridden marks whether spentCents came from an override of the viewed
+// month (see categoryAmount).
+func normalRow(row CategoryRow, spentCents int, overridden bool) CategoryRow {
+	row.SpentCents = spentCents
+	row.Overridden = overridden
+	return row
+}
+
+// datedCategoryRow handles a dated category whose month isn't in the viewed
+// period: not shown at all once its month is before ref — dwelling on it is
+// just clutter — previewed with PlannedCents/PlannedMonth set (the template
+// grays it out and shows its configured amount and month, e.g. "3,000
+// (September 2026)") while its month is after ref. ref means different
+// things depending on the caller: ForMonth passes the viewed month itself
+// (so browsing month-by-month shows a one-time cost as upcoming right up to
+// its due month and gone the month after, regardless of today's real date);
+// ForYear passes real current time (its own "remaining months" logic
+// already depends on real now, so the per-row decision stays consistent
+// with that rather than the viewed year). The future-preview branch looks
+// up its own due-month override directly (via overrideFor), since it isn't
+// the viewed month.
+func datedCategoryRow(c budgetdata.Category, row CategoryRow, spentCents int, overridden bool, ref time.Time, minimal bool) (CategoryRow, bool) {
 	d, err := time.Parse("2006-01-02", *c.Date)
 	if err != nil {
 		// Shouldn't happen — ValidateBudget already enforces the format —

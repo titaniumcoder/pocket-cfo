@@ -51,17 +51,17 @@ func (s *server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	token, err := auth.ExchangeCode(ctx, s.httpClient, s.cfg.clientID, s.cfg.clientSecret, code)
 	if err != nil {
-		http.Error(w, "GitHub login failed: "+err.Error(), http.StatusBadGateway)
+		http.Error(w, fmt.Sprintf("github login failed: %s", err), http.StatusBadGateway)
 		return
 	}
 	login, err := auth.CurrentUser(ctx, s.httpClient, token)
 	if err != nil {
-		http.Error(w, "GitHub login failed: "+err.Error(), http.StatusBadGateway)
+		http.Error(w, fmt.Sprintf("github login failed: %s", err), http.StatusBadGateway)
 		return
 	}
 	permission, err := auth.CollaboratorPermission(ctx, s.httpClient, token, s.cfg.repo, login)
 	if err != nil {
-		http.Error(w, "GitHub permission check failed: "+err.Error(), http.StatusBadGateway)
+		http.Error(w, fmt.Sprintf("github permission check failed: %s", err), http.StatusBadGateway)
 		return
 	}
 

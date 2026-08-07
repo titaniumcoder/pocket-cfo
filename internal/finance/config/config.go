@@ -19,7 +19,10 @@ import (
 
 // FileConfig is config.json's shape. Every field is optional; a nil pointer
 // (or a missing config.json entirely) falls back to the default baked into
-// Load.
+// Load. JSON tags are deliberately camelCase, unlike the rest of the app's
+// own wire formats (session/OTP/the net-income API, all snake_case) —
+// config.json is a hand-edited file in the private companion data repo, so
+// its existing key casing stays as-is rather than being forced to match.
 type FileConfig struct {
 	HoursPerDay        *float64 `json:"hoursPerDay"`
 	TogglProjectIDs    []int    `json:"togglProjectIds"`

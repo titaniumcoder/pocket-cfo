@@ -252,9 +252,22 @@ func (s *server) financeAPINetIncomeMonth(w http.ResponseWriter, r *http.Request
 	writeNetIncome(w, trk.ComputeMonth(ctx, year, time.Month(month)))
 }
 
+// writeJSONError writes a JSON error body ({"error": msg}) with the given
+// status, so writeNetIncome's error responses stay JSON like its success
+// response — this is the app's one JSON API endpoint, and a plain-text
+// http.Error body would break that contract for callers parsing errors as
+// JSON.
+func writeJSONError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(struct {
+		Error string `json:"error"`
+	}{Error: msg})
+}
+
 func writeNetIncome(w http.ResponseWriter, f tracker.Figures) {
 	if f.Personal.Err != "" {
-		http.Error(w, f.Personal.Err, http.StatusBadGateway)
+		writeJSONError(w, http.StatusBadGateway, f.Personal.Err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -290,7 +303,7 @@ func writeNetIncome(w http.ResponseWriter, f tracker.Figures) {
 		PersonalIncomeTaxCents:      f.Personal.IncomeTaxCents,
 	}
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
 	}
 }
 

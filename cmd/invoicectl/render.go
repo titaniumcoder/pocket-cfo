@@ -190,28 +190,10 @@ func renderOne(ctx context.Context, renderer render.Renderer, signer *sign.PDFSi
 			if _, err := os.Stat(t.path); err == nil {
 				fmt.Printf("skip  %s (already rendered, use --force to overwrite)\n", t.path)
 
-				// Backfill: this PDF predates the integrity-manifest feature
-				// (or the manifest was lost) — record what its hash *would*
-				// be from the current JSON, without touching the existing
-				// PDF, so the dashboard's staleness check has a baseline to
-				// compare future edits against. Treats current JSON as
-				// authoritative at backfill time — true today, since a
-				// write-once PDF's JSON hasn't changed since it was made.
 				if !dryRun {
-					if _, ok := manifest[filename]; !ok {
-						if !haveTotals {
-							totals, err = money.Compute(&inv)
-							if err != nil {
-								return fmt.Errorf("compute totals: %w", err)
-							}
-							haveTotals = true
-						}
-						html, err := render.HTML(&inv, totals, t.showPaid)
-						if err != nil {
-							return fmt.Errorf("backfill manifest for %s: %w", filename, err)
-						}
-						manifest[filename] = render.HashHTML(html)
-						fmt.Printf("backfilled manifest entry for %s\n", filename)
+					totals, haveTotals, err = backfillManifestEntry(&inv, t, filename, manifest, totals, haveTotals)
+					if err != nil {
+						return err
 					}
 				}
 				continue
@@ -255,6 +237,35 @@ func renderOne(ctx context.Context, renderer render.Renderer, signer *sign.PDFSi
 		fmt.Printf("wrote %s\n", t.path)
 	}
 	return nil
+}
+
+// backfillManifestEntry records manifest[filename]'s hash from the current
+// JSON without touching the existing PDF, when a PDF predates the
+// integrity-manifest feature (or the manifest was lost) — so the
+// dashboard's staleness check has a baseline to compare future edits
+// against. Treats current JSON as authoritative at backfill time — true
+// today, since a write-once PDF's JSON hasn't changed since it was made.
+// Returns the possibly-just-computed totals/haveTotals so the caller's
+// lazy-compute-once bookkeeping carries forward to the rest of the loop.
+func backfillManifestEntry(inv *invoice.InvoiceJson, t target, filename string, manifest render.Manifest, totals money.Totals, haveTotals bool) (money.Totals, bool, error) {
+	if _, ok := manifest[filename]; ok {
+		return totals, haveTotals, nil
+	}
+	if !haveTotals {
+		var err error
+		totals, err = money.Compute(inv)
+		if err != nil {
+			return totals, haveTotals, fmt.Errorf("compute totals: %w", err)
+		}
+		haveTotals = true
+	}
+	html, err := render.HTML(inv, totals, t.showPaid)
+	if err != nil {
+		return totals, haveTotals, fmt.Errorf("backfill manifest for %s: %w", filename, err)
+	}
+	manifest[filename] = render.HashHTML(html)
+	fmt.Printf("backfilled manifest entry for %s\n", filename)
+	return totals, haveTotals, nil
 }
 
 // removeStaleDraftPDF deletes build/{number}-DRAFT.pdf once an invoice is no

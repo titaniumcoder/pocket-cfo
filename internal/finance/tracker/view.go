@@ -234,9 +234,15 @@ type Figures struct {
 	// (see staleAfterDays): the roll-forward keeps producing confident
 	// figures off a snapshot that quietly drifts further from reality, and
 	// nothing else would ever say so.
+	//
+	// AvailableCents is what there is to spend this month before any
+	// private expense comes off: the opening balance plus the net income
+	// arriving. It only renders alongside an opening balance — without one
+	// it would just restate Net income.
 	ShowOpeningBalance  bool
 	OpeningBalanceCents int
 	OpeningBalanceLabel string
+	AvailableCents      int
 	PrivateAccounts     []AccountRow
 	AccountsStaleNote   string
 
@@ -692,6 +698,7 @@ func (f *Figures) computeAccountBalances(t *Tracker, ctx context.Context, viewed
 	}
 	f.ShowOpeningBalance = true
 	f.OpeningBalanceCents = opening
+	f.AvailableCents = opening + f.FundingPersonal.NetIncomeCents
 	f.OpeningBalanceLabel = openingBalanceLabel(snap, viewed)
 	// The per-account breakdown is only shown in the month the snapshot
 	// opens, where the opening figure IS those balances. Once carried, the

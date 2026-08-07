@@ -2,6 +2,8 @@ package tracker
 
 import (
 	"context"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -198,6 +200,42 @@ func TestPrivateBalanceRollsForwardAndCompounds(t *testing.T) {
 				t.Errorf("Balance = %d, want %d (opening + net income - private expenses)", f.BalanceCents, tt.wantBalance)
 			}
 		})
+	}
+}
+
+// TestAvailableIsOpeningPlusNetIncome pins the middle line of the budget
+// ledger and its relationship to the two around it: Available is what there
+// is before private expenses come off, and Balance is what's left after.
+func TestAvailableIsOpeningPlusNetIncome(t *testing.T) {
+	trk := accountsTracker(t, `{"accounts":[
+		{"name":"Private","balance":2000,"as_of":"2026-07-31"}
+	]}`)
+	f := trk.ComputeMonth(context.Background(), 2026, time.August)
+
+	if !f.ShowOpeningBalance {
+		t.Fatal("expected an opening balance for the month the snapshot opens")
+	}
+	if want := f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents; f.AvailableCents != want {
+		t.Errorf("AvailableCents = %d, want %d (opening + net income)", f.AvailableCents, want)
+	}
+	if want := f.AvailableCents - f.PrivateTotalSpentCents; f.BalanceCents != want {
+		t.Errorf("BalanceCents = %d, want %d (available - private expenses)", f.BalanceCents, want)
+	}
+}
+
+// TestAvailableHiddenWithoutAnOpeningBalance keeps the row from restating
+// Net income when there's no balance layer to add to it.
+func TestAvailableHiddenWithoutAnOpeningBalance(t *testing.T) {
+	trk := accountsTracker(t, `{"accounts":[]}`)
+	f := trk.ComputeMonth(context.Background(), 2026, time.August)
+	if f.ShowOpeningBalance {
+		t.Fatal("no accounts configured — expected no opening balance")
+	}
+
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	if strings.Contains(rec.Body.String(), "Available to spend") {
+		t.Error("Available row should not render without an opening balance to add")
 	}
 }
 

@@ -39,11 +39,15 @@ next version. Releases are cut locally, on request, not automated by GitHub Acti
 `release-it` analyzes commits since the last tag, categorizes them (feature/fix/breaking),
 proposes a version (semver-derived, or `v0.1.0` for the first release), and — only after
 the user explicitly confirms the proposal — runs the full verify checklist, tags, and
-pushes. Pushing the tag is what triggers `.github/workflows/release.yml`'s image-publish
-job; nothing else does, and day-to-day commits to `main` never publish an image by
+pushes. Pushing the tag is what triggers `.github/workflows/release.yml`'s two publish
+jobs; nothing else does, and day-to-day commits to `main` never publish anything by
 themselves. One Docker image (`ghcr.io/titaniumcoder/pocket-cfo`), containing **both**
 executables (`pocketcfo`, the web server; `invoicectl`, the CLI), ships both the finance
-tracker and invoicing, tagged with the release version and `latest`.
+tracker and invoicing, tagged with the release version and `latest`. The same two
+executables are also cross-compiled (no CGO dependencies anywhere in the module, so
+one Linux runner builds every target) and attached directly to the GitHub Release as
+downloadable archives — `pocketcfo_<version>_<os>_<arch>.{tar.gz,zip}` for
+linux/{amd64,arm64}, darwin/{amd64,arm64}, and windows/amd64.
 
 A subtask's own commit message (see the ritual below) doesn't need to be a release-worthy
 `feat`/`fix` itself — only commits that land on `main` do, and even those, `release-it`

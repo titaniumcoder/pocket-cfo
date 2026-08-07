@@ -108,6 +108,11 @@ For a real deployment, mount a real data checkout over `/app/data` (or point the
 `*_DIR`/`*_FILE` env vars at it individually) rather than rebuilding the image — see the
 Dockerfile and [`AGENTS.md`](AGENTS.md#releases) for how released images get published.
 
+Prebuilt `pocketcfo`/`invoicectl` binaries for Linux, macOS (Intel and Apple Silicon), and
+Windows are attached directly to each [GitHub
+Release](https://github.com/titaniumcoder/pocket-cfo/releases) — no Docker or Go toolchain
+required, just download and run.
+
 ## License
 
 [MIT](LICENSE).

@@ -250,6 +250,12 @@ table.data tr.row-draft a { color: var(--muted); }
 
 a.paid-link { color: var(--good-strong); font-size: .8rem; margin-left: .4rem; }
 
+/* Info page's Configuration panel. */
+h3.config-group { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 1.25rem 0 .35rem; font-weight: 700; }
+h3.config-group:first-of-type { margin-top: .25rem; }
+table.data td.config-name { white-space: nowrap; width: 1%; padding-right: 1.5rem; }
+table.data td.config-secret { opacity: .75; }
+
 /* Info page's collapsible per-workspace/per-country cards. */
 details.card { margin-bottom: .5rem; }
 details.card summary { cursor: pointer; font-weight: 700; padding: .3rem 0; }

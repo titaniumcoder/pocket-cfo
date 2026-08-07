@@ -64,14 +64,22 @@ func TestHandleInfo_ForbiddenForReadOnlySession(t *testing.T) {
 	}
 }
 
-func TestHandleInfo_ForbiddenForUnauthenticated(t *testing.T) {
+// TestHandleInfo_UnauthenticatedRedirectsToLogin pins the distinction
+// between "we don't know who you are" and "we do, and it isn't enough":
+// a logged-out visitor gets sent to log in, not a dead-end 403 on a page
+// they may well be entitled to. The 403 case is
+// TestHandleInfo_ForbiddenForReadOnlySession above.
+func TestHandleInfo_UnauthenticatedRedirectsToLogin(t *testing.T) {
 	s := newInfoTestServer(t)
 	r := httptest.NewRequest(http.MethodGet, "/info", nil) // no cookie
 	w := httptest.NewRecorder()
 
 	s.handleInfo(w, r)
-	if w.Code != http.StatusForbidden {
-		t.Errorf("status = %d, want 403", w.Code)
+	if w.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302 (redirect to login)", w.Code)
+	}
+	if got := w.Header().Get("Location"); got != "/auth/login" {
+		t.Errorf("Location = %q, want /auth/login", got)
 	}
 }
 

@@ -25,6 +25,8 @@ type infoCountryView struct {
 type infoView struct {
 	Header webui.Header
 
+	ConfigGroups []configGroup
+
 	TogglConfigured bool
 	TogglErr        string
 	Workspaces      []infoWorkspaceView
@@ -45,7 +47,16 @@ type infoView struct {
 // email-OTP readOnly tier) since this can expose account/billing data.
 func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	sess, ok := s.currentSession(r)
-	if !ok || !s.authorized(sess) {
+	// Not logged in at all is a different answer from logged in without
+	// the rights: send anonymous visitors to log in first (same as
+	// handleInvoicePDF), and only refuse outright once we know who they
+	// are and that it isn't enough. Otherwise a logged-out admin just
+	// gets a dead-end 403 on a page they're perfectly entitled to.
+	if !ok || !s.authenticated(sess) {
+		http.Redirect(w, r, "/auth/login", http.StatusFound)
+		return
+	}
+	if !s.authorized(sess) {
 		http.Error(w, "you don't have access to this page", http.StatusForbidden)
 		return
 	}
@@ -53,7 +64,10 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
 
-	view := infoView{Header: s.header(sess, webui.PageInfo)}
+	view := infoView{
+		Header:       s.header(sess, webui.PageInfo),
+		ConfigGroups: s.configGroups(),
+	}
 
 	if s.tracker.Toggl != nil {
 		view.TogglConfigured = true

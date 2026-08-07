@@ -250,71 +250,130 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 		holidaySet[hd.Date.Format("2006-01-02")] = true
 	}
 
-	// Remaining paid leave (year view only): the annual allowance minus the past
-	// workdays already spent without anything billable. The remaining days are
-	// deducted from expected work below.
-	if vacationDays > 0 {
-		f.VacationTotal = vacationDays
-		ok := true
-		if herr != nil {
-			f.VacationErr = herr.Error()
-			ok = false
-		} else if terr != nil {
-			f.VacationErr = terr.Error()
-			ok = false
-		} else if today.After(start) {
-			// freeWorkdays only inspects days before today; the yearly billable-day
-			// set covers them.
-			f.VacationTaken = freeWorkdays(start, today, holidaySet, yd.Days)
-		}
-		if ok {
-			if rem := vacationDays - f.VacationTaken; rem > 0 {
-				f.VacationRemaining = rem
-			}
+	f.computeVacation(vacationDays, today, start, herr, terr, holidaySet, yd)
+
+	trackedHours, trackedCents, monthlyCompanyCents := f.computeTrackedRows(t, projects, aggs, yd, terr, perr, year, start, end)
+
+	f.computeInvoicedRows(t, projects, year, start, end)
+
+	rateCents, currency := t.RateCents, t.RateCurrency
+	if currency != "" {
+		f.Currency = CurrencySymbol(currency)
+	}
+
+	expectedNetHours, expectedNetCentsByMonth, expectedOK := f.computeExpected(t, year, start, end, today, todayTracked, herr, todayErr, holidaySet, rateCents)
+	for m, cents := range expectedNetCentsByMonth {
+		monthlyCompanyCents[m] += cents
+	}
+
+	f.computeTotal(trackedHours, trackedCents, expectedNetHours, expectedOK, rateCents)
+
+	// Holidays: the whole year, with the ones in the viewed month marked
+	// (month view only — year view has no single "current" month).
+	if herr != nil {
+		f.HolidaysErr = herr.Error()
+	} else {
+		for _, hd := range holidays {
+			f.Holidays = append(f.Holidays, HolidayView{
+				Date:    hd.Date.Format("Mon, 02 Jan"),
+				Name:    hd.Name,
+				Current: months == 1 && !hd.Date.Before(start) && !hd.Date.After(end),
+			})
 		}
 	}
 
-	// Tracked rows (one per project+rate, most time first).
-	var trackedHours float64
-	var trackedCents int
-	monthlyCompanyCents := map[time.Month]int{}
+	bv := f.computeBudget(t, ctx, year, start, now, months)
+
+	f.computePersonal(t, ctx, year, months, monthlyCompanyCents, bv)
+
+	f.computeSpendable(months, year, start)
+
+	f.computeFundingBalance(t, ctx, year, start, now, months, rateCents, bv)
+
+	if at := t.Toggl.YearFetchedAt(year); !at.IsZero() {
+		f.LastUpdated = at.In(t.Loc).Format("02 Jan 15:04")
+	} else {
+		f.LastUpdated = "—"
+	}
+
+	return f
+}
+
+// computeVacation fills in the remaining-paid-leave figures (year view only):
+// the annual allowance minus the past workdays already spent without
+// anything billable. The remaining days are later deducted from expected
+// work by computeExpected.
+func (f *Figures) computeVacation(vacationDays int, today, start time.Time, herr, terr error, holidaySet map[string]bool, yd *YearData) {
+	if vacationDays <= 0 {
+		return
+	}
+	f.VacationTotal = vacationDays
+	ok := true
+	if herr != nil {
+		f.VacationErr = herr.Error()
+		ok = false
+	} else if terr != nil {
+		f.VacationErr = terr.Error()
+		ok = false
+	} else if today.After(start) {
+		// freeWorkdays only inspects days before today; the yearly billable-day
+		// set covers them.
+		f.VacationTaken = freeWorkdays(start, today, holidaySet, yd.Days)
+	}
+	if ok {
+		if rem := vacationDays - f.VacationTaken; rem > 0 {
+			f.VacationRemaining = rem
+		}
+	}
+}
+
+// computeTrackedRows fills in the Tracked rows (one per project+rate, most
+// time first) and returns the running hours/cents totals plus each month's
+// company income so far, for computeTotal/computePersonal to build on.
+func (f *Figures) computeTrackedRows(t *Tracker, projects map[int]Project, aggs []Aggregate, yd *YearData, terr, perr error, year int, start, end time.Time) (trackedHours float64, trackedCents int, monthlyCompanyCents map[time.Month]int) {
+	monthlyCompanyCents = map[time.Month]int{}
 	if terr != nil {
 		f.TrackedErr = terr.Error()
-	} else if perr != nil {
-		f.TrackedErr = perr.Error()
-	} else {
-		for m := start.Month(); m <= end.Month(); m++ {
-			ym := yearMonth{year, m}
-			for _, a := range yd.Months[m] {
-				if t.invoiceSuppresses(a.ProjectID, ym) {
-					continue
-				}
-				monthlyCompanyCents[m] += a.AmountCents
-			}
-			monthlyCompanyCents[m] += t.invoicedCentsForMonth(ym)
-		}
-		sort.Slice(aggs, func(i, j int) bool { return aggs[i].Seconds > aggs[j].Seconds })
-		for _, a := range aggs {
-			name := projects[a.ProjectID].Name
-			if name == "" {
-				name = "(no project)"
-			}
-			hours := aggHours(a)
-			f.Tracked = append(f.Tracked, TrackedRow{
-				Project:     name,
-				Hours:       formatHM(hours),
-				Rate:        formatNum(float64(a.RateCents) / 100),
-				AmountCents: a.AmountCents,
-			})
-			trackedHours += hours
-			trackedCents += a.AmountCents
-		}
+		return 0, 0, monthlyCompanyCents
 	}
+	if perr != nil {
+		f.TrackedErr = perr.Error()
+		return 0, 0, monthlyCompanyCents
+	}
+	for m := start.Month(); m <= end.Month(); m++ {
+		ym := yearMonth{year, m}
+		for _, a := range yd.Months[m] {
+			if t.invoiceSuppresses(a.ProjectID, ym) {
+				continue
+			}
+			monthlyCompanyCents[m] += a.AmountCents
+		}
+		monthlyCompanyCents[m] += t.invoicedCentsForMonth(ym)
+	}
+	sort.Slice(aggs, func(i, j int) bool { return aggs[i].Seconds > aggs[j].Seconds })
+	for _, a := range aggs {
+		name := projects[a.ProjectID].Name
+		if name == "" {
+			name = "(no project)"
+		}
+		hours := aggHours(a)
+		f.Tracked = append(f.Tracked, TrackedRow{
+			Project:     name,
+			Hours:       formatHM(hours),
+			Rate:        formatNum(float64(a.RateCents) / 100),
+			AmountCents: a.AmountCents,
+		})
+		trackedHours += hours
+		trackedCents += a.AmountCents
+	}
+	return trackedHours, trackedCents, monthlyCompanyCents
+}
 
-	// Invoiced income that became usable during the viewed period (see
-	// Tracker.Invoiced/InvoicedProject.UsableCents) — independent of
-	// Toggl/perr/terr above, since it comes from real invoice data, not a
-	// Toggl fetch.
+// computeInvoicedRows fills in the real invoiced income that became usable
+// during the viewed period (see Tracker.Invoiced/InvoicedProject.UsableCents)
+// — independent of the Toggl fetch above, since it comes from real invoice
+// data, not a Toggl fetch.
+func (f *Figures) computeInvoicedRows(t *Tracker, projects map[int]Project, year int, start, end time.Time) {
 	for pid, ip := range t.Invoiced {
 		var cents int
 		for m := start.Month(); m <= end.Month(); m++ {
@@ -331,89 +390,87 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 		f.InvoicedCents += cents
 	}
 	sort.Slice(f.Invoiced, func(i, j int) bool { return f.Invoiced[i].AmountCents > f.Invoiced[j].AmountCents })
+}
 
-	// Projection rate for Expected (not-yet-tracked) work — a configured
-	// value (see Tracker.RateCents), not derived from Toggl.
-	rateCents, currency := t.RateCents, t.RateCurrency
-	if currency != "" {
-		f.Currency = CurrencySymbol(currency)
-	}
-
-	// Expected work remaining this month.
-	var expectedHours float64
-	var expectedNetHours float64
+// computeExpected fills in the expected (not-yet-tracked) work remaining in
+// the period, at the configured projection rate, and returns the net expected
+// hours/per-month cents (with vacation already deducted) for the caller to
+// fold into total company income.
+func (f *Figures) computeExpected(t *Tracker, year int, start, end, today time.Time, todayTracked bool, herr, todayErr error, holidaySet map[string]bool, rateCents int) (expectedNetHours float64, expectedNetCentsByMonth map[time.Month]int, ok bool) {
 	expectedCentsByMonth := map[time.Month]int{}
-	expectedNetCentsByMonth := map[time.Month]int{}
-	expectedOK := false
-	if herr == nil && todayErr == nil {
-		remaining, todayIsWorkday := workdayInfo(start, end, today, holidaySet)
-		days := remaining
-		expStart := today.AddDate(0, 0, 1)
-		if todayIsWorkday && !todayTracked {
-			days++
-			expStart = today
-		}
-		// For future months today is before the month; the expected work starts
-		// at the month's first day rather than tomorrow.
-		if expStart.Before(start) {
-			expStart = start
-		}
-		expectedHours = float64(days) * t.HoursPerDay
-		vacationHours := float64(f.VacationRemaining) * t.HoursPerDay
-		expectedNetHours = expectedHours - vacationHours
-		if expectedNetHours < 0 {
-			expectedNetHours = 0
-			vacationHours = expectedHours
-		}
-		vacationHoursLeft := vacationHours
-		for m := start.Month(); m <= end.Month(); m++ {
-			monthStart := time.Date(year, m, 1, 0, 0, 0, 0, t.Loc)
-			monthEnd := monthStart.AddDate(0, 1, -1)
-			if monthStart.Before(start) {
-				monthStart = start
-			}
-			if monthEnd.After(end) {
-				monthEnd = end
-			}
-			monthRemaining, monthTodayIsWorkday := workdayInfo(monthStart, monthEnd, today, holidaySet)
-			monthDays := monthRemaining
-			if monthTodayIsWorkday && !todayTracked {
-				monthDays++
-			}
-			monthHours := float64(monthDays) * t.HoursPerDay
-			monthVacationHours := math.Min(vacationHoursLeft, monthHours)
-			vacationHoursLeft -= monthVacationHours
-			expectedCentsByMonth[m] = round(monthHours * float64(rateCents))
-			expectedNetCentsByMonth[m] = round((monthHours - monthVacationHours) * float64(rateCents))
-		}
-		expectedOK = true
-
-		f.ExpectedHours = formatCompactHours(expectedHours)
-		f.ExpectedRate = formatNum(float64(rateCents) / 100)
-		f.ExpectedCents = sumMonthCents(expectedCentsByMonth)
-		f.ExpectedNetHours = formatCompactHours(expectedNetHours)
-		f.ExpectedNetCents = sumMonthCents(expectedNetCentsByMonth)
-		if f.VacationRemaining > 0 && vacationHours > 0 {
-			f.ShowVacation = true
-			f.VacationHoursDeducted = formatCompactHours(vacationHours)
-			f.VacationCentsDeducted = f.ExpectedCents - f.ExpectedNetCents
-		} else {
-			f.ShowVacation = false
-		}
-		if days > 0 {
-			f.ExpectedRange = expStart.Format("02.01.") + " - " + end.Format("02.01.06")
-		} else {
-			f.ExpectedRange = "—"
-		}
-	} else {
-		f.ExpectedErr = firstErr(terr, herr, todayErr)
+	expectedNetCentsByMonth = map[time.Month]int{}
+	if herr != nil || todayErr != nil {
+		f.ExpectedErr = firstErr(herr, todayErr)
+		return 0, expectedNetCentsByMonth, false
 	}
 
-	// Total = tracked + expected + invoiced. TotalHours/TotalRate stay
-	// hours-based (Tracked+Expected only) — invoiced income is a real lump
-	// sum with no meaningful hours figure of its own, by design (an
-	// invoice replaces predicted/tracked hours with a real total, not a
-	// real hours count).
+	remaining, todayIsWorkday := workdayInfo(start, end, today, holidaySet)
+	days := remaining
+	expStart := today.AddDate(0, 0, 1)
+	if todayIsWorkday && !todayTracked {
+		days++
+		expStart = today
+	}
+	// For future months today is before the month; the expected work starts
+	// at the month's first day rather than tomorrow.
+	if expStart.Before(start) {
+		expStart = start
+	}
+	expectedHours := float64(days) * t.HoursPerDay
+	vacationHours := float64(f.VacationRemaining) * t.HoursPerDay
+	expectedNetHours = expectedHours - vacationHours
+	if expectedNetHours < 0 {
+		expectedNetHours = 0
+		vacationHours = expectedHours
+	}
+	vacationHoursLeft := vacationHours
+	for m := start.Month(); m <= end.Month(); m++ {
+		monthStart := time.Date(year, m, 1, 0, 0, 0, 0, t.Loc)
+		monthEnd := monthStart.AddDate(0, 1, -1)
+		if monthStart.Before(start) {
+			monthStart = start
+		}
+		if monthEnd.After(end) {
+			monthEnd = end
+		}
+		monthRemaining, monthTodayIsWorkday := workdayInfo(monthStart, monthEnd, today, holidaySet)
+		monthDays := monthRemaining
+		if monthTodayIsWorkday && !todayTracked {
+			monthDays++
+		}
+		monthHours := float64(monthDays) * t.HoursPerDay
+		monthVacationHours := math.Min(vacationHoursLeft, monthHours)
+		vacationHoursLeft -= monthVacationHours
+		expectedCentsByMonth[m] = round(monthHours * float64(rateCents))
+		expectedNetCentsByMonth[m] = round((monthHours - monthVacationHours) * float64(rateCents))
+	}
+
+	f.ExpectedHours = formatCompactHours(expectedHours)
+	f.ExpectedRate = formatNum(float64(rateCents) / 100)
+	f.ExpectedCents = sumMonthCents(expectedCentsByMonth)
+	f.ExpectedNetHours = formatCompactHours(expectedNetHours)
+	f.ExpectedNetCents = sumMonthCents(expectedNetCentsByMonth)
+	if f.VacationRemaining > 0 && vacationHours > 0 {
+		f.ShowVacation = true
+		f.VacationHoursDeducted = formatCompactHours(vacationHours)
+		f.VacationCentsDeducted = f.ExpectedCents - f.ExpectedNetCents
+	} else {
+		f.ShowVacation = false
+	}
+	if days > 0 {
+		f.ExpectedRange = expStart.Format("02.01.") + " - " + end.Format("02.01.06")
+	} else {
+		f.ExpectedRange = "—"
+	}
+	return expectedNetHours, expectedNetCentsByMonth, true
+}
+
+// computeTotal fills in Total = tracked + expected + invoiced. TotalHours/
+// TotalRate stay hours-based (Tracked+Expected only) — invoiced income is a
+// real lump sum with no meaningful hours figure of its own, by design (an
+// invoice replaces predicted/tracked hours with a real total, not a real
+// hours count).
+func (f *Figures) computeTotal(trackedHours float64, trackedCents int, expectedNetHours float64, expectedOK bool, rateCents int) {
 	if f.TrackedErr == "" && expectedOK {
 		f.TotalHours = formatHM(trackedHours + expectedNetHours)
 		f.TotalRate = formatNum(float64(rateCents) / 100)
@@ -421,101 +478,101 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	} else {
 		f.TotalErr = "unavailable"
 	}
+}
 
-	// Holidays: the whole year, with the ones in the viewed month marked
-	// (month view only — year view has no single "current" month).
-	if herr != nil {
-		f.HolidaysErr = herr.Error()
-	} else {
-		for _, hd := range holidays {
-			f.Holidays = append(f.Holidays, HolidayView{
-				Date:    hd.Date.Format("Mon, 02 Jan"),
-				Name:    hd.Name,
-				Current: months == 1 && !hd.Date.Before(start) && !hd.Date.After(end),
-			})
-		}
-	}
-
-	// Budget (private-kind Expenses, company-kind categories feeding the
-	// salary cascade below, and Loans) — fetched once, ahead of the Personal
-	// income calc, since that calc needs company expenses. A nil Budget (not
-	// configured), or a fetch error, just leaves company expenses at zero and
-	// the Expenses/Debts sections empty rather than erroring the whole page —
-	// mirrors how the rest of compute degrades gracefully per section; company
-	// expenses silently defaulting to zero on a Budget error is an accepted
-	// edge case (an embedded static file essentially never fails at runtime).
+// computeBudget fetches Budget (private-kind Expenses, company-kind
+// categories feeding the salary cascade, and Loans) — fetched once, ahead of
+// the Personal income calc, since that calc needs company expenses. A nil
+// Budget (not configured), or a fetch error, just leaves company expenses at
+// zero and the Expenses/Debts sections empty rather than erroring the whole
+// page — mirrors how the rest of compute degrades gracefully per section;
+// company expenses silently defaulting to zero on a Budget error is an
+// accepted edge case (an embedded static file essentially never fails at
+// runtime).
+func (f *Figures) computeBudget(t *Tracker, ctx context.Context, year int, start, now time.Time, months int) BudgetView {
 	var bv BudgetView
-	if t.Budget != nil {
-		var berr error
-		if months > 1 {
-			bv, berr = t.Budget.ForYear(ctx, year, now)
-		} else {
-			f.MinimalMode = t.Budget.IsMinimal()
-			bv, berr = t.Budget.ForMonth(ctx, year, start.Month(), now)
-		}
-		if berr != nil {
-			f.BudgetErr = berr.Error()
-		}
+	if t.Budget == nil {
+		return bv
 	}
-
-	// Company income → net personal income (Bulgaria). Company (business)
-	// expenses are deducted first, before the employer-social/gross-salary/
-	// employee-social/income-tax cascade — see PersonalParams.breakdown — so
-	// they never show up as if they were personal salary spending.
-	if f.TotalErr == "" {
-		if months > 1 {
-			for m, cents := range expectedNetCentsByMonth {
-				monthlyCompanyCents[m] += cents
-			}
-			var monthlyCompanyExpenseCents map[time.Month]int
-			if t.Budget != nil && f.BudgetErr == "" {
-				if m, err := t.Budget.CompanyExpensesByMonth(ctx, year); err != nil {
-					f.BudgetErr = err.Error()
-				} else {
-					monthlyCompanyExpenseCents = m
-				}
-			}
-			f.Personal = t.Personal.breakdownMonths(
-				monthlyIncomeEUR(start, end, monthlyCompanyCents),
-				monthlyIncomeEUR(start, end, monthlyCompanyExpenseCents),
-			)
-		} else {
-			f.Personal = t.Personal.breakdown(float64(f.TotalCents)/100, float64(bv.CompanyTotalSpentCents)/100, 1)
-		}
-		f.Personal.CompanyGroups = bv.CompanyGroups
+	var berr error
+	if months > 1 {
+		bv, berr = t.Budget.ForYear(ctx, year, now)
 	} else {
+		f.MinimalMode = t.Budget.IsMinimal()
+		bv, berr = t.Budget.ForMonth(ctx, year, start.Month(), now)
+	}
+	if berr != nil {
+		f.BudgetErr = berr.Error()
+	}
+	return bv
+}
+
+// computePersonal fills in the company-income → net personal income
+// (Bulgaria) cascade for the viewed period itself. Company (business)
+// expenses are deducted first, before the employer-social/gross-salary/
+// employee-social/income-tax cascade — see PersonalParams.breakdown — so
+// they never show up as if they were personal salary spending.
+func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months int, monthlyCompanyCents map[time.Month]int, bv BudgetView) {
+	if f.TotalErr != "" {
 		f.Personal = PersonalView{Err: "company income unavailable"}
+		return
 	}
-
-	// SpendableLabel/URL: when this period's own Income (TotalCents)
-	// actually becomes spendable — the viewed period shifted forward two
-	// calendar months (the mirror of the funding shift below), rendered
-	// inline as "Income (for September 2026)". Pure calendar arithmetic on
-	// the viewed period, so it can't fail once Total itself is available,
-	// and independent of Budget/Personal — it's a property of Income alone.
-	if f.TotalErr == "" {
-		var spendStart, spendEnd yearMonth
-		if months > 1 {
-			spendStart, spendEnd = spendRangeForYear(year)
-		} else {
-			spendStart, spendEnd = spendRangeForMonth(year, start.Month())
+	if months > 1 {
+		var monthlyCompanyExpenseCents map[time.Month]int
+		if t.Budget != nil && f.BudgetErr == "" {
+			if m, err := t.Budget.CompanyExpensesByMonth(ctx, year); err != nil {
+				f.BudgetErr = err.Error()
+			} else {
+				monthlyCompanyExpenseCents = m
+			}
 		}
-		f.SpendableLabel = rangeLabel(spendStart, spendEnd)
-		f.SpendableURL = linkForRange(spendStart, spendEnd, spendStart.Year)
+		start := time.Date(year, time.January, 1, 0, 0, 0, 0, t.Loc)
+		end := start.AddDate(1, 0, -1)
+		f.Personal = t.Personal.breakdownMonths(
+			monthlyIncomeEUR(start, end, monthlyCompanyCents),
+			monthlyIncomeEUR(start, end, monthlyCompanyExpenseCents),
+		)
+	} else {
+		f.Personal = t.Personal.breakdown(float64(f.TotalCents)/100, float64(bv.CompanyTotalSpentCents)/100, 1)
 	}
+	f.Personal.CompanyGroups = bv.CompanyGroups
+}
 
-	// FundingPersonal: the company-income → net-income cascade actually
-	// rendered in the Expenses panel. Only the raw labor income (Tracked +
-	// Expected) is shifted back fundingShiftMonths calendar months, since
-	// salary earned in month M only becomes spendable from M+2 (see
-	// Tracker.fundingIncome) — applies uniformly to every viewed period,
-	// past/current/future alike. Company-kind expenses (bv.CompanyGroups/
-	// CompanyTotalSpentCents, fetched above) are a real-time business fact,
-	// not subject to the payroll lag, so they stay tied to the VIEWED
-	// period — same as bv.Groups below and the old f.Personal computation
-	// above — not the shifted funding period: a one-off cost like "Computer"
-	// dated 2026-09-01 shows/hides based on whichever month is actually
-	// being browsed, never postponed by the income shift.
+// computeSpendable fills in SpendableLabel/URL: when this period's own Income
+// (TotalCents) actually becomes spendable — the viewed period shifted forward
+// two calendar months (the mirror of the funding shift in
+// computeFundingBalance), rendered inline as "Income (for September 2026)".
+// Pure calendar arithmetic on the viewed period, so it can't fail once Total
+// itself is available, and independent of Budget/Personal — it's a property
+// of Income alone.
+func (f *Figures) computeSpendable(months, year int, start time.Time) {
+	if f.TotalErr != "" {
+		return
+	}
+	var spendStart, spendEnd yearMonth
+	if months > 1 {
+		spendStart, spendEnd = spendRangeForYear(year)
+	} else {
+		spendStart, spendEnd = spendRangeForMonth(year, start.Month())
+	}
+	f.SpendableLabel = rangeLabel(spendStart, spendEnd)
+	f.SpendableURL = linkForRange(spendStart, spendEnd, spendStart.Year)
+}
+
+// computeFundingBalance fills in FundingPersonal (the company-income →
+// net-income cascade actually rendered in the Expenses panel) and the bottom
+// line ShowBalance/BalanceCents. Only the raw labor income (Tracked +
+// Expected) is shifted back fundingShiftMonths calendar months, since salary
+// earned in month M only becomes spendable from M+2 (see
+// Tracker.fundingIncome) — applies uniformly to every viewed period,
+// past/current/future alike. Company-kind expenses (bv.CompanyGroups/
+// CompanyTotalSpentCents, fetched by computeBudget) are a real-time business
+// fact, not subject to the payroll lag, so they stay tied to the VIEWED
+// period — same as bv.Groups and computePersonal above — not the shifted
+// funding period: a one-off cost like "Computer" dated 2026-09-01 shows/hides
+// based on whichever month is actually being browsed, never postponed by the
+// income shift.
+func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year int, start, now time.Time, months, rateCents int, bv BudgetView) {
 	var fundingStart, fundingEnd yearMonth
 	if months > 1 {
 		fundingStart, fundingEnd = fundingRangeForYear(year, now)
@@ -524,29 +581,21 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	}
 	f.FundingPersonal = t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(bv.CompanyTotalSpentCents)/100, bv.CompanyGroups)
 
-	if t.Budget != nil {
-		if f.BudgetErr == "" {
-			f.PrivateGroups = bv.Groups
-			f.PrivateTotalSpentCents = bv.TotalSpentCents
-		}
-
-		// The bottom line: funding income minus this period's private
-		// expenses. Company expenses for the funding period are already
-		// deducted inside FundingPersonal.NetIncomeCents, so they aren't
-		// subtracted again here.
-		if f.BudgetErr == "" && f.FundingPersonal.Err == "" {
-			f.ShowBalance = true
-			f.BalanceCents = f.FundingPersonal.NetIncomeCents - f.PrivateTotalSpentCents
-		}
+	if t.Budget == nil {
+		return
+	}
+	if f.BudgetErr == "" {
+		f.PrivateGroups = bv.Groups
+		f.PrivateTotalSpentCents = bv.TotalSpentCents
 	}
 
-	if at := t.Toggl.YearFetchedAt(year); !at.IsZero() {
-		f.LastUpdated = at.In(t.Loc).Format("02 Jan 15:04")
-	} else {
-		f.LastUpdated = "—"
+	// The bottom line: funding income minus this period's private expenses.
+	// Company expenses for the funding period are already deducted inside
+	// FundingPersonal.NetIncomeCents, so they aren't subtracted again here.
+	if f.BudgetErr == "" && f.FundingPersonal.Err == "" {
+		f.ShowBalance = true
+		f.BalanceCents = f.FundingPersonal.NetIncomeCents - f.PrivateTotalSpentCents
 	}
-
-	return f
 }
 
 // EvictMonth drops the cached Toggl and budget data for the given month (the

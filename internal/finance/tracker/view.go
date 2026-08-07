@@ -200,9 +200,9 @@ func (t *Tracker) ComputeMonth(ctx context.Context, year int, month time.Month) 
 	now := time.Now().In(t.Loc)
 	start := time.Date(year, month, 1, 0, 0, 0, 0, t.Loc)
 	end := start.AddDate(0, 1, -1) // last day of the month
-	f := t.compute(ctx, year, start, end, start.Format("January 2006"), 1, 0)
-	f.fillMonthNav(now, start)
-	return f
+	result := t.compute(ctx, year, start, end, start.Format("January 2006"), 1, 0)
+	result.fillMonthNav(now, start)
+	return result
 }
 
 // ComputeYear builds the figures for a full calendar year.
@@ -210,9 +210,9 @@ func (t *Tracker) ComputeYear(ctx context.Context, year int) Figures {
 	now := time.Now().In(t.Loc)
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, t.Loc)
 	end := start.AddDate(1, 0, -1) // 31 December
-	f := t.compute(ctx, year, start, end, start.Format("2006"), 12, t.VacationDays)
-	f.fillYearNav(now, start)
-	return f
+	result := t.compute(ctx, year, start, end, start.Format("2006"), 12, t.VacationDays)
+	result.fillYearNav(now, start)
+	return result
 }
 
 // compute builds the figures for the period [start, end] (inclusive) within the
@@ -223,7 +223,7 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	now := time.Now().In(t.Loc)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, t.Loc)
 
-	f := Figures{Month: label, Currency: "€"}
+	result := Figures{Month: label, Currency: "€"}
 
 	// today's tracked time only matters when today falls inside the period.
 	isCurrentPeriod := !today.Before(start) && !today.After(end)
@@ -250,31 +250,31 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 		holidaySet[hd.Date.Format("2006-01-02")] = true
 	}
 
-	f.computeVacation(vacationDays, today, start, herr, terr, holidaySet, yd)
+	result.computeVacation(vacationDays, today, start, herr, terr, holidaySet, yd)
 
-	trackedHours, trackedCents, monthlyCompanyCents := f.computeTrackedRows(t, projects, aggs, yd, terr, perr, year, start, end)
+	trackedHours, trackedCents, monthlyCompanyCents := result.computeTrackedRows(t, projects, aggs, yd, terr, perr, year, start, end)
 
-	f.computeInvoicedRows(t, projects, year, start, end)
+	result.computeInvoicedRows(t, projects, year, start, end)
 
 	rateCents, currency := t.RateCents, t.RateCurrency
 	if currency != "" {
-		f.Currency = CurrencySymbol(currency)
+		result.Currency = CurrencySymbol(currency)
 	}
 
-	expectedNetHours, expectedNetCentsByMonth, expectedOK := f.computeExpected(t, year, start, end, today, todayTracked, herr, todayErr, holidaySet, rateCents)
+	expectedNetHours, expectedNetCentsByMonth, expectedOK := result.computeExpected(t, year, start, end, today, todayTracked, herr, todayErr, holidaySet, rateCents)
 	for m, cents := range expectedNetCentsByMonth {
 		monthlyCompanyCents[m] += cents
 	}
 
-	f.computeTotal(trackedHours, trackedCents, expectedNetHours, expectedOK, rateCents)
+	result.computeTotal(trackedHours, trackedCents, expectedNetHours, expectedOK, rateCents)
 
 	// Holidays: the whole year, with the ones in the viewed month marked
 	// (month view only — year view has no single "current" month).
 	if herr != nil {
-		f.HolidaysErr = herr.Error()
+		result.HolidaysErr = herr.Error()
 	} else {
 		for _, hd := range holidays {
-			f.Holidays = append(f.Holidays, HolidayView{
+			result.Holidays = append(result.Holidays, HolidayView{
 				Date:    hd.Date.Format("Mon, 02 Jan"),
 				Name:    hd.Name,
 				Current: months == 1 && !hd.Date.Before(start) && !hd.Date.After(end),
@@ -282,21 +282,21 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 		}
 	}
 
-	bv := f.computeBudget(t, ctx, year, start, now, months)
+	bv := result.computeBudget(t, ctx, year, start, now, months)
 
-	f.computePersonal(t, ctx, year, months, monthlyCompanyCents, bv)
+	result.computePersonal(t, ctx, year, months, monthlyCompanyCents, bv)
 
-	f.computeSpendable(months, year, start)
+	result.computeSpendable(months, year, start)
 
-	f.computeFundingBalance(t, ctx, year, start, now, months, rateCents, bv)
+	result.computeFundingBalance(t, ctx, year, start, now, months, rateCents, bv)
 
 	if at := t.Toggl.YearFetchedAt(year); !at.IsZero() {
-		f.LastUpdated = at.In(t.Loc).Format("02 Jan 15:04")
+		result.LastUpdated = at.In(t.Loc).Format("02 Jan 15:04")
 	} else {
-		f.LastUpdated = "—"
+		result.LastUpdated = "—"
 	}
 
-	return f
+	return result
 }
 
 // computeVacation fills in the remaining-paid-leave figures (year view only):

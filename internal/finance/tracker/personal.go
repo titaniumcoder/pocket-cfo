@@ -60,7 +60,7 @@ type PersonalView struct {
 // social-contribution cap applies correctly; the per-month figures are then
 // scaled back up by `months` for display.
 func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, months int) PersonalView {
-	v := PersonalView{
+	result := PersonalView{
 		EmployerPct:  formatNum(p.EmployerRate * 100),
 		EmployeePct:  formatNum(p.EmployeeRate * 100),
 		IncomeTaxPct: formatNum(p.IncomeTaxRate * 100),
@@ -100,14 +100,14 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 
 	m := float64(months)
 	cents := func(x float64) int { return round(x * 100 * m) }
-	v.CompanyIncomeCents = cents(monthlyRawIncome)
-	v.CompanyExpensesCents = cents(monthlyCompanyExpenses)
-	v.EmployerContribCents = cents(employerContrib)
-	v.GrossSalaryCents = cents(gross)
-	v.EmployeeContribCents = cents(employeeContrib)
-	v.IncomeTaxCents = cents(incomeTax)
-	v.NetIncomeCents = cents(net)
-	return v
+	result.CompanyIncomeCents = cents(monthlyRawIncome)
+	result.CompanyExpensesCents = cents(monthlyCompanyExpenses)
+	result.EmployerContribCents = cents(employerContrib)
+	result.GrossSalaryCents = cents(gross)
+	result.EmployeeContribCents = cents(employeeContrib)
+	result.IncomeTaxCents = cents(incomeTax)
+	result.NetIncomeCents = cents(net)
+	return result
 }
 
 // breakdownMonths computes the personal-income waterfall month by month and
@@ -116,7 +116,7 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 // as monthlyIncomeEUR (index i's company expenses apply to index i's income);
 // a shorter or nil slice treats missing months as zero company expenses.
 func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpensesEUR []float64) PersonalView {
-	v := PersonalView{
+	result := PersonalView{
 		EmployerPct:  formatNum(p.EmployerRate * 100),
 		EmployeePct:  formatNum(p.EmployeeRate * 100),
 		IncomeTaxPct: formatNum(p.IncomeTaxRate * 100),
@@ -127,13 +127,13 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 			companyExpenses = monthlyCompanyExpensesEUR[i]
 		}
 		m := p.breakdown(income, companyExpenses, 1)
-		v.CompanyIncomeCents += m.CompanyIncomeCents
-		v.CompanyExpensesCents += m.CompanyExpensesCents
-		v.EmployerContribCents += m.EmployerContribCents
-		v.GrossSalaryCents += m.GrossSalaryCents
-		v.EmployeeContribCents += m.EmployeeContribCents
-		v.IncomeTaxCents += m.IncomeTaxCents
-		v.NetIncomeCents += m.NetIncomeCents
+		result.CompanyIncomeCents += m.CompanyIncomeCents
+		result.CompanyExpensesCents += m.CompanyExpensesCents
+		result.EmployerContribCents += m.EmployerContribCents
+		result.GrossSalaryCents += m.GrossSalaryCents
+		result.EmployeeContribCents += m.EmployeeContribCents
+		result.IncomeTaxCents += m.IncomeTaxCents
+		result.NetIncomeCents += m.NetIncomeCents
 	}
-	return v
+	return result
 }

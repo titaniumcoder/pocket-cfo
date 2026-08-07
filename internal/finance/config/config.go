@@ -84,19 +84,13 @@ type Config struct {
 	MaxInsurableMonthly float64
 	IncomeTaxRate       float64
 	AnnualVacationDays  int
-
-	// APIPassword gates GET /api/net-income/... — empty disables the API
-	// entirely (every request is rejected, same as an unset password never
-	// matching anything).
-	APIPassword string
 }
 
 // Load merges fc (already loaded via LoadFileConfig) with the
 // finance-specific environment variables into a fully-resolved Config.
 // Unlike cmd/pocketcfo's main config.go, nothing here is fail-fast: every
-// setting has a workable default or degrades to "layer disabled" (Toggl) /
-// "endpoint disabled" (the JSON API), since the finance tracker should stay
-// usable even with minimal setup.
+// setting has a workable default or degrades to "layer disabled" (Toggl),
+// since the finance tracker should stay usable even with minimal setup.
 func Load(fc FileConfig) Config {
 	return Config{
 		TogglToken:     os.Getenv("TOGGL_API_TOKEN"),
@@ -114,8 +108,6 @@ func Load(fc FileConfig) Config {
 		MaxInsurableMonthly: floatOr(fc.SocialMaxInsurableMonthly, 2112),
 		IncomeTaxRate:       floatOr(fc.IncomeTaxRate, 0.10),
 		AnnualVacationDays:  intOr(fc.AnnualVacationDays, 25),
-
-		APIPassword: os.Getenv("API_PASSWORD"),
 	}
 }
 

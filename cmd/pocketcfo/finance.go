@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/subtle"
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -223,111 +221,6 @@ func (s *server) financeMonth(w http.ResponseWriter, r *http.Request) {
 	renderFinancePage(w, sess, trk.ComputeMonth(ctx, year, time.Month(month)))
 }
 
-// financeAPIAuth gates GET /api/net-income/... on API_PASSWORD -- a
-// separate, simpler credential from the session cookie, since this is
-// meant for scripts/API consumers, not browser logins.
-func (s *server) financeAPIAuth(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		given := r.Header.Get("X-API-Password")
-		if given == "" {
-			const prefix = "Bearer "
-			if h := r.Header.Get("Authorization"); len(h) > len(prefix) && h[:len(prefix)] == prefix {
-				given = h[len(prefix):]
-			}
-		}
-		if s.cfg.finance.APIPassword == "" || subtle.ConstantTimeCompare([]byte(given), []byte(s.cfg.finance.APIPassword)) != 1 {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		next(w, r)
-	}
-}
-
-func (s *server) financeAPINetIncomeYear(w http.ResponseWriter, r *http.Request) {
-	trk, err := s.trackerForRequest()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	year, ok := parseAPIYear(w, r, trk.Loc)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
-	defer cancel()
-	writeNetIncome(w, trk.ComputeYear(ctx, year))
-}
-
-func (s *server) financeAPINetIncomeMonth(w http.ResponseWriter, r *http.Request) {
-	trk, err := s.trackerForRequest()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	year, month, ok := parseAPIYearMonth(w, r, trk.Loc)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
-	defer cancel()
-	writeNetIncome(w, trk.ComputeMonth(ctx, year, time.Month(month)))
-}
-
-// writeJSONError writes a JSON error body ({"error": msg}) with the given
-// status, so writeNetIncome's error responses stay JSON like its success
-// response — this is the app's one JSON API endpoint, and a plain-text
-// http.Error body would break that contract for callers parsing errors as
-// JSON.
-func writeJSONError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(struct {
-		Error string `json:"error"`
-	}{Error: msg})
-}
-
-func writeNetIncome(w http.ResponseWriter, f tracker.Figures) {
-	if f.Personal.Err != "" {
-		writeJSONError(w, http.StatusBadGateway, f.Personal.Err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	resp := struct {
-		Mode                        string `json:"mode"`
-		Year                        int    `json:"year"`
-		Month                       int    `json:"month,omitempty"`
-		Currency                    string `json:"currency"`
-		ExpectedIncomeCents         int    `json:"expected_income_cents"`
-		ExpectedGrossIncomeCents    int    `json:"expected_gross_income_cents"`
-		VacationDeductionCents      int    `json:"vacation_deduction_cents,omitempty"`
-		ProjectedCompanyIncomeCents int    `json:"projected_company_income_cents"`
-		InvoicedCents               int    `json:"invoiced_cents"`
-		PersonalIncomeCents         int    `json:"personal_income_cents"`
-		EmployerContributionCents   int    `json:"employer_contribution_cents"`
-		GrossSalaryCents            int    `json:"gross_salary_cents"`
-		EmployeeContributionCents   int    `json:"employee_contribution_cents"`
-		PersonalIncomeTaxCents      int    `json:"personal_income_tax_cents"`
-	}{
-		Mode:                        f.Mode,
-		Year:                        f.Year,
-		Month:                       f.MonthNum,
-		Currency:                    f.Currency,
-		ExpectedIncomeCents:         f.ExpectedNetCents,
-		ExpectedGrossIncomeCents:    f.ExpectedCents,
-		VacationDeductionCents:      f.VacationCentsDeducted,
-		ProjectedCompanyIncomeCents: f.TotalCents,
-		InvoicedCents:               f.InvoicedCents,
-		PersonalIncomeCents:         f.Personal.NetIncomeCents,
-		EmployerContributionCents:   f.Personal.EmployerContribCents,
-		GrossSalaryCents:            f.Personal.GrossSalaryCents,
-		EmployeeContributionCents:   f.Personal.EmployeeContribCents,
-		PersonalIncomeTaxCents:      f.Personal.IncomeTaxCents,
-	}
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
-	}
-}
-
 const yearRange = 2
 
 func parseYear(w http.ResponseWriter, r *http.Request, loc *time.Location) (int, bool) {
@@ -347,28 +240,6 @@ func parseYearMonth(w http.ResponseWriter, r *http.Request, loc *time.Location) 
 	if err1 != nil || err2 != nil || month < 1 || month > 12 ||
 		year < now.Year()-yearRange || year > now.Year()+yearRange {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return 0, 0, false
-	}
-	return year, month, true
-}
-
-func parseAPIYear(w http.ResponseWriter, r *http.Request, loc *time.Location) (int, bool) {
-	now := time.Now().In(loc)
-	year, err := strconv.Atoi(r.PathValue("year"))
-	if err != nil || year < now.Year()-yearRange || year > now.Year()+yearRange {
-		http.Error(w, "invalid year", http.StatusBadRequest)
-		return 0, false
-	}
-	return year, true
-}
-
-func parseAPIYearMonth(w http.ResponseWriter, r *http.Request, loc *time.Location) (int, int, bool) {
-	now := time.Now().In(loc)
-	year, err1 := strconv.Atoi(r.PathValue("year"))
-	month, err2 := strconv.Atoi(r.PathValue("month"))
-	if err1 != nil || err2 != nil || month < 1 || month > 12 ||
-		year < now.Year()-yearRange || year > now.Year()+yearRange {
-		http.Error(w, "invalid year or month", http.StatusBadRequest)
 		return 0, 0, false
 	}
 	return year, month, true

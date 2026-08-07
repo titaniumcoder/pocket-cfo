@@ -132,8 +132,6 @@ func main() {
 	mux.HandleFunc("GET /{$}", s.financeCurrentMonth)
 	mux.HandleFunc("GET /{year}", s.financeYear)
 	mux.HandleFunc("GET /{year}/{month}", s.financeMonth)
-	mux.HandleFunc("GET /api/net-income/{year}", s.financeAPIAuth(s.financeAPINetIncomeYear))
-	mux.HandleFunc("GET /api/net-income/{year}/{month}", s.financeAPIAuth(s.financeAPINetIncomeMonth))
 
 	addr := ":" + cfg.port
 	log.Printf("pocketcfo listening on %s", addr)

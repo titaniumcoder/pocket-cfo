@@ -46,10 +46,9 @@ export SES_FROM_EMAIL=
 # Optional: TOGGL_API_TOKEN/TOGGL_WORKSPACE_ID unset leaves the Toggl
 # tracked-hours layer disabled entirely (predictions still run off the
 # configured hourly rate in config.json — see hourlyRateCents/currency
-# there). API_PASSWORD unset disables GET /api/net-income/... entirely.
+# there).
 export TOGGL_API_TOKEN=
 export TOGGL_WORKSPACE_ID=
-export API_PASSWORD=
 # Optional. Default to config.json — non-secret finance tunables
 # (hoursPerDay, togglProjectIds, hourlyRateCents, currency, social rates,
 # annualVacationDays). See internal/finance/config.FileConfig.

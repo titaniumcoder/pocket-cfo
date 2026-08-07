@@ -175,10 +175,8 @@ type Figures struct {
 
 	// Personal is the company-income → net-income cascade for the viewed
 	// period itself (Bulgaria's employer-social/gross-salary/employee-social/
-	// income-tax waterfall) — kept for the JSON API
-	// (GET /api/net-income/...), which reports figures for the period the
-	// caller actually requested. Not rendered on the dashboard itself
-	// anymore — see FundingPersonal below for what the Expenses panel shows.
+	// income-tax waterfall). Not rendered on the dashboard itself — see
+	// FundingPersonal below for what the Expenses panel shows.
 	Personal PersonalView
 
 	// Expenses: private-kind categories from data/budget.json, read from the

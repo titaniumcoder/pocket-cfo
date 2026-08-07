@@ -72,7 +72,6 @@ otherwise `source .envrc` before running `pocket-cfo-ctl render` or `cmd/pocketc
 | `AWS_REGION` / `SES_FROM_EMAIL` | `cmd/pocketcfo`, prod only | Amazon SES sends the `/auth/email` login link; `SES_FROM_EMAIL` must be a verified SES identity, unset logs the link instead of emailing it, for local testing |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `cmd/pocketcfo`, prod only | AWS credentials for SES, read by the AWS SDK's default credential chain (not by this app's own config) — needs only `ses:SendEmail` on the `SES_FROM_EMAIL` identity, see ARCHITECTURE.md §8 |
 | `TOGGL_API_TOKEN` / `TOGGL_WORKSPACE_ID` | `cmd/pocketcfo`, optional | Toggl credentials for the finance tracker's tracked-hours layer; unset leaves it disabled, predictions still run off the configured hourly rate |
-| `API_PASSWORD` | `cmd/pocketcfo`, optional | gates `GET /api/net-income/...`; unset disables that endpoint entirely |
 | `CONFIG_FILE` | `cmd/pocketcfo`, optional | default `config.json` — non-secret finance tunables (hourly rate, currency, social rates, `hoursPerDay`, ...); see `internal/finance/config` |
 | `BUILD_DIR` | `cmd/pocketcfo`/`pocket-cfo-ctl` | optional, default `build` — rendered PDFs (generated output, kept separate from `DATA_DIR`'s hand-edited data) |
 | `TEMPLATES_DIR` / `STATIC_DIR` | `cmd/pocketcfo`; `TEMPLATES_DIR` also `pocket-cfo-ctl render` | optional, default to `templates` / `static`; override for a deployment with its own branding |

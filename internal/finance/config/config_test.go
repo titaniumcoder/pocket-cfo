@@ -110,12 +110,8 @@ func TestLoad_OverridesFromFileConfig(t *testing.T) {
 func TestLoad_TogglFromEnv(t *testing.T) {
 	t.Setenv("TOGGL_API_TOKEN", "tok")
 	t.Setenv("TOGGL_WORKSPACE_ID", "ws")
-	t.Setenv("API_PASSWORD", "pw")
 	cfg := Load(FileConfig{})
 	if cfg.TogglToken != "tok" || cfg.TogglWorkspace != "ws" {
 		t.Errorf("Toggl creds = %q/%q, want tok/ws", cfg.TogglToken, cfg.TogglWorkspace)
-	}
-	if cfg.APIPassword != "pw" {
-		t.Errorf("APIPassword = %q, want pw", cfg.APIPassword)
 	}
 }

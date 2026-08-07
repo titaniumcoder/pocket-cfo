@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -273,123 +272,6 @@ func TestFinanceMonth_ValidYearMonthRenders(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestFinanceAPIAuth_RejectsWrongPassword(t *testing.T) {
-	s := newFinanceTestServer(t)
-	s.cfg.finance.APIPassword = "correct-password"
-	called := false
-	handler := s.financeAPIAuth(func(w http.ResponseWriter, r *http.Request) { called = true })
-
-	r := httptest.NewRequest(http.MethodGet, "/api/net-income/2026", nil)
-	r.Header.Set("X-API-Password", "wrong")
-	w := httptest.NewRecorder()
-	handler(w, r)
-
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401", w.Code)
-	}
-	if called {
-		t.Error("next handler must not run on a bad password")
-	}
-}
-
-func TestFinanceAPIAuth_AcceptsBearerToken(t *testing.T) {
-	s := newFinanceTestServer(t)
-	s.cfg.finance.APIPassword = "correct-password"
-	called := false
-	handler := s.financeAPIAuth(func(w http.ResponseWriter, r *http.Request) { called = true })
-
-	r := httptest.NewRequest(http.MethodGet, "/api/net-income/2026", nil)
-	r.Header.Set("Authorization", "Bearer correct-password")
-	w := httptest.NewRecorder()
-	handler(w, r)
-
-	if !called {
-		t.Error("want the next handler to run with a valid bearer token")
-	}
-}
-
-func TestFinanceAPINetIncomeYear_ReturnsJSON(t *testing.T) {
-	s := newFinanceTestServer(t)
-	r := httptest.NewRequest(http.MethodGet, "/api/net-income/2026", nil)
-	r.SetPathValue("year", "2026")
-	w := httptest.NewRecorder()
-
-	s.financeAPINetIncomeYear(w, r)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
-	}
-	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
-		t.Errorf("Content-Type = %q, want application/json", ct)
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("response is not valid JSON: %v (body: %s)", err, w.Body.String())
-	}
-	if resp["mode"] != "year" {
-		t.Errorf("mode = %v, want year", resp["mode"])
-	}
-}
-
-// TestWriteNetIncome_ErrorPathReturnsJSON is a direct regression test for
-// writeJSONError: writeNetIncome's error path must stay JSON like its
-// success path, not fall through to http.Error's plain-text body.
-func TestWriteNetIncome_ErrorPathReturnsJSON(t *testing.T) {
-	w := httptest.NewRecorder()
-	writeNetIncome(w, tracker.Figures{Personal: tracker.PersonalView{Err: "company income unavailable"}})
-
-	if w.Code != http.StatusBadGateway {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadGateway)
-	}
-	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
-		t.Errorf("Content-Type = %q, want application/json", ct)
-	}
-	var resp struct {
-		Error string `json:"error"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("body is not valid JSON: %v (body: %s)", err, w.Body.String())
-	}
-	if resp.Error != "company income unavailable" {
-		t.Errorf("error = %q, want %q", resp.Error, "company income unavailable")
-	}
-}
-
-func TestFinanceAPINetIncomeMonth_InvalidMonthReturnsBadRequest(t *testing.T) {
-	s := newFinanceTestServer(t)
-	r := httptest.NewRequest(http.MethodGet, "/api/net-income/2026/13", nil)
-	r.SetPathValue("year", "2026")
-	r.SetPathValue("month", "13")
-	w := httptest.NewRecorder()
-
-	s.financeAPINetIncomeMonth(w, r)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", w.Code)
-	}
-}
-
-func TestWriteJSONError(t *testing.T) {
-	w := httptest.NewRecorder()
-	writeJSONError(w, http.StatusBadGateway, "boom")
-
-	if w.Code != http.StatusBadGateway {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadGateway)
-	}
-	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
-		t.Errorf("Content-Type = %q, want application/json", ct)
-	}
-	var resp struct {
-		Error string `json:"error"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("body is not valid JSON: %v", err)
-	}
-	if resp.Error != "boom" {
-		t.Errorf("error = %q, want boom", resp.Error)
 	}
 }
 

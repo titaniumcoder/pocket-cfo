@@ -118,6 +118,14 @@ const thousandsSeparator = ' '
 // FormatMoney renders minor units as "1 234,56 €" — nbsp-grouped thousands,
 // decimal-comma, euro suffix. Picked and frozen per ARCHITECTURE.md §6/§11.
 func FormatMoney(minor int64) string {
+	return FormatAmount(minor) + " €"
+}
+
+// FormatAmount is FormatMoney without the euro suffix — "1 234,56" — for
+// figures that aren't in euros (the api2pdf account balance on the /info
+// page) but should still read in the same Bulgarian/European convention as
+// everything else in the app.
+func FormatAmount(minor int64) string {
 	neg := minor < 0
 	if neg {
 		minor = -minor
@@ -138,7 +146,7 @@ func FormatMoney(minor int64) string {
 	if neg {
 		sign = "-"
 	}
-	return fmt.Sprintf("%s%s,%02d €", sign, grouped.String(), cents)
+	return fmt.Sprintf("%s%s,%02d", sign, grouped.String(), cents)
 }
 
 // loadLogoSVG reads an SVG file from disk (relative to the repo root, like

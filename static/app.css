@@ -107,7 +107,10 @@ main.wide { max-width: 1240px; }
 }
 .main-col { min-width: 0; }
 .side-col.holidays { position: sticky; top: 2rem; }
-header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+/* The bottom margin lives on header itself, not on its h1 — the h1 is a
+   flex child here, so its own margin can't separate the header from the
+   content below it. */
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem 1.5rem; flex-wrap: wrap; margin-bottom: 1.75rem; }
 .topnav { display: flex; gap: .25rem; flex-wrap: wrap; }
 .topnav a { text-decoration: none; color: inherit; opacity: .55; font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; padding: .3rem .8rem; border-radius: 999px; white-space: nowrap; }
 .topnav a:hover { opacity: .9; }

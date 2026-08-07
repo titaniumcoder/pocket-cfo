@@ -110,6 +110,7 @@ func (r *API2PDF) Render(ctx context.Context, html []byte) ([]byte, error) {
 type BalanceInfo struct {
 	Balance    float64
 	HasBalance bool
+	Currency   string
 	Raw        map[string]string
 }
 
@@ -154,6 +155,11 @@ func (r *API2PDF) Balance(ctx context.Context) (BalanceInfo, error) {
 			if f, ok := v.(float64); ok {
 				info.Balance = f
 				info.HasBalance = true
+			}
+		}
+		if info.Currency == "" && strings.EqualFold(k, "currency") {
+			if s, ok := v.(string); ok {
+				info.Currency = s
 			}
 		}
 	}

@@ -9,8 +9,10 @@ package main
 import (
 	"html/template"
 	"log"
+	"math"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,6 +28,7 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/invoice"
 	"github.com/titaniumcoder/pocket-cfo/internal/stats"
 	"github.com/titaniumcoder/pocket-cfo/internal/users"
+	"github.com/titaniumcoder/pocket-cfo/internal/webui"
 )
 
 type server struct {
@@ -95,12 +98,12 @@ func main() {
 		cfg:              cfg,
 		httpClient:       httpClient,
 		tracker:          buildTracker(cfg.finance, httpClient, budgetDir),
-		indexTmpl:        template.Must(template.New("index.html").Funcs(templateFuncs).ParseFiles(templatesDir + "/index.html")),
+		indexTmpl:        mustPageTemplate(templatesDir + "/index.html"),
 		loginTmpl:        template.Must(template.ParseFiles(templatesDir + "/login.html")),
 		clientTmpl:       template.Must(template.New("client.html").Funcs(templateFuncs).ParseFiles(templatesDir + "/client.html")),
 		emailLoginTmpl:   template.Must(template.ParseFiles(templatesDir + "/email_login.html")),
 		emailSentTmpl:    template.Must(template.ParseFiles(templatesDir + "/email_sent.html")),
-		infoTmpl:         template.Must(template.New("info.html").Funcs(templateFuncs).ParseFiles(templatesDir + "/info.html")),
+		infoTmpl:         mustPageTemplate(templatesDir + "/info.html"),
 		emailRequestedAt: map[string]time.Time{},
 	}
 
@@ -138,6 +141,19 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
 
+// mustPageTemplate parses the full-page template at path with the shared
+// site header (see internal/webui) already defined, so the page can invoke
+// {{template "sitehead" .Header}} instead of hand-rolling its own header
+// markup — the finance dashboard's own template set does the same, which is
+// what keeps the three pages' chrome identical. Takes a full path rather
+// than a bare name so tests can resolve templates/ absolutely before
+// chdir'ing into a fixture directory, and still build them exactly the way
+// main does.
+func mustPageTemplate(path string) *template.Template {
+	t := template.Must(template.New(filepath.Base(path)).Funcs(templateFuncs).Parse(webui.HeaderTemplate))
+	return template.Must(t.ParseFiles(path))
+}
+
 // templateFuncs reuses internal/render's exact Bulgarian-format money and
 // date rendering, so the dashboard matches the PDFs instead of a second
 // implementation.
@@ -155,6 +171,12 @@ var templateFuncs = template.FuncMap{
 			return 0
 		}
 		return *i
+	},
+	// amount renders a plain float (the api2pdf balance, which arrives as
+	// a JSON number, not minor units) to two decimals in the same
+	// Bulgarian/European convention as every other figure in the app.
+	"amount": func(v float64) string {
+		return render.FormatAmount(int64(math.Round(v * 100)))
 	},
 }
 
@@ -245,27 +267,21 @@ func (s *server) loadInvoicingView(r *http.Request, sess auth.Session) (any, err
 	}
 
 	return struct {
-		Login           string
-		ReadOnly        bool
-		ShowFinanceLink bool
-		ShowInfoLink    bool
-		Years           []int
-		SelectedYear    *int
-		Recipients      []stats.RecipientRow
-		Invoices        []stats.InvoiceRow
-		PortalLinks     map[int]string
-		PDFCurrent      map[string]bool
+		Header       webui.Header
+		Years        []int
+		SelectedYear *int
+		Recipients   []stats.RecipientRow
+		Invoices     []stats.InvoiceRow
+		PortalLinks  map[int]string
+		PDFCurrent   map[string]bool
 	}{
-		Login:           sess.Login,
-		ReadOnly:        s.readOnly(sess),
-		ShowFinanceLink: sess.HasPart(users.PartFinance),
-		ShowInfoLink:    s.authorized(sess),
-		Years:           years,
-		SelectedYear:    selectedYear,
-		Recipients:      recipientRows,
-		Invoices:        invoiceRows,
-		PortalLinks:     portalLinks,
-		PDFCurrent:      pdfCurrentMap(invoices),
+		Header:       s.header(sess, webui.PageInvoicing),
+		Years:        years,
+		SelectedYear: selectedYear,
+		Recipients:   recipientRows,
+		Invoices:     invoiceRows,
+		PortalLinks:  portalLinks,
+		PDFCurrent:   pdfCurrentMap(invoices),
 	}, nil
 }
 

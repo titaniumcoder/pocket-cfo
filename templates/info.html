@@ -9,18 +9,31 @@
 </head>
 <body>
 <main>
-  <header>
-    <h1>PocketCFO</h1>
-    <nav class="topnav">
-      <a href="/">Finance</a>
-      <a href="/invoicing">Invoicing</a>
-      <a class="active" href="/info">Info</a>
-    </nav>
-    <div class="hdr-right">
-      <span class="login-email">{{.Login}}</span>
-      <form method="post" action="/auth/logout"><button class="link">Logout</button></form>
+  {{template "sitehead" .Header}}
+
+  <section class="panel">
+    <h2 class="section-title">api2pdf</h2>
+    <p class="section-note">Account balance and spend.</p>
+    {{if not .API2PDFConfigured}}
+    <p class="not-configured">Not configured (API2PDF_KEY unset).</p>
+    {{else if .API2PDFErr}}
+    <p class="error">{{.API2PDFErr}}</p>
+    {{else}}
+    {{if .Balance.HasBalance}}
+    <p class="balance-figure"><strong>Balance:</strong> {{amount .Balance.Balance}}{{with .Balance.Currency}} {{.}}{{end}}</p>
+    {{end}}
+    <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Field</th><th>Value</th></tr></thead>
+      <tbody>
+        {{range $k, $v := .Balance.Raw}}
+        <tr><td>{{$k}}</td><td>{{$v}}</td></tr>
+        {{end}}
+      </tbody>
+    </table>
     </div>
-  </header>
+    {{end}}
+  </section>
 
   <section class="panel">
     <h2 class="section-title">Toggl</h2>
@@ -74,28 +87,5 @@
     {{end}}
   </section>
 
-  <section class="panel">
-    <h2 class="section-title">api2pdf</h2>
-    <p class="section-note">Account balance and spend.</p>
-    {{if not .API2PDFConfigured}}
-    <p class="not-configured">Not configured (API2PDF_KEY unset).</p>
-    {{else if .API2PDFErr}}
-    <p class="error">{{.API2PDFErr}}</p>
-    {{else}}
-    {{if .Balance.HasBalance}}
-    <p><strong>Balance:</strong> {{.Balance.Balance}}</p>
-    {{end}}
-    <div class="table-wrap">
-    <table class="data">
-      <thead><tr><th>Field</th><th>Value</th></tr></thead>
-      <tbody>
-        {{range $k, $v := .Balance.Raw}}
-        <tr><td>{{$k}}</td><td>{{$v}}</td></tr>
-        {{end}}
-      </tbody>
-    </table>
-    </div>
-    {{end}}
-  </section>
 </body>
 </html>

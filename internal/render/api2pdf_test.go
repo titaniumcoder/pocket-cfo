@@ -114,6 +114,9 @@ func TestAPI2PDF_Balance_Success(t *testing.T) {
 	if !info.HasBalance || info.Balance != 12.5 {
 		t.Errorf("Balance = %+v, want HasBalance=true Balance=12.5", info)
 	}
+	if info.Currency != "USD" {
+		t.Errorf("Currency = %q, want USD", info.Currency)
+	}
 	if info.Raw["Currency"] != "USD" {
 		t.Errorf("Raw[Currency] = %q, want USD", info.Raw["Currency"])
 	}

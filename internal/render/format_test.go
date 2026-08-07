@@ -30,6 +30,31 @@ func TestFormatMoney(t *testing.T) {
 	}
 }
 
+// TestFormatAmount covers the euro-less variant used for figures that
+// aren't in euros (the api2pdf balance on /info) — same grouping and
+// decimal-comma, no currency suffix.
+func TestFormatAmount(t *testing.T) {
+	nbsp := " "
+	tests := []struct {
+		name  string
+		minor int64
+		want  string
+	}{
+		{"zero", 0, "0,00"},
+		{"cents only", 5, "0,05"},
+		{"thousands separator", 100000, "1" + nbsp + "000,00"},
+		{"thousands with cents", 102025, "1" + nbsp + "020,25"},
+		{"negative", -150000, "-1" + nbsp + "500,00"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := FormatAmount(tt.minor); got != tt.want {
+				t.Errorf("FormatAmount(%d) = %q, want %q", tt.minor, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCountryName(t *testing.T) {
 	tests := []struct {
 		name string

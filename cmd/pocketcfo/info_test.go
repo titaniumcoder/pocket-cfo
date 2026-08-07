@@ -1,7 +1,7 @@
 package main
 
 import (
-	"html/template"
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +12,7 @@ import (
 
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
+	"github.com/titaniumcoder/pocket-cfo/internal/render"
 )
 
 // newInfoTestServer builds a server with the real info.html template
@@ -24,7 +25,7 @@ func newInfoTestServer(t *testing.T) *server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	infoTmpl := template.Must(template.New("info.html").Funcs(templateFuncs).ParseFiles(filepath.Join(wd, "..", "..", "templates", "info.html")))
+	infoTmpl := mustPageTemplate(filepath.Join(wd, "..", "..", "templates", "info.html"))
 
 	noNetwork := &http.Client{Transport: oauthRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if strings.Contains(r.URL.Host, "openholidaysapi.org") {
@@ -89,5 +90,53 @@ func TestHandleInfo_RendersForAuthorizedSession(t *testing.T) {
 	}
 	if !strings.Contains(body, "Not configured (API2PDF_KEY") {
 		t.Error("expected the api2pdf section to show 'not configured' (no key in test config)")
+	}
+}
+
+// TestInfoTemplate_SectionOrderAndBalanceFormatting pins the page's section
+// order (api2pdf, then Toggl, then OpenHolidays) and the balance figure's
+// formatting — two decimals, Bulgarian/European decimal-comma, same as
+// every other amount in the app — rather than the raw Go float that would
+// otherwise print as e.g. "12.5".
+func TestInfoTemplate_SectionOrderAndBalanceFormatting(t *testing.T) {
+	s := newInfoTestServer(t)
+	var buf bytes.Buffer
+	err := s.infoTmpl.Execute(&buf, infoView{
+		API2PDFConfigured: true,
+		Balance: render.BalanceInfo{
+			Balance:    1234.5,
+			HasBalance: true,
+			Currency:   "USD",
+			Raw:        map[string]string{"Balance": "1234.5", "Currency": "USD"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := buf.String()
+
+	balanceLine := ""
+	for _, ln := range strings.Split(body, "\n") {
+		if strings.Contains(ln, "balance-figure") {
+			balanceLine = ln
+		}
+	}
+	if want := "1\u00a0234,50 USD"; !strings.Contains(balanceLine, want) {
+		t.Errorf("balance figure = %q, want it to contain %q", balanceLine, want)
+	}
+	// The raw float may still appear in the untouched Raw-fields table
+	// below; it's the headline figure that must be formatted.
+	if strings.Contains(balanceLine, "1234.5") {
+		t.Errorf("balance figure = %q, still rendering as a raw Go float", balanceLine)
+	}
+
+	api := strings.Index(body, ">api2pdf<")
+	toggl := strings.Index(body, ">Toggl<")
+	holidays := strings.Index(body, "Holiday API (OpenHolidays)")
+	if api < 0 || toggl < 0 || holidays < 0 {
+		t.Fatalf("missing a section: api2pdf=%d toggl=%d holidays=%d", api, toggl, holidays)
+	}
+	if !(api < toggl && toggl < holidays) {
+		t.Errorf("section order = api2pdf@%d toggl@%d holidays@%d, want api2pdf < toggl < holidays", api, toggl, holidays)
 	}
 }

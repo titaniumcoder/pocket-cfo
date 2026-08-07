@@ -173,7 +173,7 @@ func newTestClientServer(t *testing.T) *server {
 	}
 	templatesPath := filepath.Join(wd, "..", "..", "templates")
 	clientTmpl := template.Must(template.New("client.html").Funcs(templateFuncs).ParseFiles(filepath.Join(templatesPath, "client.html")))
-	indexTmpl := template.Must(template.New("index.html").Funcs(templateFuncs).ParseFiles(filepath.Join(templatesPath, "index.html")))
+	indexTmpl := mustPageTemplate(filepath.Join(templatesPath, "index.html"))
 	return &server{cfg: config{clientLinkSecret: "secret"}, clientTmpl: clientTmpl, indexTmpl: indexTmpl}
 }
 

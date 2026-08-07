@@ -6,6 +6,8 @@ import (
 	"math"
 	"sort"
 	"time"
+
+	"github.com/titaniumcoder/pocket-cfo/internal/webui"
 )
 
 // Tracker aggregates the Toggl and Holidays sources into the figures and
@@ -90,10 +92,8 @@ type Figures struct {
 	// access to" (see PocketCFO's plan §5.2). ShowInfoLink mirrors
 	// s.authorized(sess) — the /info diagnostics page's own gate — so an
 	// email-OTP (readonly) session never even sees the link, let alone
-	// reaches the page. The template only renders the topnav at all when
-	// this session actually has somewhere else to go
-	// (ShowInvoicingLink || ShowInfoLink) — a session scoped to just
-	// finance has no navigation menu to show.
+	// reaches the page. Whether a menu renders at all is webui.Header's
+	// call, not this package's — see Header below.
 	Login             string
 	ReadOnly          bool
 	ShowInvoicingLink bool
@@ -209,6 +209,23 @@ type Figures struct {
 	// FundingPersonal.NetIncomeCents, so they aren't subtracted again here.
 	ShowBalance  bool
 	BalanceCents int
+}
+
+// Header adapts the session-derived fields above into the shared site
+// header's own view (see internal/webui) — the finance dashboard is always
+// reachable from itself, so ShowFinance is unconditionally true here.
+func (f Figures) Header() webui.Header {
+	return webui.Header{
+		Login:         f.Login,
+		ReadOnly:      f.ReadOnly,
+		Active:        webui.PageFinance,
+		ShowFinance:   true,
+		ShowInvoicing: f.ShowInvoicingLink,
+		ShowInfo:      f.ShowInfoLink,
+		LastUpdated:   f.LastUpdated,
+		TodayURL:      f.TodayURL,
+		RefreshURL:    f.RefreshURL,
+	}
 }
 
 // ComputeMonth builds the figures for a single month (year + month).

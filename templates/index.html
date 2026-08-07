@@ -9,20 +9,7 @@
 </head>
 <body>
 <main class="wide">
-  <header>
-    <h1>PocketCFO</h1>
-    {{if or .ShowFinanceLink .ShowInfoLink}}
-    <nav class="topnav">
-      {{if .ShowFinanceLink}}<a href="/">Finance</a>{{end}}
-      <a class="active" href="/invoicing">Invoicing</a>
-      {{if .ShowInfoLink}}<a href="/info">Info</a>{{end}}
-    </nav>
-    {{end}}
-    <div class="hdr-right">
-      <span class="login-email">{{.Login}}{{if .ReadOnly}} (read-only){{end}}</span>
-      <form method="post" action="/auth/logout"><button class="link">Logout</button></form>
-    </div>
-  </header>
+  {{template "sitehead" .Header}}
 
   <nav class="years">
     <a href="/invoicing"{{if not .SelectedYear}} class="active"{{end}}>All</a>

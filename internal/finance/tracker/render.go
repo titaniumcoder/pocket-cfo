@@ -3,12 +3,14 @@ package tracker
 import (
 	"html/template"
 	"net/http"
+
+	"github.com/titaniumcoder/pocket-cfo/internal/webui"
 )
 
-var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
+var tmpl = template.Must(template.Must(template.New("").Funcs(template.FuncMap{
 	"eur":        formatEuro,
 	"truncHours": truncHours,
-}).Parse(templates))
+}).Parse(webui.HeaderTemplate)).Parse(templates))
 
 // loginData is the login template's data: errMsg is shown when non-empty;
 // showEmailLogin hides the "Continue with email" option entirely when no
@@ -143,23 +145,7 @@ var templates = `
 <body>
 <main>
   <h1 class="print-title">PocketCFO — Finance {{.Month}}</h1>
-  <header class="no-print">
-    <h1>PocketCFO</h1>
-    {{if or .ShowInvoicingLink .ShowInfoLink}}
-    <nav class="topnav">
-      <a class="active" href="/">Finance</a>
-      {{if .ShowInvoicingLink}}<a href="/invoicing">Invoicing</a>{{end}}
-      {{if .ShowInfoLink}}<a href="/info">Info</a>{{end}}
-    </nav>
-    {{end}}
-    <div class="hdr-right">
-      <span class="login-email">{{.Login}}{{if .ReadOnly}} (read-only){{end}}</span>
-      <span class="updated">Updated {{.LastUpdated}}</span>
-      <a class="link" href="{{.TodayURL}}">Today</a>
-      <a class="link" href="{{.RefreshURL}}">Reload</a>
-      <form method="post" action="/auth/logout"><button class="link">Logout</button></form>
-    </div>
-  </header>
+  {{template "sitehead" .Header}}
 
   <nav class="viewtoggle no-print">
     <a href="{{.MonthViewURL}}"{{if eq .Mode "month"}} class="active"{{end}}>Month</a>

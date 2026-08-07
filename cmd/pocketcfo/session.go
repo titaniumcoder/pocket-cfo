@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
+	"github.com/titaniumcoder/pocket-cfo/internal/users"
+	"github.com/titaniumcoder/pocket-cfo/internal/webui"
 )
 
 const sessionCookie = "pocketcfo_session"
@@ -52,6 +54,22 @@ func (s *server) readOnly(sess auth.Session) bool {
 // which show the same read-only dashboard content to both.
 func (s *server) authenticated(sess auth.Session) bool {
 	return s.authorized(sess) || s.readOnly(sess)
+}
+
+// header builds the shared site header's view for the page being rendered.
+// Each Show* flag mirrors that page's own access gate exactly — finance and
+// invoicing by users.json part, info by the stricter authorized() tier — so
+// the menu can never offer a link to a page the session would be bounced
+// from. active is the page currently being viewed (see webui.Page*).
+func (s *server) header(sess auth.Session, active string) webui.Header {
+	return webui.Header{
+		Login:         sess.Login,
+		ReadOnly:      s.readOnly(sess),
+		Active:        active,
+		ShowFinance:   sess.HasPart(users.PartFinance),
+		ShowInvoicing: sess.HasPart(users.PartInvoicing),
+		ShowInfo:      s.authorized(sess),
+	}
 }
 
 func (s *server) secureCookies() bool {

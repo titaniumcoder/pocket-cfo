@@ -7,6 +7,7 @@ import (
 
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 	"github.com/titaniumcoder/pocket-cfo/internal/render"
+	"github.com/titaniumcoder/pocket-cfo/internal/webui"
 )
 
 type infoWorkspaceView struct {
@@ -22,7 +23,7 @@ type infoCountryView struct {
 }
 
 type infoView struct {
-	Login string
+	Header webui.Header
 
 	TogglConfigured bool
 	TogglErr        string
@@ -52,7 +53,7 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
 
-	view := infoView{Login: sess.Login}
+	view := infoView{Header: s.header(sess, webui.PageInfo)}
 
 	if s.tracker.Toggl != nil {
 		view.TogglConfigured = true

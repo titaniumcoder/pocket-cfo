@@ -244,15 +244,15 @@ var templates = `
       <div class="row"><span class="label">Employee social ({{.EmployeePct}}%)</span><span class="mid"></span><span class="amt neg">&minus;{{eur .EmployeeContribCents}}</span></div>
       <div class="row"><span class="label">Income tax ({{.IncomeTaxPct}}%)</span><span class="mid"></span><span class="amt neg">&minus;{{eur .IncomeTaxCents}}</span></div>
       <div class="row net neg"><span class="label">Total company expenses</span><span class="mid"></span><span class="amt neg">&minus;{{eur .CompanyExpensesCents}}</span></div>
-      <div class="row net"><span class="label">Net income</span><span class="mid"></span><span class="amt goodamt">{{eur .NetIncomeCents}}</span></div>
+      <div class="row net{{if lt .NetIncomeCents 0}} neg{{end}}"><span class="label">Net income</span><span class="mid"></span><span class="amt netamt">{{eur .NetIncomeCents}}</span></div>
       {{end}}
       {{end}}
       {{if .AccountsErr}}<div class="row"><span class="error">{{.AccountsErr}}</span></div>{{end}}
       {{if .ShowOpeningBalance}}
-      <div class="row net"><span class="label">Opening balance <small>({{.OpeningBalanceLabel}})</small></span><span class="mid"></span><span class="amt goodamt">{{eur .OpeningBalanceCents}}</span></div>
+      <div class="row net{{if lt .OpeningBalanceCents 0}} neg{{end}}"><span class="label">Opening balance <small>({{.OpeningBalanceLabel}})</small></span><span class="mid"></span><span class="amt netamt">{{eur .OpeningBalanceCents}}</span></div>
       {{range .PrivateAccounts}}<div class="row acct"><span class="label">{{.Name}} <span class="note">as of {{.AsOf}}{{if .Note}} &middot; {{.Note}}{{end}}</span></span><span class="mid"></span><span class="amt">{{eur .Cents}}</span></div>{{end}}
       {{if .AccountsStaleNote}}<div class="row"><span class="stale-note">{{.AccountsStaleNote}}</span></div>{{end}}
-      <div class="row net gap-above"><span class="label">Available to spend</span><span class="mid"></span><span class="amt netamt">{{eur .AvailableCents}}</span></div>
+      <div class="row net gap-above{{if lt .AvailableCents 0}} neg{{end}}"><span class="label">Available to spend</span><span class="mid"></span><span class="amt netamt">{{eur .AvailableCents}}</span></div>
       {{end}}
     </div>
 

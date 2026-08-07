@@ -223,6 +223,41 @@ func TestAvailableIsOpeningPlusNetIncome(t *testing.T) {
 	}
 }
 
+// TestNegativeBalancesRenderRed guards the money rows that are allowed to
+// go negative and used to be painted green regardless — an overdraft
+// carried in from last month reading as good news is exactly backwards.
+func TestNegativeBalancesRenderRed(t *testing.T) {
+	// Opening at 2 000 against 1 000/month of expenses and no income runs
+	// out during the third month, so October opens negative.
+	trk := accountsTracker(t, `{"accounts":[
+		{"name":"Private","balance":2000,"as_of":"2026-07-31"}
+	]}`)
+
+	positive := trk.ComputeMonth(context.Background(), 2026, time.August)
+	if positive.OpeningBalanceCents <= 0 {
+		t.Fatalf("August opening = %d, want positive for the control case", positive.OpeningBalanceCents)
+	}
+	recPos := httptest.NewRecorder()
+	RenderPage(recPos, positive)
+	if strings.Contains(recPos.Body.String(), `class="row net neg"><span class="label">Opening balance`) {
+		t.Error("a positive opening balance must not render as negative")
+	}
+
+	negative := trk.ComputeMonth(context.Background(), 2026, time.November)
+	if negative.OpeningBalanceCents >= 0 {
+		t.Fatalf("November opening = %d, want negative for this test to mean anything", negative.OpeningBalanceCents)
+	}
+	rec := httptest.NewRecorder()
+	RenderPage(rec, negative)
+	body := rec.Body.String()
+	if !strings.Contains(body, `class="row net neg"><span class="label">Opening balance`) {
+		t.Errorf("a negative opening balance should carry the neg class, got: %s", body)
+	}
+	if negative.AvailableCents < 0 && !strings.Contains(body, `neg"><span class="label">Available to spend`) {
+		t.Error("a negative Available to spend should carry the neg class too")
+	}
+}
+
 // TestAvailableHiddenWithoutAnOpeningBalance keeps the row from restating
 // Net income when there's no balance layer to add to it.
 func TestAvailableHiddenWithoutAnOpeningBalance(t *testing.T) {

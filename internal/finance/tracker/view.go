@@ -43,7 +43,6 @@ type Tracker struct {
 	Invoiced     map[int]InvoicedProject // Toggl project ID -> its invoicing state, see invoiced.go
 }
 
-// TrackedRow is one project+rate group of tracked work.
 type TrackedRow struct {
 	Project     string
 	Hours       string
@@ -59,7 +58,6 @@ type InvoicedRow struct {
 	AmountCents int
 }
 
-// HolidayView is a holiday formatted for display.
 type HolidayView struct {
 	Date string
 	Name string
@@ -69,7 +67,6 @@ type HolidayView struct {
 	Current bool
 }
 
-// MonthOption is a selectable month for the navigation dropdown.
 type MonthOption struct {
 	Num  int
 	Name string

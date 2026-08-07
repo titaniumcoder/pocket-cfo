@@ -62,7 +62,6 @@ func (s Session) HasPart(part string) bool {
 	return slices.Contains(s.Parts, part)
 }
 
-// Expired reports whether the session's TTL has passed.
 func (s Session) Expired() bool {
 	return time.Now().After(s.ExpiresAt)
 }

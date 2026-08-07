@@ -141,7 +141,6 @@ type CategoryRow struct {
 	Overridden   bool
 }
 
-// LoanRow is one loan's balance for display, in cents.
 type LoanRow struct {
 	Name        string
 	AmountCents int

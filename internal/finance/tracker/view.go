@@ -229,10 +229,16 @@ type Figures struct {
 	//
 	// There is deliberately no company-side equivalent: business money is
 	// spent down rather than accumulated, so there is no balance to carry.
+	//
+	// AccountsStaleNote nags when the balance hasn't been read in a while
+	// (see staleAfterDays): the roll-forward keeps producing confident
+	// figures off a snapshot that quietly drifts further from reality, and
+	// nothing else would ever say so.
 	ShowOpeningBalance  bool
 	OpeningBalanceCents int
 	OpeningBalanceLabel string
 	PrivateAccounts     []AccountRow
+	AccountsStaleNote   string
 
 	AccountsErr string
 }
@@ -701,6 +707,11 @@ func (f *Figures) computeAccountBalances(t *Tracker, ctx context.Context, viewed
 	// contradiction rather than a breakdown.
 	if viewed == snap.OpensMonth {
 		f.PrivateAccounts = snap.AccountRow
+	}
+	if days, stale := snap.StaleDays(now); stale {
+		f.AccountsStaleNote = fmt.Sprintf(
+			"Last read %d days ago (%s). Everything below it is extrapolated from that one figure — go check your bank and update accounts.json.",
+			days, snap.LatestAsOf.Format("2 January 2006"))
 	}
 }
 

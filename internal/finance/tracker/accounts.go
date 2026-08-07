@@ -49,6 +49,25 @@ type AccountSnapshot struct {
 	OpensMonth yearMonth
 	Cents      int
 	AccountRow []AccountRow
+	// LatestAsOf is the newest read date across the accounts, kept as a
+	// full date (not just its month) so staleness can be measured in days
+	// against the real calendar — see StaleDays.
+	LatestAsOf time.Time
+}
+
+// staleAfterDays is how long a balance may go unread before the dashboard
+// says so. Everything from the snapshot month onward is extrapolated from
+// that one figure, so the older it gets the more of the panel is guesswork
+// presented as fact — and the failure is silent, which is exactly the kind
+// worth nagging about.
+const staleAfterDays = 40
+
+// StaleDays is how many days ago the newest balance was read, and whether
+// that is past staleAfterDays. Measured against real current time, not the
+// month being viewed: browsing to March doesn't make March's data fresh.
+func (s AccountSnapshot) StaleDays(now time.Time) (int, bool) {
+	days := int(now.Sub(s.LatestAsOf).Hours() / 24)
+	return days, days > staleAfterDays
 }
 
 // AccountRow is one account as displayed.
@@ -139,6 +158,9 @@ func snapshotFor(af accountsdata.AccountsFile) (AccountSnapshot, bool) {
 		})
 		if !found || opens.ordinal() > snap.OpensMonth.ordinal() {
 			snap.OpensMonth = opens
+		}
+		if d.After(snap.LatestAsOf) {
+			snap.LatestAsOf = d
 		}
 		found = true
 	}

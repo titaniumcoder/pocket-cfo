@@ -201,6 +201,60 @@ func TestPrivateBalanceRollsForwardAndCompounds(t *testing.T) {
 	}
 }
 
+// TestStaleDaysThreshold covers the nag's boundary in both directions,
+// measured against real current time rather than the month being viewed.
+func TestStaleDaysThreshold(t *testing.T) {
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name      string
+		asOf      time.Time
+		wantDays  int
+		wantStale bool
+	}{
+		{"read today", now, 0, false},
+		{"just inside the threshold", now.AddDate(0, 0, -staleAfterDays), staleAfterDays, false},
+		{"one day past", now.AddDate(0, 0, -(staleAfterDays + 1)), staleAfterDays + 1, true},
+		{"badly overdue", now.AddDate(0, 0, -120), 120, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			days, stale := AccountSnapshot{LatestAsOf: tt.asOf}.StaleDays(now)
+			if days != tt.wantDays || stale != tt.wantStale {
+				t.Errorf("StaleDays = %d, %v; want %d, %v", days, stale, tt.wantDays, tt.wantStale)
+			}
+		})
+	}
+}
+
+// TestStaleNoteAppearsOnlyWhenOverdue wires the nag through a real compute:
+// a balance read moments ago says nothing, a long-stale one speaks up. The
+// snapshot dates are relative to real now, since staleness is measured
+// against the calendar rather than the viewed month.
+func TestStaleNoteAppearsOnlyWhenOverdue(t *testing.T) {
+	now := time.Now()
+	viewed := yearMonth{now.Year(), now.Month()}
+	// Anchor each snapshot to the end of the month before the viewed one,
+	// so the balance opens the month under test either way.
+	opensPrev := viewed.addMonths(-1)
+
+	fresh := time.Date(opensPrev.Year, opensPrev.Month, 28, 0, 0, 0, 0, time.UTC)
+	if now.Sub(fresh).Hours()/24 > staleAfterDays {
+		t.Skip("running late enough in the month that even last month's read is already stale")
+	}
+	trkFresh := accountsTracker(t, `{"accounts":[{"name":"P","balance":2000,"as_of":"`+fresh.Format("2006-01-02")+`"}]}`)
+	f := trkFresh.ComputeMonth(context.Background(), viewed.Year, viewed.Month)
+	if f.AccountsStaleNote != "" {
+		t.Errorf("a recently read balance should not nag, got %q", f.AccountsStaleNote)
+	}
+
+	old := now.AddDate(0, 0, -100)
+	trkOld := accountsTracker(t, `{"accounts":[{"name":"P","balance":2000,"as_of":"`+old.Format("2006-01-02")+`"}]}`)
+	fOld := trkOld.ComputeMonth(context.Background(), viewed.Year, viewed.Month)
+	if fOld.AccountsStaleNote == "" {
+		t.Error("a balance read 100 days ago should nag")
+	}
+}
+
 // TestPrivateBalanceStaleSnapshotErrors covers the roll-forward cap: a
 // balance read years ago has drifted too far to present as this month's
 // opening figure, so it reports instead of quietly showing fiction.

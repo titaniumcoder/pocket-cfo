@@ -25,6 +25,7 @@
   --muted: #6b7684;
   --badge-draft-bg: rgba(107,118,132,.12); --badge-draft-fg: #5b6472;
   --badge-issued-bg: rgba(26,115,232,.12); --badge-issued-fg: #1a53b0;
+  --warn: #8a5a00; --warn-bg: rgba(214,158,46,.15);
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -46,6 +47,7 @@
     --muted: #8b96a5;
     --badge-draft-bg: rgba(139,150,165,.16); --badge-draft-fg: #b7bfc9;
     --badge-issued-bg: rgba(138,176,242,.18); --badge-issued-fg: #8ab0f2;
+    --warn: #e8c168; --warn-bg: rgba(214,158,46,.18);
   }
 }
 * { box-sizing: border-box; }
@@ -188,6 +190,7 @@ main h2.panel-title { font-size: 1.05rem; text-transform: none; letter-spacing: 
 .row.balance.neg { border-color: var(--net-border-neg); }
 .row.balance .label, .row.balance .amt { font-size: 1.2rem; }
 .error { color: var(--danger); font-size: .9rem; }
+.stale-note { grid-column: 1 / -1; color: var(--warn); font-size: .82rem; background: var(--warn-bg); border-radius: 8px; padding: .5rem .7rem; margin: .1rem 0 .3rem; }
 .row .error { grid-column: 1 / -1; }
 .holidays ul { list-style: none; margin: 0; padding: 0; }
 .holidays li { display: grid; grid-template-columns: 6.5em 1fr; column-gap: .75rem; padding: .35rem .75rem; border-radius: 6px; }

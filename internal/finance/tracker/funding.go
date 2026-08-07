@@ -175,6 +175,29 @@ func (t *Tracker) fundingLaborIncomeEUR(ctx context.Context, months []yearMonth,
 	}
 	years := distinctYears(months)
 
+	ydByYear, err := t.fetchYearDataByYear(ctx, years)
+	if err != nil {
+		return nil, err
+	}
+	holidaysByYear, err := t.fetchHolidaysByYear(ctx, years)
+	if err != nil {
+		return nil, err
+	}
+
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, t.Loc)
+
+	incomeEUR := make([]float64, len(months))
+	for i, ym := range months {
+		incomeEUR[i] = t.monthLaborIncome(ym, ydByYear[ym.Year], holidaysByYear[ym.Year], today, rateCents)
+	}
+
+	return incomeEUR, nil
+}
+
+// fetchYearDataByYear fetches the Toggl yearly report for each distinct year
+// the funding months touch — a funding period spanning a year boundary (see
+// fundingRangeForMonth/Year) needs both years' data.
+func (t *Tracker) fetchYearDataByYear(ctx context.Context, years []int) (map[int]*YearData, error) {
 	ydByYear := map[int]*YearData{}
 	for _, y := range years {
 		yd, err := t.Toggl.Year(ctx, y)
@@ -183,7 +206,12 @@ func (t *Tracker) fundingLaborIncomeEUR(ctx context.Context, months []yearMonth,
 		}
 		ydByYear[y] = yd
 	}
+	return ydByYear, nil
+}
 
+// fetchHolidaysByYear fetches each distinct year's public holidays and
+// indexes them by "YYYY-MM-DD" for workdayInfo's lookup.
+func (t *Tracker) fetchHolidaysByYear(ctx context.Context, years []int) (map[int]map[string]bool, error) {
 	holidaysByYear := map[int]map[string]bool{}
 	for _, y := range years {
 		yearStart := time.Date(y, time.January, 1, 0, 0, 0, 0, t.Loc)
@@ -198,46 +226,46 @@ func (t *Tracker) fundingLaborIncomeEUR(ctx context.Context, months []yearMonth,
 		}
 		holidaysByYear[y] = set
 	}
+	return holidaysByYear, nil
+}
 
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, t.Loc)
+// monthLaborIncome computes one funding month's raw labor income: Toggl-
+// tracked cents plus projected "expected" cents for whatever's left of the
+// month relative to today (same workdayInfo-driven formula Tracker.compute
+// uses, minus the vacation-day deduction, which is tied to the *viewed*
+// year's annual allowance and doesn't apply to an unrelated funding period).
+func (t *Tracker) monthLaborIncome(ym yearMonth, yd *YearData, holidays map[string]bool, today time.Time, rateCents int) float64 {
+	monthStart := time.Date(ym.Year, ym.Month, 1, 0, 0, 0, 0, t.Loc)
+	monthEnd := monthStart.AddDate(0, 1, -1)
 
-	incomeEUR := make([]float64, len(months))
-	for i, ym := range months {
-		yd := ydByYear[ym.Year]
-		monthStart := time.Date(ym.Year, ym.Month, 1, 0, 0, 0, 0, t.Loc)
-		monthEnd := monthStart.AddDate(0, 1, -1)
-
-		var trackedCents int
-		for _, a := range yd.Months[ym.Month] {
-			if t.invoiceSuppresses(a.ProjectID, ym) {
-				continue
-			}
-			trackedCents += a.AmountCents
+	var trackedCents int
+	for _, a := range yd.Months[ym.Month] {
+		if t.invoiceSuppresses(a.ProjectID, ym) {
+			continue
 		}
-		// Real invoiced income that became usable in this funding month —
-		// same UsableCents lookup Tracker.compute's own Invoiced section
-		// uses, added directly here rather than through the generic
-		// fundingShiftMonths shift: an invoice's "usable in the month
-		// after its due date" timing is already the real answer, not
-		// something to shift again.
-		trackedCents += t.invoicedCentsForMonth(ym)
-
-		// workdayInfo naturally returns remaining=0 for a month wholly in
-		// the past (nothing in [monthStart,monthEnd] is after today) and
-		// counts every workday for a month wholly in the future — no
-		// special-casing needed, same as compute's own per-month loop.
-		remaining, todayIsWorkday := workdayInfo(monthStart, monthEnd, today, holidaysByYear[ym.Year])
-		days := remaining
-		todayTracked := yd.Days[today.Format("2006-01-02")]
-		if todayIsWorkday && !todayTracked {
-			days++
-		}
-		expectedCents := round(float64(days) * t.HoursPerDay * float64(rateCents))
-
-		incomeEUR[i] = float64(trackedCents+expectedCents) / 100
+		trackedCents += a.AmountCents
 	}
+	// Real invoiced income that became usable in this funding month —
+	// same UsableCents lookup Tracker.compute's own Invoiced section
+	// uses, added directly here rather than through the generic
+	// fundingShiftMonths shift: an invoice's "usable in the month
+	// after its due date" timing is already the real answer, not
+	// something to shift again.
+	trackedCents += t.invoicedCentsForMonth(ym)
 
-	return incomeEUR, nil
+	// workdayInfo naturally returns remaining=0 for a month wholly in
+	// the past (nothing in [monthStart,monthEnd] is after today) and
+	// counts every workday for a month wholly in the future — no
+	// special-casing needed, same as compute's own per-month loop.
+	remaining, todayIsWorkday := workdayInfo(monthStart, monthEnd, today, holidays)
+	days := remaining
+	todayTracked := yd.Days[today.Format("2006-01-02")]
+	if todayIsWorkday && !todayTracked {
+		days++
+	}
+	expectedCents := round(float64(days) * t.HoursPerDay * float64(rateCents))
+
+	return float64(trackedCents+expectedCents) / 100
 }
 
 func distinctYears(months []yearMonth) []int {

@@ -204,6 +204,7 @@ var templates = `
       {{range .Invoiced}}<div class="row"><span class="label">{{if .URL}}<a href="{{.URL}}">{{.Number}}</a>{{else}}{{.Number}}{{end}}</span><span class="mid"></span><span class="amt">{{eur .AmountCents}}</span></div>{{end}}
       {{end}}
 
+      {{if or .ShowExpected .ExpectedErr}}
       <h2>Expected</h2>
       {{if .ExpectedErr}}<div class="row"><span class="error">{{.ExpectedErr}}</span></div>
       {{else}}
@@ -211,6 +212,7 @@ var templates = `
       {{if .ShowVacation}}
       <div class="row"><span class="label">Vacation</span><span class="mid">{{.VacationHoursDeducted}} &times; {{.ExpectedRate}}</span><span class="amt neg">&minus;{{eur .VacationCentsDeducted}}<span class="hrs-m">({{.VacationHoursDeducted}}h)</span></span></div>
       <div class="row sub"><span class="label">Expected total</span><span class="mid">{{.ExpectedNetHours}} &times; {{.ExpectedRate}}</span><span class="amt goodamt">{{eur .ExpectedNetCents}}<span class="hrs-m">({{.ExpectedNetHours}}h)</span></span></div>
+      {{end}}
       {{end}}
       {{end}}
 
@@ -259,6 +261,11 @@ var templates = `
 
     {{if .ShowBalance}}
     <div class="ledger">
+      {{if .AccountsErr}}<div class="row"><span class="error">{{.AccountsErr}}</span></div>{{end}}
+      {{if .ShowOpeningBalance}}
+      <div class="row"><span class="label">Opening balance <small>({{.OpeningBalanceLabel}})</small></span><span class="mid"></span><span class="amt">{{eur .OpeningBalanceCents}}</span></div>
+      {{range .PrivateAccounts}}<div class="row acct"><span class="label">{{.Name}} <span class="note">as of {{.AsOf}}{{if .Note}} &middot; {{.Note}}{{end}}</span></span><span class="mid"></span><span class="amt">{{eur .Cents}}</span></div>{{end}}
+      {{end}}
       <div class="row net neg"><span class="label">Total private expenses</span><span class="mid"></span><span class="amt neg">&minus;{{eur .PrivateTotalSpentCents}}</span></div>
       <div class="row net balance{{if lt .BalanceCents 0}} neg{{end}}"><span class="label">Balance</span><span class="mid"></span><span class="amt netamt">{{eur .BalanceCents}}</span></div>
     </div>

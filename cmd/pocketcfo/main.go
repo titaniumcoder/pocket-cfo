@@ -76,6 +76,7 @@ func buildTracker(cfg financeconfig.Config, httpClient *http.Client, budgetDir s
 		Toggl:        togglClient,
 		Holidays:     &tracker.Holidays{Country: cfg.Country, Subdivision: cfg.Subdivision, HTTP: httpClient},
 		Budget:       &tracker.Budget{FS: os.DirFS(budgetDir)},
+		Accounts:     &tracker.Accounts{FS: os.DirFS(budgetDir)},
 		HoursPerDay:  cfg.HoursPerDay,
 		Loc:          time.Local,
 		VacationDays: cfg.AnnualVacationDays,

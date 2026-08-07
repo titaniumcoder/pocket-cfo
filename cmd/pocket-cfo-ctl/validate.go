@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/titaniumcoder/pocket-cfo/internal/finance/accountsdata"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/budgetdata"
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/invoice"
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/recipient"
@@ -46,6 +47,10 @@ func runValidate(args []string) int {
 			return err
 		}
 		return budgetdata.ValidateBudget(bf)
+	})
+	problems += validateFile(filepath.Join(dataDir, "accounts.json"), func(b []byte) error {
+		var af accountsdata.AccountsFile
+		return json.Unmarshal(b, &af)
 	})
 
 	if problems > 0 {

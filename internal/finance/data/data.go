@@ -1,4 +1,4 @@
-// Package data embeds budget.schema.json (schema definitions ship embedded,
+// Package data embeds the finance schemas (schema definitions ship embedded,
 // same convention as invoicer's own schemas/ — see AGENTS.md). budget.json
 // itself is data, not schema, so it does NOT live here: it's
 // read fresh from disk at runtime (data/budget.json by default, overridable
@@ -9,5 +9,5 @@ package data
 
 import "embed"
 
-//go:embed budget.schema.json
+//go:embed budget.schema.json accounts.schema.json
 var FS embed.FS

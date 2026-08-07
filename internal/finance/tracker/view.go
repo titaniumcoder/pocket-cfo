@@ -29,9 +29,13 @@ import (
 // "no invoices exist yet", same nil-means-"not configured" convention as
 // Toggl/Budget.
 type Tracker struct {
-	Toggl        *Toggl
-	Holidays     *Holidays
-	Budget       *Budget
+	Toggl    *Toggl
+	Holidays *Holidays
+	Budget   *Budget
+	// Accounts is the optional real-bank-balance layer (accounts.json).
+	// Nil, or a missing file, simply leaves the balance rows off — the
+	// dashboard behaves as it did before the layer existed.
+	Accounts     *Accounts
 	HoursPerDay  float64
 	Loc          *time.Location
 	Personal     PersonalParams
@@ -136,6 +140,12 @@ type Figures struct {
 	InvoicedCents int
 
 	// Expected work still to come this month, at the most-used rate.
+	// ShowExpected is false once the whole viewed period is in the past:
+	// there is no work still to come, so the section is dropped rather
+	// than rendered as a row of zeroes and an em-dash range. (The figures
+	// below are already 0 in that case — workdayInfo only counts days on
+	// or after today — so this is presentation, not arithmetic.)
+	ShowExpected     bool
 	ExpectedRange    string
 	ExpectedHours    string
 	ExpectedRate     string
@@ -209,6 +219,22 @@ type Figures struct {
 	// FundingPersonal.NetIncomeCents, so they aren't subtracted again here.
 	ShowBalance  bool
 	BalanceCents int
+
+	// The real personal bank balance from accounts.json — month view only,
+	// and only from the month its snapshot opens (see
+	// computeAccountBalances).
+	// OpeningBalanceCents is what the month starts with, already rolled
+	// forward from the snapshot; it is the first term of BalanceCents
+	// above, so the panel reads opening + income - expenses = Balance.
+	//
+	// There is deliberately no company-side equivalent: business money is
+	// spent down rather than accumulated, so there is no balance to carry.
+	ShowOpeningBalance  bool
+	OpeningBalanceCents int
+	OpeningBalanceLabel string
+	PrivateAccounts     []AccountRow
+
+	AccountsErr string
 }
 
 // Header adapts the session-derived fields above into the shared site
@@ -298,6 +324,8 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	for m, cents := range expectedNetCentsByMonth {
 		monthlyCompanyCents[m] += cents
 	}
+	// A period that has fully elapsed has no work still to come.
+	result.ShowExpected = !today.After(end)
 
 	result.computeTotal(trackedHours, trackedCents, expectedNetHours, expectedOK, rateCents)
 
@@ -618,13 +646,71 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 		f.PrivateTotalSpentCents = bv.TotalSpentCents
 	}
 
-	// The bottom line: funding income minus this period's private expenses.
-	// Company expenses for the funding period are already deducted inside
-	// FundingPersonal.NetIncomeCents, so they aren't subtracted again here.
+	// Real account balances (month view only — see computeAccountBalances).
+	// Resolved before the bottom line below, which builds on the opening
+	// balance it produces.
+	if months == 1 {
+		f.computeAccountBalances(t, ctx, yearMonth{year, start.Month()}, now, rateCents)
+	}
+
+	// The bottom line: the month's opening account balance (zero unless
+	// accounts.json puts one there) plus funding income, minus this
+	// period's private expenses. Company expenses for the funding period
+	// are already deducted inside FundingPersonal.NetIncomeCents, so they
+	// aren't subtracted again here.
 	if f.BudgetErr == "" && f.FundingPersonal.Err == "" {
 		f.ShowBalance = true
-		f.BalanceCents = f.FundingPersonal.NetIncomeCents - f.PrivateTotalSpentCents
+		f.BalanceCents = f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents - f.PrivateTotalSpentCents
 	}
+}
+
+// computeAccountBalances layers the real personal bank balance
+// (accounts.json) onto the month being viewed.
+//
+// From the month its snapshot OPENS (the month after the balance was read —
+// a figure read on 31 July is August's opening balance, not July's) the
+// balance is rolled forward one month at a time: each month closes with
+// opening + net income - private expenses, and that closing figure opens
+// the next, so a loss-making month genuinely eats into it. Earlier months
+// ignore it: a past balance isn't known, and back-projecting one would be
+// fiction.
+//
+// Month view only. A year's "opening balance" would have to pick one month
+// to anchor to and silently mean something different from the monthly
+// figure, so the year view omits the layer rather than inventing a number.
+func (f *Figures) computeAccountBalances(t *Tracker, ctx context.Context, viewed yearMonth, now time.Time, rateCents int) {
+	if t.Accounts == nil || f.BudgetErr != "" || f.FundingPersonal.Err != "" {
+		return
+	}
+	snap, ok := t.Accounts.Snapshot(ctx)
+	if !ok || viewed.ordinal() < snap.OpensMonth.ordinal() {
+		return
+	}
+	opening, err := t.privateOpeningCents(ctx, snap, viewed, now, rateCents)
+	if err != nil {
+		f.AccountsErr = err.Error()
+		return
+	}
+	f.ShowOpeningBalance = true
+	f.OpeningBalanceCents = opening
+	f.OpeningBalanceLabel = openingBalanceLabel(snap, viewed)
+	// The per-account breakdown is only shown in the month the snapshot
+	// opens, where the opening figure IS those balances. Once carried, the
+	// opening figure is derived and no longer equals what was read — listing
+	// the original 4 200 under an opening balance of -70 would read as a
+	// contradiction rather than a breakdown.
+	if viewed == snap.OpensMonth {
+		f.PrivateAccounts = snap.AccountRow
+	}
+}
+
+// openingBalanceLabel says where the figure came from: the snapshot itself
+// in its own month, or how far it has been carried since.
+func openingBalanceLabel(snap AccountSnapshot, viewed yearMonth) string {
+	if viewed == snap.OpensMonth {
+		return "as read end of " + snap.OpensMonth.addMonths(-1).String()
+	}
+	return "carried from " + snap.OpensMonth.String()
 }
 
 // EvictMonth drops the cached Toggl and budget data for the given month (the
@@ -640,6 +726,7 @@ func (t *Tracker) EvictMonth(year int, month time.Month) {
 	if t.Budget != nil {
 		t.Budget.Evict()
 	}
+	t.Accounts.Evict()
 }
 
 // EvictYear drops the cached Toggl and budget data for the given year (the
@@ -654,6 +741,7 @@ func (t *Tracker) EvictYear(year int) {
 	if t.Budget != nil {
 		t.Budget.Evict()
 	}
+	t.Accounts.Evict()
 }
 
 // fillMonthNav populates navigation for month view: prev/next month links, the

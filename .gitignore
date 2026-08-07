@@ -16,6 +16,7 @@
 # generated from internal/finance/data/budget.schema.json via go generate —
 # see internal/finance/budgetdata/gen.go
 /internal/finance/budgetdata/generated.go
+/internal/finance/accountsdata/generated.go
 
 # Test binary, built with `go test -c`
 *.test

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/titaniumcoder/pocket-cfo/internal/finance/data/accounts.schema.json",
+  "title": "Accounts",
+  "description": "Real personal bank-account balances, hand-read off the bank at the end of a month. Not bookkeeping: there are no transactions here, just \"this is what was actually in the account when the month closed\". A balance read at the end of month M opens month M+1's rolling budget, and from there it is carried forward month by month (opening + net income - private expenses), so it genuinely depletes. Months at or before M ignore it entirely — a past balance isn't known and isn't guessed. Business accounts are deliberately not modelled: company money is spent down rather than accumulated, so there is no business balance to carry. Hand-edited and committed via git.",
+  "type": "object",
+  "required": ["accounts"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "accounts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/account" }
+    }
+  },
+  "$defs": {
+    "account": {
+      "type": "object",
+      "required": ["name", "balance", "as_of"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "balance": {
+          "type": "number",
+          "description": "Euros, decimals allowed (e.g. 1427.42). May be negative for an overdrawn account."
+        },
+        "as_of": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "The month-end date this balance was read, e.g. \"2026-07-31\". It is the CLOSING balance of that month, so it becomes the OPENING balance of the next one: a balance dated 2026-07-31 is August's starting figure and has no effect on July. Only the month matters; the day is informational. All accounts are combined into one balance anchored at the latest as_of among them, so read them together — a stale entry silently drags the whole figure."
+        },
+        "note": {
+          "type": "string",
+          "description": "Free-text context, shown next to the account name. Not used in any computation."
+        }
+      }
+    }
+  }
+}

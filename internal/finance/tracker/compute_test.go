@@ -122,6 +122,36 @@ func TestComputeMonthHappyPath(t *testing.T) {
 	}
 }
 
+// TestExpectedHiddenForElapsedPeriods covers both directions of the
+// ShowExpected gate: a month that has fully elapsed has no work still to
+// come, so the Expected section is dropped entirely rather than rendered
+// as zeroes with an em-dash range; a future month still shows it.
+func TestExpectedHiddenForElapsedPeriods(t *testing.T) {
+	trk := fullTracker()
+	now := time.Now()
+
+	past := trk.ComputeMonth(context.Background(), now.Year()-1, time.March)
+	if past.ShowExpected {
+		t.Error("ShowExpected = true for a month a year in the past, want false")
+	}
+	future := trk.ComputeMonth(context.Background(), now.Year()+1, time.March)
+	if !future.ShowExpected {
+		t.Error("ShowExpected = false for a month a year ahead, want true")
+	}
+
+	rec := httptest.NewRecorder()
+	RenderPage(rec, past)
+	if strings.Contains(rec.Body.String(), ">Expected<") {
+		t.Error("elapsed month still renders the Expected section")
+	}
+
+	rec2 := httptest.NewRecorder()
+	RenderPage(rec2, future)
+	if !strings.Contains(rec2.Body.String(), ">Expected<") {
+		t.Error("future month should still render the Expected section")
+	}
+}
+
 func TestComputeYearShowsFutureVacation(t *testing.T) {
 	trk := fullTracker()
 	f := trk.ComputeYear(context.Background(), 2027)
@@ -262,6 +292,7 @@ func TestRenderPageHidesEmptyTrackedAndTotalWhenNoVacation(t *testing.T) {
 		LastUpdated:   "—",
 		Mode:          "year",
 		Currency:      "€",
+		ShowExpected:  true,
 		ExpectedRange: "01.01. - 31.12.27",
 		ExpectedHours: "1600",
 		ExpectedRate:  "75",
@@ -339,6 +370,7 @@ func TestRenderPageShowsExpectedTotalWithVacation(t *testing.T) {
 		LastUpdated:           "—",
 		Mode:                  "year",
 		Currency:              "€",
+		ShowExpected:          true,
 		ExpectedRange:         "01.01. - 31.12.27",
 		ExpectedHours:         "1800",
 		ExpectedRate:          "75",

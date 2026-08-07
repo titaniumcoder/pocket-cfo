@@ -1,0 +1,11 @@
+{
+  "$schema": "../internal/finance/data/accounts.schema.json",
+  "accounts": [
+    {
+      "name": "Private Checking",
+      "balance": 4200,
+      "as_of": "2026-07-31",
+      "note": "Read at month end; opens August"
+    }
+  ]
+}

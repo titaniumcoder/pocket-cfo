@@ -87,10 +87,17 @@ type Figures struct {
 	// invoicing dashboard. ShowInvoicingLink reflects whether this
 	// session has access to the invoicing part at all — "users with
 	// access to both get shared links, others land to wherever they have
-	// access to" (see PocketCFO's plan §5.2).
+	// access to" (see PocketCFO's plan §5.2). ShowInfoLink mirrors
+	// s.authorized(sess) — the /info diagnostics page's own gate — so an
+	// email-OTP (readonly) session never even sees the link, let alone
+	// reaches the page. The template only renders the topnav at all when
+	// this session actually has somewhere else to go
+	// (ShowInvoicingLink || ShowInfoLink) — a session scoped to just
+	// finance has no navigation menu to show.
 	Login             string
 	ReadOnly          bool
 	ShowInvoicingLink bool
+	ShowInfoLink      bool
 
 	// Navigation. Mode is "month" or "year"; the period selects and prev/next
 	// arrows adapt accordingly.

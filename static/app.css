@@ -1,3 +1,9 @@
+/* Shared design system for every PocketCFO dashboard page (Finance,
+   Invoicing, Info) and its login-adjacent pages. One stylesheet, one look —
+   served at /invoicing/static/app.css and linked from every page, including
+   internal/finance/tracker's own embedded templates (see AGENTS.md on why
+   that package still renders its own HTML rather than living under
+   templates/). */
 :root {
   color-scheme: light dark;
   --bg: #f4f5f7;
@@ -16,6 +22,9 @@
   --zebra-bg: rgba(0,0,0,.028);
   --panel-bg: #fff;
   --panel-border: rgba(0,0,0,.08);
+  --muted: #6b7684;
+  --badge-draft-bg: rgba(107,118,132,.12); --badge-draft-fg: #5b6472;
+  --badge-issued-bg: rgba(26,115,232,.12); --badge-issued-fg: #1a53b0;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -34,35 +43,51 @@
     --zebra-bg: rgba(255,255,255,.035);
     --panel-bg: #1c1f23;
     --panel-border: rgba(255,255,255,.07);
+    --muted: #8b96a5;
+    --badge-draft-bg: rgba(139,150,165,.16); --badge-draft-fg: #b7bfc9;
+    --badge-issued-bg: rgba(138,176,242,.18); --badge-issued-fg: #8ab0f2;
   }
 }
 * { box-sizing: border-box; }
 body { font-family: system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--fg); }
 main { max-width: 1040px; margin: 0 auto; padding: 2rem 1.25rem; }
 main.login { max-width: 760px; }
+main.wide { max-width: 1240px; }
 .layout { display: grid; grid-template-columns: 1fr; gap: 2rem; align-items: start; }
 @media (min-width: 860px) {
   .layout { grid-template-columns: minmax(0, 1fr) 260px; }
 }
 .income-panel .hrs-m { display: none; }
+
+/* Tablet range: keep the desktop-shaped grids (3-column ledger, full
+   tables) but tighten spacing — the mobile breakpoint below actively
+   restructures content, which isn't needed yet at tablet widths. */
+@media (min-width: 601px) and (max-width: 900px) {
+  main { padding: 1.5rem 1rem; }
+  .ledger { column-gap: 2rem; }
+  table.data { font-size: .92rem; }
+  table.data th, table.data td { padding: .5rem .4rem; }
+  table.data td.address, table.data th.address { display: none; }
+}
+
 @media (max-width: 600px) {
-  .income-panel .ledger { 
+  .income-panel .ledger {
     grid-template-columns: 1fr auto;
     column-gap: 1rem;
   }
-  .income-panel .mid { 
-    display: none; 
+  .income-panel .mid {
+    display: none;
   }
-  .income-panel .amt { 
-    display: flex; 
-    flex-direction: column; 
-    align-items: flex-end; 
+  .income-panel .amt {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
   }
-  .income-panel .hrs-m { 
-    display: block; 
-    font-size: .8em; 
-    font-weight: 400; 
-    opacity: .6; 
+  .income-panel .hrs-m {
+    display: block;
+    font-size: .8em;
+    font-weight: 400;
+    opacity: .6;
   }
   .group-rows .row .label {
     padding-left: 1.5rem;
@@ -77,25 +102,28 @@ main.login { max-width: 760px; }
   .panel {
     margin-bottom: 1.5rem;
   }
+  main { padding: 1.25rem .85rem; }
+  header { flex-wrap: wrap; row-gap: .5rem; }
 }
 .main-col { min-width: 0; }
 .side-col.holidays { position: sticky; top: 2rem; }
-header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
-.topnav { display: flex; gap: .25rem; }
-.topnav a { text-decoration: none; color: inherit; opacity: .55; font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; padding: .3rem .8rem; border-radius: 999px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.topnav { display: flex; gap: .25rem; flex-wrap: wrap; }
+.topnav a { text-decoration: none; color: inherit; opacity: .55; font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; padding: .3rem .8rem; border-radius: 999px; white-space: nowrap; }
 .topnav a:hover { opacity: .9; }
 .topnav a.active { opacity: 1; background: var(--blue); color: #fff; }
 h1 { font-size: 1.6rem; margin: 0 0 1.5rem; }
 h1 small { font-weight: 400; opacity: .6; font-size: 1rem; }
-.monthnav { display: flex; align-items: center; justify-content: center; gap: .75rem; margin: 0 0 1.5rem; }
+header h1 { margin: 0; font-size: 1.5rem; }
+.monthnav { display: flex; align-items: center; justify-content: center; gap: .75rem; margin: 0 0 1.5rem; flex-wrap: wrap; }
 .monthnav .arrow { text-decoration: none; font-size: 1.4rem; line-height: 1; opacity: .6; padding: .2rem .5rem; border-radius: 6px; color: inherit; }
 .monthnav a.arrow:hover { opacity: 1; background: var(--hover-bg); }
 .monthnav .arrow.disabled { opacity: .22; cursor: default; }
 .monthnav select { padding: .4rem .5rem; border-radius: 8px; border: 1px solid var(--input-border); background: transparent; color: inherit; font-size: 1rem; font-variant-numeric: tabular-nums; }
-.viewtoggle { display: flex; justify-content: center; gap: .25rem; margin: 0 0 1rem; }
-.viewtoggle a { text-decoration: none; color: inherit; opacity: .55; font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; padding: .3rem .8rem; border-radius: 999px; }
-.viewtoggle a:hover { opacity: .9; }
-.viewtoggle a.active { opacity: 1; background: var(--blue); color: #fff; }
+.viewtoggle, nav.years { display: flex; justify-content: center; gap: .25rem; margin: 0 0 1rem; flex-wrap: wrap; }
+.viewtoggle a, nav.years a { text-decoration: none; color: inherit; opacity: .55; font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; padding: .3rem .8rem; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; }
+.viewtoggle a:hover, nav.years a:hover { opacity: .9; }
+.viewtoggle a.active, nav.years a.active { opacity: 1; background: var(--blue); color: #fff; }
 main h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; opacity: .55; margin: 1.5rem 0 .35rem; }
 .ledger { display: grid; grid-template-columns: repeat(3, auto); column-gap: 3.5rem; align-items: baseline; }
 @media (max-width: 600px) {
@@ -155,7 +183,8 @@ main h2.panel-title { font-size: 1.05rem; text-transform: none; letter-spacing: 
 .row.balance { padding-top: .7rem; padding-bottom: .7rem; border: 1px solid var(--net-border); }
 .row.balance.neg { border-color: var(--net-border-neg); }
 .row.balance .label, .row.balance .amt { font-size: 1.2rem; }
-.error { color: var(--danger); font-size: .9rem; grid-column: 1 / -1; }
+.error { color: var(--danger); font-size: .9rem; }
+.row .error { grid-column: 1 / -1; }
 .holidays ul { list-style: none; margin: 0; padding: 0; }
 .holidays li { display: grid; grid-template-columns: 6.5em 1fr; column-gap: .75rem; padding: .35rem .75rem; border-radius: 6px; }
 .holidays li:nth-child(odd) { background: var(--zebra-bg); }
@@ -164,11 +193,13 @@ main h2.panel-title { font-size: 1.05rem; text-transform: none; letter-spacing: 
 .holidays li.hday-current { background: var(--hover-bg); font-weight: 700; }
 .holidays li.hday-current .hday-date { opacity: .8; }
 .muted { opacity: .6; }
-.hdr-right { display: flex; align-items: baseline; gap: 1rem; }
+.not-configured { opacity: .6; font-style: italic; font-size: .9rem; }
+.hdr-right { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+.login-email { color: var(--muted); font-size: .8rem; }
 .updated { font-size: .8rem; opacity: .55; font-variant-numeric: tabular-nums; }
 a.link { color: inherit; opacity: .6; text-decoration: underline; font-size: .9rem; }
 a.link:hover { opacity: 1; }
-button.link { background: none; border: 0; color: inherit; opacity: .6; cursor: pointer; text-decoration: underline; font-size: .9rem; }
+button.link { background: none; border: 0; color: inherit; opacity: .6; cursor: pointer; text-decoration: underline; font-size: .9rem; padding: 0; font: inherit; }
 .login { max-width: 320px; margin: 15vh auto; text-align: center; }
 .button { display: inline-block; padding: .7rem 1.4rem; border-radius: 8px; border: 0; background: var(--blue); color: #fff; cursor: pointer; text-decoration: none; font-size: 1rem; }
 .login .button { display: block; width: 100%; margin: 0 0 .6rem; }
@@ -176,6 +207,53 @@ button.link { background: none; border: 0; color: inherit; opacity: .6; cursor: 
 .login input[type="email"] { padding: .6rem .8rem; border-radius: 8px; border: 1px solid var(--input-border); background: transparent; color: inherit; font-size: 1rem; }
 .login .error { margin-top: 1rem; }
 .print-title { display: none; }
+
+/* Data tables — Invoicing/Info's Recipients/Invoices/diagnostics lists,
+   wrapped in .panel for the same rounded-card look as the ledgers. */
+h2.section-title { font-size: 1.05rem; text-transform: none; letter-spacing: normal; opacity: .85; margin: 0 0 .35rem; font-weight: 700; }
+p.section-note { color: var(--muted); font-size: .8rem; margin: 0 0 .85rem; }
+.table-wrap { overflow-x: auto; }
+table.data { width: 100%; border-collapse: collapse; }
+table.data th {
+  text-align: left; font-size: .7rem; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); border-bottom: 1px solid var(--panel-border); padding: .6rem .4rem;
+  white-space: nowrap;
+}
+table.data td { padding: .6rem .4rem; border-bottom: 1px solid var(--panel-border); vertical-align: top; font-size: .92rem; }
+table.data tbody tr:last-child td { border-bottom: 0; }
+table.data th.num, table.data td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+table.data th.code, table.data td.code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: .85rem; }
+table.data td.outstanding-nonzero { color: var(--danger); font-weight: 700; }
+table.data tr.row-draft { opacity: .65; font-style: italic; }
+table.data tr.row-draft a { color: var(--muted); }
+
+.badge {
+  display: inline-block; margin-right: .5rem; vertical-align: middle;
+  font-size: .65rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  padding: .1rem .6rem; border-radius: 999px;
+}
+.badge-draft   { background: var(--badge-draft-bg);  color: var(--badge-draft-fg); }
+.badge-issued  { background: var(--badge-issued-bg); color: var(--badge-issued-fg); }
+.badge-overdue { background: var(--net-bg-neg); color: var(--danger); }
+.badge-paid    { background: var(--net-bg); color: var(--good-strong); }
+
+.pdf-status {
+  display: inline-block; margin-left: .4rem; vertical-align: middle;
+  font-size: .62rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  padding: .05rem .5rem; border-radius: 999px;
+}
+.pdf-current { background: var(--net-bg);     color: var(--good-strong); }
+.pdf-stale   { background: var(--net-bg-neg); color: var(--danger); }
+
+a.paid-link { color: var(--good-strong); font-size: .8rem; margin-left: .4rem; }
+
+/* Info page's collapsible per-workspace/per-country cards. */
+details.card { margin-bottom: .5rem; }
+details.card summary { cursor: pointer; font-weight: 700; padding: .3rem 0; }
+details.card summary .code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-weight: 400; opacity: .7; font-size: .85em; }
+details.card summary .count { color: var(--muted); font-weight: 400; font-size: .8em; }
+details.card .table-wrap { margin: .5rem 0 .25rem; }
+
 @media print {
   .no-print, a.link, button.link, .chevron { display: none !important; }
   .print-title { display: block; margin: 0 0 1rem; }

@@ -131,11 +131,14 @@ func fillInvoiceLinks(invoiced []tracker.InvoicedRow, showInvoicingLink bool) {
 
 // renderFinancePage fills in the session-derived presentation fields
 // (see Figures' doc comment) that compute() itself can't know about, then
-// renders the page.
-func renderFinancePage(w http.ResponseWriter, sess auth.Session, f tracker.Figures) {
+// renders the page. ShowInfoLink mirrors s.authorized(sess) — the same gate
+// handleInfo itself enforces — so an email-OTP session never sees a link to
+// a page it can't reach.
+func (s *server) renderFinancePage(w http.ResponseWriter, sess auth.Session, f tracker.Figures) {
 	f.Login = sess.Login
 	f.ReadOnly = sess.Permission == "readonly"
 	f.ShowInvoicingLink = sess.HasPart(users.PartInvoicing)
+	f.ShowInfoLink = s.authorized(sess)
 	fillInvoiceLinks(f.Invoiced, f.ShowInvoicingLink)
 	tracker.RenderPage(w, f)
 }
@@ -165,7 +168,7 @@ func (s *server) financeCurrentMonth(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
-	renderFinancePage(w, sess, trk.ComputeMonth(ctx, now.Year(), now.Month()))
+	s.renderFinancePage(w, sess, trk.ComputeMonth(ctx, now.Year(), now.Month()))
 }
 
 func (s *server) financeYear(w http.ResponseWriter, r *http.Request) {
@@ -189,7 +192,7 @@ func (s *server) financeYear(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
-	renderFinancePage(w, sess, trk.ComputeYear(ctx, year))
+	s.renderFinancePage(w, sess, trk.ComputeYear(ctx, year))
 }
 
 func (s *server) financeMonth(w http.ResponseWriter, r *http.Request) {
@@ -218,7 +221,7 @@ func (s *server) financeMonth(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
-	renderFinancePage(w, sess, trk.ComputeMonth(ctx, year, time.Month(month)))
+	s.renderFinancePage(w, sess, trk.ComputeMonth(ctx, year, time.Month(month)))
 }
 
 const yearRange = 2

@@ -1,7 +1,6 @@
 package tracker
 
 import (
-	_ "embed"
 	"html/template"
 	"net/http"
 )
@@ -61,7 +60,7 @@ var templates = `
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Finance Tracker — Login</title>
 ` + favicon + `
-<style>` + css + `</style>
+<link rel="stylesheet" href="/invoicing/static/app.css">
 </head>
 <body>
 <main class="login">
@@ -80,7 +79,7 @@ var templates = `
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Finance Tracker — Login</title>
 ` + favicon + `
-<style>` + css + `</style>
+<link rel="stylesheet" href="/invoicing/static/app.css">
 </head>
 <body>
 <main class="login">
@@ -102,7 +101,7 @@ var templates = `
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Finance Tracker — Login</title>
 ` + favicon + `
-<style>` + css + `</style>
+<link rel="stylesheet" href="/invoicing/static/app.css">
 </head>
 <body>
 <main class="login">
@@ -137,20 +136,24 @@ var templates = `
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Finance Tracker</title>
+<title>PocketCFO — Finance</title>
 ` + favicon + `
-<style>` + css + `</style>
+<link rel="stylesheet" href="/invoicing/static/app.css">
 </head>
 <body>
 <main>
-  <h1 class="print-title">Finance Tracker {{.Month}}</h1>
+  <h1 class="print-title">PocketCFO — Finance {{.Month}}</h1>
   <header class="no-print">
-    <h1>Finance Tracker</h1>
+    <h1>PocketCFO</h1>
+    {{if or .ShowInvoicingLink .ShowInfoLink}}
     <nav class="topnav">
       <a class="active" href="/">Finance</a>
       {{if .ShowInvoicingLink}}<a href="/invoicing">Invoicing</a>{{end}}
+      {{if .ShowInfoLink}}<a href="/info">Info</a>{{end}}
     </nav>
+    {{end}}
     <div class="hdr-right">
+      <span class="login-email">{{.Login}}{{if .ReadOnly}} (read-only){{end}}</span>
       <span class="updated">Updated {{.LastUpdated}}</span>
       <a class="link" href="{{.TodayURL}}">Today</a>
       <a class="link" href="{{.RefreshURL}}">Reload</a>
@@ -296,6 +299,3 @@ var templates = `
 // three-bar chart), embedded as a base64 data URI so no static file route or
 // build step is needed.
 const favicon = `<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIGZpbGw9IiMxYTczZTgiLz48cmVjdCB4PSIxNCIgeT0iMzYiIHdpZHRoPSI5IiBoZWlnaHQ9IjE2IiByeD0iMiIgZmlsbD0iI2ZmZiIvPjxyZWN0IHg9IjI3LjUiIHk9IjI2IiB3aWR0aD0iOSIgaGVpZ2h0PSIyNiIgcng9IjIiIGZpbGw9IiNmZmYiLz48cmVjdCB4PSI0MSIgeT0iMTQiIHdpZHRoPSI5IiBoZWlnaHQ9IjM4IiByeD0iMiIgZmlsbD0iI2ZmZiIvPjwvc3ZnPgo=">`
-
-//go:embed style.css
-var css string

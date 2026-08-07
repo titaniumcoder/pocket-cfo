@@ -248,6 +248,7 @@ func (s *server) loadInvoicingView(r *http.Request, sess auth.Session) (any, err
 		Login           string
 		ReadOnly        bool
 		ShowFinanceLink bool
+		ShowInfoLink    bool
 		Years           []int
 		SelectedYear    *int
 		Recipients      []stats.RecipientRow
@@ -258,6 +259,7 @@ func (s *server) loadInvoicingView(r *http.Request, sess auth.Session) (any, err
 		Login:           sess.Login,
 		ReadOnly:        s.readOnly(sess),
 		ShowFinanceLink: sess.HasPart(users.PartFinance),
+		ShowInfoLink:    s.authorized(sess),
 		Years:           years,
 		SelectedYear:    selectedYear,
 		Recipients:      recipientRows,

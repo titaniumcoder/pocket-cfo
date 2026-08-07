@@ -242,8 +242,52 @@ func TestFinanceCurrentMonth_RendersForAuthorizedSession(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "Finance Tracker") {
+	if !strings.Contains(w.Body.String(), "PocketCFO") {
 		t.Error("want the finance dashboard body")
+	}
+}
+
+// TestFinanceCurrentMonth_SinglePartSessionHasNoNav confirms the shared
+// header's topnav is omitted entirely when this session has nowhere else
+// to go — a finance-only session viewing the finance dashboard has no
+// Invoicing or Info link to show, so a menu bar with nothing but the
+// current (active) page would be pointless chrome.
+func TestFinanceCurrentMonth_SinglePartSessionHasNoNav(t *testing.T) {
+	s := newFinanceTestServer(t)
+	r := readOnlyRequest(t, s, "/", []string{users.PartFinance})
+	w := httptest.NewRecorder()
+
+	s.financeCurrentMonth(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), `class="topnav"`) {
+		t.Error("finance-only session has nowhere else to go — want no topnav at all")
+	}
+}
+
+// TestFinanceCurrentMonth_BothPartsSessionShowsInvoicingNavButNotInfo
+// confirms a readonly session with both finance and invoicing access sees
+// the Invoicing link (something to navigate to), but never an Info link —
+// /info is authorized()-only, and a readonly session must never even see a
+// link to a page it can't reach.
+func TestFinanceCurrentMonth_BothPartsSessionShowsInvoicingNavButNotInfo(t *testing.T) {
+	s := newFinanceTestServer(t)
+	r := readOnlyRequest(t, s, "/", []string{users.PartFinance, users.PartInvoicing})
+	w := httptest.NewRecorder()
+
+	s.financeCurrentMonth(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `href="/invoicing"`) {
+		t.Error("a session with both parts should see the Invoicing nav link")
+	}
+	if strings.Contains(body, `href="/info"`) {
+		t.Error("a readonly session must never see the Info nav link")
 	}
 }
 
@@ -377,5 +421,55 @@ func TestHandleIndex_AuthorizedRendersInvoicingDashboard(t *testing.T) {
 		if !strings.Contains(body, number) {
 			t.Errorf("%s missing from the invoicing dashboard", number)
 		}
+	}
+}
+
+// TestHandleIndex_InvoicingOnlySessionHasNoNav mirrors
+// TestFinanceCurrentMonth_SinglePartSessionHasNoNav on the invoicing side:
+// an invoicing-only session has nowhere else to go, so no topnav at all.
+func TestHandleIndex_InvoicingOnlySessionHasNoNav(t *testing.T) {
+	s := newTestClientServer(t)
+	s.cfg.env = "prod"
+	s.cfg.sessionSecret = "test-secret"
+	t.Chdir(t.TempDir())
+	writeFixtures(t)
+
+	r := readOnlyRequest(t, s, "/invoicing", []string{users.PartInvoicing})
+	w := httptest.NewRecorder()
+
+	s.handleIndex(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), `class="topnav"`) {
+		t.Error("invoicing-only session has nowhere else to go — want no topnav at all")
+	}
+}
+
+// TestHandleIndex_BothPartsSessionShowsFinanceNavButNotInfo is the
+// invoicing-side mirror of
+// TestFinanceCurrentMonth_BothPartsSessionShowsInvoicingNavButNotInfo.
+func TestHandleIndex_BothPartsSessionShowsFinanceNavButNotInfo(t *testing.T) {
+	s := newTestClientServer(t)
+	s.cfg.env = "prod"
+	s.cfg.sessionSecret = "test-secret"
+	t.Chdir(t.TempDir())
+	writeFixtures(t)
+
+	r := readOnlyRequest(t, s, "/invoicing", []string{users.PartFinance, users.PartInvoicing})
+	w := httptest.NewRecorder()
+
+	s.handleIndex(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `href="/"`) {
+		t.Error("a session with both parts should see the Finance nav link")
+	}
+	if strings.Contains(body, `href="/info"`) {
+		t.Error("a readonly session must never see the Info nav link")
 	}
 }

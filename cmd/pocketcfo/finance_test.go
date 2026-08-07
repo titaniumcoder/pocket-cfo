@@ -12,6 +12,8 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
 	financeconfig "github.com/titaniumcoder/pocket-cfo/internal/finance/config"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
+	"github.com/titaniumcoder/pocket-cfo/internal/schema/invoice"
+	"github.com/titaniumcoder/pocket-cfo/internal/schema/recipient"
 	"github.com/titaniumcoder/pocket-cfo/internal/users"
 )
 
@@ -51,6 +53,99 @@ func readOnlyRequest(t *testing.T, s *server, path string, parts []string) *http
 	r := httptest.NewRequest(http.MethodGet, path, nil)
 	r.AddCookie(&http.Cookie{Name: sessionCookie, Value: encoded})
 	return r
+}
+
+// TestBuildInvoicedFacts_LinkedRecipientProducesClientScopedFact confirms an
+// issued invoice for a recipient with tracking_client_id set becomes a fact
+// scoped to that Toggl client, carrying the invoice's own Number through.
+func TestBuildInvoicedFacts_LinkedRecipientProducesClientScopedFact(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustMkdirAll(t, recipientsDir)
+	mustMkdirAll(t, invoicesDir)
+
+	clientID := 424242
+	writeJSON(t, recipientsDir+"/0001.json", recipient.RecipientJson{
+		Number: 1, LegalName: "Alice Ltd", Email: "alice@example.com", IsBusiness: true,
+		Language: recipient.RecipientJsonLanguageDe, PaymentTermsDays: 14,
+		Address:          recipient.Address{Line1: "Street 1", PostalCode: "1000", City: "Vienna", CountryCode: "AT"},
+		TrackingClientId: &clientID,
+	})
+	writeJSON(t, invoicesDir+"/INV-0000000001.json", invoiceFixture("INV-0000000001", 1, invoice.InvoiceJsonStatusIssued))
+
+	facts, err := buildInvoicedFacts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("facts = %+v, want exactly 1", facts)
+	}
+	if facts[0].ClientID != clientID {
+		t.Errorf("ClientID = %d, want %d", facts[0].ClientID, clientID)
+	}
+	if facts[0].Number != "INV-0000000001" {
+		t.Errorf("Number = %q, want INV-0000000001", facts[0].Number)
+	}
+}
+
+// TestBuildInvoicedFacts_UnlinkedRecipientStillProducesUnscopedFact is the
+// regression test for Bug A: an invoice for a recipient with no
+// tracking_client_id (or, identically, no matching recipient file at all —
+// covered here since the fixture has no recipients directory entries) must
+// still produce a fact, just scoped to tracker.UnscopedClientID, so it
+// still counts as income without silently vanishing.
+func TestBuildInvoicedFacts_UnlinkedRecipientStillProducesUnscopedFact(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustMkdirAll(t, recipientsDir)
+	mustMkdirAll(t, invoicesDir)
+
+	writeJSON(t, invoicesDir+"/INV-0000000001.json", invoiceFixture("INV-0000000001", 1, invoice.InvoiceJsonStatusIssued))
+
+	facts, err := buildInvoicedFacts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("facts = %+v, want exactly 1", facts)
+	}
+	if facts[0].ClientID != tracker.UnscopedClientID {
+		t.Errorf("ClientID = %d, want UnscopedClientID (%d)", facts[0].ClientID, tracker.UnscopedClientID)
+	}
+}
+
+// TestBuildInvoicedFacts_DraftInvoicesSkipped confirms drafts still never
+// become facts, unaffected by the ClientID/Number rewrite.
+func TestBuildInvoicedFacts_DraftInvoicesSkipped(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustMkdirAll(t, recipientsDir)
+	mustMkdirAll(t, invoicesDir)
+
+	writeJSON(t, invoicesDir+"/INV-0000000002.json", invoiceFixture("INV-0000000002", 1, invoice.InvoiceJsonStatusDraft))
+
+	facts, err := buildInvoicedFacts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts) != 0 {
+		t.Errorf("facts = %+v, want none (draft invoices aren't real yet)", facts)
+	}
+}
+
+// TestFillInvoiceLinks_GatedOnInvoicingRights confirms invoice PDF links are
+// only filled in when the viewing session has invoicing rights — a
+// finance-only viewer keeps each invoice's bare number/amount (fair
+// information for them to have) but gets no URL to the PDF itself.
+func TestFillInvoiceLinks_GatedOnInvoicingRights(t *testing.T) {
+	withoutRights := []tracker.InvoicedRow{{Number: "INV-0000000001", AmountCents: 500000}}
+	fillInvoiceLinks(withoutRights, false)
+	if withoutRights[0].URL != "" {
+		t.Errorf("URL = %q, want empty when showInvoicingLink is false", withoutRights[0].URL)
+	}
+
+	withRights := []tracker.InvoicedRow{{Number: "INV-0000000001", AmountCents: 500000}}
+	fillInvoiceLinks(withRights, true)
+	if want := "/invoicing/invoices/INV-0000000001.pdf"; withRights[0].URL != want {
+		t.Errorf("URL = %q, want %q", withRights[0].URL, want)
+	}
 }
 
 func TestFinanceSession_InvoicingOnlyRedirectsToInvoicing(t *testing.T) {

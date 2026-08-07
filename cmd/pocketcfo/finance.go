@@ -19,12 +19,16 @@ import (
 // buildInvoicedFacts is the bridge between the invoicing schema
 // (internal/schema/invoice, recipient) and the finance tracker's own
 // schema-decoupled tracker.InvoicedFact (see
-// internal/finance/tracker/invoiced.go): every *issued* invoice for a
-// recipient with a tracking_project_id becomes one fact. Read fresh on
-// every request — same "no caching, re-read the checkout" convention
-// handleIndex's own stats.LoadRecipients/LoadInvoices calls already use —
-// so issuing a real invoice shows up in the finance view immediately, no
-// restart required.
+// internal/finance/tracker/invoiced.go): every *issued* invoice becomes one
+// fact. A recipient's tracking_client_id links the invoice to that Toggl
+// client's tracked/predicted hours (suppressing them in favor of the real
+// invoiced total); a recipient with no tracking_client_id — or Toggl not
+// configured at all — still contributes its invoice as income, just under
+// tracker.UnscopedClientID, which never suppresses anything (see
+// invoiced.go). Read fresh on every request — same "no caching, re-read the
+// checkout" convention handleIndex's own stats.LoadRecipients/LoadInvoices
+// calls already use — so issuing a real invoice shows up in the finance
+// view immediately, no restart required.
 func buildInvoicedFacts() ([]tracker.InvoicedFact, error) {
 	recipients, err := stats.LoadRecipients(recipientsDir)
 	if err != nil {
@@ -35,10 +39,10 @@ func buildInvoicedFacts() ([]tracker.InvoicedFact, error) {
 		return nil, err
 	}
 
-	projectIDByRecipient := map[int]int{}
+	clientIDByRecipient := map[int]int{}
 	for _, r := range recipients {
 		if r.TrackingClientId != nil {
-			projectIDByRecipient[r.Number] = *r.TrackingClientId
+			clientIDByRecipient[r.Number] = *r.TrackingClientId
 		}
 	}
 
@@ -47,16 +51,17 @@ func buildInvoicedFacts() ([]tracker.InvoicedFact, error) {
 		if inv.Status != invoice.InvoiceJsonStatusIssued {
 			continue // drafts aren't real invoices yet, see PocketCFO plan §2.3
 		}
-		pid, ok := projectIDByRecipient[inv.Recipient.Number]
-		if !ok {
-			continue // recipient not linked to a tracking-software project
+		cid := tracker.UnscopedClientID
+		if mapped, ok := clientIDByRecipient[inv.Recipient.Number]; ok {
+			cid = mapped
 		}
 		totals, err := money.Compute(inv)
 		if err != nil {
 			continue // a malformed invoice shouldn't take down the whole dashboard
 		}
 		facts = append(facts, tracker.InvoicedFact{
-			ClientID:   pid,
+			ClientID:   cid,
+			Number:     inv.Number,
 			IssueDate:  inv.IssueDate.Time,
 			DueDate:    inv.DueDate.Time,
 			TotalCents: int(totals.GrandTotal),
@@ -111,6 +116,21 @@ func (s *server) financeSession(w http.ResponseWriter, r *http.Request) (auth.Se
 	return sess, false
 }
 
+// fillInvoiceLinks sets each Invoiced row's PDF URL, but only when
+// showInvoicingLink is true (the viewing session has invoicing rights) — a
+// finance-only viewer still sees each invoice's bare number and amount
+// (fair information for them to have), just not a link to the PDF itself.
+// Split out from renderFinancePage so this gating logic is testable without
+// needing the HTML template to also support it.
+func fillInvoiceLinks(invoiced []tracker.InvoicedRow, showInvoicingLink bool) {
+	if !showInvoicingLink {
+		return
+	}
+	for i, row := range invoiced {
+		invoiced[i].URL = "/invoicing/invoices/" + row.Number + ".pdf"
+	}
+}
+
 // renderFinancePage fills in the session-derived presentation fields
 // (see Figures' doc comment) that compute() itself can't know about, then
 // renders the page.
@@ -118,6 +138,7 @@ func renderFinancePage(w http.ResponseWriter, sess auth.Session, f tracker.Figur
 	f.Login = sess.Login
 	f.ReadOnly = sess.Permission == "readonly"
 	f.ShowInvoicingLink = sess.HasPart(users.PartInvoicing)
+	fillInvoiceLinks(f.Invoiced, f.ShowInvoicingLink)
 	tracker.RenderPage(w, f)
 }
 

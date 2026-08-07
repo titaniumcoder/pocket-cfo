@@ -411,8 +411,19 @@ func TestRenderLogin(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `href="/auth/login"`) {
 		t.Error("GitHub login link should point at the registered /auth/login route")
 	}
-	if !strings.Contains(rec.Body.String(), "Continue with email") {
-		t.Error("login page should contain Continue with email when showEmailLogin is true")
+	if !strings.Contains(rec.Body.String(), `href="/auth/email"`) {
+		t.Error("login page should offer the email route when showEmailLogin is true")
+	}
+	// The GitHub option is a quiet bordered box with the mark, not a
+	// primary-coloured call to action; the email option is a plain link.
+	if !strings.Contains(rec.Body.String(), `class="button-outline"`) {
+		t.Error("GitHub option should render as the outlined button, not the primary one")
+	}
+	if !strings.Contains(rec.Body.String(), `class="gh-mark"`) {
+		t.Error("GitHub option should carry the GitHub mark")
+	}
+	if strings.Contains(rec.Body.String(), `<a class="button" href="/auth/email"`) {
+		t.Error("email option should be a link, not a primary button")
 	}
 	if strings.Contains(rec.Body.String(), "class=\"error\"") {
 		t.Error("login without message should not show error")
@@ -426,8 +437,8 @@ func TestRenderLogin(t *testing.T) {
 
 	rec3 := httptest.NewRecorder()
 	RenderLogin(rec3, "", false)
-	if strings.Contains(rec3.Body.String(), "Continue with email") {
-		t.Error("login page should not contain Continue with email when showEmailLogin is false")
+	if strings.Contains(rec3.Body.String(), `href="/auth/email"`) {
+		t.Error("login page should not offer the email route when showEmailLogin is false")
 	}
 }
 

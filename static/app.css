@@ -210,6 +210,18 @@ button.link { background: none; border: 0; color: inherit; opacity: .6; cursor: 
 .login { max-width: 320px; margin: 15vh auto; text-align: center; }
 .button { display: inline-block; padding: .7rem 1.4rem; border-radius: 8px; border: 0; background: var(--blue); color: #fff; cursor: pointer; text-decoration: none; font-size: 1rem; }
 .login .button { display: block; width: 100%; margin: 0 0 .6rem; }
+/* The sign-in choice is not a call to action to shout about — a quiet
+   bordered box, with the alternative below it as an ordinary link. */
+.button-outline {
+  display: inline-flex; align-items: center; justify-content: center; gap: .55rem;
+  padding: .7rem 1.4rem; border-radius: 8px; border: 1px solid var(--input-border);
+  background: var(--panel-bg); color: inherit; cursor: pointer; text-decoration: none;
+  font-size: 1rem; font-weight: 600;
+}
+.button-outline:hover { background: var(--hover-bg); }
+.login .button-outline { display: flex; width: 100%; }
+.gh-mark { flex-shrink: 0; }
+.login-alt { margin: .9rem 0 0; font-size: .9rem; }
 .login form { display: flex; flex-direction: column; gap: .6rem; margin-bottom: .6rem; }
 .login input[type="email"] { padding: .6rem .8rem; border-radius: 8px; border: 1px solid var(--input-border); background: transparent; color: inherit; font-size: 1rem; }
 .login .error { margin-top: 1rem; }

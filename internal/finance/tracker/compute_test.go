@@ -306,11 +306,31 @@ func TestRenderPageInvoicedRowShowsNumber(t *testing.T) {
 
 	body := rec.Body.String()
 	if !strings.Contains(body, ">0001<") {
-		t.Errorf("expected the invoice number 0001 to render, got: %s", body)
+		t.Errorf("expected the invoice number 0001 to render as plain text (no URL set), got: %s", body)
 	}
 	if strings.Contains(body, "500000") {
 		// sanity: eur formats cents, so the raw int shouldn't appear literally
 		t.Error("AmountCents should render formatted, not as a raw integer")
+	}
+}
+
+// TestRenderPageInvoicedRowLinksWhenURLSet confirms an InvoicedRow with a
+// URL (a session with invoicing rights, see cmd/pocketcfo's
+// fillInvoiceLinks) renders as a link to that URL, not just plain text.
+func TestRenderPageInvoicedRowLinksWhenURLSet(t *testing.T) {
+	f := Figures{
+		LastUpdated: "—",
+		Mode:        "month",
+		Currency:    "€",
+		Invoiced:    []InvoicedRow{{Number: "0001", AmountCents: 500000, URL: "/invoicing/invoices/0001.pdf"}},
+		Personal:    PersonalView{},
+	}
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `<a href="/invoicing/invoices/0001.pdf">0001</a>`) {
+		t.Errorf("expected a link to the invoice PDF, got: %s", body)
 	}
 }
 

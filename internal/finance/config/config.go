@@ -26,6 +26,7 @@ import (
 type FileConfig struct {
 	HoursPerDay        *float64 `json:"hoursPerDay"`
 	TogglProjectIDs    []int    `json:"togglProjectIds"`
+	HolidayCountry     *string  `json:"holidayCountry"`
 	HolidaySubdivision *string  `json:"holidaySubdivision"`
 
 	// HourlyRateCents/Currency are the primary source of the Expected-work
@@ -71,6 +72,7 @@ type Config struct {
 	TogglToken     string
 	TogglWorkspace string
 	TogglProjects  string // comma-separated, see joinIDs
+	Country        string // optional, e.g. "AT"; empty falls back to "AT" — see tracker.Holidays.countryOrDefault
 	Subdivision    string
 
 	HoursPerDay     float64
@@ -100,6 +102,7 @@ func Load(fc FileConfig) Config {
 		TogglToken:     os.Getenv("TOGGL_API_TOKEN"),
 		TogglWorkspace: os.Getenv("TOGGL_WORKSPACE_ID"),
 		TogglProjects:  joinIDs(fc.TogglProjectIDs),
+		Country:        strOr(fc.HolidayCountry, "AT"),
 		Subdivision:    strOr(fc.HolidaySubdivision, ""),
 
 		HoursPerDay:     floatOr(fc.HoursPerDay, 8),

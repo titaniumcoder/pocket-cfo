@@ -36,6 +36,7 @@ type server struct {
 	clientTmpl     *template.Template
 	emailLoginTmpl *template.Template
 	emailSentTmpl  *template.Template
+	infoTmpl       *template.Template
 
 	// tracker is the finance part's shared, cached-in-memory core (Toggl/
 	// Holidays/Budget caches, config-sourced rate) — see
@@ -70,7 +71,7 @@ func buildTracker(cfg financeconfig.Config, httpClient *http.Client, budgetDir s
 	}
 	return &tracker.Tracker{
 		Toggl:        togglClient,
-		Holidays:     &tracker.Holidays{Subdivision: cfg.Subdivision, HTTP: httpClient},
+		Holidays:     &tracker.Holidays{Country: cfg.Country, Subdivision: cfg.Subdivision, HTTP: httpClient},
 		Budget:       &tracker.Budget{FS: os.DirFS(budgetDir)},
 		HoursPerDay:  cfg.HoursPerDay,
 		Loc:          time.Local,
@@ -99,6 +100,7 @@ func main() {
 		clientTmpl:       template.Must(template.New("client.html").Funcs(templateFuncs).ParseFiles(templatesDir + "/client.html")),
 		emailLoginTmpl:   template.Must(template.ParseFiles(templatesDir + "/email_login.html")),
 		emailSentTmpl:    template.Must(template.ParseFiles(templatesDir + "/email_sent.html")),
+		infoTmpl:         template.Must(template.New("info.html").Funcs(templateFuncs).ParseFiles(templatesDir + "/info.html")),
 		emailRequestedAt: map[string]time.Time{},
 	}
 
@@ -121,6 +123,7 @@ func main() {
 	mux.HandleFunc("GET /invoicing/client/{token}/invoices/{file}", s.handleClientInvoicePDF)
 	mux.HandleFunc("GET /robots.txt", s.handleRobots)
 	mux.HandleFunc("GET /invoicing", s.handleIndex)
+	mux.HandleFunc("GET /info", s.handleInfo)
 
 	// Finance tracker: the landing page. Toggl/Budget data is all served
 	// from in-memory cache after the first fetch (see

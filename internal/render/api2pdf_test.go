@@ -86,6 +86,86 @@ func TestAPI2PDF_Render_EmptyAPIKey(t *testing.T) {
 	}
 }
 
+func TestAPI2PDF_Balance_Success(t *testing.T) {
+	var gotAuth, gotMethod, gotPath string
+	renderer := &API2PDF{
+		APIKey: "test-key",
+		Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			gotAuth = req.Header.Get("Authorization")
+			gotMethod = req.Method
+			gotPath = req.URL.Path
+			return newResponse(http.StatusOK, `{"Balance":12.5,"Currency":"USD"}`), nil
+		})},
+	}
+
+	info, err := renderer.Balance(context.Background())
+	if err != nil {
+		t.Fatalf("Balance: %v", err)
+	}
+	if gotAuth != "test-key" {
+		t.Errorf("Authorization header = %q, want test-key (no Bearer prefix)", gotAuth)
+	}
+	if gotMethod != http.MethodGet {
+		t.Errorf("method = %q, want GET", gotMethod)
+	}
+	if gotPath != "/balance" {
+		t.Errorf("path = %q, want /balance", gotPath)
+	}
+	if !info.HasBalance || info.Balance != 12.5 {
+		t.Errorf("Balance = %+v, want HasBalance=true Balance=12.5", info)
+	}
+	if info.Raw["Currency"] != "USD" {
+		t.Errorf("Raw[Currency] = %q, want USD", info.Raw["Currency"])
+	}
+}
+
+// TestAPI2PDF_Balance_UnexpectedShapeStillReturnsRaw is the defensive-parsing
+// guarantee: api2pdf's real /balance field names aren't publicly documented
+// (see BalanceInfo's doc comment), so a response with no recognizable
+// "balance" field must still surface every field it does have, not error out
+// entirely.
+func TestAPI2PDF_Balance_UnexpectedShapeStillReturnsRaw(t *testing.T) {
+	renderer := &API2PDF{
+		APIKey: "test-key",
+		Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return newResponse(http.StatusOK, `{"SomeOtherField":"mystery value"}`), nil
+		})},
+	}
+
+	info, err := renderer.Balance(context.Background())
+	if err != nil {
+		t.Fatalf("Balance: %v", err)
+	}
+	if info.HasBalance {
+		t.Error("HasBalance should be false when no balance-like field is present")
+	}
+	if info.Raw["SomeOtherField"] != "mystery value" {
+		t.Errorf("Raw[SomeOtherField] = %q, want it preserved for fallback display", info.Raw["SomeOtherField"])
+	}
+}
+
+func TestAPI2PDF_Balance_EmptyAPIKey(t *testing.T) {
+	renderer := &API2PDF{Client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		t.Fatal("must not make a request with an empty API key")
+		return nil, nil
+	})}}
+	if _, err := renderer.Balance(context.Background()); err == nil {
+		t.Fatal("expected an error with an empty API key")
+	}
+}
+
+func TestAPI2PDF_Balance_ErrorStatus(t *testing.T) {
+	renderer := &API2PDF{
+		APIKey: "test-key",
+		Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return newResponse(http.StatusUnauthorized, `{"Error":"invalid key"}`), nil
+		})},
+	}
+	if _, err := renderer.Balance(context.Background()); err == nil {
+		t.Fatal("expected an error on 401")
+	}
+}
+
 func TestAPI2PDF_Render_4xxNotRetried(t *testing.T) {
 	calls := 0
 	renderer := &API2PDF{

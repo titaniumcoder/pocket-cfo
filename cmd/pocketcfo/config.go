@@ -58,6 +58,11 @@ type config struct {
 	sesRegion        string
 	sesFromEmail     string
 	otpLinkSecret    string
+	// api2pdfKey backs the /info diagnostics page's account-balance section
+	// (see info.go) — optional, that section is simply omitted when unset.
+	// invoicectl reads this same env var independently for actual PDF
+	// rendering; the web app previously never needed it at all.
+	api2pdfKey string
 
 	// finance holds the finance tracker's own settings (config.json +
 	// TOGGL_*/API_PASSWORD env vars) — see internal/finance/config. Not
@@ -85,6 +90,7 @@ func loadConfig() config {
 		sesRegion:        os.Getenv("AWS_REGION"),
 		sesFromEmail:     os.Getenv("SES_FROM_EMAIL"),
 		otpLinkSecret:    os.Getenv("OTP_LINK_SECRET"),
+		api2pdfKey:       os.Getenv("API2PDF_KEY"),
 		finance:          financeconfig.Load(financeFileConfig),
 	}
 	applyDevDefaults(&c)

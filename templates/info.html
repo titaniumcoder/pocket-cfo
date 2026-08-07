@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PocketCFO — Info</title>
+  <link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=block" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #fff; --text: #1c2430; --muted: #6b7684; --border: #e2e5ea;
+      --err-bg: #fbe7e8; --err-text: #b4232b;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #14181f; --text: #e8ebf0; --muted: #8b96a5; --border: #2a3140;
+        --err-bg: #3a1a1c; --err-text: #f28b90;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'PT Sans', 'DejaVu Sans', sans-serif;
+      background: var(--bg); color: var(--text); margin: 0; padding: 32px 44px; font-size: 14px;
+    }
+    header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 24px; }
+    header h1 { font-size: 22px; margin: 0; }
+    header a.logout { color: var(--muted); font-size: 12px; }
+
+    nav.topnav { margin-bottom: 24px; display: flex; gap: 4px; }
+    nav.topnav a {
+      text-decoration: none; color: var(--muted); opacity: .8; font-size: 12px;
+      text-transform: uppercase; letter-spacing: .06em; padding: 4px 12px; border-radius: 999px;
+    }
+    nav.topnav a.active { opacity: 1; background: var(--text); color: var(--bg); }
+
+    h2 { font-size: 15px; margin: 32px 0 4px; }
+    h2:first-of-type { margin-top: 0; }
+    p.section-note { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+    h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 16px 0 6px; }
+
+    .error { color: var(--err-text); background: var(--err-bg); padding: 8px 12px; border-radius: 6px; font-size: 13px; }
+    .not-configured { color: var(--muted); font-size: 13px; font-style: italic; }
+
+    table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+    th {
+      text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+      color: var(--muted); border-bottom: 1px solid var(--border); padding: 6px;
+    }
+    td { padding: 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    td.code, th.code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; }
+    .table-wrap { overflow-x: auto; margin-bottom: 12px; }
+
+    details { margin-bottom: 8px; }
+    summary { cursor: pointer; font-weight: 700; }
+    summary .count { color: var(--muted); font-weight: 400; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>PocketCFO — Info</h1>
+    <div>
+      <span style="color: var(--muted); font-size: 12px;">{{.Login}}</span>
+      &middot; <a class="logout" href="/auth/logout">Logout</a>
+    </div>
+  </header>
+
+  <nav class="topnav">
+    <a href="/">Finance</a>
+    <a href="/invoicing">Invoicing</a>
+    <a class="active" href="/info">Info</a>
+  </nav>
+
+  <h2>Toggl</h2>
+  <p class="section-note">Workspaces and clients — for picking a recipient's <code>tracking_client_id</code>.</p>
+  {{if not .TogglConfigured}}
+  <p class="not-configured">Not configured (TOGGL_API_TOKEN / TOGGL_WORKSPACE_ID unset).</p>
+  {{else if .TogglErr}}
+  <p class="error">{{.TogglErr}}</p>
+  {{else}}
+  {{range .Workspaces}}
+  <details open>
+    <summary>{{.Name}} <span class="code">(workspace {{.ID}})</span> <span class="count">— {{len .Clients}} client(s)</span></summary>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Client</th><th class="code">tracking_client_id</th></tr></thead>
+      <tbody>
+        {{range .Clients}}
+        <tr><td>{{.Name}}</td><td class="code">{{.ID}}</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+    </div>
+  </details>
+  {{end}}
+  {{end}}
+
+  <h2>Holiday API (OpenHolidays)</h2>
+  <p class="section-note">Countries and subdivisions — for picking config.json's <code>holidayCountry</code> (required) and <code>holidaySubdivision</code> (optional).</p>
+  {{if .HolidaysErr}}
+  <p class="error">{{.HolidaysErr}}</p>
+  {{else}}
+  {{range .Countries}}
+  <details>
+    <summary>{{.Name}} <span class="code">({{.IsoCode}})</span>{{if .Subdivisions}} <span class="count">— {{len .Subdivisions}} subdivision(s)</span>{{end}}</summary>
+    {{if .Subdivisions}}
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Subdivision</th><th class="code">holidaySubdivision</th></tr></thead>
+      <tbody>
+        {{range .Subdivisions}}
+        <tr><td>{{.Name}}</td><td class="code">{{.IsoCode}}</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{end}}
+  </details>
+  {{end}}
+  {{end}}
+
+  <h2>api2pdf</h2>
+  <p class="section-note">Account balance and spend.</p>
+  {{if not .API2PDFConfigured}}
+  <p class="not-configured">Not configured (API2PDF_KEY unset).</p>
+  {{else if .API2PDFErr}}
+  <p class="error">{{.API2PDFErr}}</p>
+  {{else}}
+  {{if .Balance.HasBalance}}
+  <p><strong>Balance:</strong> {{.Balance.Balance}}</p>
+  {{end}}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Field</th><th>Value</th></tr></thead>
+    <tbody>
+      {{range $k, $v := .Balance.Raw}}
+      <tr><td>{{$k}}</td><td>{{$v}}</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{end}}
+</body>
+</html>

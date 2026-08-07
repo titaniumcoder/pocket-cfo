@@ -70,6 +70,17 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.TogglToken != "" || cfg.TogglWorkspace != "" {
 		t.Error("TogglToken/TogglWorkspace should be empty when the env vars aren't set")
 	}
+	if cfg.Country != "AT" {
+		t.Errorf("Country = %q, want default AT (matches the previously-hardcoded value)", cfg.Country)
+	}
+}
+
+func TestLoad_HolidayCountryOverride(t *testing.T) {
+	country := "BG"
+	cfg := Load(FileConfig{HolidayCountry: &country})
+	if cfg.Country != "BG" {
+		t.Errorf("Country = %q, want BG", cfg.Country)
+	}
 }
 
 func TestLoad_OverridesFromFileConfig(t *testing.T) {

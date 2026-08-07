@@ -64,7 +64,6 @@ func (s *server) authenticated(sess auth.Session) bool {
 func (s *server) header(sess auth.Session, active string) webui.Header {
 	return webui.Header{
 		Login:         sess.Login,
-		ReadOnly:      s.readOnly(sess),
 		Active:        active,
 		ShowFinance:   sess.HasPart(users.PartFinance),
 		ShowInvoicing: sess.HasPart(users.PartInvoicing),

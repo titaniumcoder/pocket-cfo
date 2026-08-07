@@ -52,9 +52,8 @@
 }
 * { box-sizing: border-box; }
 body { font-family: system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--fg); }
-main { max-width: 1040px; margin: 0 auto; padding: 2rem 1.25rem; }
+main { max-width: 1240px; margin: 0 auto; padding: 2rem 1.25rem; }
 main.login { max-width: 760px; }
-main.wide { max-width: 1240px; }
 .layout { display: grid; grid-template-columns: 1fr; gap: 2rem; align-items: start; }
 @media (min-width: 860px) {
   .layout { grid-template-columns: minmax(0, 1fr) 260px; }
@@ -106,6 +105,8 @@ main.wide { max-width: 1240px; }
   }
   main { padding: 1.25rem .85rem; }
   header { flex-wrap: wrap; row-gap: .5rem; }
+  .periodnav { grid-template-columns: 1fr; justify-items: center; row-gap: .6rem; }
+  .periodnav-left, .periodnav-right { justify-self: center; }
 }
 .main-col { min-width: 0; }
 .side-col.holidays { position: sticky; top: 2rem; }
@@ -117,14 +118,25 @@ header { display: flex; align-items: baseline; justify-content: space-between; g
 .topnav a { text-decoration: none; color: inherit; opacity: .55; font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; padding: .3rem .8rem; border-radius: 999px; white-space: nowrap; }
 .topnav a:hover { opacity: .9; }
 .topnav a.active { opacity: 1; background: var(--blue); color: #fff; }
+.topnav form { display: contents; }
+.topnav-logout {
+  background: none; border: 0; cursor: pointer; font: inherit; color: inherit; opacity: .55;
+  font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; padding: .3rem .8rem;
+  border-radius: 999px; white-space: nowrap;
+}
+.topnav-logout:hover { opacity: .9; background: var(--hover-bg); }
 h1 { font-size: 1.6rem; margin: 0 0 1.5rem; }
 h1 small { font-weight: 400; opacity: .6; font-size: 1rem; }
 header h1 { margin: 0; font-size: 1.5rem; }
+.periodnav { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: .75rem; margin: 0 0 1.5rem; }
+.periodnav-left { justify-self: start; }
+.periodnav-center { display: flex; align-items: center; justify-content: center; gap: .75rem; flex-wrap: wrap; }
+.periodnav-right { justify-self: end; display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; justify-content: flex-end; }
 .monthnav { display: flex; align-items: center; justify-content: center; gap: .75rem; margin: 0 0 1.5rem; flex-wrap: wrap; }
-.monthnav .arrow { text-decoration: none; font-size: 1.4rem; line-height: 1; opacity: .6; padding: .2rem .5rem; border-radius: 6px; color: inherit; }
-.monthnav a.arrow:hover { opacity: 1; background: var(--hover-bg); }
-.monthnav .arrow.disabled { opacity: .22; cursor: default; }
-.monthnav select { padding: .4rem .5rem; border-radius: 8px; border: 1px solid var(--input-border); background: transparent; color: inherit; font-size: 1rem; font-variant-numeric: tabular-nums; }
+.periodnav .arrow, .monthnav .arrow { text-decoration: none; font-size: 1.4rem; line-height: 1; opacity: .6; padding: .2rem .5rem; border-radius: 6px; color: inherit; }
+.periodnav a.arrow:hover, .monthnav a.arrow:hover { opacity: 1; background: var(--hover-bg); }
+.periodnav .arrow.disabled, .monthnav .arrow.disabled { opacity: .22; cursor: default; }
+.periodnav select, .monthnav select { padding: .4rem .5rem; border-radius: 8px; border: 1px solid var(--input-border); background: transparent; color: inherit; font-size: 1rem; font-variant-numeric: tabular-nums; }
 .viewtoggle, nav.years { display: flex; justify-content: center; gap: .25rem; margin: 0 0 1rem; flex-wrap: wrap; }
 .viewtoggle a, nav.years a { text-decoration: none; color: inherit; opacity: .55; font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; padding: .3rem .8rem; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; }
 .viewtoggle a:hover, nav.years a:hover { opacity: .9; }
@@ -266,6 +278,29 @@ table.data tr.row-draft a { color: var(--muted); }
 
 a.paid-link { color: var(--good-strong); font-size: .8rem; margin-left: .4rem; }
 
+/* An invoice line stays one line. Fixed table layout gives every other
+   column a definite width, so the invoice column gets a definite width too
+   — which is what lets the title inside it shrink and ellipsize instead of
+   pushing the amount off the right edge. The full text stays on the link's
+   title attribute, so nothing is actually lost. */
+/* Percentages, not rem: fixed widths in absolute units over-allocate on a
+   narrow screen, squeezing the invoice column until its contents spill over
+   the next one. These always sum to less than the table. */
+table.invoices { table-layout: fixed; min-width: 52rem; }
+/* Cells clip rather than spill: with fixed layout a column can end up
+   narrower than its content, and unclipped that draws over its neighbour. */
+table.invoices th, table.invoices td { overflow: hidden; }
+table.invoices th:nth-child(2), table.invoices td:nth-child(2) { width: 14%; }
+table.invoices th:nth-child(3), table.invoices td:nth-child(3),
+table.invoices th:nth-child(4), table.invoices td:nth-child(4),
+table.invoices th:nth-child(5), table.invoices td:nth-child(5) { width: 11%; }
+table.invoices th:nth-child(6), table.invoices td:nth-child(6) { width: 13%; }
+.invoice-line { display: flex; align-items: baseline; gap: .4rem; min-width: 0; }
+.invoice-line > .badge, .invoice-line > .pdf-status, .invoice-line > .paid-link { flex: 0 0 auto; }
+.invoice-link { display: flex; min-width: 0; white-space: nowrap; }
+.invoice-number { flex: 0 0 auto; }
+.invoice-title { overflow: hidden; text-overflow: ellipsis; }
+
 /* A whole panel section that folds away — the Configuration block starts
    collapsed, since it's reference material you look up rather than read. */
 details.section-collapse > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: .5rem; }
@@ -286,6 +321,19 @@ details.card summary { cursor: pointer; font-weight: 700; padding: .3rem 0; }
 details.card summary .code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-weight: 400; opacity: .7; font-size: .85em; }
 details.card summary .count { color: var(--muted); font-weight: 400; font-size: .8em; }
 details.card .table-wrap { margin: .5rem 0 .25rem; }
+
+/* Phone portrait: an invoice is its number and its amount. Everything else
+   needs a wider screen to be worth the room it takes.
+
+   This block sits at the end deliberately — .badge and .pdf-status set
+   their own display later in the file, and at equal specificity the last
+   rule wins, so declaring the hide earlier silently did nothing. */
+@media (max-width: 600px) {
+  .col-secondary { display: none; }
+  /* With only number and amount left there is nothing to ration, and the
+     fixed widths above were sized for the full set of columns. */
+  table.invoices { table-layout: auto; min-width: 0; }
+}
 
 @media print {
   .no-print, a.link, button.link, .chevron { display: none !important; }

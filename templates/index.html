@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/invoicing/static/app.css">
 </head>
 <body>
-<main class="wide">
+<main>
   {{template "sitehead" .Header}}
 
   <nav class="years">
@@ -52,40 +52,40 @@
   <section class="panel">
     <h2 class="section-title">Invoices</h2>
     <div class="table-wrap">
-    <table class="data">
+    <table class="data invoices">
       <thead>
         <tr>
           <th>Invoice</th>
-          <th>Recipient</th>
-          <th>Issue date</th>
-          <th>Due date</th>
-          <th>Paid</th>
+          <th class="col-secondary">Recipient</th>
+          <th class="col-secondary">Issue date</th>
+          <th class="col-secondary">Due date</th>
+          <th class="col-secondary">Paid</th>
           <th class="num">Total</th>
         </tr>
       </thead>
       <tbody>
         {{range .Invoices}}
         <tr{{if eq .State "draft"}} class="row-draft"{{end}}>
-          <td>
-            <span class="badge badge-{{.State}}">{{.State}}</span>
-            {{if eq .State "draft"}}
-            <a href="/invoicing/invoices/{{.Number}}-DRAFT.pdf">{{.Number}} &mdash; {{.Title}}</a>
-            {{else}}
-            <a href="/invoicing/invoices/{{.Number}}.pdf">{{.Number}} &mdash; {{.Title}}</a>
-            {{end}}
-            {{if and .Paid (ne .State "draft")}}
-            <a class="paid-link" href="/invoicing/invoices/{{.Number}}-paid.pdf">(paid)</a>
-            {{end}}
-            {{if index $.PDFCurrent .Number}}
-            <span class="pdf-status pdf-current" title="Built PDF matches the current JSON">up to date</span>
-            {{else}}
-            <span class="pdf-status pdf-stale" title="Built PDF does not (yet) match the current JSON">stale</span>
-            {{end}}
+          <td class="invoice-cell">
+            <div class="invoice-line">
+              <span class="badge badge-{{.State}} col-secondary">{{.State}}</span>
+              <a class="invoice-link" href="/invoicing/invoices/{{.Number}}{{if eq .State "draft"}}-DRAFT{{end}}.pdf"
+                 title="{{.Number}} &mdash; {{.Title}}"><span class="invoice-number">{{.Number}}</span><span
+                 class="invoice-title col-secondary"> &mdash; {{.Title}}</span></a>
+              {{if and .Paid (ne .State "draft")}}
+              <a class="paid-link col-secondary" href="/invoicing/invoices/{{.Number}}-paid.pdf">(paid)</a>
+              {{end}}
+              {{if index $.PDFCurrent .Number}}
+              <span class="pdf-status pdf-current col-secondary" title="Built PDF matches the current JSON">up to date</span>
+              {{else}}
+              <span class="pdf-status pdf-stale col-secondary" title="Built PDF does not (yet) match the current JSON">stale</span>
+              {{end}}
+            </div>
           </td>
-          <td>{{.RecipientName}}</td>
-          <td>{{date .IssueDate}}</td>
-          <td>{{date .DueDate}}</td>
-          <td>{{dateptr .Paid}}</td>
+          <td class="col-secondary">{{.RecipientName}}</td>
+          <td class="col-secondary">{{date .IssueDate}}</td>
+          <td class="col-secondary">{{date .DueDate}}</td>
+          <td class="col-secondary">{{dateptr .Paid}}</td>
           <td class="num">{{money .GrandTotal}}</td>
         </tr>
         {{end}}

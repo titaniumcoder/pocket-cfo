@@ -24,22 +24,21 @@ const (
 // are "this session may reach that page at all" — the caller derives them
 // from the session (see cmd/pocketcfo), since only it knows the auth rules.
 //
-// LastUpdated/TodayURL/RefreshURL are the finance dashboard's extra
-// right-hand controls; every field is optional and simply omitted when
-// empty, so the other pages pass nothing and get the same header without
-// them.
+// The header is deliberately identical on every page: brand, the pages
+// this session can reach, Logout, and who's signed in. Page-specific
+// controls (the finance dashboard's period navigation and Reload) live with
+// the content they act on, not up here — a header that changes shape
+// between pages reads as a different app on each one.
+//
+// There is no read-only marker: every session that reaches these pages is
+// read-only, so the badge told nobody anything.
 type Header struct {
-	Login    string
-	ReadOnly bool
-	Active   string
+	Login  string
+	Active string
 
 	ShowFinance   bool
 	ShowInvoicing bool
 	ShowInfo      bool
-
-	LastUpdated string
-	TodayURL    string
-	RefreshURL  string
 }
 
 // HasNav reports whether the top menu is worth rendering at all: it takes
@@ -65,19 +64,16 @@ func (h Header) IsActive(page string) bool { return h.Active == page }
 const HeaderTemplate = `
 {{define "sitehead"}}<header class="no-print">
   <h1>PocketCFO</h1>
-  {{if .HasNav}}
   <nav class="topnav">
+    {{if .HasNav}}
     {{if .ShowFinance}}<a{{if .IsActive "finance"}} class="active"{{end}} href="/">Finance</a>{{end}}
     {{if .ShowInvoicing}}<a{{if .IsActive "invoicing"}} class="active"{{end}} href="/invoicing">Invoicing</a>{{end}}
     {{if .ShowInfo}}<a{{if .IsActive "info"}} class="active"{{end}} href="/info">Info</a>{{end}}
+    {{end}}
+    <form method="post" action="/auth/logout"><button class="topnav-logout">Logout</button></form>
   </nav>
-  {{end}}
   <div class="hdr-right">
-    <span class="login-email">{{.Login}}{{if .ReadOnly}} (read-only){{end}}</span>
-    {{if .LastUpdated}}<span class="updated">Updated {{.LastUpdated}}</span>{{end}}
-    {{if .TodayURL}}<a class="link" href="{{.TodayURL}}">Today</a>{{end}}
-    {{if .RefreshURL}}<a class="link" href="{{.RefreshURL}}">Reload</a>{{end}}
-    <form method="post" action="/auth/logout"><button class="link">Logout</button></form>
+    <span class="login-email">{{.Login}}</span>
   </div>
 </header>{{end}}
 `

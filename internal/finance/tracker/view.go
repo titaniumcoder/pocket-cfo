@@ -255,14 +255,10 @@ type Figures struct {
 func (f Figures) Header() webui.Header {
 	return webui.Header{
 		Login:         f.Login,
-		ReadOnly:      f.ReadOnly,
 		Active:        webui.PageFinance,
 		ShowFinance:   true,
 		ShowInvoicing: f.ShowInvoicingLink,
 		ShowInfo:      f.ShowInfoLink,
-		LastUpdated:   f.LastUpdated,
-		TodayURL:      f.TodayURL,
-		RefreshURL:    f.RefreshURL,
 	}
 }
 

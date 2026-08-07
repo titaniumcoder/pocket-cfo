@@ -147,34 +147,42 @@ var templates = `
   <h1 class="print-title">PocketCFO — Finance {{.Month}}</h1>
   {{template "sitehead" .Header}}
 
-  <nav class="viewtoggle no-print">
-    <a href="{{.MonthViewURL}}"{{if eq .Mode "month"}} class="active"{{end}}>Month</a>
-    <a href="{{.YearViewURL}}"{{if eq .Mode "year"}} class="active"{{end}}>Year</a>
-  </nav>
+  <nav class="periodnav no-print">
+    <div class="periodnav-left viewtoggle">
+      <a href="{{.MonthViewURL}}"{{if eq .Mode "month"}} class="active"{{end}}>Month</a>
+      <a href="{{.YearViewURL}}"{{if eq .Mode "year"}} class="active"{{end}}>Year</a>
+    </div>
 
-  <nav class="monthnav no-print">
-    {{if .PrevDisabled}}
-    <span class="arrow disabled" aria-disabled="true" aria-label="Previous" title="Previous">&laquo;</span>
-    {{else}}
-    <a class="arrow" href="{{.PrevURL}}" aria-label="Previous" title="Previous">&laquo;</a>
-    {{end}}
-    {{if eq .Mode "year"}}
-    <select id="ysel" onchange="navYear()" aria-label="Year">
-      {{range .Years}}<option value="{{.}}"{{if eq . $.Year}} selected{{end}}>{{.}}</option>{{end}}
-    </select>
-    {{else}}
-    <select id="msel" onchange="navMonth()" aria-label="Month">
-      {{range .Months}}<option value="{{.Num}}"{{if eq .Num $.MonthNum}} selected{{end}}>{{.Name}}</option>{{end}}
-    </select>
-    <select id="ysel" onchange="navMonth()" aria-label="Year">
-      {{range .Years}}<option value="{{.}}"{{if eq . $.Year}} selected{{end}}>{{.}}</option>{{end}}
-    </select>
-    {{end}}
-    {{if .NextDisabled}}
-    <span class="arrow disabled" aria-disabled="true" aria-label="Next" title="Next">&raquo;</span>
-    {{else}}
-    <a class="arrow" href="{{.NextURL}}" aria-label="Next" title="Next">&raquo;</a>
-    {{end}}
+    <div class="periodnav-center">
+      {{if .PrevDisabled}}
+      <span class="arrow disabled" aria-disabled="true" aria-label="Previous" title="Previous">&laquo;</span>
+      {{else}}
+      <a class="arrow" href="{{.PrevURL}}" aria-label="Previous" title="Previous">&laquo;</a>
+      {{end}}
+      {{if eq .Mode "year"}}
+      <select id="ysel" onchange="navYear()" aria-label="Year">
+        {{range .Years}}<option value="{{.}}"{{if eq . $.Year}} selected{{end}}>{{.}}</option>{{end}}
+      </select>
+      {{else}}
+      <select id="msel" onchange="navMonth()" aria-label="Month">
+        {{range .Months}}<option value="{{.Num}}"{{if eq .Num $.MonthNum}} selected{{end}}>{{.Name}}</option>{{end}}
+      </select>
+      <select id="ysel" onchange="navMonth()" aria-label="Year">
+        {{range .Years}}<option value="{{.}}"{{if eq . $.Year}} selected{{end}}>{{.}}</option>{{end}}
+      </select>
+      {{end}}
+      {{if .NextDisabled}}
+      <span class="arrow disabled" aria-disabled="true" aria-label="Next" title="Next">&raquo;</span>
+      {{else}}
+      <a class="arrow" href="{{.NextURL}}" aria-label="Next" title="Next">&raquo;</a>
+      {{end}}
+    </div>
+
+    <div class="periodnav-right">
+      <span class="updated">Updated {{.LastUpdated}}</span>
+      <a class="link" href="{{.TodayURL}}">Today</a>
+      <a class="link" href="{{.RefreshURL}}">Reload</a>
+    </div>
   </nav>
   <script>
     function navMonth() {

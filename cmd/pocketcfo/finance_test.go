@@ -281,10 +281,9 @@ func TestFinanceCurrentMonth_RendersForAuthorizedSession(t *testing.T) {
 }
 
 // TestFinanceCurrentMonth_SinglePartSessionHasNoNav confirms the shared
-// header's topnav is omitted entirely when this session has nowhere else
-// to go — a finance-only session viewing the finance dashboard has no
-// Invoicing or Info link to show, so a menu bar with nothing but the
-// current (active) page would be pointless chrome.
+// header offers no page links when this session has nowhere else to go —
+// a menu whose only entry is the page you're already on is pointless
+// chrome. The nav element itself stays, since it carries Logout.
 func TestFinanceCurrentMonth_SinglePartSessionHasNoNav(t *testing.T) {
 	s := newFinanceTestServer(t)
 	r := readOnlyRequest(t, s, "/", []string{users.PartFinance})
@@ -295,9 +294,25 @@ func TestFinanceCurrentMonth_SinglePartSessionHasNoNav(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
 	}
-	if strings.Contains(w.Body.String(), `class="topnav"`) {
-		t.Error("finance-only session has nowhere else to go — want no topnav at all")
+	if links := navLinks(t, w.Body.String()); links != 0 {
+		t.Errorf("finance-only session has nowhere else to go — want no page links in the nav, got %d", links)
 	}
+	if !strings.Contains(w.Body.String(), "Logout") {
+		t.Error("Logout must still be present even without a page menu")
+	}
+}
+
+// navLinks counts the page links inside the header nav — Logout is a form
+// button, not a link, so it isn't counted.
+func navLinks(t *testing.T, body string) int {
+	t.Helper()
+	start := strings.Index(body, `<nav class="topnav">`)
+	if start < 0 {
+		t.Fatal("no topnav in the rendered page")
+	}
+	nav := body[start:]
+	nav = nav[:strings.Index(nav, "</nav>")]
+	return strings.Count(nav, "<a")
 }
 
 // TestFinanceCurrentMonth_BothPartsSessionShowsInvoicingNavButNotInfo
@@ -459,7 +474,7 @@ func TestHandleIndex_AuthorizedRendersInvoicingDashboard(t *testing.T) {
 
 // TestHandleIndex_InvoicingOnlySessionHasNoNav mirrors
 // TestFinanceCurrentMonth_SinglePartSessionHasNoNav on the invoicing side:
-// an invoicing-only session has nowhere else to go, so no topnav at all.
+// an invoicing-only session has nowhere else to go, so no page links.
 func TestHandleIndex_InvoicingOnlySessionHasNoNav(t *testing.T) {
 	s := newTestClientServer(t)
 	s.cfg.env = "prod"
@@ -475,8 +490,11 @@ func TestHandleIndex_InvoicingOnlySessionHasNoNav(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
 	}
-	if strings.Contains(w.Body.String(), `class="topnav"`) {
-		t.Error("invoicing-only session has nowhere else to go — want no topnav at all")
+	if links := navLinks(t, w.Body.String()); links != 0 {
+		t.Errorf("invoicing-only session has nowhere else to go — want no page links in the nav, got %d", links)
+	}
+	if !strings.Contains(w.Body.String(), "Logout") {
+		t.Error("Logout must still be present even without a page menu")
 	}
 }
 

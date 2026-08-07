@@ -60,13 +60,13 @@ var templates = `
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Finance Tracker — Login</title>
+<title>PocketCFO — Login</title>
 ` + favicon + `
 <link rel="stylesheet" href="/invoicing/static/app.css">
 </head>
 <body>
 <main class="login">
-  <h1>Finance Tracker</h1>
+  <h1>PocketCFO</h1>
   <a class="button" href="/auth/login">Continue with GitHub</a>
   {{if .ShowEmailLogin}}<a class="button" href="/auth/email">Continue with email</a>{{end}}
   {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
@@ -79,19 +79,19 @@ var templates = `
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Finance Tracker — Login</title>
+<title>PocketCFO — Login</title>
 ` + favicon + `
 <link rel="stylesheet" href="/invoicing/static/app.css">
 </head>
 <body>
 <main class="login">
-  <h1>Finance Tracker</h1>
+  <h1>PocketCFO</h1>
   <form method="post" action="/auth/email">
     <input type="email" name="email" placeholder="you@example.com" required autofocus>
     <button class="button" type="submit">Email me a login link</button>
   </form>
   {{if .}}<p class="error">That link is invalid or has expired — request a new one above.</p>{{end}}
-  <p><a class="link" href="/login">&larr; Back</a></p>
+  <p><a class="link" href="/">&larr; Back</a></p>
 </main>
 </body>
 </html>{{end}}
@@ -101,16 +101,16 @@ var templates = `
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Finance Tracker — Login</title>
+<title>PocketCFO — Login</title>
 ` + favicon + `
 <link rel="stylesheet" href="/invoicing/static/app.css">
 </head>
 <body>
 <main class="login">
-  <h1>Finance Tracker</h1>
+  <h1>PocketCFO</h1>
   <p>If that address is authorized, a login link is on its way — check your inbox.</p>
   <p>The link expires shortly, so use it soon.</p>
-  <p><a class="link" href="/login">&larr; Back</a></p>
+  <p><a class="link" href="/">&larr; Back</a></p>
 </main>
 </body>
 </html>{{end}}

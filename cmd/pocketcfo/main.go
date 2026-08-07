@@ -32,14 +32,11 @@ import (
 )
 
 type server struct {
-	cfg            config
-	httpClient     *http.Client
-	indexTmpl      *template.Template
-	loginTmpl      *template.Template
-	clientTmpl     *template.Template
-	emailLoginTmpl *template.Template
-	emailSentTmpl  *template.Template
-	infoTmpl       *template.Template
+	cfg        config
+	httpClient *http.Client
+	indexTmpl  *template.Template
+	clientTmpl *template.Template
+	infoTmpl   *template.Template
 
 	// tracker is the finance part's shared, cached-in-memory core (Toggl/
 	// Holidays/Budget caches, config-sourced rate) — see
@@ -100,10 +97,7 @@ func main() {
 		httpClient:       httpClient,
 		tracker:          buildTracker(cfg.finance, httpClient, budgetDir),
 		indexTmpl:        mustPageTemplate(templatesDir + "/index.html"),
-		loginTmpl:        template.Must(template.ParseFiles(templatesDir + "/login.html")),
 		clientTmpl:       template.Must(template.New("client.html").Funcs(templateFuncs).ParseFiles(templatesDir + "/client.html")),
-		emailLoginTmpl:   template.Must(template.ParseFiles(templatesDir + "/email_login.html")),
-		emailSentTmpl:    template.Must(template.ParseFiles(templatesDir + "/email_sent.html")),
 		infoTmpl:         mustPageTemplate(templatesDir + "/info.html"),
 		emailRequestedAt: map[string]time.Time{},
 	}
@@ -192,10 +186,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	sess, ok := s.currentSession(r)
 	if !ok || !s.authenticated(sess) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := s.loginTmpl.Execute(w, nil); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
+		tracker.RenderLogin(w, "", s.emailLoginAvailable())
 		return
 	}
 	if redirect, forbidden := s.checkInvoicingAccess(sess); forbidden {

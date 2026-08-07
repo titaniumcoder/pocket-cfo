@@ -1,11 +1,11 @@
 package main
 
 import (
-	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -101,8 +101,6 @@ func newTestServer(t *testing.T) *server {
 			otpLinkSecret: "test-otp-secret",
 		},
 		httpClient:       &http.Client{},
-		emailSentTmpl:    template.Must(template.New("t").Parse("check your email")),
-		emailLoginTmpl:   template.Must(template.New("t").Parse("{{if .Error}}error{{end}}")),
 		emailRequestedAt: map[string]time.Time{},
 	}
 }
@@ -193,7 +191,7 @@ func TestHandleEmailLoginRequestSameResponseRegardlessOfAllowlist(t *testing.T) 
 		if w.Code != http.StatusOK {
 			t.Errorf("email=%q: status = %d, want 200", email, w.Code)
 		}
-		if w.Body.String() != "check your email" {
+		if !strings.Contains(w.Body.String(), "a login link is on its way") {
 			t.Errorf("email=%q: body = %q, want the generic confirmation", email, w.Body.String())
 		}
 	}

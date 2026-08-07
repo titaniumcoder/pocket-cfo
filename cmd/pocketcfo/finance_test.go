@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -199,8 +200,40 @@ func TestFinanceSession_UnauthenticatedShowsLogin(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200 (the login page itself)", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "Finance Tracker") {
+	if !strings.Contains(w.Body.String(), "PocketCFO") {
 		t.Error("want the login page body, got something else")
+	}
+}
+
+// TestLoginPageOffersEmailWhenUsersExist is the regression test for a real
+// bug: financeSession passed showEmailLogin=false unconditionally, so the
+// "Continue with email" option never appeared on the start page at all —
+// email login was unreachable no matter what users.json said. The option
+// still hides when nobody is listed, since it could only dead-end there.
+func TestLoginPageOffersEmailWhenUsersExist(t *testing.T) {
+	s := &server{cfg: config{env: "prod", sessionSecret: "test-secret"}}
+	t.Chdir(t.TempDir())
+	mustMkdirAll(t, filepath.Dir(usersFile))
+
+	render := func() string {
+		r := httptest.NewRequest(http.MethodGet, "/", nil) // no cookie
+		w := httptest.NewRecorder()
+		s.financeSession(w, r)
+		return w.Body.String()
+	}
+
+	mustWriteFile(t, usersFile, `{"users":[]}`)
+	if body := render(); strings.Contains(body, "/auth/email") {
+		t.Error("with nobody listed in users.json, the email option must stay hidden")
+	}
+
+	mustWriteFile(t, usersFile, `{"users":[{"email":"person@example.com","parts":["finance"]}]}`)
+	body := render()
+	if !strings.Contains(body, `href="/auth/email"`) {
+		t.Errorf("with a listed user, the login page must offer email login; got: %s", body)
+	}
+	if !strings.Contains(body, `href="/auth/login"`) {
+		t.Error("the GitHub option must still be there too")
 	}
 }
 

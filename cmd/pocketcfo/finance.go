@@ -100,7 +100,7 @@ func (s *server) authenticatedForPart(sess auth.Session, part string) bool {
 func (s *server) financeSession(w http.ResponseWriter, r *http.Request) (auth.Session, bool) {
 	sess, ok := s.currentSession(r)
 	if !ok || !s.authenticated(sess) {
-		tracker.RenderLogin(w, "", false)
+		tracker.RenderLogin(w, "", s.emailLoginAvailable())
 		return sess, false
 	}
 	if s.authenticatedForPart(sess, users.PartFinance) {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
+	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 	"github.com/titaniumcoder/pocket-cfo/internal/mail"
 	"github.com/titaniumcoder/pocket-cfo/internal/users"
 )
@@ -26,12 +27,7 @@ const (
 
 // handleEmailLoginForm serves the email-entry form at GET /auth/email.
 func (s *server) handleEmailLoginForm(w http.ResponseWriter, r *http.Request) {
-	view := struct{ Error bool }{Error: r.URL.Query().Get("error") != ""}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.emailLoginTmpl.Execute(w, view); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
+	tracker.RenderEmailLogin(w, r.URL.Query().Get("error") != "")
 }
 
 // handleEmailLoginRequest handles POST /auth/email. It always renders the
@@ -46,10 +42,7 @@ func (s *server) handleEmailLoginRequest(w http.ResponseWriter, r *http.Request)
 		s.sendLoginLink(r, email)
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.emailSentTmpl.Execute(w, nil); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
+	tracker.RenderEmailSent(w)
 }
 
 func (s *server) sendLoginLink(r *http.Request, email string) {
@@ -101,6 +94,19 @@ func (s *server) handleEmailLoginCallback(w http.ResponseWriter, r *http.Request
 		Expires:  time.Now().Add(auth.ReadOnlyTTL),
 	})
 	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+// emailLoginAvailable reports whether the email-login option is worth
+// offering at all: it can only ever succeed for an address listed in
+// users.json, so with an empty (or unreadable) list the link would lead
+// straight to a dead end. Read fresh, like every other users.json check, so
+// adding the first user makes the option appear without a restart.
+func (s *server) emailLoginAvailable() bool {
+	u, err := users.Load(usersFile)
+	if err != nil {
+		return false
+	}
+	return len(u.Users) > 0
 }
 
 // emailParts reports the part(s) email is allowed on this deployment's

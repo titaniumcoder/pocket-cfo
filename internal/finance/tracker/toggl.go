@@ -118,9 +118,11 @@ type Aggregate struct {
 	Currency    string
 }
 
-// Project is a Toggl project (used for its name).
+// Project is a Toggl project. ClientID is 0 when the project has no client
+// assigned in Toggl.
 type Project struct {
-	Name string
+	Name     string
+	ClientID int
 }
 
 const (
@@ -319,8 +321,9 @@ func (t *Toggl) fetchProjects(ctx context.Context) (map[int]Project, error) {
 	}
 
 	var list []struct {
-		ID   int    `json:"id"`
-		Name string `json:"name"`
+		ID       int    `json:"id"`
+		Name     string `json:"name"`
+		ClientID *int   `json:"client_id"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
 		return nil, fmt.Errorf("toggl: decode projects: %w", err)
@@ -328,7 +331,105 @@ func (t *Toggl) fetchProjects(ctx context.Context) (map[int]Project, error) {
 
 	out := make(map[int]Project, len(list))
 	for _, p := range list {
-		out[p.ID] = Project{Name: p.Name}
+		out[p.ID] = Project{Name: p.Name, ClientID: derefInt(p.ClientID)}
+	}
+	return out, nil
+}
+
+// Workspace is a Toggl workspace (used by the admin /info diagnostics page to
+// help pick the right IDs for config.json/recipient tracking_client_id).
+type Workspace struct {
+	ID   int
+	Name string
+}
+
+// Workspaces returns every workspace the configured token can see. Not
+// range-scoped, so it's cached forever like Projects.
+func (t *Toggl) Workspaces(ctx context.Context) ([]Workspace, error) {
+	if t == nil {
+		return nil, nil
+	}
+	v, err := t.getCached("workspaces", time.Time{}, time.Time{}, func() (any, error) {
+		return t.fetchWorkspaces(ctx)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.([]Workspace), nil
+}
+
+func (t *Toggl) fetchWorkspaces(ctx context.Context) ([]Workspace, error) {
+	resp, err := t.do(ctx, http.MethodGet, "https://api.track.toggl.com/api/v9/me/workspaces", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, apiError("toggl", resp)
+	}
+
+	var list []struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		return nil, fmt.Errorf("toggl: decode workspaces: %w", err)
+	}
+
+	out := make([]Workspace, len(list))
+	for i, w := range list {
+		out[i] = Workspace{ID: w.ID, Name: w.Name}
+	}
+	return out, nil
+}
+
+// Client is a Toggl client (the entity tracking_client_id links a recipient
+// to) — used by the admin /info diagnostics page.
+type Client struct {
+	ID   int
+	Name string
+}
+
+// Clients returns every client in the given workspace. Not range-scoped, so
+// it's cached forever like Projects/Workspaces.
+func (t *Toggl) Clients(ctx context.Context, workspaceID int) ([]Client, error) {
+	if t == nil {
+		return nil, nil
+	}
+	key := "clients|" + strconv.Itoa(workspaceID)
+	v, err := t.getCached(key, time.Time{}, time.Time{}, func() (any, error) {
+		return t.fetchClients(ctx, workspaceID)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.([]Client), nil
+}
+
+func (t *Toggl) fetchClients(ctx context.Context, workspaceID int) ([]Client, error) {
+	url := fmt.Sprintf("https://api.track.toggl.com/api/v9/workspaces/%d/clients", workspaceID)
+	resp, err := t.do(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, apiError("toggl", resp)
+	}
+
+	var list []struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		return nil, fmt.Errorf("toggl: decode clients: %w", err)
+	}
+
+	out := make([]Client, len(list))
+	for i, c := range list {
+		out[i] = Client{ID: c.ID, Name: c.Name}
 	}
 	return out, nil
 }

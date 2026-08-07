@@ -10,15 +10,18 @@ import (
 )
 
 func TestProjects(t *testing.T) {
-	b := &fakeBackend{projects: `[{"id":1,"name":"Alpha"},{"id":2,"name":"Beta"}]`}
+	b := &fakeBackend{projects: `[{"id":1,"name":"Alpha","client_id":100},{"id":2,"name":"Beta"}]`}
 	tg := &Toggl{WorkspaceID: "ws", HTTP: b.transport()}
 
 	got, err := tg.Projects(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got[1].Name != "Alpha" || got[2].Name != "Beta" {
-		t.Errorf("projects = %+v", got)
+	if got[1].Name != "Alpha" || got[1].ClientID != 100 {
+		t.Errorf("project 1 = %+v, want Name=Alpha ClientID=100", got[1])
+	}
+	if got[2].Name != "Beta" || got[2].ClientID != 0 {
+		t.Errorf("project 2 = %+v, want Name=Beta ClientID=0 (no client assigned)", got[2])
 	}
 }
 
@@ -203,5 +206,72 @@ func TestYearKey(t *testing.T) {
 	tg := &Toggl{ProjectIDs: "1,2"}
 	if got, want := tg.yearKey(2026), "detailed|1,2|2026"; got != want {
 		t.Errorf("yearKey = %q, want %q", got, want)
+	}
+}
+
+func TestWorkspaces(t *testing.T) {
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if !strings.Contains(r.URL.Path, "/me/workspaces") {
+			return statusResponse(http.StatusNotFound, "unexpected: "+r.URL.String()), nil
+		}
+		return jsonResponse(`[{"id":10,"name":"Acme Freelance"},{"id":20,"name":"Side Gig"}]`, nil), nil
+	})
+	tg := &Toggl{HTTP: &http.Client{Transport: rt}}
+
+	got, err := tg.Workspaces(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Workspace{{ID: 10, Name: "Acme Freelance"}, {ID: 20, Name: "Side Gig"}}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("Workspaces() = %+v, want %+v", got, want)
+	}
+}
+
+func TestWorkspacesErrorStatus(t *testing.T) {
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return statusResponse(401, "unauthorized"), nil
+	})
+	tg := &Toggl{HTTP: &http.Client{Transport: rt}}
+	if _, err := tg.Workspaces(context.Background()); err == nil {
+		t.Fatal("expected error on 401")
+	}
+}
+
+func TestClients(t *testing.T) {
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if !strings.Contains(r.URL.Path, "/workspaces/10/clients") {
+			return statusResponse(http.StatusNotFound, "unexpected: "+r.URL.String()), nil
+		}
+		return jsonResponse(`[{"id":100,"name":"Example Client AG"}]`, nil), nil
+	})
+	tg := &Toggl{HTTP: &http.Client{Transport: rt}}
+
+	got, err := tg.Clients(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != (Client{ID: 100, Name: "Example Client AG"}) {
+		t.Errorf("Clients(10) = %+v, want [{100 Example Client AG}]", got)
+	}
+}
+
+func TestClientsErrorStatus(t *testing.T) {
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return statusResponse(401, "unauthorized"), nil
+	})
+	tg := &Toggl{HTTP: &http.Client{Transport: rt}}
+	if _, err := tg.Clients(context.Background(), 10); err == nil {
+		t.Fatal("expected error on 401")
+	}
+}
+
+func TestWorkspacesClientsNilTogglNoOp(t *testing.T) {
+	var tg *Toggl
+	if got, err := tg.Workspaces(context.Background()); got != nil || err != nil {
+		t.Errorf("nil Toggl Workspaces() = %v, %v, want nil, nil", got, err)
+	}
+	if got, err := tg.Clients(context.Background(), 10); got != nil || err != nil {
+		t.Errorf("nil Toggl Clients() = %v, %v, want nil, nil", got, err)
 	}
 }

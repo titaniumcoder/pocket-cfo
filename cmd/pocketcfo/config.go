@@ -84,44 +84,53 @@ func loadConfig() config {
 		otpLinkSecret:    os.Getenv("OTP_LINK_SECRET"),
 		finance:          financeconfig.Load(financeFileConfig),
 	}
+	applyDevDefaults(&c)
+	if c.env == "prod" {
+		requireProdVars(c)
+	}
+	return c
+}
+
+// applyDevDefaults fills in the fallbacks that only matter outside prod,
+// where currentSession bypasses GitHub auth entirely, so these values are
+// never actually consulted.
+func applyDevDefaults(c *config) {
 	if c.env == "" {
 		c.env = "development"
 	}
 	if c.repo == "" {
-		// Harmless in dev/test: currentSession bypasses GitHub auth
-		// entirely outside prod, so c.repo is never actually consulted.
 		// Deliberately NOT defaulted to titaniumcoder/pocket-cfo (the
-		// public code repo) — GITHUB_REPO is required below in prod so a
-		// real deployment can't silently check collaborator permission
-		// against the wrong repo (it should be the private data repo,
-		// e.g. titaniumcoder/pocket-cfo-data — see that repo's own
-		// docker-compose.yml).
+		// public code repo) — GITHUB_REPO is required in prod (see
+		// requireProdVars) so a real deployment can't silently check
+		// collaborator permission against the wrong repo (it should be
+		// the private data repo, e.g. titaniumcoder/pocket-cfo-data —
+		// see that repo's own docker-compose.yml).
 		c.repo = "unset"
 	}
 	if c.port == "" {
 		c.port = "8080"
 	}
+}
 
-	// GitHub OAuth and the email-login path are only enforced in prod (see
-	// (*server).currentSession) — local development skips both entirely, so
-	// none of this is required unless ENV=prod.
-	if c.env == "prod" {
-		missing := map[string]string{
-			"GITHUB_OAUTH_CLIENT_ID":     c.clientID,
-			"GITHUB_OAUTH_CLIENT_SECRET": c.clientSecret,
-			"SESSION_SECRET":             c.sessionSecret,
-			"CLIENT_LINK_SECRET":         c.clientLinkSecret,
-			"PUBLIC_BASE_URL":            c.baseURL,
-			"GITHUB_REPO":                os.Getenv("GITHUB_REPO"),
-			"AWS_REGION":                 c.sesRegion,
-			"SES_FROM_EMAIL":             c.sesFromEmail,
-			"OTP_LINK_SECRET":            c.otpLinkSecret,
-		}
-		for name, v := range missing {
-			if v == "" {
-				log.Fatalf("pocketcfo: %s is not set (see .envrc.example)", name)
-			}
+// requireProdVars fails fast on missing config in prod. GitHub OAuth and the
+// email-login path are only enforced in prod (see (*server).currentSession)
+// — local development skips both entirely, so none of this is required
+// unless ENV=prod.
+func requireProdVars(c config) {
+	missing := map[string]string{
+		"GITHUB_OAUTH_CLIENT_ID":     c.clientID,
+		"GITHUB_OAUTH_CLIENT_SECRET": c.clientSecret,
+		"SESSION_SECRET":             c.sessionSecret,
+		"CLIENT_LINK_SECRET":         c.clientLinkSecret,
+		"PUBLIC_BASE_URL":            c.baseURL,
+		"GITHUB_REPO":                os.Getenv("GITHUB_REPO"),
+		"AWS_REGION":                 c.sesRegion,
+		"SES_FROM_EMAIL":             c.sesFromEmail,
+		"OTP_LINK_SECRET":            c.otpLinkSecret,
+	}
+	for name, v := range missing {
+		if v == "" {
+			log.Fatalf("pocketcfo: %s is not set (see .envrc.example)", name)
 		}
 	}
-	return c
 }

@@ -18,6 +18,7 @@ import (
 
 	"github.com/atombender/go-jsonschema/pkg/types"
 
+	"github.com/titaniumcoder/pocket-cfo/internal/auth"
 	financeconfig "github.com/titaniumcoder/pocket-cfo/internal/finance/config"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 	"github.com/titaniumcoder/pocket-cfo/internal/money"
@@ -158,9 +159,7 @@ var templateFuncs = template.FuncMap{
 
 // handleIndex is the invoicing dashboard: unauthenticated visitors get a
 // bare login prompt; authenticated ones with no access to the invoicing
-// part (a users.json-listed, email-OTP session scoped to finance only) get
-// bounced to "/" instead — "users with access to both get shared links,
-// others land to wherever they have access to" (PocketCFO plan §5.2).
+// part get routed by checkInvoicingAccess.
 func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/invoicing" {
 		http.NotFound(w, r)
@@ -175,24 +174,52 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if !s.authenticatedForPart(sess, users.PartInvoicing) {
-		if sess.HasPart(users.PartFinance) {
-			http.Redirect(w, r, "/", http.StatusFound)
-			return
-		}
+	if redirect, forbidden := s.checkInvoicingAccess(sess); forbidden {
 		http.Error(w, "you don't have access to invoicing", http.StatusForbidden)
+		return
+	} else if redirect != "" {
+		http.Redirect(w, r, redirect, http.StatusFound)
 		return
 	}
 
-	recipients, err := stats.LoadRecipients(recipientsDir)
+	view, err := s.loadInvoicingView(r, sess)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.indexTmpl.Execute(w, view); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// checkInvoicingAccess reports how an already-authenticated sess may reach
+// the invoicing dashboard: a users.json-listed, email-OTP session scoped to
+// finance only redirects to "/" instead — "users with access to both get
+// shared links, others land to wherever they have access to" (PocketCFO
+// plan §5.2) — and a session with neither part is forbidden outright.
+func (s *server) checkInvoicingAccess(sess auth.Session) (redirect string, forbidden bool) {
+	if s.authenticatedForPart(sess, users.PartInvoicing) {
+		return "", false
+	}
+	if sess.HasPart(users.PartFinance) {
+		return "/", false
+	}
+	return "", true
+}
+
+// loadInvoicingView loads recipients/invoices, aggregates them for the
+// selected year (via the ?year= query param, defaulting to "All"), and
+// assembles the invoicing dashboard's template data.
+func (s *server) loadInvoicingView(r *http.Request, sess auth.Session) (any, error) {
+	recipients, err := stats.LoadRecipients(recipientsDir)
+	if err != nil {
+		return nil, err
+	}
 	invoices, err := stats.LoadInvoices(invoicesDir)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 
 	var selectedYear *int
@@ -205,8 +232,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	years, recipientRows, invoiceRows, err := stats.Aggregate(invoices, recipients, selectedYear, time.Now())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 
 	// Portal links are bearer secrets for the client-portal tier (see
@@ -217,7 +243,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		portalLinks = s.portalLinks(recipients)
 	}
 
-	view := struct {
+	return struct {
 		Login           string
 		ReadOnly        bool
 		ShowFinanceLink bool
@@ -237,12 +263,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		Invoices:        invoiceRows,
 		PortalLinks:     portalLinks,
 		PDFCurrent:      pdfCurrentMap(invoices),
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.indexTmpl.Execute(w, view); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
+	}, nil
 }
 
 // pdfCurrentMap builds the admin-only "does the built PDF still match the

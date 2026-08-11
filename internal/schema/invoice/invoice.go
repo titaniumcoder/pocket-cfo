@@ -65,55 +65,6 @@ func (j *Address) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-type Annulment struct {
-	// Date corresponds to the JSON schema field "date".
-	Date types.SerializableDate `json:"date" yaml:"date" mapstructure:"date"`
-
-	// ReasonBg corresponds to the JSON schema field "reason_bg".
-	ReasonBg string `json:"reason_bg" yaml:"reason_bg" mapstructure:"reason_bg"`
-
-	// ReasonDe corresponds to the JSON schema field "reason_de".
-	ReasonDe string `json:"reason_de" yaml:"reason_de" mapstructure:"reason_de"`
-
-	// ReplacementInvoice corresponds to the JSON schema field "replacement_invoice".
-	ReplacementInvoice *string `json:"replacement_invoice,omitempty,omitzero" yaml:"replacement_invoice,omitempty" mapstructure:"replacement_invoice,omitempty"`
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *Annulment) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["date"]; raw != nil && !ok {
-		return fmt.Errorf("field date in Annulment: required")
-	}
-	if _, ok := raw["reason_bg"]; raw != nil && !ok {
-		return fmt.Errorf("field reason_bg in Annulment: required")
-	}
-	if _, ok := raw["reason_de"]; raw != nil && !ok {
-		return fmt.Errorf("field reason_de in Annulment: required")
-	}
-	type Plain Annulment
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	if utf8.RuneCountInString(string(plain.ReasonBg)) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "reason_bg", 1)
-	}
-	if utf8.RuneCountInString(string(plain.ReasonDe)) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "reason_de", 1)
-	}
-	if plain.ReplacementInvoice != nil {
-		if matched, _ := regexp.MatchString(`^INV-\d{10}$`, string(*plain.ReplacementInvoice)); !matched {
-			return fmt.Errorf("field %s pattern match: must match %s", "ReplacementInvoice", `^INV-\d{10}$`)
-		}
-	}
-	*j = Annulment(plain)
-	return nil
-}
-
 type Bank struct {
 	// Bic corresponds to the JSON schema field "bic".
 	Bic string `json:"bic" yaml:"bic" mapstructure:"bic"`
@@ -194,9 +145,6 @@ func (j *Discount) UnmarshalJSON(value []byte) error {
 }
 
 type InvoiceJson struct {
-	// Annulment corresponds to the JSON schema field "annulment".
-	Annulment *Annulment `json:"annulment" yaml:"annulment" mapstructure:"annulment"`
-
 	// Currency corresponds to the JSON schema field "currency".
 	Currency string `json:"currency" yaml:"currency" mapstructure:"currency"`
 
@@ -309,9 +257,6 @@ func (j *InvoiceJson) UnmarshalJSON(value []byte) error {
 	var raw map[string]interface{}
 	if err := json.Unmarshal(value, &raw); err != nil {
 		return err
-	}
-	if _, ok := raw["annulment"]; raw != nil && !ok {
-		return fmt.Errorf("field annulment in InvoiceJson: required")
 	}
 	if _, ok := raw["currency"]; raw != nil && !ok {
 		return fmt.Errorf("field currency in InvoiceJson: required")

@@ -44,12 +44,10 @@ func LoadRecipients(dir string) ([]recipient.RecipientJson, error) {
 	return recipients, nil
 }
 
-// LoadInvoices reads every invoice JSON file under dir and returns every one
-// except annulled invoices. Annulled invoices aren't live ledger items and
-// stay excluded per ARCHITECTURE.md §3.8 ("annulled wins over everything").
-// Drafts are included — the dashboard shows them, clearly marked, rather
-// than hiding unfinished work — but see Aggregate, which keeps them out of
-// the recipient ledger totals.
+// LoadInvoices reads every invoice JSON file under dir and returns all of
+// them. Drafts are included — the dashboard shows them, clearly marked,
+// rather than hiding unfinished work — but see Aggregate, which keeps them
+// out of the recipient ledger totals.
 func LoadInvoices(dir string) ([]*invoice.InvoiceJson, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -67,9 +65,6 @@ func LoadInvoices(dir string) ([]*invoice.InvoiceJson, error) {
 		var inv invoice.InvoiceJson
 		if err := json.Unmarshal(b, &inv); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", e.Name(), err)
-		}
-		if inv.Annulment != nil {
-			continue
 		}
 		invoices = append(invoices, &inv)
 	}
@@ -99,11 +94,10 @@ type InvoiceRow struct {
 }
 
 // deriveState computes the single ledger/lifecycle state a row is marked
-// with, given whether paid names this invoice. Precedence — draft wins over
-// paid/overdue/issued — mirrors ARCHITECTURE.md §3.8's "annulled wins over
-// everything" pattern applied one level down: a draft is a lifecycle state,
-// not a ledger state, and the template keys both its badge and its PDF link
-// off this single value so the two can never disagree.
+// with, given whether paid names this invoice. Draft wins over
+// paid/overdue/issued: a draft is a lifecycle state, not a ledger state, and
+// the template keys both its badge and its PDF link off this single value so
+// the two can never disagree.
 func deriveState(inv *invoice.InvoiceJson, paidOn *types.SerializableDate, today time.Time) string {
 	if inv.Status == invoice.InvoiceJsonStatusDraft {
 		return "draft"

@@ -127,6 +127,13 @@ type Figures struct {
 	MinimalMode      bool
 	MinimalToggleURL string // current month view + ?minimal=toggle
 
+	// The three states the Toggl layer can be in, beyond "fine". TogglPending:
+	// nothing cached yet but a fetch is running, so the page renders a loading
+	// Income section and a meta refresh. TogglStaleNote: real figures, out of
+	// date because a refresh failed. TrackedErr (below): nothing is coming.
+	TogglPending   bool
+	TogglStaleNote string
+
 	// Billable tracked work this month, one row per project+rate (includes
 	// today) — excludes any project+month an issued invoice has already
 	// superseded (see Tracker.Invoiced/invoiceSuppresses).
@@ -295,10 +302,16 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	// today's tracked time only matters when today falls inside the period.
 	isCurrentPeriod := !today.Before(start) && !today.After(end)
 
-	projects, perr := t.Toggl.Projects(ctx)
+	// Toggl gets a short slice of the request's budget: Tracker.Warm keeps the
+	// data current, and a page's job is to use whatever is ready.
+	togglCtx, cancelToggl := waitBudget(ctx)
+	defer cancelToggl()
+
+	projects, perr := t.Toggl.Projects(togglCtx)
 	// One yearly fetch feeds tracked rows, the rate, today's status and the
 	// billable-day set; filter it to the period in question.
-	yd, terr := t.Toggl.Year(ctx, year)
+	yd, terr := t.Toggl.Year(togglCtx, year)
+	result.TogglPending = terr != nil && t.Toggl.YearPending(year)
 	aggs := aggregatesInRange(yd, start, end)
 	todayErr := terr // today's status shares the yearly fetch's fate
 	todayTracked := isCurrentPeriod && terr == nil && yd.Days[today.Format("2006-01-02")]
@@ -357,8 +370,11 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 
 	result.computeFundingBalance(t, ctx, year, start, now, months, rateCents, bv)
 
-	if at := t.Toggl.YearFetchedAt(year); !at.IsZero() {
+	if at, stale := t.Toggl.YearStatus(year); !at.IsZero() {
 		result.LastUpdated = at.In(t.Loc).Format("02 Jan 15:04")
+		if stale {
+			result.TogglStaleNote = "Toggl didn't answer — tracked hours are the last ones fetched, on " + result.LastUpdated + "."
+		}
 	} else {
 		result.LastUpdated = "—"
 	}

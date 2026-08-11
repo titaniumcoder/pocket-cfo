@@ -20,61 +20,180 @@ import (
 // names. Tracked time uses Toggl's individual rounding to 15 minutes and only
 // counts billable entries.
 //
-// Responses are cached in memory indefinitely to stay under Toggl's rate limit.
-// The cache is only cleared explicitly via EvictRange — the page's Reload button,
-// which drops the currently viewed month or year.
+// Responses are cached in memory indefinitely to stay under Toggl's rate limit,
+// and invalidated explicitly via EvictRange (the page's Reload button). Stale
+// means "refetch on next use", not "forget" — the detailed report times out
+// often enough that the last good value is worth keeping as a fallback. See
+// getCached.
 type Toggl struct {
 	Token       string
 	WorkspaceID string
 	ProjectIDs  string // optional comma-separated filter
 	HTTP        *http.Client
 
-	mu    sync.Mutex
-	cache map[string]cacheEntry
+	mu       sync.Mutex
+	cache    map[string]cacheEntry
+	inflight map[string]*fetchCall
+	breaker  map[string]breakerState
 }
+
+// fetchCall is one in-progress fetch that later callers for the same key wait
+// on. val/err are written before done is closed and read only after; the close
+// is the happens-before edge.
+type fetchCall struct {
+	done chan struct{}
+	val  any
+	err  error
+}
+
+type breakerState struct {
+	failures  int
+	openUntil time.Time
+}
+
+const togglBreakerThreshold = 3
+
+// Variables, not constants, only so tests need not wait them out.
+var (
+	togglFetchTimeout    = 2 * time.Minute
+	togglBreakerCooldown = time.Minute
+)
 
 type cacheEntry struct {
 	val        any
 	start, end time.Time // date range this entry covers (zero = not range-scoped)
-	fetchedAt  time.Time
+	fetchedAt  time.Time // when val was last fetched successfully
+	stale      bool      // refetch on next use, but keep val as a fallback
 }
 
 // getCached returns the cached value for key, or computes it via fn and stores it
 // forever, tagged with the date range it covers (zero start/end for entries that
 // aren't range-scoped, such as the project list). Cache hits, fetch starts, and
 // fetch outcomes (with timing) are logged to stdout for container log visibility.
-func (t *Toggl) getCached(key string, start, end time.Time, fn func() (any, error)) (any, error) {
+//
+// A failure is only an error when there is nothing cached to fall back on;
+// otherwise the previous value is returned and the entry left stale.
+//
+// ctx bounds how long this caller waits, not how long the fetch lives — fn runs
+// detached (see fill). A cache fill is shared, so it must not die because the
+// caller that happened to trigger it walked away.
+func (t *Toggl) getCached(ctx context.Context, key string, start, end time.Time, fn func(context.Context) (any, error)) (any, error) {
 	t.mu.Lock()
-	if e, ok := t.cache[key]; ok {
+	cached, hit := t.cache[key]
+	if hit && !cached.stale {
 		t.mu.Unlock()
 		log.Printf("toggl: %s — served from cache", key)
-		return e.val, nil
+		return cached.val, nil
+	}
+	// Upstream has been failing: don't add another slow request to the pile.
+	if until := t.breaker[key].openUntil; time.Now().Before(until) {
+		t.mu.Unlock()
+		log.Printf("toggl: %s — upstream failing, not retrying before %s", key, until.Format(time.RFC3339))
+		return staleOr(key, cached, hit, fmt.Errorf("toggl: %s: upstream unavailable, not retried", key))
+	}
+	// One fetch per key: concurrent readers of the same year would otherwise
+	// fire identical year-wide reports at the slowest endpoint this app calls.
+	call, running := t.inflight[key]
+	if !running {
+		call = &fetchCall{done: make(chan struct{})}
+		if t.inflight == nil {
+			t.inflight = map[string]*fetchCall{}
+		}
+		t.inflight[key] = call
 	}
 	t.mu.Unlock()
 
-	log.Printf("toggl: %s — fetching…", key)
-	t0 := time.Now()
-	val, err := fn()
-	elapsed := time.Since(t0).Round(time.Millisecond)
-	if err != nil {
-		log.Printf("toggl: %s — failed after %s: %v", key, elapsed, err)
-		return nil, err
+	// On its own goroutine even for the caller that started it, so every caller
+	// waits on its own deadline. Inline, the request that arrived first would
+	// wait out the whole detached timeout while the ones behind it left early.
+	if !running {
+		go t.fill(ctx, key, start, end, fn, call)
+	} else {
+		log.Printf("toggl: %s — waiting on the fetch already in flight", key)
 	}
-	log.Printf("toggl: %s — fetched in %s", key, elapsed)
 
-	t.mu.Lock()
-	if t.cache == nil {
-		t.cache = map[string]cacheEntry{}
+	select {
+	case <-call.done:
+	case <-ctx.Done():
+		log.Printf("toggl: %s — gave up waiting; the fetch continues", key)
+		return staleOr(key, cached, hit, ctx.Err())
 	}
-	t.cache[key] = cacheEntry{val: val, start: start, end: end, fetchedAt: time.Now()}
-	t.mu.Unlock()
-	return val, nil
+	if call.err != nil {
+		return staleOr(key, cached, hit, call.err)
+	}
+	return call.val, nil
 }
 
-// EvictRange drops cached responses whose date range intersects [start, end].
-// Entries that aren't range-scoped (e.g. the project list) are kept. A nil
-// Toggl (the tracked-hours layer disabled by config — see Tracker) is a
-// no-op, same convention as the other methods below.
+// fill performs the fetch and publishes it to everyone waiting on call,
+// outliving whichever caller triggered it.
+func (t *Toggl) fill(ctx context.Context, key string, start, end time.Time, fn func(context.Context) (any, error), call *fetchCall) {
+	log.Printf("toggl: %s — fetching…", key)
+	t0 := time.Now()
+	fetchCtx, cancelFetch := context.WithTimeout(context.WithoutCancel(ctx), togglFetchTimeout)
+	defer cancelFetch()
+	val, err := fn(fetchCtx)
+	elapsed := time.Since(t0).Round(time.Millisecond)
+
+	// Waiters and the shared maps are published under one acquisition, so the
+	// key is never observable as neither in-flight nor resolved.
+	t.mu.Lock()
+	delete(t.inflight, key)
+	if err != nil {
+		t.recordFailureLocked(key)
+	} else {
+		delete(t.breaker, key)
+		if t.cache == nil {
+			t.cache = map[string]cacheEntry{}
+		}
+		t.cache[key] = cacheEntry{val: val, start: start, end: end, fetchedAt: time.Now()}
+	}
+	call.val, call.err = val, err
+	t.mu.Unlock()
+	close(call.done)
+
+	if err != nil {
+		log.Printf("toggl: %s — failed after %s: %v", key, elapsed, err)
+		return
+	}
+	log.Printf("toggl: %s — fetched in %s", key, elapsed)
+}
+
+// staleOr returns the previous value for key when there is one, err otherwise.
+func staleOr(key string, cached cacheEntry, hit bool, err error) (any, error) {
+	if !hit {
+		return nil, err
+	}
+	log.Printf("toggl: %s — serving stale data fetched %s", key, cached.fetchedAt.Format(time.RFC3339))
+	return cached.val, nil
+}
+
+// recordFailureLocked counts a failed fetch and opens the breaker at the
+// threshold. Failures are not reset on opening, so the first attempt after the
+// cooldown is a probe: if it fails the breaker reopens immediately rather than
+// granting another three tries. t.mu must be held.
+func (t *Toggl) recordFailureLocked(key string) {
+	if t.breaker == nil {
+		t.breaker = map[string]breakerState{}
+	}
+	b := t.breaker[key]
+	b.failures++
+	if b.failures >= togglBreakerThreshold {
+		b.openUntil = time.Now().Add(togglBreakerCooldown)
+		log.Printf("toggl: %s — %d consecutive failures, pausing fetches for %s", key, b.failures, togglBreakerCooldown)
+	}
+	t.breaker[key] = b
+}
+
+// EvictRange marks cached responses whose date range intersects [start, end]
+// stale, so the next read refetches them. Entries that aren't range-scoped
+// (e.g. the project list) are left alone. A nil Toggl (the tracked-hours layer
+// disabled by config — see Tracker) is a no-op, same convention as the other
+// methods below.
+//
+// A mark rather than a delete: deleting would make a failed refetch
+// indistinguishable from "never fetched", exactly where the previous figures
+// are still the best answer. Entries are therefore never removed — fine, since
+// the key space is one entry per year plus one project list.
 func (t *Toggl) EvictRange(start, end time.Time) {
 	if t == nil {
 		return
@@ -86,23 +205,60 @@ func (t *Toggl) EvictRange(start, end time.Time) {
 			continue
 		}
 		if !e.end.Before(start) && !e.start.After(end) {
-			delete(t.cache, k)
+			e.stale = true
+			t.cache[k] = e
 		}
+	}
+	// Reload means "try again now", so it reopens every breaker too. Wholesale
+	// rather than per matching entry: the case that most needs it is a key
+	// whose first fetch failed, which has no cache entry for the loop above.
+	clear(t.breaker)
+}
+
+// markStale forces the next read of key to refetch, leaving the breaker alone —
+// the background refresher's invalidation. Only Reload (EvictRange) overrides a
+// decision to stop calling a failing API.
+func (t *Toggl) markStale(key string) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if e, ok := t.cache[key]; ok {
+		e.stale = true
+		t.cache[key] = e
 	}
 }
 
-// YearFetchedAt reports when the detailed report for the given year was fetched,
-// or the zero time if it isn't cached. A nil Toggl always reports the zero time.
-func (t *Toggl) YearFetchedAt(year int) time.Time {
+// YearPending reports that a fetch for the year is in flight with nothing
+// cached yet: no figures to show, but waiting will help. Answered structurally
+// rather than by inspecting the error, since a deadline arrives by several
+// routes.
+func (t *Toggl) YearPending(year int) bool {
 	if t == nil {
-		return time.Time{}
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	key := t.yearKey(year)
+	_, fetching := t.inflight[key]
+	_, cached := t.cache[key]
+	return fetching && !cached
+}
+
+// YearStatus reports when the year's report was last fetched successfully and
+// whether that value is stale. An uncached year, or a nil Toggl, reports the
+// zero time and false.
+func (t *Toggl) YearStatus(year int) (fetchedAt time.Time, stale bool) {
+	if t == nil {
+		return time.Time{}, false
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if e, ok := t.cache[t.yearKey(year)]; ok {
-		return e.fetchedAt
+		return e.fetchedAt, e.stale
 	}
-	return time.Time{}
+	return time.Time{}, false
 }
 
 func (t *Toggl) yearKey(year int) string {
@@ -231,8 +387,8 @@ func (t *Toggl) Year(ctx context.Context, year int) (*YearData, error) {
 	}
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, time.UTC)
 	end := time.Date(year, time.December, 31, 0, 0, 0, 0, time.UTC)
-	v, err := t.getCached(t.yearKey(year), start, end, func() (any, error) {
-		return t.fetchYear(ctx, start, end)
+	v, err := t.getCached(ctx, t.yearKey(year), start, end, func(fetchCtx context.Context) (any, error) {
+		return t.fetchYear(fetchCtx, start, end)
 	})
 	if err != nil {
 		return nil, err
@@ -299,8 +455,8 @@ func (t *Toggl) Projects(ctx context.Context) (map[int]Project, error) {
 	if t == nil {
 		return map[int]Project{}, nil
 	}
-	v, err := t.getCached("projects", time.Time{}, time.Time{}, func() (any, error) {
-		return t.fetchProjects(ctx)
+	v, err := t.getCached(ctx, "projects", time.Time{}, time.Time{}, func(fetchCtx context.Context) (any, error) {
+		return t.fetchProjects(fetchCtx)
 	})
 	if err != nil {
 		return nil, err
@@ -349,8 +505,8 @@ func (t *Toggl) Workspaces(ctx context.Context) ([]Workspace, error) {
 	if t == nil {
 		return nil, nil
 	}
-	v, err := t.getCached("workspaces", time.Time{}, time.Time{}, func() (any, error) {
-		return t.fetchWorkspaces(ctx)
+	v, err := t.getCached(ctx, "workspaces", time.Time{}, time.Time{}, func(fetchCtx context.Context) (any, error) {
+		return t.fetchWorkspaces(fetchCtx)
 	})
 	if err != nil {
 		return nil, err
@@ -398,8 +554,8 @@ func (t *Toggl) Clients(ctx context.Context, workspaceID int) ([]Client, error) 
 		return nil, nil
 	}
 	key := "clients|" + strconv.Itoa(workspaceID)
-	v, err := t.getCached(key, time.Time{}, time.Time{}, func() (any, error) {
-		return t.fetchClients(ctx, workspaceID)
+	v, err := t.getCached(ctx, key, time.Time{}, time.Time{}, func(fetchCtx context.Context) (any, error) {
+		return t.fetchClients(fetchCtx, workspaceID)
 	})
 	if err != nil {
 		return nil, err
@@ -434,17 +590,107 @@ func (t *Toggl) fetchClients(ctx context.Context, workspaceID int) ([]Client, er
 	return out, nil
 }
 
+const (
+	togglAttempts   = 3 // total tries, not retries
+	togglBackoffMax = 8 * time.Second
+)
+
+// togglBackoffBase is a variable only so tests can shrink it (see TestMain).
+var togglBackoffBase = 500 * time.Millisecond
+
+// do performs one Toggl API call, retrying transport errors and 429/5xx with
+// exponential backoff. Any other 4xx is a real answer and is returned as-is.
+// Retries are bounded by ctx as well as by togglAttempts, so a tight deadline
+// degrades to a single attempt.
 func (t *Toggl) do(ctx context.Context, method, url string, body io.Reader) (*http.Response, error) {
+	// Buffered so each attempt gets a fresh reader.
+	var payload []byte
+	if body != nil {
+		var err error
+		payload, err = io.ReadAll(body)
+		if err != nil {
+			return nil, fmt.Errorf("toggl: buffer request body: %w", err)
+		}
+	}
+
+	backoff := togglBackoffBase
+	var lastErr error
+	for attempt := 1; ; attempt++ {
+		resp, err := t.attempt(ctx, method, url, payload)
+		if err == nil && !retryableStatus(resp.StatusCode) {
+			return resp, nil
+		}
+
+		wait := backoff
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = apiError("toggl "+method, resp)
+			if after, ok := retryAfter(resp); ok {
+				wait = after
+			}
+			resp.Body.Close()
+		}
+
+		if attempt >= togglAttempts {
+			return nil, lastErr
+		}
+		log.Printf("toggl: attempt %d/%d failed (%v) — retrying in %s", attempt, togglAttempts, lastErr, wait)
+		if err := sleepCtx(ctx, wait); err != nil {
+			return nil, lastErr
+		}
+		if backoff *= 2; backoff > togglBackoffMax {
+			backoff = togglBackoffMax
+		}
+	}
+}
+
+func (t *Toggl) attempt(ctx context.Context, method, url string, payload []byte) (*http.Response, error) {
+	var body io.Reader
+	if payload != nil {
+		body = bytes.NewReader(payload)
+	}
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, err
 	}
-	if body != nil {
+	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	auth := base64.StdEncoding.EncodeToString([]byte(t.Token + ":api_token"))
 	req.Header.Set("Authorization", "Basic "+auth)
 	return t.client().Do(req)
+}
+
+func retryableStatus(code int) bool {
+	return code == http.StatusTooManyRequests || code >= 500
+}
+
+// retryAfter reads a Retry-After expressed in seconds, the form Toggl sends.
+// An HTTP-date or malformed value yields ok=false and the caller's own backoff.
+func retryAfter(resp *http.Response) (time.Duration, bool) {
+	v := strings.TrimSpace(resp.Header.Get("Retry-After"))
+	if v == "" {
+		return 0, false
+	}
+	secs, err := strconv.Atoi(v)
+	if err != nil || secs < 0 {
+		return 0, false
+	}
+	return time.Duration(secs) * time.Second, true
+}
+
+// sleepCtx waits for d, or returns ctx's error if the caller gives up first, so
+// a long Retry-After can't hold a request past its deadline.
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (t *Toggl) client() *http.Client {

@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"html/template"
 	"log"
 	"math"
@@ -66,7 +67,7 @@ func buildTracker(cfg financeconfig.Config, httpClient *http.Client, budgetDir s
 			Token:       cfg.TogglToken,
 			WorkspaceID: cfg.TogglWorkspace,
 			ProjectIDs:  cfg.TogglProjects,
-			HTTP:        httpClient,
+			HTTP:        togglHTTPClient(httpClient),
 		}
 	}
 	return &tracker.Tracker{
@@ -88,6 +89,21 @@ func buildTracker(cfg financeconfig.Config, httpClient *http.Client, budgetDir s
 	}
 }
 
+// togglTimeout is the ceiling for one Toggl API call: the Reports v3 detailed
+// report pages through several POSTs and is by a wide margin the slowest thing
+// this app calls, while SES and the OAuth callback want to fail fast. Sharing
+// one 15s client across all four is why the report kept dying with
+// "Client.Timeout exceeded while awaiting headers".
+const togglTimeout = 60 * time.Second
+
+// togglHTTPClient derives the Toggl client from the shared one, keeping its
+// Transport so injected test round-trippers still apply.
+func togglHTTPClient(shared *http.Client) *http.Client {
+	c := *shared
+	c.Timeout = togglTimeout
+	return &c
+}
+
 func main() {
 	cfg := loadConfig()
 
@@ -101,6 +117,13 @@ func main() {
 		infoTmpl:         mustPageTemplate(templatesDir + "/info.html"),
 		emailRequestedAt: map[string]time.Time{},
 	}
+
+	// Started before the listener: on a scale-to-zero host the first request
+	// arrives moments after boot, and joining a fetch already in flight beats
+	// starting one.
+	warmCtx, stopWarming := context.WithCancel(context.Background())
+	defer stopWarming()
+	go s.tracker.Warm(warmCtx, togglRefreshInterval())
 
 	mux := http.NewServeMux()
 	// Under /invoicing/ (not the bare /static/ this had before the finance

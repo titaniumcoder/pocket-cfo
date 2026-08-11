@@ -175,11 +175,17 @@ func (t *Tracker) fundingLaborIncomeEUR(ctx context.Context, months []yearMonth,
 	}
 	years := distinctYears(months)
 
-	projects, err := t.Toggl.Projects(ctx)
+	// Same short budget as the viewed period's reads (see waitBudget); on the
+	// raw request context these would sit out the wait the Income panel just
+	// avoided.
+	togglCtx, cancelToggl := waitBudget(ctx)
+	defer cancelToggl()
+
+	projects, err := t.Toggl.Projects(togglCtx)
 	if err != nil {
 		return nil, fmt.Errorf("funding: toggl projects: %w", err)
 	}
-	ydByYear, err := t.fetchYearDataByYear(ctx, years)
+	ydByYear, err := t.fetchYearDataByYear(togglCtx, years)
 	if err != nil {
 		return nil, err
 	}

@@ -138,6 +138,7 @@ var templates = `
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+{{if .TogglPending}}<meta http-equiv="refresh" content="` + pendingRefresh + `">{{end}}
 <title>PocketCFO — Finance</title>
 ` + favicon + `
 <link rel="stylesheet" href="/invoicing/static/app.css">
@@ -202,6 +203,10 @@ var templates = `
   <section class="panel income-panel">
     <h2 class="panel-title">Income</h2>
     <div class="ledger">
+      {{if .TogglPending}}
+      <div class="row"><span class="stale-note">Fetching tracked hours from Toggl — this page refreshes itself in a moment.</span></div>
+      {{else}}
+      {{if .TogglStaleNote}}<div class="row"><span class="stale-note">{{.TogglStaleNote}}</span></div>{{end}}
       {{if or .TrackedErr .Tracked}}
       <h2>Tracked</h2>
       {{if .TrackedErr}}<div class="row"><span class="error">{{.TrackedErr}}</span></div>
@@ -224,6 +229,7 @@ var templates = `
       <div class="row"><span class="error">{{.TotalErr}}</span></div>
       {{else}}
       <div class="row net"><span class="label">Income{{if .SpendableLabel}} <small>(for {{if .SpendableURL}}<a class="period-link" href="{{.SpendableURL}}">{{.SpendableLabel}}</a>{{else}}{{.SpendableLabel}}{{end}})</small>{{end}}</span><span class="mid">{{.TotalHours}} h &times; {{.TotalRate}}</span><span class="amt netamt">{{eur .TotalCents}}<span class="hrs-m">({{.TotalHours}}h)</span></span></div>
+      {{end}}
       {{end}}
     </div>
   </section>

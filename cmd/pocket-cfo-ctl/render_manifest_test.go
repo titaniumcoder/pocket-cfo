@@ -17,15 +17,20 @@ import (
 // otherwise touching the existing PDF file.
 func TestRenderOne_BackfillsManifestWithoutTouchingExistingPDF(t *testing.T) {
 	// render.HTML reads templates/invoice.html.tmpl relative to the repo
-	// root, so the temp dir needs a symlink to it before chdir'ing — same
+	// root, so the temp dir needs its own copy before chdir'ing — same
 	// constraint as internal/render's own fixture-loading tests.
+	//
+	// Copied rather than symlinked: creating a symlink on Windows needs
+	// Developer Mode or an elevated process, so a symlink here failed the
+	// test on every ordinary Windows checkout. The directory is four small
+	// templates, and the test only reads them.
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
 	repoRoot := filepath.Join(wd, "..", "..")
 	tmp := t.TempDir()
-	if err := os.Symlink(filepath.Join(repoRoot, "templates"), filepath.Join(tmp, "templates")); err != nil {
+	if err := os.CopyFS(filepath.Join(tmp, "templates"), os.DirFS(filepath.Join(repoRoot, "templates"))); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(tmp)

@@ -136,7 +136,7 @@ func accountsTracker(t *testing.T, accountsJSON string) *Tracker {
 		HoursPerDay: 8,
 		Loc:         time.UTC,
 		Budget: newTestBudget(t, map[string]string{"budget.json": `{"groups":[
-			{"name":"Housing","kind":"private","categories":[{"name":"Rent","amount":1000}]}
+			{"name":"Housing","kind":"private","categories":[{"id":"00000000-0000-4000-8000-000000000001","name":"Rent","amount":1000}]}
 		]}`}),
 		Accounts: newTestAccounts(t, accountsJSON),
 		Personal: PersonalParams{

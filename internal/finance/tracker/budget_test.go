@@ -12,11 +12,11 @@ import (
 const testBudgetJSON = `{
   "groups": [
     { "name": "Housing", "kind": "private", "categories": [
-      { "name": "Rent", "amount": 1000 },
-      { "name": "Groceries", "amount": 300 }
+      { "id": "00000000-0000-4000-8000-000000000001", "name": "Rent", "amount": 1000 },
+      { "id": "00000000-0000-4000-8000-000000000002", "name": "Groceries", "amount": 300 }
     ]},
     { "name": "OneOff", "kind": "private", "categories": [
-      { "name": "Desk", "amount": 500, "date": "2026-09-01" }
+      { "id": "00000000-0000-4000-8000-000000000003", "name": "Desk", "amount": 500, "date": "2026-09-01" }
     ]}
   ],
   "loans": [
@@ -30,10 +30,10 @@ const testBudgetJSON = `{
 const testBudgetJSONWithCompany = `{
   "groups": [
     { "name": "Housing", "kind": "private", "categories": [
-      { "name": "Rent", "amount": 1000 }
+      { "id": "00000000-0000-4000-8000-000000000001", "name": "Rent", "amount": 1000 }
     ]},
     { "name": "Office", "kind": "company", "categories": [
-      { "name": "Accounting", "amount": 200 }
+      { "id": "00000000-0000-4000-8000-000000000004", "name": "Accounting", "amount": 200 }
     ]}
   ]
 }`
@@ -159,7 +159,7 @@ func TestBudgetForYearDatedCategoryBeforeNowInCurrentYearContributesNothing(t *t
 	b := newTestBudget(t, map[string]string{"budget.json": `{
 		"groups": [
 			{ "name": "OneOff", "kind": "private", "categories": [
-				{ "name": "OldPurchase", "amount": 500, "date": "2026-03-01" }
+				{ "id": "00000000-0000-4000-8000-000000000005", "name": "OldPurchase", "amount": 500, "date": "2026-03-01" }
 			]}
 		]
 	}`})
@@ -358,8 +358,8 @@ func TestBudgetGroupAllFutureStillShows(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": `{
 		"groups": [
 			{ "name": "Equipment", "kind": "company", "categories": [
-				{ "name": "Desk", "amount": 3000, "date": "2026-09-01" },
-				{ "name": "Monitor", "amount": 500, "date": "2026-09-01" }
+				{ "id": "00000000-0000-4000-8000-000000000003", "name": "Desk", "amount": 3000, "date": "2026-09-01" },
+				{ "id": "00000000-0000-4000-8000-000000000006", "name": "Monitor", "amount": 500, "date": "2026-09-01" }
 			]}
 		]
 	}`})
@@ -391,7 +391,7 @@ func TestBudgetGroupAllPastIsHidden(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": `{
 		"groups": [
 			{ "name": "Equipment", "kind": "company", "categories": [
-				{ "name": "OldDesk", "amount": 3000, "date": "2026-01-01" }
+				{ "id": "00000000-0000-4000-8000-000000000007", "name": "OldDesk", "amount": 3000, "date": "2026-01-01" }
 			]}
 		]
 	}`})
@@ -414,7 +414,7 @@ func TestBudgetForMonthRowVisibilityFollowsViewedMonthNotRealNow(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": `{
 		"groups": [
 			{ "name": "Equipment", "kind": "company", "categories": [
-				{ "name": "Desk", "amount": 3000, "date": "2026-10-01" }
+				{ "id": "00000000-0000-4000-8000-000000000003", "name": "Desk", "amount": 3000, "date": "2026-10-01" }
 			]}
 		]
 	}`})
@@ -595,11 +595,11 @@ func TestBudgetMinimalToggleFlipsGlobalState(t *testing.T) {
 const testBudgetJSONWithMinimal = `{
   "groups": [
     { "name": "Housing", "kind": "private", "categories": [
-      { "name": "Rent", "amount": 1000 },
-      { "name": "Restaurants", "amount": 500, "minimal_amount": 200 }
+      { "id": "00000000-0000-4000-8000-000000000001", "name": "Rent", "amount": 1000 },
+      { "id": "00000000-0000-4000-8000-000000000008", "name": "Restaurants", "amount": 500, "minimal_amount": 200 }
     ]},
     { "name": "OneOff", "kind": "private", "categories": [
-      { "name": "Trip", "amount": 800, "minimal_amount": 300, "date": "2026-09-01" }
+      { "id": "00000000-0000-4000-8000-000000000009", "name": "Trip", "amount": 800, "minimal_amount": 300, "date": "2026-09-01" }
     ]}
   ]
 }`
@@ -699,11 +699,11 @@ func TestComputeYearMinimalModeAlwaysFalse(t *testing.T) {
 const testBudgetJSONWithOverrides = `{
   "groups": [
     { "name": "Housing", "kind": "private", "categories": [
-      { "name": "Rent", "amount": 1000 }
+      { "id": "00000000-0000-4000-8000-000000000001", "name": "Rent", "amount": 1000 }
     ]},
     { "name": "Trip", "kind": "company", "categories": [
-      { "name": "Flight", "amount": 400, "overrides": [{ "month": "2026-08-01", "amount": 0 }] },
-      { "name": "Hotel", "amount": 200, "minimal_amount": 150, "overrides": [{ "month": "2026-08-01", "amount": 0 }, { "month": "2026-12-01", "amount": 0 }] }
+      { "id": "00000000-0000-4000-8000-000000000010", "name": "Flight", "amount": 400, "overrides": [{ "month": "2026-08-01", "amount": 0 }] },
+      { "id": "00000000-0000-4000-8000-000000000011", "name": "Hotel", "amount": 200, "minimal_amount": 150, "overrides": [{ "month": "2026-08-01", "amount": 0 }, { "month": "2026-12-01", "amount": 0 }] }
     ]}
   ]
 }`
@@ -888,7 +888,7 @@ func TestCategoryRowForFutureDatedOverriddenMonthPreviewIsZero(t *testing.T) {
 const testBudgetJSONWithNonZeroOverride = `{
   "groups": [
     { "name": "Trip", "kind": "company", "categories": [
-      { "name": "Flight", "amount": 400, "minimal_amount": 100, "overrides": [{ "month": "2026-09-01", "amount": 427.42 }] }
+      { "id": "00000000-0000-4000-8000-000000000010", "name": "Flight", "amount": 400, "minimal_amount": 100, "overrides": [{ "month": "2026-09-01", "amount": 427.42 }] }
     ]}
   ]
 }`

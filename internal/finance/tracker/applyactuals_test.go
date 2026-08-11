@@ -270,3 +270,45 @@ func TestActualsYearViewOnlyForPastYears(t *testing.T) {
 		t.Error("the current year must not show actuals — its planned figures are a forward projection")
 	}
 }
+
+// TestDescriptionsNeverReachTheDashboard is the security invariant stated
+// once and tested: computeActuals reads only ByCategory and TotalCents, so a
+// statement description is not in the struct the dashboard renders at all.
+// That, not the 403 on the drill-down, is what makes a leak impossible
+// however the page template is later edited.
+func TestDescriptionsNeverReachTheDashboard(t *testing.T) {
+	const secret = "VERY-PRIVATE-MERCHANT-NAME"
+	trk := actualsTracker(t, map[string]string{
+		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+			"transactions":[
+				{"id":"s1","date":"2026-08-03","description":"` + secret + `","amount":1000,"account":"A","category":"rent"},
+				{"id":"s2","date":"2026-08-04","description":"` + secret + `-IGNORED","amount":-50,"account":"A","ignored":"refund of something"}
+			]}`,
+	})
+
+	f := trk.ComputeMonth(context.Background(), 2026, time.August)
+	if !f.ShowActuals {
+		t.Fatal("the actuals layer did not switch on — this test would prove nothing")
+	}
+
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	if strings.Contains(rec.Body.String(), secret) {
+		t.Error("a transaction description reached the dashboard HTML")
+	}
+
+	// And it *is* reachable through the admin-only path, so the test above
+	// isn't passing merely because the data never loaded.
+	sv := trk.ComputeSpending(context.Background(), 2026, time.August)
+	if !sv.Present {
+		t.Fatal("ComputeSpending found nothing — the fixture never loaded")
+	}
+	recS := httptest.NewRecorder()
+	RenderSpending(recS, sv)
+	if !strings.Contains(recS.Body.String(), secret) {
+		t.Error("the admin drill-down should show descriptions; it showed none")
+	}
+	if !strings.Contains(recS.Body.String(), "refund of something") {
+		t.Error("an ignored line must appear with its reason, so the page reconciles to the statement")
+	}
+}

@@ -550,3 +550,36 @@ func TestHandleIndex_BothPartsSessionShowsFinanceNavButNotInfo(t *testing.T) {
 		t.Error("a readonly session must never see the Info nav link")
 	}
 }
+
+// TestFinanceSpending_AnonymousRedirectsToLogin mirrors handleInfo: a
+// logged-out admin shouldn't hit a dead-end 403 on a page they're entitled to.
+func TestFinanceSpending_AnonymousRedirectsToLogin(t *testing.T) {
+	s := newTestClientServer(t)
+	s.cfg.env = "prod"
+	s.cfg.sessionSecret = "test-secret"
+
+	r := httptest.NewRequest(http.MethodGet, "/spending/2026/8", nil)
+	w := httptest.NewRecorder()
+	s.financeSpending(w, r)
+
+	if w.Code != http.StatusFound || w.Header().Get("Location") != "/auth/login" {
+		t.Errorf("want redirect to /auth/login, got %d %q", w.Code, w.Header().Get("Location"))
+	}
+}
+
+// TestFinanceSpending_ReadOnlyIsForbidden pins the tier: the drill-down is the
+// only page carrying statement descriptions, so an email-OTP session is
+// refused even though it can see the dashboard.
+func TestFinanceSpending_ReadOnlyIsForbidden(t *testing.T) {
+	s := newTestClientServer(t)
+	s.cfg.env = "prod"
+	s.cfg.sessionSecret = "test-secret"
+
+	r := readOnlyRequest(t, s, "/spending/2026/8", []string{users.PartFinance})
+	w := httptest.NewRecorder()
+	s.financeSpending(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403 for a readonly session", w.Code)
+	}
+}

@@ -139,6 +139,12 @@ func main() {
 	mux.HandleFunc("GET /{$}", s.financeCurrentMonth)
 	mux.HandleFunc("GET /{year}", s.financeYear)
 	mux.HandleFunc("GET /{year}/{month}", s.financeMonth)
+	// Deliberately /spending/{year}/{month} rather than
+	// /{year}/{month}/spending: the latter conflicts with the
+	// /invoicing/static/ subtree above — both match /invoicing/static/spending
+	// and ServeMux considers neither more specific. A literal first segment
+	// beats the {year} wildcard, so this form is unambiguous.
+	mux.HandleFunc("GET /spending/{year}/{month}", s.financeSpending)
 
 	addr := ":" + cfg.port
 	log.Printf("pocketcfo listening on %s", addr)

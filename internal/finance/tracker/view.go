@@ -161,9 +161,9 @@ type Figures struct {
 	// private-kind categories from budget.json. Company-kind ones live in
 	// FundingPersonal.CompanyGroups instead: they come off Company income, not
 	// Net income.
-	PrivateGroups          []CategoryGroupView
-	PrivateTotalSpentCents int
-	BudgetErr              string
+	PrivateGroups            []CategoryGroupView
+	PrivateTotalPlannedCents int
+	BudgetErr                string
 
 	// The same cascade for the period that funds the viewed one: shifted back
 	// two months, since money earned in M is paid end of M+1 and spendable from
@@ -522,7 +522,7 @@ func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months 
 			monthlyIncomeEUR(start, end, monthlyCompanyExpenseCents),
 		)
 	} else {
-		f.Personal = t.Personal.breakdown(float64(f.TotalCents)/100, float64(bv.CompanyTotalSpentCents)/100, 1)
+		f.Personal = t.Personal.breakdown(float64(f.TotalCents)/100, float64(bv.CompanyTotalPlannedCents)/100, 1)
 	}
 	f.Personal.CompanyGroups = bv.CompanyGroups
 }
@@ -560,14 +560,14 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 	} else {
 		fundingStart, fundingEnd = fundingRangeForMonth(year, start.Month())
 	}
-	f.FundingPersonal = t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(bv.CompanyTotalSpentCents)/100, bv.CompanyGroups)
+	f.FundingPersonal = t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(bv.CompanyTotalPlannedCents)/100, bv.CompanyGroups)
 
 	if t.Budget == nil {
 		return
 	}
 	if f.BudgetErr == "" {
 		f.PrivateGroups = bv.Groups
-		f.PrivateTotalSpentCents = bv.TotalSpentCents
+		f.PrivateTotalPlannedCents = bv.TotalPlannedCents
 	}
 
 	// Before the bottom line below, which builds on the opening balance.
@@ -578,7 +578,7 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 	// Company expenses are already inside NetIncomeCents, not subtracted twice.
 	if f.BudgetErr == "" && f.FundingPersonal.Err == "" {
 		f.ShowBalance = true
-		f.BalanceCents = f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents - f.PrivateTotalSpentCents
+		f.BalanceCents = f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents - f.PrivateTotalPlannedCents
 	}
 }
 

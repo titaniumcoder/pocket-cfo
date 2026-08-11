@@ -26,7 +26,7 @@ const testBudgetJSON = `{
 
 // testBudgetJSONWithCompany extends testBudgetJSON's shape with a
 // company-kind group, for tests specifically about the company/private
-// split (see BudgetView.CompanyGroups/CompanyTotalSpentCents).
+// split (see BudgetView.CompanyGroups/CompanyTotalPlannedCents).
 const testBudgetJSONWithCompany = `{
   "groups": [
     { "name": "Housing", "kind": "private", "categories": [
@@ -87,11 +87,11 @@ func TestBudgetForMonthRecurringCategoryAlwaysCounts(t *testing.T) {
 			byName[r.Name] = r
 		}
 	}
-	if want := eurToCents(1000); byName["Rent"].SpentCents != want {
-		t.Errorf("Rent spent = %d, want %d", byName["Rent"].SpentCents, want)
+	if want := eurToCents(1000); byName["Rent"].PlannedCents != want {
+		t.Errorf("Rent spent = %d, want %d", byName["Rent"].PlannedCents, want)
 	}
-	if want := eurToCents(300); byName["Groceries"].SpentCents != want {
-		t.Errorf("Groceries spent = %d, want %d", byName["Groceries"].SpentCents, want)
+	if want := eurToCents(300); byName["Groceries"].PlannedCents != want {
+		t.Errorf("Groceries spent = %d, want %d", byName["Groceries"].PlannedCents, want)
 	}
 }
 
@@ -102,7 +102,7 @@ func TestBudgetForMonthDatedCategoryCountsOnlyWhenDue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForMonth: %v", err)
 	}
-	if got := rowByName(due, "Desk").SpentCents; got != eurToCents(500) {
+	if got := rowByName(due, "Desk").PlannedCents; got != eurToCents(500) {
 		t.Errorf("Desk spent in its due month = %d, want %d", got, eurToCents(500))
 	}
 
@@ -110,7 +110,7 @@ func TestBudgetForMonthDatedCategoryCountsOnlyWhenDue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForMonth: %v", err)
 	}
-	if got := rowByName(notDue, "Desk").SpentCents; got != 0 {
+	if got := rowByName(notDue, "Desk").PlannedCents; got != 0 {
 		t.Errorf("Desk spent outside its due month = %d, want 0", got)
 	}
 }
@@ -126,15 +126,15 @@ func TestBudgetForYearCurrentYearOnlyCountsRemainingMonths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForYear: %v", err)
 	}
-	if want := eurToCents(6 * 1000); rowByName(view, "Rent").SpentCents != want {
-		t.Errorf("Rent SpentCents = %d, want %d (Jul-Dec only)", rowByName(view, "Rent").SpentCents, want)
+	if want := eurToCents(6 * 1000); rowByName(view, "Rent").PlannedCents != want {
+		t.Errorf("Rent PlannedCents = %d, want %d (Jul-Dec only)", rowByName(view, "Rent").PlannedCents, want)
 	}
-	if want := eurToCents(6 * 300); rowByName(view, "Groceries").SpentCents != want {
-		t.Errorf("Groceries SpentCents = %d, want %d (Jul-Dec only)", rowByName(view, "Groceries").SpentCents, want)
+	if want := eurToCents(6 * 300); rowByName(view, "Groceries").PlannedCents != want {
+		t.Errorf("Groceries PlannedCents = %d, want %d (Jul-Dec only)", rowByName(view, "Groceries").PlannedCents, want)
 	}
 	// Due once in September, still among the remaining months.
-	if want := eurToCents(500); rowByName(view, "Desk").SpentCents != want {
-		t.Errorf("Desk SpentCents = %d, want %d", rowByName(view, "Desk").SpentCents, want)
+	if want := eurToCents(500); rowByName(view, "Desk").PlannedCents != want {
+		t.Errorf("Desk PlannedCents = %d, want %d", rowByName(view, "Desk").PlannedCents, want)
 	}
 }
 
@@ -149,8 +149,8 @@ func TestBudgetForYearOtherYearsCountAllTwelveMonths(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ForYear(%d): %v", year, err)
 		}
-		if want := eurToCents(12 * 1000); rowByName(view, "Rent").SpentCents != want {
-			t.Errorf("year %d: Rent SpentCents = %d, want %d (full year)", year, rowByName(view, "Rent").SpentCents, want)
+		if want := eurToCents(12 * 1000); rowByName(view, "Rent").PlannedCents != want {
+			t.Errorf("year %d: Rent PlannedCents = %d, want %d (full year)", year, rowByName(view, "Rent").PlannedCents, want)
 		}
 	}
 }
@@ -167,8 +167,8 @@ func TestBudgetForYearDatedCategoryBeforeNowInCurrentYearContributesNothing(t *t
 	if err != nil {
 		t.Fatalf("ForYear: %v", err)
 	}
-	if got := rowByName(view, "OldPurchase").SpentCents; got != 0 {
-		t.Errorf("OldPurchase SpentCents = %d, want 0 (its month, March, is before now)", got)
+	if got := rowByName(view, "OldPurchase").PlannedCents; got != 0 {
+		t.Errorf("OldPurchase PlannedCents = %d, want 0 (its month, March, is before now)", got)
 	}
 }
 
@@ -178,8 +178,8 @@ func TestBudgetForYearDatedCategoryOutsideYearContributesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForYear: %v", err)
 	}
-	if got := rowByName(view, "Desk").SpentCents; got != 0 {
-		t.Errorf("Desk SpentCents in a year it's not due = %d, want 0", got)
+	if got := rowByName(view, "Desk").PlannedCents; got != 0 {
+		t.Errorf("Desk PlannedCents in a year it's not due = %d, want 0", got)
 	}
 }
 
@@ -197,7 +197,7 @@ func rowByName(view BudgetView, name string) CategoryRow {
 // TestCategoryRowForDated covers the three cases for a dated category with
 // nothing due this period, compared against now at month granularity:
 // future (shown, grayed out with its configured amount and month — see
-// categoryRowFor), due this period (shown plainly, spentCents > 0), past
+// categoryRowFor), due this period (shown plainly, plannedCents > 0), past
 // (hidden entirely).
 func TestCategoryRowForDated(t *testing.T) {
 	date := "2026-09-01"
@@ -209,14 +209,14 @@ func TestCategoryRowForDated(t *testing.T) {
 		if !ok {
 			t.Fatal("expected a future dated category to still render")
 		}
-		if row.PlannedMonth != "September 2026" {
-			t.Errorf("PlannedMonth = %q, want September 2026", row.PlannedMonth)
+		if row.UpcomingMonth != "September 2026" {
+			t.Errorf("UpcomingMonth = %q, want September 2026", row.UpcomingMonth)
 		}
-		if row.PlannedCents != eurToCents(500) {
-			t.Errorf("PlannedCents = %d, want %d", row.PlannedCents, eurToCents(500))
+		if row.UpcomingCents != eurToCents(500) {
+			t.Errorf("UpcomingCents = %d, want %d", row.UpcomingCents, eurToCents(500))
 		}
-		if row.SpentCents != 0 {
-			t.Errorf("SpentCents = %d, want 0", row.SpentCents)
+		if row.PlannedCents != 0 {
+			t.Errorf("PlannedCents = %d, want 0", row.PlannedCents)
 		}
 	})
 
@@ -225,11 +225,11 @@ func TestCategoryRowForDated(t *testing.T) {
 		if !ok {
 			t.Fatal("expected a due-this-period category to render")
 		}
-		if row.PlannedMonth != "" {
-			t.Errorf("PlannedMonth = %q, want empty (not grayed out)", row.PlannedMonth)
+		if row.UpcomingMonth != "" {
+			t.Errorf("UpcomingMonth = %q, want empty (not grayed out)", row.UpcomingMonth)
 		}
-		if row.SpentCents != eurToCents(500) {
-			t.Errorf("SpentCents = %d, want %d", row.SpentCents, eurToCents(500))
+		if row.PlannedCents != eurToCents(500) {
+			t.Errorf("PlannedCents = %d, want %d", row.PlannedCents, eurToCents(500))
 		}
 	})
 
@@ -247,8 +247,8 @@ func TestCategoryRowForDated(t *testing.T) {
 		if !ok {
 			t.Fatal("expected a recurring category to always render")
 		}
-		if row.PlannedMonth != "" {
-			t.Errorf("PlannedMonth = %q, want empty for a recurring category", row.PlannedMonth)
+		if row.UpcomingMonth != "" {
+			t.Errorf("UpcomingMonth = %q, want empty for a recurring category", row.UpcomingMonth)
 		}
 	})
 
@@ -259,8 +259,8 @@ func TestCategoryRowForDated(t *testing.T) {
 		if !ok {
 			t.Fatal("expected a future dated category to still render")
 		}
-		if row.PlannedCents != eurToCents(300) {
-			t.Errorf("PlannedCents = %d, want %d (minimal_amount)", row.PlannedCents, eurToCents(300))
+		if row.UpcomingCents != eurToCents(300) {
+			t.Errorf("UpcomingCents = %d, want %d (minimal_amount)", row.UpcomingCents, eurToCents(300))
 		}
 	})
 
@@ -271,8 +271,8 @@ func TestCategoryRowForDated(t *testing.T) {
 		if !ok {
 			t.Fatal("expected a future dated category to still render")
 		}
-		if row.PlannedCents != eurToCents(500) {
-			t.Errorf("PlannedCents = %d, want %d (full amount)", row.PlannedCents, eurToCents(500))
+		if row.UpcomingCents != eurToCents(500) {
+			t.Errorf("UpcomingCents = %d, want %d (full amount)", row.UpcomingCents, eurToCents(500))
 		}
 	})
 }
@@ -327,7 +327,7 @@ func TestBudgetEvictForcesRefetch(t *testing.T) {
 }
 
 // TestBudgetSplitsGroupsByKind confirms a company-kind group's categories
-// land in CompanyGroups/CompanyTotalSpentCents, not Groups/TotalSpentCents,
+// land in CompanyGroups/CompanyTotalPlannedCents, not Groups/TotalPlannedCents,
 // and vice versa for private.
 func TestBudgetSplitsGroupsByKind(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithCompany})
@@ -335,11 +335,11 @@ func TestBudgetSplitsGroupsByKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForMonth: %v", err)
 	}
-	if want := eurToCents(1000); view.TotalSpentCents != want {
-		t.Errorf("TotalSpentCents (private) = %d, want %d", view.TotalSpentCents, want)
+	if want := eurToCents(1000); view.TotalPlannedCents != want {
+		t.Errorf("TotalPlannedCents (private) = %d, want %d", view.TotalPlannedCents, want)
 	}
-	if want := eurToCents(200); view.CompanyTotalSpentCents != want {
-		t.Errorf("CompanyTotalSpentCents = %d, want %d", view.CompanyTotalSpentCents, want)
+	if want := eurToCents(200); view.CompanyTotalPlannedCents != want {
+		t.Errorf("CompanyTotalPlannedCents = %d, want %d", view.CompanyTotalPlannedCents, want)
 	}
 	if len(view.Groups) != 1 || view.Groups[0].Name != "Housing" {
 		t.Errorf("Groups = %+v, want just Housing", view.Groups)
@@ -350,7 +350,7 @@ func TestBudgetSplitsGroupsByKind(t *testing.T) {
 }
 
 // TestBudgetGroupAllFutureStillShows confirms a group whose every category is
-// a one-time cost planned for a later month still renders — SpentCents sums
+// a one-time cost planned for a later month still renders — PlannedCents sums
 // to zero for the period, but it's not "empty": it has grayed-out planned
 // rows worth showing as a reminder. Only a group with zero rows at all (see
 // TestBudgetGroupAllPastIsHidden) should be dropped.
@@ -371,15 +371,15 @@ func TestBudgetGroupAllFutureStillShows(t *testing.T) {
 		t.Fatalf("expected the Equipment group to still render, got %+v", view.CompanyGroups)
 	}
 	eq := view.CompanyGroups[0]
-	if eq.SpentCents != 0 {
-		t.Errorf("SpentCents = %d, want 0 (nothing due yet)", eq.SpentCents)
+	if eq.PlannedCents != 0 {
+		t.Errorf("PlannedCents = %d, want 0 (nothing due yet)", eq.PlannedCents)
 	}
 	if len(eq.Rows) != 2 {
 		t.Fatalf("expected 2 planned rows, got %d", len(eq.Rows))
 	}
 	for _, r := range eq.Rows {
-		if r.PlannedMonth != "September 2026" {
-			t.Errorf("%s: PlannedMonth = %q, want September 2026", r.Name, r.PlannedMonth)
+		if r.UpcomingMonth != "September 2026" {
+			t.Errorf("%s: UpcomingMonth = %q, want September 2026", r.Name, r.UpcomingMonth)
 		}
 	}
 }
@@ -425,8 +425,8 @@ func TestBudgetForMonthRowVisibilityFollowsViewedMonthNotRealNow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForMonth(September): %v", err)
 	}
-	if got := rowByName(BudgetView{Groups: sep.CompanyGroups}, "Desk"); got.PlannedMonth != "October 2026" {
-		t.Errorf("September: PlannedMonth = %q, want October 2026", got.PlannedMonth)
+	if got := rowByName(BudgetView{Groups: sep.CompanyGroups}, "Desk"); got.UpcomingMonth != "October 2026" {
+		t.Errorf("September: UpcomingMonth = %q, want October 2026", got.UpcomingMonth)
 	}
 
 	// October: due this month -> active, full amount.
@@ -434,8 +434,8 @@ func TestBudgetForMonthRowVisibilityFollowsViewedMonthNotRealNow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForMonth(October): %v", err)
 	}
-	if got := rowByName(BudgetView{Groups: oct.CompanyGroups}, "Desk").SpentCents; got != eurToCents(3000) {
-		t.Errorf("October: SpentCents = %d, want %d", got, eurToCents(3000))
+	if got := rowByName(BudgetView{Groups: oct.CompanyGroups}, "Desk").PlannedCents; got != eurToCents(3000) {
+		t.Errorf("October: PlannedCents = %d, want %d", got, eurToCents(3000))
 	}
 
 	// November: already in the past relative to the viewed month -> the whole
@@ -462,11 +462,11 @@ func TestBudgetForYearCompanyAlwaysCountsAllTwelveMonths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForYear: %v", err)
 	}
-	if want := eurToCents(6 * 1000); view.TotalSpentCents != want {
-		t.Errorf("TotalSpentCents (private, remaining months) = %d, want %d", view.TotalSpentCents, want)
+	if want := eurToCents(6 * 1000); view.TotalPlannedCents != want {
+		t.Errorf("TotalPlannedCents (private, remaining months) = %d, want %d", view.TotalPlannedCents, want)
 	}
-	if want := eurToCents(12 * 200); view.CompanyTotalSpentCents != want {
-		t.Errorf("CompanyTotalSpentCents (company, full year) = %d, want %d", view.CompanyTotalSpentCents, want)
+	if want := eurToCents(12 * 200); view.CompanyTotalPlannedCents != want {
+		t.Errorf("CompanyTotalPlannedCents (company, full year) = %d, want %d", view.CompanyTotalPlannedCents, want)
 	}
 }
 
@@ -498,8 +498,8 @@ func TestComputeMonthWithBudget(t *testing.T) {
 	}
 	// Rent 1000 + Groceries 300 recur; Desk (due September) doesn't count in March.
 	want := eurToCents(1000 + 300)
-	if f.PrivateTotalSpentCents != want {
-		t.Errorf("BudgetTotalSpentCents = %d, want %d", f.PrivateTotalSpentCents, want)
+	if f.PrivateTotalPlannedCents != want {
+		t.Errorf("PrivateTotalPlannedCents = %d, want %d", f.PrivateTotalPlannedCents, want)
 	}
 	// Balance now pairs March's expenses with January's funding income (the
 	// viewed month shifted back two calendar months — see
@@ -517,7 +517,7 @@ func TestComputeMonthWithBudget(t *testing.T) {
 	if f.FundingPersonal.NetIncomeCents != 0 {
 		t.Errorf("FundingPersonal.NetIncomeCents = %d, want 0 (January has no fake Toggl data)", f.FundingPersonal.NetIncomeCents)
 	}
-	if want := -f.PrivateTotalSpentCents; !f.ShowBalance || f.BalanceCents != want {
+	if want := -f.PrivateTotalPlannedCents; !f.ShowBalance || f.BalanceCents != want {
 		t.Errorf("ShowBalance/BalanceCents = %v/%d, want true/%d", f.ShowBalance, f.BalanceCents, want)
 	}
 	// Removed loans check since Loans field was removed from Figures struct
@@ -525,7 +525,7 @@ func TestComputeMonthWithBudget(t *testing.T) {
 
 // TestComputeMonthDeductsCompanyExpensesFromCompanyIncome confirms company
 // expenses reduce NetIncomeCents (via the salary cascade) rather than being
-// subtracted a second time from PrivateTotalSpentCents/BalanceCents.
+// subtracted a second time from PrivateTotalPlannedCents/BalanceCents.
 func TestComputeMonthDeductsCompanyExpensesFromCompanyIncome(t *testing.T) {
 	trk := fullTracker()
 	trk.Budget = newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithCompany})
@@ -537,8 +537,8 @@ func TestComputeMonthDeductsCompanyExpensesFromCompanyIncome(t *testing.T) {
 	if want := eurToCents(200); f.Personal.CompanyExpensesCents != want {
 		t.Errorf("Personal.CompanyExpensesCents = %d, want %d", f.Personal.CompanyExpensesCents, want)
 	}
-	if want := eurToCents(1000); f.PrivateTotalSpentCents != want {
-		t.Errorf("PrivateTotalSpentCents = %d, want %d (company expenses shouldn't appear here)", f.PrivateTotalSpentCents, want)
+	if want := eurToCents(1000); f.PrivateTotalPlannedCents != want {
+		t.Errorf("PrivateTotalPlannedCents = %d, want %d (company expenses shouldn't appear here)", f.PrivateTotalPlannedCents, want)
 	}
 	if len(f.Personal.CompanyGroups) != 1 || f.Personal.CompanyGroups[0].Name != "Office" {
 		t.Errorf("Personal.CompanyGroups = %+v, want just Office", f.Personal.CompanyGroups)
@@ -561,7 +561,7 @@ func TestComputeYearWithBudget(t *testing.T) {
 	// viewed year's expense range shifted back two months — see
 	// fundingRangeForYear), not f.Personal.NetIncomeCents (the year's own
 	// income) — see TestComputeMonthWithBudget for why the two now differ.
-	want := f.FundingPersonal.NetIncomeCents - f.PrivateTotalSpentCents
+	want := f.FundingPersonal.NetIncomeCents - f.PrivateTotalPlannedCents
 	if !f.ShowBalance || f.BalanceCents != want {
 		t.Errorf("ShowBalance/BalanceCents = %v/%d, want true/%d", f.ShowBalance, f.BalanceCents, want)
 	}
@@ -610,8 +610,8 @@ func TestBudgetForMonthFullAmountsWhenMinimalOff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForMonth: %v", err)
 	}
-	if want := eurToCents(500); rowByName(view, "Restaurants").SpentCents != want {
-		t.Errorf("Restaurants SpentCents = %d, want %d (minimal off)", rowByName(view, "Restaurants").SpentCents, want)
+	if want := eurToCents(500); rowByName(view, "Restaurants").PlannedCents != want {
+		t.Errorf("Restaurants PlannedCents = %d, want %d (minimal off)", rowByName(view, "Restaurants").PlannedCents, want)
 	}
 }
 
@@ -627,14 +627,14 @@ func TestBudgetForMonthSubstitutesMinimalAmountWhenOn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForMonth: %v", err)
 	}
-	if want := eurToCents(200); rowByName(view, "Restaurants").SpentCents != want {
-		t.Errorf("Restaurants SpentCents = %d, want %d (minimal)", rowByName(view, "Restaurants").SpentCents, want)
+	if want := eurToCents(200); rowByName(view, "Restaurants").PlannedCents != want {
+		t.Errorf("Restaurants PlannedCents = %d, want %d (minimal)", rowByName(view, "Restaurants").PlannedCents, want)
 	}
-	if want := eurToCents(1000); rowByName(view, "Rent").SpentCents != want {
-		t.Errorf("Rent SpentCents = %d, want %d (no minimal_amount configured, stays full)", rowByName(view, "Rent").SpentCents, want)
+	if want := eurToCents(1000); rowByName(view, "Rent").PlannedCents != want {
+		t.Errorf("Rent PlannedCents = %d, want %d (no minimal_amount configured, stays full)", rowByName(view, "Rent").PlannedCents, want)
 	}
-	if want := eurToCents(300); rowByName(view, "Trip").SpentCents != want {
-		t.Errorf("Trip (dated, due this month) SpentCents = %d, want %d (minimal)", rowByName(view, "Trip").SpentCents, want)
+	if want := eurToCents(300); rowByName(view, "Trip").PlannedCents != want {
+		t.Errorf("Trip (dated, due this month) PlannedCents = %d, want %d (minimal)", rowByName(view, "Trip").PlannedCents, want)
 	}
 }
 
@@ -648,8 +648,8 @@ func TestBudgetForYearIgnoresMinimalMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForYear: %v", err)
 	}
-	if want := eurToCents(12 * 500); rowByName(view, "Restaurants").SpentCents != want {
-		t.Errorf("Restaurants SpentCents = %d, want %d (year view unaffected by minimal mode)", rowByName(view, "Restaurants").SpentCents, want)
+	if want := eurToCents(12 * 500); rowByName(view, "Restaurants").PlannedCents != want {
+		t.Errorf("Restaurants PlannedCents = %d, want %d (year view unaffected by minimal mode)", rowByName(view, "Restaurants").PlannedCents, want)
 	}
 }
 
@@ -717,8 +717,8 @@ func TestBudgetForMonthNoOverridesUnaffected(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ForMonth(%v): %v", m, err)
 		}
-		if want := eurToCents(1000); rowByName(view, "Rent").SpentCents != want {
-			t.Errorf("%v: Rent SpentCents = %d, want %d (no overrides)", m, rowByName(view, "Rent").SpentCents, want)
+		if want := eurToCents(1000); rowByName(view, "Rent").PlannedCents != want {
+			t.Errorf("%v: Rent PlannedCents = %d, want %d (no overrides)", m, rowByName(view, "Rent").PlannedCents, want)
 		}
 	}
 }
@@ -726,8 +726,8 @@ func TestBudgetForMonthNoOverridesUnaffected(t *testing.T) {
 // TestBudgetForMonthSingleZeroOverrideZeroesOnlyThatMonth covers the
 // single-override case (Flight, zeroed only in August). August itself now
 // renders as a next-occurrence preview (see nextNonZeroMonth) rather than a
-// bare 0 with no explanation — SpentCents stays 0, but PlannedMonth/
-// PlannedCents point at September, the next month Flight resumes; Overridden
+// bare 0 with no explanation — PlannedCents stays 0, but UpcomingMonth/
+// UpcomingCents point at September, the next month Flight resumes; Overridden
 // on that row describes September's own override status (none), not
 // August's — same convention TestCategoryRowForDated's dated-future branch
 // already uses for what it's previewing.
@@ -738,8 +738,8 @@ func TestBudgetForMonthSingleZeroOverrideZeroesOnlyThatMonth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForMonth(July): %v", err)
 	}
-	if want := eurToCents(400); rowByName(BudgetView{Groups: july.CompanyGroups}, "Flight").SpentCents != want {
-		t.Errorf("July: Flight SpentCents = %d, want %d", rowByName(BudgetView{Groups: july.CompanyGroups}, "Flight").SpentCents, want)
+	if want := eurToCents(400); rowByName(BudgetView{Groups: july.CompanyGroups}, "Flight").PlannedCents != want {
+		t.Errorf("July: Flight PlannedCents = %d, want %d", rowByName(BudgetView{Groups: july.CompanyGroups}, "Flight").PlannedCents, want)
 	}
 
 	aug, err := b.ForMonth(context.Background(), 2026, time.August, testNow)
@@ -747,14 +747,14 @@ func TestBudgetForMonthSingleZeroOverrideZeroesOnlyThatMonth(t *testing.T) {
 		t.Fatalf("ForMonth(August): %v", err)
 	}
 	augFlight := rowByName(BudgetView{Groups: aug.CompanyGroups}, "Flight")
-	if augFlight.SpentCents != 0 {
-		t.Errorf("August (zero override): Flight SpentCents = %d, want 0", augFlight.SpentCents)
+	if augFlight.PlannedCents != 0 {
+		t.Errorf("August (zero override): Flight PlannedCents = %d, want 0", augFlight.PlannedCents)
 	}
-	if want := eurToCents(400); augFlight.PlannedCents != want {
-		t.Errorf("August: Flight PlannedCents = %d, want %d (September's normal amount)", augFlight.PlannedCents, want)
+	if want := eurToCents(400); augFlight.UpcomingCents != want {
+		t.Errorf("August: Flight UpcomingCents = %d, want %d (September's normal amount)", augFlight.UpcomingCents, want)
 	}
-	if augFlight.PlannedMonth != "September 2026" {
-		t.Errorf("August: Flight PlannedMonth = %q, want September 2026 (next non-zero month)", augFlight.PlannedMonth)
+	if augFlight.UpcomingMonth != "September 2026" {
+		t.Errorf("August: Flight UpcomingMonth = %q, want September 2026 (next non-zero month)", augFlight.UpcomingMonth)
 	}
 	if augFlight.Overridden {
 		t.Error("August: Flight.Overridden should be false (describes September, which has no override)")
@@ -765,8 +765,8 @@ func TestBudgetForMonthSingleZeroOverrideZeroesOnlyThatMonth(t *testing.T) {
 		t.Fatalf("ForMonth(September): %v", err)
 	}
 	sepFlight := rowByName(BudgetView{Groups: sep.CompanyGroups}, "Flight")
-	if want := eurToCents(400); sepFlight.SpentCents != want {
-		t.Errorf("September: Flight SpentCents = %d, want %d (override month is August only)", sepFlight.SpentCents, want)
+	if want := eurToCents(400); sepFlight.PlannedCents != want {
+		t.Errorf("September: Flight PlannedCents = %d, want %d (override month is August only)", sepFlight.PlannedCents, want)
 	}
 	if sepFlight.Overridden {
 		t.Error("September: Flight.Overridden should be false (no override this month)")
@@ -783,8 +783,8 @@ func TestBudgetForMonthMultipleZeroOverridesZeroEach(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ForMonth(%v): %v", m, err)
 		}
-		if got := rowByName(BudgetView{Groups: view.CompanyGroups}, "Hotel").SpentCents; got != 0 {
-			t.Errorf("%v (zero override): Hotel SpentCents = %d, want 0", m, got)
+		if got := rowByName(BudgetView{Groups: view.CompanyGroups}, "Hotel").PlannedCents; got != 0 {
+			t.Errorf("%v (zero override): Hotel PlannedCents = %d, want 0", m, got)
 		}
 	}
 	for _, m := range []time.Month{time.July, time.November} {
@@ -792,8 +792,8 @@ func TestBudgetForMonthMultipleZeroOverridesZeroEach(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ForMonth(%v): %v", m, err)
 		}
-		if want := eurToCents(200); rowByName(BudgetView{Groups: view.CompanyGroups}, "Hotel").SpentCents != want {
-			t.Errorf("%v (no override): Hotel SpentCents = %d, want %d", m, rowByName(BudgetView{Groups: view.CompanyGroups}, "Hotel").SpentCents, want)
+		if want := eurToCents(200); rowByName(BudgetView{Groups: view.CompanyGroups}, "Hotel").PlannedCents != want {
+			t.Errorf("%v (no override): Hotel PlannedCents = %d, want %d", m, rowByName(BudgetView{Groups: view.CompanyGroups}, "Hotel").PlannedCents, want)
 		}
 	}
 }
@@ -808,11 +808,11 @@ func TestBudgetForYearZeroOverridesReduceContribution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForYear: %v", err)
 	}
-	if want := eurToCents(10 * 200); rowByName(BudgetView{Groups: view.CompanyGroups}, "Hotel").SpentCents != want {
-		t.Errorf("Hotel SpentCents = %d, want %d (12 months minus 2 zero-overridden)", rowByName(BudgetView{Groups: view.CompanyGroups}, "Hotel").SpentCents, want)
+	if want := eurToCents(10 * 200); rowByName(BudgetView{Groups: view.CompanyGroups}, "Hotel").PlannedCents != want {
+		t.Errorf("Hotel PlannedCents = %d, want %d (12 months minus 2 zero-overridden)", rowByName(BudgetView{Groups: view.CompanyGroups}, "Hotel").PlannedCents, want)
 	}
-	if want := eurToCents(11 * 400); rowByName(BudgetView{Groups: view.CompanyGroups}, "Flight").SpentCents != want {
-		t.Errorf("Flight SpentCents = %d, want %d (12 months minus 1 zero-overridden)", rowByName(BudgetView{Groups: view.CompanyGroups}, "Flight").SpentCents, want)
+	if want := eurToCents(11 * 400); rowByName(BudgetView{Groups: view.CompanyGroups}, "Flight").PlannedCents != want {
+		t.Errorf("Flight PlannedCents = %d, want %d (12 months minus 1 zero-overridden)", rowByName(BudgetView{Groups: view.CompanyGroups}, "Flight").PlannedCents, want)
 	}
 }
 
@@ -847,16 +847,16 @@ func TestBudgetZeroOverrideWinsOverMinimalAmount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForMonth(August): %v", err)
 	}
-	if got := rowByName(BudgetView{Groups: aug.CompanyGroups}, "Hotel").SpentCents; got != 0 {
-		t.Errorf("August (zero override, minimal on): Hotel SpentCents = %d, want 0, not minimal_amount", got)
+	if got := rowByName(BudgetView{Groups: aug.CompanyGroups}, "Hotel").PlannedCents; got != 0 {
+		t.Errorf("August (zero override, minimal on): Hotel PlannedCents = %d, want 0, not minimal_amount", got)
 	}
 
 	july, err := b.ForMonth(context.Background(), 2026, time.July, testNow)
 	if err != nil {
 		t.Fatalf("ForMonth(July): %v", err)
 	}
-	if want := eurToCents(150); rowByName(BudgetView{Groups: july.CompanyGroups}, "Hotel").SpentCents != want {
-		t.Errorf("July (no override, minimal on): Hotel SpentCents = %d, want %d (minimal_amount applies normally)", rowByName(BudgetView{Groups: july.CompanyGroups}, "Hotel").SpentCents, want)
+	if want := eurToCents(150); rowByName(BudgetView{Groups: july.CompanyGroups}, "Hotel").PlannedCents != want {
+		t.Errorf("July (no override, minimal on): Hotel PlannedCents = %d, want %d (minimal_amount applies normally)", rowByName(BudgetView{Groups: july.CompanyGroups}, "Hotel").PlannedCents, want)
 	}
 }
 
@@ -871,11 +871,11 @@ func TestCategoryRowForFutureDatedOverriddenMonthPreviewIsZero(t *testing.T) {
 	if !ok {
 		t.Fatal("expected a future dated category to still render")
 	}
-	if row.PlannedMonth != "September 2026" {
-		t.Errorf("PlannedMonth = %q, want September 2026", row.PlannedMonth)
+	if row.UpcomingMonth != "September 2026" {
+		t.Errorf("UpcomingMonth = %q, want September 2026", row.UpcomingMonth)
 	}
-	if row.PlannedCents != 0 {
-		t.Errorf("PlannedCents = %d, want 0 (due month is zero-overridden)", row.PlannedCents)
+	if row.UpcomingCents != 0 {
+		t.Errorf("UpcomingCents = %d, want 0 (due month is zero-overridden)", row.UpcomingCents)
 	}
 	if !row.Overridden {
 		t.Error("Overridden should be true (due month has an override)")
@@ -904,8 +904,8 @@ func TestBudgetForMonthNonZeroOverrideReplacesRecurringAmount(t *testing.T) {
 		t.Fatalf("ForMonth(September): %v", err)
 	}
 	sepFlight := rowByName(BudgetView{Groups: sep.CompanyGroups}, "Flight")
-	if want := eurToCents(427.42); sepFlight.SpentCents != want {
-		t.Errorf("September: Flight SpentCents = %d, want %d (override)", sepFlight.SpentCents, want)
+	if want := eurToCents(427.42); sepFlight.PlannedCents != want {
+		t.Errorf("September: Flight PlannedCents = %d, want %d (override)", sepFlight.PlannedCents, want)
 	}
 	if !sepFlight.Overridden {
 		t.Error("September: Flight.Overridden should be true")
@@ -916,8 +916,8 @@ func TestBudgetForMonthNonZeroOverrideReplacesRecurringAmount(t *testing.T) {
 		t.Fatalf("ForMonth(August): %v", err)
 	}
 	augFlight := rowByName(BudgetView{Groups: aug.CompanyGroups}, "Flight")
-	if want := eurToCents(400); augFlight.SpentCents != want {
-		t.Errorf("August: Flight SpentCents = %d, want %d (no override, normal amount)", augFlight.SpentCents, want)
+	if want := eurToCents(400); augFlight.PlannedCents != want {
+		t.Errorf("August: Flight PlannedCents = %d, want %d (no override, normal amount)", augFlight.PlannedCents, want)
 	}
 	if augFlight.Overridden {
 		t.Error("August: Flight.Overridden should be false")
@@ -936,16 +936,16 @@ func TestBudgetOverrideWinsOverMinimalMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForMonth(September): %v", err)
 	}
-	if want := eurToCents(427.42); rowByName(BudgetView{Groups: sep.CompanyGroups}, "Flight").SpentCents != want {
-		t.Errorf("September (minimal on): Flight SpentCents = %d, want %d (override wins)", rowByName(BudgetView{Groups: sep.CompanyGroups}, "Flight").SpentCents, want)
+	if want := eurToCents(427.42); rowByName(BudgetView{Groups: sep.CompanyGroups}, "Flight").PlannedCents != want {
+		t.Errorf("September (minimal on): Flight PlannedCents = %d, want %d (override wins)", rowByName(BudgetView{Groups: sep.CompanyGroups}, "Flight").PlannedCents, want)
 	}
 
 	aug, err := b.ForMonth(context.Background(), 2026, time.August, testNow)
 	if err != nil {
 		t.Fatalf("ForMonth(August): %v", err)
 	}
-	if want := eurToCents(100); rowByName(BudgetView{Groups: aug.CompanyGroups}, "Flight").SpentCents != want {
-		t.Errorf("August (minimal on, no override): Flight SpentCents = %d, want %d (minimal_amount applies normally)", rowByName(BudgetView{Groups: aug.CompanyGroups}, "Flight").SpentCents, want)
+	if want := eurToCents(100); rowByName(BudgetView{Groups: aug.CompanyGroups}, "Flight").PlannedCents != want {
+		t.Errorf("August (minimal on, no override): Flight PlannedCents = %d, want %d (minimal_amount applies normally)", rowByName(BudgetView{Groups: aug.CompanyGroups}, "Flight").PlannedCents, want)
 	}
 }
 
@@ -1048,21 +1048,21 @@ func TestCategoryRowForRecurringZeroOverrideShowsNextOccurrence(t *testing.T) {
 	if !ok {
 		t.Fatal("expected the category to still render")
 	}
-	if row.SpentCents != 0 {
-		t.Errorf("SpentCents = %d, want 0", row.SpentCents)
+	if row.PlannedCents != 0 {
+		t.Errorf("PlannedCents = %d, want 0", row.PlannedCents)
 	}
-	if row.PlannedMonth != "September 2026" {
-		t.Errorf("PlannedMonth = %q, want September 2026", row.PlannedMonth)
+	if row.UpcomingMonth != "September 2026" {
+		t.Errorf("UpcomingMonth = %q, want September 2026", row.UpcomingMonth)
 	}
-	if want := eurToCents(250); row.PlannedCents != want {
-		t.Errorf("PlannedCents = %d, want %d", row.PlannedCents, want)
+	if want := eurToCents(250); row.UpcomingCents != want {
+		t.Errorf("UpcomingCents = %d, want %d", row.UpcomingCents, want)
 	}
 }
 
 // TestCategoryRowForRecurringNonOverriddenZeroIsUnreachable documents why
-// categoryRowFor's new branch is gated on overridden, not just spentCents ==
+// categoryRowFor's new branch is gated on overridden, not just plannedCents ==
 // 0: a recurring category's normal amount is always > 0 (ValidateBudget), so
-// overridden=false with spentCents==0 shouldn't occur in practice for a
+// overridden=false with plannedCents==0 shouldn't occur in practice for a
 // recurring category — but if it somehow did (e.g. a future relaxation of
 // that invariant), it must fall through to the plain zero row rather than
 // scanning for a next occurrence that isn't actually meaningful.
@@ -1074,8 +1074,8 @@ func TestCategoryRowForRecurringNonOverriddenZeroIsUnreachable(t *testing.T) {
 	if !ok {
 		t.Fatal("expected the category to still render")
 	}
-	if row.PlannedMonth != "" {
-		t.Errorf("PlannedMonth = %q, want empty (overridden=false must not trigger the preview branch)", row.PlannedMonth)
+	if row.UpcomingMonth != "" {
+		t.Errorf("UpcomingMonth = %q, want empty (overridden=false must not trigger the preview branch)", row.UpcomingMonth)
 	}
 }
 

@@ -211,11 +211,11 @@ func TestBalanceUsesFundingPersonalNotViewedPeriodPersonal(t *testing.T) {
 	if f.FundingPersonal.NetIncomeCents == f.Personal.NetIncomeCents {
 		t.Fatalf("FundingPersonal.NetIncomeCents (%d) should differ from Personal.NetIncomeCents (%d) given distinct January/March fixtures", f.FundingPersonal.NetIncomeCents, f.Personal.NetIncomeCents)
 	}
-	want := f.FundingPersonal.NetIncomeCents - f.PrivateTotalSpentCents
+	want := f.FundingPersonal.NetIncomeCents - f.PrivateTotalPlannedCents
 	if f.BalanceCents != want {
-		t.Errorf("BalanceCents = %d, want %d (FundingPersonal.NetIncomeCents - PrivateTotalSpentCents)", f.BalanceCents, want)
+		t.Errorf("BalanceCents = %d, want %d (FundingPersonal.NetIncomeCents - PrivateTotalPlannedCents)", f.BalanceCents, want)
 	}
-	if got := f.Personal.NetIncomeCents - f.PrivateTotalSpentCents; f.BalanceCents == got {
+	if got := f.Personal.NetIncomeCents - f.PrivateTotalPlannedCents; f.BalanceCents == got {
 		t.Errorf("BalanceCents (%d) must not equal the viewed-period-based formula (%d)", f.BalanceCents, got)
 	}
 }
@@ -343,11 +343,11 @@ func TestFundingPersonalCompanyExpenseStaysOnViewedPeriod(t *testing.T) {
 		t.Fatalf("viewing September: FundingPersonal.Err = %q", sep.FundingPersonal.Err)
 	}
 	sepRow := rowByName(BudgetView{Groups: sep.FundingPersonal.CompanyGroups}, "Computer")
-	if sepRow.SpentCents != eurToCents(3000) {
-		t.Errorf("viewing September: Computer.SpentCents = %d, want %d (real spend in its own due month, not postponed to November)", sepRow.SpentCents, eurToCents(3000))
+	if sepRow.PlannedCents != eurToCents(3000) {
+		t.Errorf("viewing September: Computer.PlannedCents = %d, want %d (real spend in its own due month, not postponed to November)", sepRow.PlannedCents, eurToCents(3000))
 	}
-	if sepRow.PlannedMonth != "" {
-		t.Errorf("viewing September: Computer should not still be a future reminder, got PlannedMonth = %q", sepRow.PlannedMonth)
+	if sepRow.UpcomingMonth != "" {
+		t.Errorf("viewing September: Computer should not still be a future reminder, got UpcomingMonth = %q", sepRow.UpcomingMonth)
 	}
 
 	// Viewing July 2026 — two months before its due date — should show it
@@ -357,8 +357,8 @@ func TestFundingPersonalCompanyExpenseStaysOnViewedPeriod(t *testing.T) {
 		t.Fatalf("viewing July: FundingPersonal.Err = %q", jul.FundingPersonal.Err)
 	}
 	julRow := rowByName(BudgetView{Groups: jul.FundingPersonal.CompanyGroups}, "Computer")
-	if julRow.PlannedMonth != "September 2026" {
-		t.Errorf("viewing July: Computer.PlannedMonth = %q, want %q", julRow.PlannedMonth, "September 2026")
+	if julRow.UpcomingMonth != "September 2026" {
+		t.Errorf("viewing July: Computer.UpcomingMonth = %q, want %q", julRow.UpcomingMonth, "September 2026")
 	}
 
 	// Viewing November 2026 — after its due month has passed — should drop

@@ -203,11 +203,11 @@ func (t *Tracker) monthBalanceDelta(ctx context.Context, m yearMonth, now time.T
 		return 0, fmt.Errorf("accounts: budget for %s: %w", m, err)
 	}
 	fundingStart, fundingEnd := fundingRangeForMonth(m.Year, m.Month)
-	pv := t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(bv.CompanyTotalSpentCents)/100, bv.CompanyGroups)
+	pv := t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(bv.CompanyTotalPlannedCents)/100, bv.CompanyGroups)
 	if pv.Err != "" {
 		return 0, fmt.Errorf("accounts: income for %s: %s", m, pv.Err)
 	}
-	return pv.NetIncomeCents - bv.TotalSpentCents, nil
+	return pv.NetIncomeCents - bv.TotalPlannedCents, nil
 }
 
 // derefStr renders an optional schema string, empty when absent.

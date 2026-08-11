@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://titaniumcoder.com/schemas/paid-invoices.json",
+  "title": "PaidInvoices",
+  "description": "Which invoices have been paid, and when. Payment is mutable state and deliberately lives outside the invoice documents, which are write-once once issued — see ARCHITECTURE.md §3.7. An object per payment rather than a bare number->date map, so a bank reference can be attached later without a schema break.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["paid"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "paid": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/payment" }
+    }
+  },
+  "$defs": {
+    "payment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["invoice", "date"],
+      "properties": {
+        "invoice": { "type": "string", "pattern": "^INV-\\d{10}$" },
+        "date": { "type": "string", "format": "date" },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}

@@ -20,6 +20,7 @@ var (
 	dataDir            = getenv("DATA_DIR", "data")
 	recipientsDir      = dataDir + "/recipients"
 	invoicesDir        = dataDir + "/invoices"
+	paidInvoicesPath   = dataDir + "/paid-invoices.json"
 	usersFile          = dataDir + "/users.json"
 	buildDir           = getenv("BUILD_DIR", "build")
 	renderManifestPath = buildDir + "/render-manifest.json"

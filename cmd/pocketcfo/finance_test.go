@@ -472,6 +472,32 @@ func TestHandleIndex_AuthorizedRendersInvoicingDashboard(t *testing.T) {
 	}
 }
 
+// TestHandleIndex_DraftRowHasNoStaleBadge pins the "drafts get no badge"
+// rule. A draft's -DRAFT.pdf is re-rendered on every render run, so any edit
+// since the last one correctly reports "not current" — but for a document
+// you're still writing that's noise, not a warning.
+func TestHandleIndex_DraftRowHasNoStaleBadge(t *testing.T) {
+	s := newTestClientServer(t)
+	s.cfg.env = "prod"
+	s.cfg.sessionSecret = "test-secret"
+	t.Chdir(t.TempDir())
+	writeFixtures(t)
+
+	r := readOnlyRequest(t, s, "/invoicing", []string{users.PartInvoicing})
+	w := httptest.NewRecorder()
+
+	s.handleIndex(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+	// writeFixtures lays down two issued invoices and one draft, so exactly
+	// the two issued rows carry a badge.
+	if got := strings.Count(w.Body.String(), "pdf-status"); got != 2 {
+		t.Errorf("found %d pdf-status badges, want 2 — the draft row must have none", got)
+	}
+}
+
 // TestHandleIndex_InvoicingOnlySessionHasNoNav mirrors
 // TestFinanceCurrentMonth_SinglePartSessionHasNoNav on the invoicing side:
 // an invoicing-only session has nowhere else to go, so no page links.

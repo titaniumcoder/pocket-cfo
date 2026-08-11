@@ -27,7 +27,7 @@ func writeFixture(t *testing.T, dir, name, content string) {
 	}
 }
 
-func TestLoadInvoicesIncludesDraftsExcludesAnnulled(t *testing.T) {
+func TestLoadInvoicesIncludesDrafts(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "issued.json", `{
 		"schema_version": 1, "number": "INV-0000000001", "status": "issued", "type": "invoice",
@@ -35,8 +35,7 @@ func TestLoadInvoicesIncludesDraftsExcludesAnnulled(t *testing.T) {
 		"issuer": {"legal_name":"x","address":{"line1":"a","postal_code":"1","city":"c","country_code":"BG"},"tax_id":"1","vat_id":"BG1","bank":{"name":"b","iban":"i","bic":"b"},"default_currency":"EUR"},
 		"recipient": {"number":1,"legal_name":"r","address":{"line1":"a","postal_code":"1","city":"c","country_code":"BG"},"is_business":true,"language":"de","payment_terms_days":30,"email":"e@x.com"},
 		"lines": [{"description":{"de":"d","bg":"d"},"unit_price":1000,"vat_rate":0}],
-		"tax": {"regime":"domestic_standard","citations":[],"note":{"de":"n","bg":"n"}},
-		"paid": null, "annulment": null
+		"tax": {"regime":"domestic_standard","citations":[],"note":{"de":"n","bg":"n"}}
 	}`)
 	writeFixture(t, dir, "draft.json", `{
 		"schema_version": 1, "number": "INV-0000000002", "status": "draft", "type": "invoice",
@@ -44,38 +43,36 @@ func TestLoadInvoicesIncludesDraftsExcludesAnnulled(t *testing.T) {
 		"issuer": {"legal_name":"x","address":{"line1":"a","postal_code":"1","city":"c","country_code":"BG"},"tax_id":"1","vat_id":"BG1","bank":{"name":"b","iban":"i","bic":"b"},"default_currency":"EUR"},
 		"recipient": {"number":1,"legal_name":"r","address":{"line1":"a","postal_code":"1","city":"c","country_code":"BG"},"is_business":true,"language":"de","payment_terms_days":30,"email":"e@x.com"},
 		"lines": [{"description":{"de":"d","bg":"d"},"unit_price":1000,"vat_rate":0}],
-		"tax": {"regime":"domestic_standard","citations":[],"note":{"de":"n","bg":"n"}},
-		"paid": null, "annulment": null
+		"tax": {"regime":"domestic_standard","citations":[],"note":{"de":"n","bg":"n"}}
 	}`)
-	writeFixture(t, dir, "annulled.json", `{
+	// A file still carrying the retired `paid`/`annulment` keys must keep
+	// parsing: encoding/json ignores what the struct no longer has, which is
+	// what lets a data checkout migrate on its own schedule.
+	writeFixture(t, dir, "legacy-keys.json", `{
 		"schema_version": 1, "number": "INV-0000000003", "status": "issued", "type": "invoice",
 		"title": "t", "issue_date": "2026-01-01", "due_date": "2026-01-08", "currency": "EUR", "language": "de",
 		"issuer": {"legal_name":"x","address":{"line1":"a","postal_code":"1","city":"c","country_code":"BG"},"tax_id":"1","vat_id":"BG1","bank":{"name":"b","iban":"i","bic":"b"},"default_currency":"EUR"},
 		"recipient": {"number":1,"legal_name":"r","address":{"line1":"a","postal_code":"1","city":"c","country_code":"BG"},"is_business":true,"language":"de","payment_terms_days":30,"email":"e@x.com"},
 		"lines": [{"description":{"de":"d","bg":"d"},"unit_price":1000,"vat_rate":0}],
 		"tax": {"regime":"domestic_standard","citations":[],"note":{"de":"n","bg":"n"}},
-		"paid": null, "annulment": {"date":"2026-01-02","reason_de":"r","reason_bg":"r"}
+		"paid": "2026-01-05", "annulment": {"date":"2026-01-02","reason_de":"r","reason_bg":"r"}
 	}`)
 
 	got, err := LoadInvoices(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("len(got) = %d, want 2 (issued + draft, annulled excluded)", len(got))
+	if len(got) != 3 {
+		t.Fatalf("len(got) = %d, want 3 — nothing is filtered out any more", len(got))
 	}
 	numbers := map[string]bool{}
 	for _, inv := range got {
 		numbers[inv.Number] = true
 	}
-	if !numbers["INV-0000000001"] {
-		t.Errorf("got %v, want the issued invoice included", numbers)
-	}
-	if !numbers["INV-0000000002"] {
-		t.Errorf("got %v, want the draft invoice included", numbers)
-	}
-	if numbers["INV-0000000003"] {
-		t.Errorf("got %v, want the annulled invoice excluded", numbers)
+	for _, want := range []string{"INV-0000000001", "INV-0000000002", "INV-0000000003"} {
+		if !numbers[want] {
+			t.Errorf("got %v, want %s included", numbers, want)
+		}
 	}
 }
 
@@ -101,14 +98,15 @@ func TestAggregate(t *testing.T) {
 
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 
-	paidDate := mustDate("2025-03-01")
+	// Payment lives in paid-invoices.json now, so it reaches Aggregate as a
+	// map rather than as a field on the invoice.
+	paid := map[string]types.SerializableDate{"INV-A1": mustDate("2025-03-01")}
 	invoices := []*invoice.InvoiceJson{
 		{
 			Number: "INV-A1", Title: "A1", Status: invoice.InvoiceJsonStatusIssued,
 			IssueDate: mustDate("2025-02-01"), DueDate: mustDate("2025-02-08"),
 			Recipient: invoice.RecipientSnapshot{Number: 1, LegalName: "Alice Ltd"},
 			Lines:     []invoice.Line{line(100000)}, // 1000.00
-			Paid:      &paidDate,
 		},
 		{
 			Number: "INV-A2", Title: "A2", Status: invoice.InvoiceJsonStatusIssued,
@@ -133,7 +131,7 @@ func TestAggregate(t *testing.T) {
 
 	states := map[string]string{}
 
-	years, recipientRows, invoiceRows, err := Aggregate(invoices, recipients, nil, now)
+	years, recipientRows, invoiceRows, err := Aggregate(invoices, recipients, paid, nil, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +166,7 @@ func TestAggregate(t *testing.T) {
 	}
 
 	year2025 := 2025
-	_, recipientRows2025, invoiceRows2025, err := Aggregate(invoices, recipients, &year2025, now)
+	_, recipientRows2025, invoiceRows2025, err := Aggregate(invoices, recipients, paid, &year2025, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +203,7 @@ func TestAggregateDraftOnlyRecipientShownWithZeroedLedger(t *testing.T) {
 		},
 	}
 
-	_, recipientRows, _, err := Aggregate(invoices, recipients, nil, now)
+	_, recipientRows, _, err := Aggregate(invoices, recipients, nil, nil, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +220,7 @@ func TestAggregateDraftOnlyRecipientShownWithZeroedLedger(t *testing.T) {
 
 	// Filtering to a year with no activity at all excludes her again.
 	otherYear := 2025
-	_, recipientRows2025, _, err := Aggregate(invoices, recipients, &otherYear, now)
+	_, recipientRows2025, _, err := Aggregate(invoices, recipients, nil, &otherYear, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +237,7 @@ func TestAggregateRecipientWithNoInvoicesAtAllNotShown(t *testing.T) {
 	}
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 
-	_, recipientRows, _, err := Aggregate(nil, recipients, nil, now)
+	_, recipientRows, _, err := Aggregate(nil, recipients, nil, nil, now)
 	if err != nil {
 		t.Fatal(err)
 	}

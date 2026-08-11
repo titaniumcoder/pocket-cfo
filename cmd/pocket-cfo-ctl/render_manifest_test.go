@@ -6,8 +6,74 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/atombender/go-jsonschema/pkg/types"
+
+	"github.com/titaniumcoder/pocket-cfo/internal/money"
 	"github.com/titaniumcoder/pocket-cfo/internal/render"
+	"github.com/titaniumcoder/pocket-cfo/internal/stats"
 )
+
+// TestSampleDataStillMatchesCommittedManifest is the central assertion behind
+// splitting payment out of the invoice documents: it changed no rendered
+// HTML, so every hash in the committed build/render-manifest.json is still
+// correct and `pocket-cfo-ctl render` has nothing to re-render.
+//
+// It runs against the real sample data rather than a fixture, because the
+// committed manifest is what that data was rendered into. If this fails, some
+// PDF on disk no longer matches its JSON and the split was not transparent.
+func TestSampleDataStillMatchesCommittedManifest(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(filepath.Join(wd, "..", ".."))
+
+	manifest, err := render.LoadManifest(renderManifestPath)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+	invoices, err := stats.LoadInvoices(invoicesDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paid, err := stats.LoadPaid(paidInvoicesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checked := 0
+	for _, inv := range invoices {
+		totals, err := money.Compute(inv)
+		if err != nil {
+			t.Fatalf("compute totals for %s: %v", inv.Number, err)
+		}
+		var paidOn *types.SerializableDate
+		if d, ok := paid[inv.Number]; ok {
+			paidOn = &d
+		}
+		for _, tgt := range targetsFor(*inv, paidOn) {
+			name := filepath.Base(tgt.path)
+			want, ok := manifest[name]
+			if !ok {
+				continue // never rendered, so nothing is pinned for it
+			}
+			html, err := render.HTML(inv, totals, tgt.paidOn)
+			if err != nil {
+				t.Fatalf("render %s: %v", name, err)
+			}
+			if got := render.HashHTML(html); got != want {
+				t.Errorf("%s: hash %s, manifest says %s — the rendered HTML changed, so this PDF would need re-rendering", name, got, want)
+			}
+			checked++
+		}
+	}
+
+	// Guards against the test quietly passing because it compared nothing —
+	// e.g. if the sample data or the manifest were emptied.
+	if checked < 2 {
+		t.Fatalf("only %d artifact(s) checked against the manifest, want at least the original and the paid variant", checked)
+	}
+}
 
 // TestRenderOne_BackfillsManifestWithoutTouchingExistingPDF covers the
 // one-time bootstrap this repo needed the moment the integrity-manifest
@@ -51,7 +117,7 @@ func TestRenderOne_BackfillsManifestWithoutTouchingExistingPDF(t *testing.T) {
 	}
 
 	manifest := render.Manifest{}
-	if err := renderOne(context.Background(), nil, nil, "INV-0000000001", false, false, manifest); err != nil {
+	if err := renderOne(context.Background(), nil, nil, "INV-0000000001", false, false, manifest, nil); err != nil {
 		t.Fatalf("renderOne: %v", err)
 	}
 

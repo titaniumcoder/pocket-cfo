@@ -133,7 +133,7 @@
 </head>
 <body>
   {{if .IsDraft}}<div class="watermark">ENTWURF &middot; ЧЕРНОВА &middot; DRAFT</div>{{end}}
-  {{if .IsPaid}}<div class="paid-stamp">BEZAHLT &middot; ПЛАТЕНО &middot; PAID<div class="stamp-date">{{dateptr .Invoice.Paid}}</div></div>{{end}}
+  {{if .IsPaid}}<div class="paid-stamp">BEZAHLT &middot; ПЛАТЕНО &middot; PAID<div class="stamp-date">{{dateptr .PaidOn}}</div></div>{{end}}
   <header>
     <div class="issuer">
       {{if .LogoSVG}}<div class="logo">{{.LogoSVG}}</div>{{end}}

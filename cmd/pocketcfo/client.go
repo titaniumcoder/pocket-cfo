@@ -98,6 +98,12 @@ func (s *server) handleClientPortal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	paid, err := stats.LoadPaid(paidInvoicesPath)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	var rows []clientInvoiceRow
 	for _, inv := range invoices {
 		if inv.Status != invoice.InvoiceJsonStatusIssued || inv.Recipient.Number != found.Number {
@@ -108,8 +114,9 @@ func (s *server) handleClientPortal(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		_, isPaid := paid[inv.Number]
 		pdfPath := inv.Number + ".pdf"
-		if inv.Paid != nil {
+		if isPaid {
 			pdfPath = inv.Number + "-paid.pdf"
 		}
 		rows = append(rows, clientInvoiceRow{
@@ -117,7 +124,7 @@ func (s *server) handleClientPortal(w http.ResponseWriter, r *http.Request) {
 			Title:      inv.Title,
 			IssueDate:  render.FormatDate(inv.IssueDate),
 			DueDate:    render.FormatDate(inv.DueDate),
-			Paid:       inv.Paid != nil,
+			Paid:       isPaid,
 			GrandTotal: totals.GrandTotal,
 			PDFPath:    "/invoicing/client/" + token + "/invoices/" + pdfPath,
 		})

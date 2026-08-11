@@ -34,6 +34,7 @@ type View struct {
 	Totals    money.Totals
 	Labels    Labels
 	AmountDue int64
+	PaidOn    *types.SerializableDate
 	IsPaid    bool
 	IsDraft   bool
 	HasVAT    bool
@@ -44,12 +45,12 @@ type View struct {
 // from disk relative to the repo root, like templates/ elsewhere — see
 // AGENTS.md.
 //
-// showPaid decides whether the paid badge/stamp and zeroed amount-due are
-// shown — deliberately independent of inv.Paid. Per ARCHITECTURE.md §6, the
-// original PDF is written once and never touched, so it must always render
-// as if unpaid regardless of the invoice's actual payment state; only the
-// separate -paid.pdf artifact (rendered with showPaid=true) reflects it.
-func HTML(inv *invoice.InvoiceJson, totals money.Totals, showPaid bool) ([]byte, error) {
+// paidOn is the payment date to stamp, or nil to render the original.
+// Payment lives in data/paid-invoices.json rather than in the invoice
+// document, so it arrives as an argument: per ARCHITECTURE.md §6 the
+// original PDF is written once and never touched, so it always renders as if
+// unpaid, and only the separate -paid.pdf artifact is given a date.
+func HTML(inv *invoice.InvoiceJson, totals money.Totals, paidOn *types.SerializableDate) ([]byte, error) {
 	if err := validateLocalization(inv); err != nil {
 		return nil, fmt.Errorf("localization: %w", err)
 	}
@@ -68,7 +69,7 @@ func HTML(inv *invoice.InvoiceJson, totals money.Totals, showPaid bool) ([]byte,
 	}
 
 	amountDue := totals.GrandTotal
-	if showPaid {
+	if paidOn != nil {
 		amountDue = 0
 	}
 
@@ -86,7 +87,8 @@ func HTML(inv *invoice.InvoiceJson, totals money.Totals, showPaid bool) ([]byte,
 		Totals:    totals,
 		Labels:    CombinedLabels(inv.Language),
 		AmountDue: amountDue,
-		IsPaid:    showPaid,
+		PaidOn:    paidOn,
+		IsPaid:    paidOn != nil,
 		IsDraft:   inv.Status == invoice.InvoiceJsonStatusDraft,
 		HasVAT:    hasVAT,
 		LogoSVG:   logoSVG,

@@ -54,14 +54,14 @@ func TestHTML_RendersReferenceInvoices(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			html, err := HTML(inv, totals, false)
+			html, err := HTML(inv, totals, nil)
 			if err != nil {
 				t.Fatalf("HTML: %v", err)
 			}
 			out := string(html)
 
 			if strings.Contains(out, "BEZAHLT") {
-				t.Error("original (showPaid=false) must never show the paid badge/stamp, even when inv.Paid is set")
+				t.Error("the original (paidOn=nil) must never show the paid badge/stamp, however the invoice was actually settled")
 			}
 
 			for _, want := range []string{
@@ -108,14 +108,13 @@ func TestHTML_RendersReferenceInvoices(t *testing.T) {
 	}
 }
 
-// TestHTML_PaidVariant covers the -paid.pdf artifact: showPaid=true must
-// show the badge, the rotated stamp with the payment date, and a zeroed
-// amount due — the mirror image of the showPaid=false assertions above.
+// TestHTML_PaidVariant covers the -paid.pdf artifact: a non-nil paidOn must
+// show the badge, the rotated stamp with that date, and a zeroed amount due
+// — the mirror image of the paidOn=nil assertions above. The date is passed
+// in rather than read off the invoice, which no longer carries one.
 func TestHTML_PaidVariant(t *testing.T) {
 	inv := loadFixture(t, "INV-0000000001")
-	if inv.Paid == nil {
-		t.Fatal("fixture no longer has paid set — test is stale")
-	}
+	paidOn := mustDate("2026-01-15")
 
 	totals, err := money.Compute(inv)
 	if err != nil {
@@ -127,17 +126,17 @@ func TestHTML_PaidVariant(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	html, err := HTML(inv, totals, true)
+	html, err := HTML(inv, totals, &paidOn)
 	if err != nil {
 		t.Fatalf("HTML: %v", err)
 	}
 	out := string(html)
 
 	if !strings.Contains(out, "BEZAHLT") {
-		t.Error("paid variant (showPaid=true) must show the paid badge/stamp")
+		t.Error("the paid variant must show the paid badge/stamp")
 	}
-	if !strings.Contains(out, FormatDate(*inv.Paid)) {
-		t.Errorf("paid variant must show the payment date %q", FormatDate(*inv.Paid))
+	if !strings.Contains(out, FormatDate(paidOn)) {
+		t.Errorf("paid variant must show the payment date %q", FormatDate(paidOn))
 	}
 	if !strings.Contains(out, FormatMoney(0)) {
 		t.Error("paid variant must show a zeroed amount due")
@@ -159,7 +158,7 @@ func TestHTML_EmptyTaxNoteOmitsNotesBox(t *testing.T) {
 	if err := os.Chdir(filepath.Join("..", "..")); err != nil {
 		t.Fatal(err)
 	}
-	html, err := HTML(inv, totals, false)
+	html, err := HTML(inv, totals, nil)
 	if err != nil {
 		t.Fatalf("HTML: %v", err)
 	}
@@ -182,7 +181,7 @@ func TestHTML_NonEmptyTaxNoteRendersNotesBox(t *testing.T) {
 	if err := os.Chdir(filepath.Join("..", "..")); err != nil {
 		t.Fatal(err)
 	}
-	html, err := HTML(inv, totals, false)
+	html, err := HTML(inv, totals, nil)
 	if err != nil {
 		t.Fatalf("HTML: %v", err)
 	}

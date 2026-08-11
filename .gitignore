@@ -13,10 +13,21 @@
 /pocket-cfo-ctl
 /pocketcfo
 
-# generated from internal/finance/data/budget.schema.json via go generate —
-# see internal/finance/budgetdata/gen.go
+# Generated from JSON Schema by go-jsonschema via `go generate ./...` (see
+# internal/schema/generate.go and internal/finance/*data/gen.go). Build
+# output, not source: every build regenerates them, so checking them in only
+# creates diffs nobody reviews and merge conflicts nobody can resolve.
+# `go generate ./...` (or `make generate`) is required before the tree
+# compiles from a fresh clone — CI, the Dockerfile and the release workflow
+# all run it as their first step.
 /internal/finance/budgetdata/generated.go
 /internal/finance/accountsdata/generated.go
+/internal/schema/issuer/issuer.go
+/internal/schema/recipient/recipient.go
+/internal/schema/invoice/invoice.go
+/internal/schema/notes/notes.go
+/internal/schema/users/users.go
+/internal/schema/paidinvoices/paidinvoices.go
 
 # Test binary, built with `go test -c`
 *.test

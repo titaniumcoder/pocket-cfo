@@ -14,9 +14,9 @@ import (
 // runDelete implements `pocket-cfo-ctl delete NUMBER [--dry-run]`: removes a
 // draft invoice's JSON, its build/{NUMBER}-DRAFT.pdf if any, and its
 // render-manifest.json entry, so nothing is left orphaned. Refuses anything
-// not in draft status — an issued invoice is annulled, never deleted, per
-// ARCHITECTURE.md §3.7 (the number stays consumed, and deleting one would
-// break the gapless-sequence check).
+// not in draft status — an issued invoice is kept, never deleted: the number
+// stays consumed, and deleting one would break the gapless-sequence check.
+// Retracting one is annulment, which isn't built yet (ARCHITECTURE.md §3.7).
 func runDelete(args []string) int {
 	fs := flag.NewFlagSet("delete", flag.ContinueOnError)
 	dryRun := fs.Bool("dry-run", false, "print what would be removed, without removing it")
@@ -47,7 +47,7 @@ func runDelete(args []string) int {
 		return 1
 	}
 	if inv.Status != invoice.InvoiceJsonStatusDraft {
-		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl delete: %s is %s, not draft — issued invoices are annulled, not deleted (ARCHITECTURE.md §3.7)\n", number, inv.Status)
+		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl delete: %s is %s, not draft — an issued invoice is kept, never deleted (ARCHITECTURE.md §3.7)\n", number, inv.Status)
 		return 1
 	}
 

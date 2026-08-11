@@ -1,0 +1,7 @@
+{
+  "$schema": "../schemas/paid-invoices.json",
+  "paid": [
+    { "invoice": "INV-0000000001", "date": "2026-01-15" },
+    { "invoice": "INV-0000000002", "date": "2026-01-28" }
+  ]
+}

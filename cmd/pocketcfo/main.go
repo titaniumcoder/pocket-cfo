@@ -236,6 +236,10 @@ func (s *server) loadInvoicingView(r *http.Request, sess auth.Session) (any, err
 	if err != nil {
 		return nil, err
 	}
+	paid, err := stats.LoadPaid(paidInvoicesPath)
+	if err != nil {
+		return nil, err
+	}
 
 	var selectedYear *int
 	if raw := r.URL.Query().Get("year"); raw != "" {
@@ -245,7 +249,7 @@ func (s *server) loadInvoicingView(r *http.Request, sess auth.Session) (any, err
 		}
 	}
 
-	years, recipientRows, invoiceRows, err := stats.Aggregate(invoices, recipients, selectedYear, time.Now())
+	years, recipientRows, invoiceRows, err := stats.Aggregate(invoices, recipients, paid, selectedYear, time.Now())
 	if err != nil {
 		return nil, err
 	}

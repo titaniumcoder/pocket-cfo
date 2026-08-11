@@ -79,12 +79,16 @@ otherwise `source .envrc` before running `pocket-cfo-ctl render` or `cmd/pocketc
 
 ## Building and running
 
+**Run `make generate` first in a fresh clone.** The Go types generated from
+`schemas/*.json` are build output rather than source, so they aren't checked in and
+nothing compiles until they exist. Re-run it whenever a schema changes.
+
 ```
+make generate   # regenerate the schema-derived Go types (do this first)
 make build      # go build ./...
 make test       # go test ./...
 make vet        # go vet ./...
 make fmt        # gofmt -l -w .
-make generate   # regenerate internal/schema/* from schemas/*.json
 make clean      # go clean ./...
 make dev-cert   # print a throwaway self-signed SIGN_CERT_B64/SIGN_KEY_B64 pair for local testing
 

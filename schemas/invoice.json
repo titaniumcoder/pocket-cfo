@@ -17,9 +17,7 @@
     "issuer",
     "recipient",
     "lines",
-    "tax",
-    "paid",
-    "annulment"
+    "tax"
   ],
   "properties": {
     "schema_version": { "const": 1 },
@@ -42,12 +40,7 @@
       "type": "array",
       "items": { "$ref": "#/$defs/discount" }
     },
-    "tax": { "$ref": "#/$defs/tax" },
-    "paid": { "type": ["string", "null"], "format": "date" },
-    "annulment": {
-      "type": ["object", "null"],
-      "$ref": "#/$defs/annulment"
-    }
+    "tax": { "$ref": "#/$defs/tax" }
   },
   "$defs": {
     "localized_string": {
@@ -158,17 +151,6 @@
         },
         "citations": { "type": "array", "items": { "type": "string" } },
         "note": { "$ref": "#/$defs/localized_string" }
-      }
-    },
-    "annulment": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["date", "reason_de", "reason_bg"],
-      "properties": {
-        "date": { "type": "string", "format": "date" },
-        "reason_de": { "type": "string", "minLength": 1 },
-        "reason_bg": { "type": "string", "minLength": 1 },
-        "replacement_invoice": { "type": "string", "pattern": "^INV-\\d{10}$" }
       }
     }
   }

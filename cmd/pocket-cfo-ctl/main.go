@@ -30,6 +30,7 @@ var commands = map[string]func([]string) int{
 	"delete":    runDelete,
 	"prune":     runPrune,
 	"validate":  runValidate,
+	"invoices":  runInvoices,
 }
 
 func main() {
@@ -69,6 +70,8 @@ func runHelp(_ []string) int {
 	fmt.Println("  prune       remove build/*-DRAFT.pdf relics whose JSON no longer exists (see 'prune -h')")
 	fmt.Println("  validate    validate a data checkout's recipients/invoices/users.json/budget.json")
 	fmt.Println("              against their schemas and business rules ('validate [dir]', default data)")
+	fmt.Println("  invoices    invoices extract-paid [dir] — one-time migration moving `paid` out of")
+	fmt.Println("              the invoice files into paid-invoices.json, dropping `annulment`")
 	fmt.Println()
 	fmt.Println("Planned (not yet implemented):")
 	for _, c := range plannedCommands {

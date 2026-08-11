@@ -2,12 +2,14 @@
   "schema_version": 1,
   "number": "INV-0000000001",
   "status": "issued",
+
   "type": "invoice",
   "title": "Example Client AG - Support & Development, January 2026",
   "issue_date": "2026-01-05",
   "due_date": "2026-01-19",
   "currency": "EUR",
   "language": "de",
+
   "issuer": {
     "legal_name": "Example Issuer EOOD",
     "address": {
@@ -42,6 +44,7 @@
     "payment_terms_days": 14,
     "email": "buchhaltung@example-client.example"
   },
+
   "lines": [
     {
       "description": {
@@ -71,11 +74,10 @@
       "vat_rate": 0
     }
   ],
+
   "tax": {
     "regime": "outside_eu_place_of_supply",
-    "citations": [
-      "ЗДДС чл. 69 ал. 2"
-    ],
+    "citations": ["ЗДДС чл. 69 ал. 2"],
     "note": {
       "de": "Steuerfreie Leistung gemäß Art. 69 Abs. 2 des bulgarischen Umsatzsteuergesetzes (Leistungsort außerhalb der EU).",
       "bg": "Данъкът не е начислен на основание чл. 69, ал. 2 от ЗДДС - място на изпълнение извън територията на страната."

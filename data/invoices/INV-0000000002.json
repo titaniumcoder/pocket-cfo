@@ -2,12 +2,14 @@
   "schema_version": 1,
   "number": "INV-0000000002",
   "status": "issued",
+
   "type": "invoice",
   "title": "Example Project / January 2026",
   "issue_date": "2026-01-15",
   "due_date": "2026-01-22",
   "currency": "EUR",
   "language": "de",
+
   "issuer": {
     "legal_name": "Example Issuer EOOD",
     "address": {
@@ -42,6 +44,7 @@
     "payment_terms_days": 30,
     "email": "buchhaltung@musterfirma.example"
   },
+
   "lines": [
     {
       "description": {
@@ -54,12 +57,10 @@
       "vat_rate": 0
     }
   ],
+
   "tax": {
     "regime": "eu_b2b_reverse_charge",
-    "citations": [
-      "ЗДДС чл. 21 ал. 2",
-      "ЗДДС чл. 86 ал. 3"
-    ],
+    "citations": ["ЗДДС чл. 21 ал. 2", "ЗДДС чл. 86 ал. 3"],
     "note": {
       "de": "Steuerschuldnerschaft des Leistungsempfängers (Reverse Charge). Keine Umsatzsteuer gemäß Art. 21 Abs. 2 und Art. 86 Abs. 3 ЗДДС.",
       "bg": "Данъкът не е начислен на основание чл. 21, ал. 2 и чл. 86, ал. 3 ЗДДС. Данъкът е изискуем от получателя (обратно начисляване)."

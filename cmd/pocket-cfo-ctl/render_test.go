@@ -77,13 +77,18 @@ func mustDate(s string) types.SerializableDate {
 // drafts get exactly one, always-overwritten target; issued invoices get a
 // write-once original that never shows paid regardless of inv.Paid, plus a
 // -paid.pdf only once inv.Paid is set.
+//
+// Expected paths go through filepath.Join, same as targetsFor itself: hardcoded
+// forward slashes matched on Linux and failed on Windows, where buildDir joins
+// with a backslash.
 func TestTargetsFor(t *testing.T) {
 	paidDate := mustDate("2026-01-15")
+	built := func(name string) string { return filepath.Join(buildDir, name) }
 
 	t.Run("draft", func(t *testing.T) {
 		inv := invoice.InvoiceJson{Number: "INV-0000000009", Status: invoice.InvoiceJsonStatusDraft}
 		got := targetsFor(inv)
-		want := []target{{path: "build/INV-0000000009-DRAFT.pdf", overwrite: true, showPaid: false}}
+		want := []target{{path: built("INV-0000000009-DRAFT.pdf"), overwrite: true, showPaid: false}}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("targetsFor(draft) = %+v, want %+v", got, want)
 		}
@@ -92,7 +97,7 @@ func TestTargetsFor(t *testing.T) {
 	t.Run("issued, unpaid", func(t *testing.T) {
 		inv := invoice.InvoiceJson{Number: "INV-0000000009", Status: invoice.InvoiceJsonStatusIssued}
 		got := targetsFor(inv)
-		want := []target{{path: "build/INV-0000000009.pdf", overwrite: false, showPaid: false}}
+		want := []target{{path: built("INV-0000000009.pdf"), overwrite: false, showPaid: false}}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("targetsFor(issued, unpaid) = %+v, want %+v", got, want)
 		}
@@ -102,8 +107,8 @@ func TestTargetsFor(t *testing.T) {
 		inv := invoice.InvoiceJson{Number: "INV-0000000009", Status: invoice.InvoiceJsonStatusIssued, Paid: &paidDate}
 		got := targetsFor(inv)
 		want := []target{
-			{path: "build/INV-0000000009.pdf", overwrite: false, showPaid: false},
-			{path: "build/INV-0000000009-paid.pdf", overwrite: false, showPaid: true},
+			{path: built("INV-0000000009.pdf"), overwrite: false, showPaid: false},
+			{path: built("INV-0000000009-paid.pdf"), overwrite: false, showPaid: true},
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("targetsFor(issued, paid) = %+v, want %+v", got, want)

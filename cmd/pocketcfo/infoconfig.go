@@ -91,6 +91,8 @@ func (s *server) configGroups() []configGroup {
 			{Name: "GITHUB_DATA_TOKEN", Value: maskSecret(c.githubDataToken), Secret: true},
 			{Name: "API routes", Value: enabledIf(c.hermesAPIToken != "")},
 			{Name: "Writes", Value: enabledIf(c.githubDataToken != "")},
+			{Name: "Write target", Value: orUnset(c.repo)},
+			{Name: "GITHUB_API_URL", Value: orUnset(c.githubAPIURL)},
 		}},
 		{Name: "Email (Amazon SES)", Rows: []configRow{
 			{Name: "AWS_REGION", Value: orUnset(c.sesRegion)},

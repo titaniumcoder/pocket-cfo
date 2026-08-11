@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"go/parser"
 	"go/printer"
 	"go/token"
@@ -14,6 +15,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/titaniumcoder/pocket-cfo/internal/api"
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
@@ -436,5 +438,122 @@ func TestAPIDoesNotWriteDataDir(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join(dir, "canary"))
 	if err != nil || string(b) != "untouched" {
 		t.Error("the canary file was modified")
+	}
+}
+
+// putServer wires a server with writes configured. The GitHub call itself is
+// covered in internal/api against a fake Contents API; these tests are about
+// the adapter's own decoding, limits and status mapping.
+func putServer(t *testing.T) *server {
+	t.Helper()
+	s := apiServer(t, apiTestToken, "prod")
+	s.cfg.githubDataToken = "gh-token"
+	s.cfg.repo = "owner/data"
+	s.httpClient = &http.Client{}
+	return s
+}
+
+func apiPut(t *testing.T, s *server, month, body, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	r := httptest.NewRequest(http.MethodPut, "/api/actuals/"+month, strings.NewReader(body))
+	if token != "" {
+		r.Header.Set("Authorization", "Bearer "+token)
+	}
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.routes().ServeHTTP(w, r)
+	return w
+}
+
+func TestAPIPutRequiresABearer(t *testing.T) {
+	s := putServer(t)
+	w := apiPut(t, s, "2026-08", `{"document":{},"base_sha":""}`, "")
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", w.Code)
+	}
+}
+
+func TestAPIPutWithoutAWriteTokenIs503(t *testing.T) {
+	s := apiServer(t, apiTestToken, "prod") // no githubDataToken
+	body := `{"document":{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],"transactions":[]},"base_sha":""}`
+	w := apiPut(t, s, "2026-08", body, apiTestToken)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503, body %s", w.Code, w.Body)
+	}
+	var e apiErrorBody
+	json.Unmarshal(w.Body.Bytes(), &e)
+	if e.Error.Code != "write_not_configured" {
+		t.Errorf("code = %q", e.Error.Code)
+	}
+}
+
+func TestAPIPutRejectsAnOversizedBody(t *testing.T) {
+	s := putServer(t)
+	w := apiPut(t, s, "2026-08", `{"document":`+strings.Repeat("a", 2<<20)+`}`, apiTestToken)
+	if w.Code != http.StatusRequestEntityTooLarge && w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want the body cap to reject it", w.Code)
+	}
+}
+
+func TestAPIPutRejectsAnUnknownEnvelopeField(t *testing.T) {
+	s := putServer(t)
+	w := apiPut(t, s, "2026-08", `{"document":{},"base_sha":"","typo":1}`, apiTestToken)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for an unknown field", w.Code)
+	}
+}
+
+func TestAPIPutMapsServiceCodesToStatuses(t *testing.T) {
+	tests := []struct {
+		name, month, body string
+		want              int
+	}{
+		{
+			name: "bad month", month: "2026-13",
+			body: `{"document":{"month":"2026-13","coverage":[],"transactions":[]},"base_sha":""}`,
+			want: http.StatusBadRequest,
+		},
+		{
+			name: "validation failure", month: "2026-08",
+			body: `{"document":{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],` +
+				`"transactions":[{"id":"x","date":"2026-08-01","description":"X","amount":1,"account":"A","category":"00000000-0000-4000-8000-0000000000ff"}]},"base_sha":""}`,
+			want: http.StatusBadRequest,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := putServer(t)
+			w := apiPut(t, s, tt.month, tt.body, apiTestToken)
+			if w.Code != tt.want {
+				t.Errorf("status = %d, want %d, body %s", w.Code, tt.want, w.Body)
+			}
+			if !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
+				t.Errorf("Content-Type = %q, want JSON", w.Header().Get("Content-Type"))
+			}
+		})
+	}
+}
+
+func TestAPIStatusMapping(t *testing.T) {
+	tests := []struct {
+		code string
+		want int
+	}{
+		{api.CodeInvalidRequest, http.StatusBadRequest},
+		{api.CodeValidationFailed, http.StatusBadRequest},
+		{api.CodeWouldRemove, http.StatusBadRequest},
+		{api.CodeNotFound, http.StatusNotFound},
+		{api.CodeConflict, http.StatusConflict},
+		{api.CodeWriteNotConfigured, http.StatusServiceUnavailable},
+		{api.CodeUpstream, http.StatusBadGateway},
+		{api.CodeInternal, http.StatusInternalServerError},
+	}
+	for _, tt := range tests {
+		if got := apiStatus(&api.Error{Code: tt.code}); got != tt.want {
+			t.Errorf("%s = %d, want %d", tt.code, got, tt.want)
+		}
+	}
+	if got := apiStatus(errors.New("plain")); got != http.StatusInternalServerError {
+		t.Errorf("a non-api error = %d, want 500", got)
 	}
 }

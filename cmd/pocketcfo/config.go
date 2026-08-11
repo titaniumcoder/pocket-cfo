@@ -73,6 +73,10 @@ type config struct {
 	// Deliberately not in requireProdVars — same convention as api2pdfKey.
 	hermesAPIToken  string
 	githubDataToken string
+	// Optional, defaults to https://api.github.com. Points the Contents
+	// client somewhere else — a scratch instance, or a stub while verifying
+	// the write path by hand.
+	githubAPIURL string
 
 	// Not fail-fast like the rest of config: Toggl and the JSON API degrade to
 	// disabled rather than refusing to start, so the finance part stays usable
@@ -101,6 +105,7 @@ func loadConfig() config {
 		api2pdfKey:       os.Getenv("API2PDF_KEY"),
 		hermesAPIToken:   os.Getenv("HERMES_API_TOKEN"),
 		githubDataToken:  os.Getenv("GITHUB_DATA_TOKEN"),
+		githubAPIURL:     os.Getenv("GITHUB_API_URL"),
 		finance:          financeconfig.Load(financeFileConfig),
 	}
 	applyDevDefaults(&c)

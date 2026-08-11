@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,6 +29,7 @@ func (s *server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/actuals/{month}", s.apiActuals)
 	mux.HandleFunc("GET /api/transactions", s.apiTransactions)
 	mux.HandleFunc("GET /api/reconciliation", s.apiReconciliation)
+	mux.HandleFunc("PUT /api/actuals/{month}", s.apiPutActuals)
 	// So a typo'd path answers Hermes in JSON rather than with a finance page.
 	// Two exact shapes rather than an /api/ subtree: a subtree overlaps
 	// /{year}/{month} with neither more specific, which ServeMux rejects.
@@ -56,7 +58,53 @@ func (s *server) apiAuthorized(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func (s *server) apiService() *api.Service {
-	return &api.Service{Budget: s.tracker.Budget, Accounts: s.tracker.Accounts, Actuals: s.tracker.Actuals}
+	svc := &api.Service{Budget: s.tracker.Budget, Accounts: s.tracker.Accounts, Actuals: s.tracker.Actuals}
+	if s.cfg.githubDataToken != "" {
+		svc.Store = &api.ContentsClient{
+			HTTP:    s.httpClient, // GitHub is fast-fail territory, unlike Toggl
+			Repo:    s.cfg.repo,
+			Token:   s.cfg.githubDataToken,
+			BaseURL: s.cfg.githubAPIURL,
+		}
+	}
+	return svc
+}
+
+// maxPutBody caps a month document. A year of statements is a few hundred KB;
+// anything larger is a mistake rather than a reconciliation.
+const maxPutBody = 1 << 20
+
+func (s *server) apiPutActuals(w http.ResponseWriter, r *http.Request) {
+	if !s.apiAuthorized(w, r) {
+		return
+	}
+	if ct := r.Header.Get("Content-Type"); ct != "" && !strings.HasPrefix(ct, "application/json") {
+		writeAPIError(w, &api.Error{Code: api.CodeInvalidRequest, Message: "Content-Type must be application/json"}, http.StatusUnsupportedMediaType)
+		return
+	}
+
+	var req api.PutRequest
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPutBody))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeAPIError(w, &api.Error{Code: api.CodeInvalidRequest, Message: "body too large"}, http.StatusRequestEntityTooLarge)
+			return
+		}
+		writeAPIError(w, &api.Error{Code: api.CodeInvalidRequest, Message: err.Error()}, http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
+	defer cancel()
+
+	out, err := s.apiService().PutActuals(ctx, r.PathValue("month"), req)
+	if err != nil {
+		writeAPIError(w, err, apiStatus(err))
+		return
+	}
+	writeAPIJSON(w, http.StatusOK, out)
 }
 
 func (s *server) apiBudgetCategories(w http.ResponseWriter, r *http.Request) {

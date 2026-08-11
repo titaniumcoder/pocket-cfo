@@ -143,8 +143,7 @@ func TestDiffCatchesCoverageRegression(t *testing.T) {
 	}
 }
 
-// TestDiffCatchesADroppedAccount covers the case where a whole account stops
-// being imported: every one of its days is lost at once.
+// TestDiffCatchesADroppedAccount: a whole account stops being imported.
 func TestDiffCatchesADroppedAccount(t *testing.T) {
 	before := file([]actualsdata.Coverage{cov("A", "2026-08-01", "2026-08-31"), cov("B", "2026-08-01", "2026-08-31")})
 	after := file(wholeAugust)
@@ -155,8 +154,8 @@ func TestDiffCatchesADroppedAccount(t *testing.T) {
 	}
 }
 
-// TestDiffReportsEverything pins that a submission which both drops a
-// transaction and shrinks coverage reports both, rather than the first.
+// TestDiffReportsEverything: a submission breaking several rules reports all
+// of them.
 func TestDiffReportsEverything(t *testing.T) {
 	before := file(wholeAugust, tx("t1", "2026-08-01", 900, "rent"), tx("t2", "2026-08-04", 40, "gym"))
 	after := file([]actualsdata.Coverage{cov("A", "2026-08-01", "2026-08-09")}, tx("t2", "2026-08-04", 999, "gym"))

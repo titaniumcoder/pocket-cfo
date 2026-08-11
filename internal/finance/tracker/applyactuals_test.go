@@ -157,7 +157,7 @@ func TestUnmatchedCentsSplitsByKind(t *testing.T) {
 }
 
 // actualsTracker builds a tracker over the shared test budget plus an
-// optional actuals file, for the two regression tests below.
+// optional actuals file.
 func actualsTracker(t *testing.T, actuals map[string]string) *Tracker {
 	t.Helper()
 	trk := accountsTracker(t, testAccountsJSON)
@@ -167,9 +167,8 @@ func actualsTracker(t *testing.T, actuals map[string]string) *Tracker {
 	return trk
 }
 
-// TestActualsChangeNoPlannedFigure is the requirement stated as a test: the
-// layer is display-only, so every planned-based figure must be bit-identical
-// with and without it.
+// TestActualsChangeNoPlannedFigure: the layer is display-only, so every
+// planned-based figure must be bit-identical with and without it.
 func TestActualsChangeNoPlannedFigure(t *testing.T) {
 	ctx := context.Background()
 	month := time.August
@@ -212,10 +211,8 @@ func TestActualsChangeNoPlannedFigure(t *testing.T) {
 	}
 }
 
-// TestNoActualsRendersByteIdentically encodes "nothing shown when there's
-// nothing to show" as a test rather than a manual diff: a month with no
-// imported file must produce exactly the HTML it produced before this layer
-// existed.
+// TestNoActualsRendersByteIdentically: a month with no imported file must
+// produce exactly the HTML it produced before this layer existed.
 func TestNoActualsRendersByteIdentically(t *testing.T) {
 	ctx := context.Background()
 
@@ -271,11 +268,9 @@ func TestActualsYearViewOnlyForPastYears(t *testing.T) {
 	}
 }
 
-// TestDescriptionsNeverReachTheDashboard is the security invariant stated
-// once and tested: computeActuals reads only ByCategory and TotalCents, so a
-// statement description is not in the struct the dashboard renders at all.
-// That, not the 403 on the drill-down, is what makes a leak impossible
-// however the page template is later edited.
+// TestDescriptionsNeverReachTheDashboard: computeActuals reads only
+// ByCategory and TotalCents, so a description isn't in the struct the
+// dashboard renders. That, not the 403, is what makes a leak impossible.
 func TestDescriptionsNeverReachTheDashboard(t *testing.T) {
 	const secret = "VERY-PRIVATE-MERCHANT-NAME"
 	trk := actualsTracker(t, map[string]string{
@@ -297,8 +292,8 @@ func TestDescriptionsNeverReachTheDashboard(t *testing.T) {
 		t.Error("a transaction description reached the dashboard HTML")
 	}
 
-	// And it *is* reachable through the admin-only path, so the test above
-	// isn't passing merely because the data never loaded.
+	// And it is reachable through the admin path, so the check above isn't
+	// passing merely because the data never loaded.
 	sv := trk.ComputeSpending(context.Background(), 2026, time.August)
 	if !sv.Present {
 		t.Fatal("ComputeSpending found nothing — the fixture never loaded")

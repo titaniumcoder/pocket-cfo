@@ -1,10 +1,9 @@
 // Package actualsdiff compares two versions of one month's recorded spending
-// and reports anything that would disappear or change underneath you.
+// and reports what would disappear or change.
 //
-// The risk this exists for isn't a malformed file — validation catches that.
-// It's a subtly *smaller* one: August is rebuilt from a statement covering
-// only the last two weeks, submitted, and the first two weeks quietly cease
-// to exist. Every figure still adds up. Nothing looks wrong.
+// The risk isn't a malformed file — validation catches that — but a subtly
+// smaller one: a month rebuilt from a partial statement, where every figure
+// still adds up and nothing looks wrong.
 package actualsdiff
 
 import (
@@ -33,9 +32,8 @@ func (c Change) String() string {
 	return fmt.Sprintf("%s %s: %s", c.Kind, c.ID, c.Detail)
 }
 
-// Diff reports what `after` would remove or rewrite relative to `before`.
-// Adding transactions, extending coverage and a brand-new month are always
-// clean — the common case never trips it.
+// Diff reports what after would remove or rewrite relative to before. Adding
+// transactions, extending coverage and a new month are always clean.
 func Diff(before, after actualsdata.ActualsFile) []Change {
 	var changes []Change
 	changes = append(changes, transactionChanges(before, after)...)
@@ -65,8 +63,8 @@ func transactionChanges(before, after actualsdata.ActualsFile) []Change {
 }
 
 // mutations lists the fields that changed under a stable id. description is
-// deliberately not one of them: correcting a mangled statement line is
-// legitimate, and it feeds no figure.
+// not one: correcting a mangled statement line is legitimate and feeds no
+// figure.
 func mutations(was, is actualsdata.Transaction) []string {
 	var out []string
 	if was.Date != is.Date {
@@ -94,10 +92,9 @@ func deref(s *string) string {
 	return *s
 }
 
-// coverageChanges compares covered *days* per account rather than ranges.
-// A range-by-range comparison reports a false positive the moment a second
-// weekly import merges two adjacent ranges into one — which is precisely what
-// the normal workflow does.
+// coverageChanges compares covered days per account, not ranges: a
+// range-by-range compare false-positives the moment a second weekly import
+// merges two adjacent ranges, which is what the normal workflow does.
 func coverageChanges(before, after actualsdata.ActualsFile) []Change {
 	wasDays := coveredDays(before)
 	isDays := coveredDays(after)

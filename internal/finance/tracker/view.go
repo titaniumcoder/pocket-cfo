@@ -167,19 +167,17 @@ type Figures struct {
 	PrivateTotalPlannedCents int
 	BudgetErr                string
 
-	// Recorded spending, shown beside the plan and folded into nothing. Every
-	// figure above stays planned-based. ShowActuals is false whenever the
-	// period has no imported file, and the page then renders byte-identically
-	// to one built without this layer at all.
+	// Recorded spending, shown beside the plan and folded into nothing. False
+	// ShowActuals renders byte-identically to a build without this layer.
 	ShowActuals           bool
-	ActualsNote           string // coverage caveat; empty once the period is fully read
+	ActualsNote           string
 	PrivateActualCents    int
 	CompanyActualCents    int
 	PrivateUnmatchedCents int
 	CompanyUnmatchedCents int
 	Mistimed              []MistimedRow
 	ActualsErr            string
-	SpendingDetailURL     string // filled by cmd/pocketcfo for an admin session only
+	SpendingDetailURL     string // filled by cmd/pocketcfo, admin sessions only
 
 	// The same cascade for the period that funds the viewed one: shifted back
 	// two months, since money earned in M is paid end of M+1 and spendable from
@@ -855,14 +853,9 @@ func freeWorkdays(start, today time.Time, holidays, billable map[string]bool) in
 	return count
 }
 
-// computeActuals decorates the already-built budget view with recorded
-// spending. It runs after computeBudget and before computePersonal: the
-// slices are shared, so the decoration is visible downstream, and none of it
-// touches a figure any downstream step reads.
-//
-// Nothing is shown for a period with no imported file, and a failure sets
-// ActualsErr and leaves the layer off — the same per-section degradation as
-// every other *Err field, so one bad month never takes down the page.
+// computeActuals decorates the built budget view with recorded spending. It
+// runs between computeBudget and computePersonal, and touches no figure any
+// downstream step reads.
 func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, start, now time.Time, months int, bv *BudgetView) {
 	if t.Actuals == nil || f.BudgetErr != "" {
 		return
@@ -871,10 +864,8 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 	var av ActualsView
 	var err error
 	if months > 1 {
-		// Year view compares whole years or nothing. For the current year
-		// ForYear projects private spend forward from this month, so putting
-		// backward-looking actuals beside it would compare the wrong halves
-		// of the year.
+		// For the current year ForYear projects private spend forward from
+		// this month, so actuals beside it would compare the wrong halves.
 		if year >= now.Year() {
 			return
 		}
@@ -890,7 +881,7 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 		return
 	}
 
-	// The mistimed check spans the year, so it only applies in month view.
+	// The mistimed check spans the year, so month view only.
 	var charged map[string][]time.Month
 	if months == 1 {
 		if charged, err = t.Actuals.ChargedMonths(ctx, year); err != nil {
@@ -915,9 +906,9 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 	f.CompanyActualCents += f.CompanyUnmatchedCents
 }
 
-// companyCategoryIDs is the set of category ids in company-kind groups, so
-// unmatched spending lands in the ledger it came from. A failure here is not
-// worth an error: it only means unmatched company money is shown as private.
+// companyCategoryIDs is the set of ids in company-kind groups, so unmatched
+// spending lands in the ledger it came from. A failure only means it shows as
+// private.
 func (t *Tracker) companyCategoryIDs(ctx context.Context) map[string]bool {
 	if t.Budget == nil {
 		return nil

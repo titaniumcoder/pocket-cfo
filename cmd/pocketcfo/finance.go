@@ -141,8 +141,8 @@ func (s *server) renderFinancePage(w http.ResponseWriter, sess auth.Session, f t
 	f.ReadOnly = sess.Permission == "readonly"
 	f.ShowInvoicingLink = sess.HasPart(users.PartInvoicing)
 	f.ShowInfoLink = s.authorized(sess)
-	// The drill-down carries statement descriptions, so only the admin tier
-	// gets a link to it; everyone else sees the actual figures as plain text.
+	// The drill-down carries statement descriptions, so only admins get a
+	// link; everyone else sees the figures as plain text.
 	if s.authorized(sess) && f.ShowActuals {
 		f.SpendingDetailURL = fmt.Sprintf("/spending/%d/%d", f.Year, f.MonthNum)
 	}
@@ -266,14 +266,9 @@ func isMinimalToggle(r *http.Request) bool {
 	return r.URL.Query().Get("minimal") == "toggle"
 }
 
-// financeSpending renders the admin-only drill-down behind the dashboard's
-// actual figures. Gated exactly like /info: an anonymous visitor is sent to
-// log in (a logged-out admin shouldn't hit a dead-end 403 on a page they're
-// entitled to), and an authenticated session without the tier is refused.
-//
-// The 403 is not what protects the descriptions — the dashboard's Figures
-// never carries one, so they cannot leak regardless. This gate is about the
-// page itself.
+// financeSpending renders the admin-only drill-down, gated like /info:
+// anonymous visitors log in first, authenticated non-admins are refused. The
+// 403 isn't what protects the descriptions — Figures never carries one.
 func (s *server) financeSpending(w http.ResponseWriter, r *http.Request) {
 	sess, ok := s.currentSession(r)
 	if !ok || !s.authenticated(sess) {

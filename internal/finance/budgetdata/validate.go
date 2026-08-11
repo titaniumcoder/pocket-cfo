@@ -17,13 +17,11 @@ func validateDate(field, date string) error {
 }
 
 // ValidateBudget checks what the JSON Schema can't express: category ids are
-// unique across the *whole file* — deliberately a wider scope than name,
-// because an id is what a recorded transaction in data/actuals/ points at, so
-// two categories sharing one would silently merge their spending; category
-// names are unique within their own group (not across the whole file — a
-// category is always shown nested under its group header, so "Hotel" under
-// both "Company - Vienna Trip" and "Galati Trips" is unambiguous on the page;
-// only a repeat within the same group is actually a mistake), every category has
+// unique across the whole file — a wider scope than name, because an id is
+// what a transaction points at, so a shared one would merge two categories'
+// spending; category names are unique within their own group (a repeat across
+// groups is unambiguous on the page, since each is shown under its own
+// header), every category has
 // a positive amount (a zero-euro line is almost certainly a mistake — note
 // this only applies to the base amount; an override may still be 0, to skip
 // a specific month), a dated category's date is a real calendar date, a

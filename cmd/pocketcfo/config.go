@@ -10,23 +10,12 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
 
-// dataDir is the one override point for this binary's hand-edited data —
-// recipients/, invoices/, users.json, budget.json — overridable via
-// DATA_DIR, e.g. to point this binary at a data checkout that lives outside
-// its own repo (see ARCHITECTURE.md §2). buildDir is kept separate (its own
-// BUILD_DIR override) since rendered PDFs are generated output, not
-// hand-edited data. renderManifestPath is duplicated as a separate var in
-// cmd/pocket-cfo-ctl/render.go (a different `main` package) rather than shared,
-// matching the existing precedent of buildDir/invoicesDir being independently
-// declared per-binary. templatesDir and staticDir default to this repo's own
-// branding — overridable via TEMPLATES_DIR/STATIC_DIR for a deployment that
-// wants its own look instead. TEMPLATES_DIR is shared with internal/render,
-// which reads invoice.html.tmpl from the same directory.
-// usersFile is the private, per-deployment access-control list (see
-// internal/users and schemas/users.json) — email → which part(s) of
-// PocketCFO that non-collaborator may reach. GitHub collaborators bypass it
-// entirely (see (*server).authorized); it's only consulted for the
-// email-OTP tier below.
+// dataDir is the override point for hand-edited data, e.g. to point at a data
+// checkout outside this repo (ARCHITECTURE.md §2). buildDir is separate because
+// rendered PDFs are generated output, not hand-edited data; renderManifestPath
+// is declared independently in cmd/pocket-cfo-ctl too, per the existing
+// per-binary precedent. usersFile is the access-control list consulted only for
+// the email-OTP tier — GitHub collaborators bypass it (see (*server).authorized).
 var (
 	dataDir            = getenv("DATA_DIR", "data")
 	recipientsDir      = dataDir + "/recipients"
@@ -36,8 +25,7 @@ var (
 	renderManifestPath = buildDir + "/render-manifest.json"
 	templatesDir       = getenv("TEMPLATES_DIR", "templates")
 	staticDir          = getenv("STATIC_DIR", "static")
-	// budgetDir holds budget.json for the finance tracker (see buildTracker)
-	// — same directory as the rest of dataDir's hand-edited data.
+	// Same directory as the rest of dataDir's hand-edited data.
 	budgetDir = dataDir
 )
 
@@ -76,17 +64,13 @@ type config struct {
 	sesRegion        string
 	sesFromEmail     string
 	otpLinkSecret    string
-	// api2pdfKey backs the /info diagnostics page's account-balance section
-	// (see info.go) — optional, that section is simply omitted when unset.
-	// pocket-cfo-ctl reads this same env var independently for actual PDF
-	// rendering; the web app previously never needed it at all.
+	// Optional: /info's account-balance section is omitted when unset.
+	// pocket-cfo-ctl reads the same env var independently for PDF rendering.
 	api2pdfKey string
 
-	// finance holds the finance tracker's own settings (config.json +
-	// TOGGL_*/API_PASSWORD env vars) — see internal/finance/config. Not
-	// fail-fast like the rest of config: Toggl/the JSON API degrade to
-	// "disabled" rather than refusing to start, since the finance part
-	// should stay usable with minimal setup.
+	// Not fail-fast like the rest of config: Toggl and the JSON API degrade to
+	// disabled rather than refusing to start, so the finance part stays usable
+	// with minimal setup.
 	finance financeconfig.Config
 }
 
@@ -126,12 +110,9 @@ func applyDevDefaults(c *config) {
 		c.env = "development"
 	}
 	if c.repo == "" {
-		// Deliberately NOT defaulted to titaniumcoder/pocket-cfo (the
-		// public code repo) — GITHUB_REPO is required in prod (see
-		// requireProdVars) so a real deployment can't silently check
-		// collaborator permission against the wrong repo (it should be
-		// the private data repo, e.g. titaniumcoder/pocket-cfo-data —
-		// see that repo's own docker-compose.yml).
+		// Deliberately NOT defaulted to the public code repo: GITHUB_REPO is
+		// required in prod so a deployment can't silently check collaborator
+		// permission against the wrong one. It should be the private data repo.
 		c.repo = "unset"
 	}
 	if c.port == "" {

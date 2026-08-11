@@ -15,17 +15,11 @@ import (
 
 const accountsPath = "accounts.json"
 
-// Accounts reads real bank-account balances (accounts.json) from FS and
-// caches them in memory, same convention as Budget — read fresh from a real
-// directory (DATA_DIR), never embedded, and evicted by the Reload link.
-//
-// Unlike Budget, a missing accounts.json is not an error: account balances
-// are an optional layer. Without the file the dashboard behaves exactly as
-// it did before they existed, so an existing deployment doesn't break by
-// upgrading into this feature.
+// Accounts reads real bank balances from accounts.json, same convention as
+// Budget. Unlike Budget, a missing file is not an error: this is an optional
+// layer, and without it the dashboard behaves as it did before it existed.
 type Accounts struct {
-	// FS is where accounts.json is read from. A nil FS means "not
-	// configured", same nil-means-disabled convention as Tracker.Toggl.
+	// A nil FS means not configured, as with Tracker.Toggl.
 	FS fs.FS
 
 	mu    sync.Mutex
@@ -37,34 +31,27 @@ type accountsResult struct {
 	err  error
 }
 
-// AccountSnapshot is the combined balance across every account and the
-// month it OPENS. Accounts are summed and anchored at the latest as_of
-// among them (see the schema's as_of description): balances are read at one
-// sitting, and one effective date is what the roll-forward below needs.
+// AccountSnapshot is the combined balance and the month it OPENS. Accounts are
+// summed and anchored at the latest as_of among them, since they're read at one
+// sitting and the roll-forward needs a single effective date.
 //
-// OpensMonth is deliberately the month AFTER the as_of date: a balance read
-// on 31 July is July's closing figure, so it is August's opening one. July
-// itself must not see it.
+// OpensMonth is deliberately the month AFTER as_of: a balance read on 31 July
+// is July's closing figure, so it is August's opening one.
 type AccountSnapshot struct {
 	OpensMonth yearMonth
 	Cents      int
 	AccountRow []AccountRow
-	// LatestAsOf is the newest read date across the accounts, kept as a
-	// full date (not just its month) so staleness can be measured in days
-	// against the real calendar — see StaleDays.
+	// A full date, not just its month, so StaleDays can count real days.
 	LatestAsOf time.Time
 }
 
-// staleAfterDays is how long a balance may go unread before the dashboard
-// says so. Everything from the snapshot month onward is extrapolated from
-// that one figure, so the older it gets the more of the panel is guesswork
-// presented as fact — and the failure is silent, which is exactly the kind
-// worth nagging about.
+// staleAfterDays is how long a balance may go unread before the dashboard says
+// so. Everything from the snapshot month on is extrapolated from that one
+// figure, and the drift is silent, which is the kind worth nagging about.
 const staleAfterDays = 40
 
-// StaleDays is how many days ago the newest balance was read, and whether
-// that is past staleAfterDays. Measured against real current time, not the
-// month being viewed: browsing to March doesn't make March's data fresh.
+// StaleDays counts against real current time, not the viewed month: browsing to
+// March doesn't make March's data fresh.
 func (s AccountSnapshot) StaleDays(now time.Time) (int, bool) {
 	days := int(now.Sub(s.LatestAsOf).Hours() / 24)
 	return days, days > staleAfterDays
@@ -110,8 +97,7 @@ func (a *Accounts) fetch() (accountsdata.AccountsFile, error) {
 	content, err := fs.ReadFile(a.FS, accountsPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			// Optional layer — absence is the "no balances configured"
-			// case, not a failure.
+			// Optional layer: absence is "not configured", not a failure.
 			return accountsdata.AccountsFile{}, nil
 		}
 		return accountsdata.AccountsFile{}, fmt.Errorf("accounts: reading %s: %w", accountsPath, err)
@@ -123,8 +109,7 @@ func (a *Accounts) fetch() (accountsdata.AccountsFile, error) {
 	return af, nil
 }
 
-// Evict drops the cached accounts.json, so the Reload link picks up a
-// hand-edited balance without a restart — same as Budget.Evict.
+// Evict lets the Reload link pick up a hand-edited balance without a restart.
 func (a *Accounts) Evict() {
 	if a == nil {
 		return
@@ -134,10 +119,9 @@ func (a *Accounts) Evict() {
 	a.cache = nil
 }
 
-// snapshotFor combines every account into one balance anchored at the
-// latest as_of month among them, shifted forward one month (see
-// AccountSnapshot.OpensMonth). ok is false when the file has no account
-// with a parseable date, which callers treat as "no balance layer at all".
+// snapshotFor combines every account into one balance anchored at the latest
+// as_of, shifted forward a month (see AccountSnapshot.OpensMonth). ok is false
+// when no account has a parseable date, meaning no balance layer at all.
 func snapshotFor(af accountsdata.AccountsFile) (AccountSnapshot, bool) {
 	var snap AccountSnapshot
 	found := false
@@ -177,17 +161,13 @@ func (a *Accounts) Snapshot(ctx context.Context) (AccountSnapshot, bool) {
 	return snapshotFor(af)
 }
 
-// maxRollForwardMonths is a guard against a mistyped year, NOT a staleness
-// policy. However long you've gone without reading your bank, the balance
-// is still carried and still shown — the 40-day note (see staleAfterDays)
-// is what says you're overdue, and the extra per-month arithmetic that
-// carrying costs is not a reason to withhold the figure.
+// maxRollForwardMonths guards against a mistyped year, and is NOT a staleness
+// policy — however long you've gone without reading your bank, the balance is
+// still carried and shown; staleAfterDays is what says you're overdue.
 //
-// A typo like "1999-07-31" is a different matter: the loop below spans one
-// iteration per month, and each new calendar year it crosses pulls that
-// year's Toggl report and holiday list, so a century-wide span would fan
-// out into hundreds of external API calls. Ten years is far past any
-// balance anyone means to roll forward.
+// A typo like "1999-07-31" is different: each calendar year the loop crosses
+// pulls that year's Toggl report and holiday list, so a century-wide span fans
+// out into hundreds of API calls.
 const maxRollForwardMonths = 120
 
 // privateOpeningCents is the balance carried forward to the START of viewed:
@@ -202,9 +182,8 @@ func (t *Tracker) privateOpeningCents(ctx context.Context, snap AccountSnapshot,
 	}
 
 	opening := snap.Cents
-	// Each completed month between the snapshot and the viewed month moves
-	// the balance; the viewed month itself is not applied here, since this
-	// is its OPENING figure — Figures.BalanceCents closes it.
+	// The viewed month itself is not applied: this is its OPENING figure, and
+	// Figures.BalanceCents closes it.
 	for m := snap.OpensMonth; m.ordinal() < viewed.ordinal(); m = m.addMonths(1) {
 		delta, err := t.monthBalanceDelta(ctx, m, now, rateCents)
 		if err != nil {
@@ -215,10 +194,9 @@ func (t *Tracker) privateOpeningCents(ctx context.Context, snap AccountSnapshot,
 	return opening, nil
 }
 
-// monthBalanceDelta is what month m adds to (or takes from) the private
-// balance: the net income that lands in m minus the private expenses paid
-// in m — the same two figures the Expenses panel shows for m, so browsing
-// to that month and reading its Balance reproduces this arithmetic exactly.
+// monthBalanceDelta is m's net income minus its private expenses — the same two
+// figures the Expenses panel shows for m, so browsing there and reading its
+// Balance reproduces this arithmetic exactly.
 func (t *Tracker) monthBalanceDelta(ctx context.Context, m yearMonth, now time.Time, rateCents int) (int, error) {
 	bv, err := t.Budget.ForMonth(ctx, m.Year, m.Month, now)
 	if err != nil {

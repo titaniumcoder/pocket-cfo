@@ -58,6 +58,14 @@ type breakerState struct {
 
 const togglBreakerThreshold = 3
 
+// togglFetchTimeout bounds a cache fill, which outlives the caller that
+// started it (see getCached). Generous, because the year-wide detailed report
+// genuinely is slow and finishing it late still fills the cache for the next
+// reader; bounded, so an abandoned fetch cannot linger indefinitely. The
+// single-flight and the circuit breaker together cap how many can ever be
+// running at once.
+var togglFetchTimeout = 2 * time.Minute
+
 // togglBreakerCooldown is how long a key is left alone after the threshold is
 // reached. A variable only so tests need not wait it out.
 var togglBreakerCooldown = time.Minute
@@ -85,7 +93,15 @@ type cacheEntry struct {
 // shows the reader (see Tracker.compute's TogglStaleNote). The alternative —
 // propagating the error — blanks the whole Income panel over one slow request
 // to an API that times out routinely.
-func (t *Toggl) getCached(ctx context.Context, key string, start, end time.Time, fn func() (any, error)) (any, error) {
+//
+// fn runs under a context detached from ctx (see togglFetchTimeout), not under
+// ctx itself. A cache fill is shared: every waiter on this key gets its result,
+// so it must not die because the one caller that happened to trigger it walked
+// away. ctx still governs how long *this* caller waits — it just no longer
+// decides how long the fetch lives. That is what lets a page give up after a
+// few seconds, render a "still loading" state, and find the answer waiting on
+// the next refresh instead of having killed it on the way out.
+func (t *Toggl) getCached(ctx context.Context, key string, start, end time.Time, fn func(context.Context) (any, error)) (any, error) {
 	t.mu.Lock()
 	cached, hit := t.cache[key]
 	if hit && !cached.stale {
@@ -102,35 +118,48 @@ func (t *Toggl) getCached(ctx context.Context, key string, start, end time.Time,
 	// One fetch per key: N concurrent readers of the same year would
 	// otherwise fire N identical year-wide reports at an API that is already
 	// the slow part.
-	if call, ok := t.inflight[key]; ok {
-		t.mu.Unlock()
-		log.Printf("toggl: %s — waiting on the fetch already in flight", key)
-		select {
-		case <-call.done:
-		case <-ctx.Done():
-			// The leader can be the background refresher, which has a much
-			// longer deadline than a page request and keeps running after
-			// this returns. Waiting it out would hand the caller's whole
-			// budget to someone else's fetch, so give up on our own terms
-			// and let the refresher finish in its own time.
-			log.Printf("toggl: %s — gave up waiting on the in-flight fetch", key)
-			return staleOr(key, cached, hit, ctx.Err())
+	call, running := t.inflight[key]
+	if !running {
+		call = &fetchCall{done: make(chan struct{})}
+		if t.inflight == nil {
+			t.inflight = map[string]*fetchCall{}
 		}
-		if call.err != nil {
-			return staleOr(key, cached, hit, call.err)
-		}
-		return call.val, nil
+		t.inflight[key] = call
 	}
-	call := &fetchCall{done: make(chan struct{})}
-	if t.inflight == nil {
-		t.inflight = map[string]*fetchCall{}
-	}
-	t.inflight[key] = call
 	t.mu.Unlock()
 
+	// The fetch always runs on its own goroutine, even for the caller that
+	// started it, so that *every* caller waits on its own deadline rather than
+	// the fetch's. Running it inline for the starter would mean the request
+	// unlucky enough to arrive first silently waited out the whole detached
+	// timeout while everyone behind it got to leave early.
+	if !running {
+		go t.fill(ctx, key, start, end, fn, call)
+	} else {
+		log.Printf("toggl: %s — waiting on the fetch already in flight", key)
+	}
+
+	select {
+	case <-call.done:
+	case <-ctx.Done():
+		log.Printf("toggl: %s — gave up waiting; the fetch continues", key)
+		return staleOr(key, cached, hit, ctx.Err())
+	}
+	if call.err != nil {
+		return staleOr(key, cached, hit, call.err)
+	}
+	return call.val, nil
+}
+
+// fill performs the fetch and publishes it to everyone waiting on call. It
+// outlives whichever caller triggered it (see getCached) and is bounded only
+// by togglFetchTimeout.
+func (t *Toggl) fill(ctx context.Context, key string, start, end time.Time, fn func(context.Context) (any, error), call *fetchCall) {
 	log.Printf("toggl: %s — fetching…", key)
 	t0 := time.Now()
-	val, err := fn()
+	fetchCtx, cancelFetch := context.WithTimeout(context.WithoutCancel(ctx), togglFetchTimeout)
+	defer cancelFetch()
+	val, err := fn(fetchCtx)
 	elapsed := time.Since(t0).Round(time.Millisecond)
 
 	// The result is published to waiters and the shared maps under one
@@ -154,10 +183,9 @@ func (t *Toggl) getCached(ctx context.Context, key string, start, end time.Time,
 
 	if err != nil {
 		log.Printf("toggl: %s — failed after %s: %v", key, elapsed, err)
-		return staleOr(key, cached, hit, err)
+		return
 	}
 	log.Printf("toggl: %s — fetched in %s", key, elapsed)
-	return val, nil
 }
 
 // staleOr returns the previous value for key when there is one, and err
@@ -238,6 +266,24 @@ func (t *Toggl) markStale(key string) {
 		e.stale = true
 		t.cache[key] = e
 	}
+}
+
+// YearPending reports that a fetch for the year is in flight and there is
+// nothing cached yet — the page has no figures to show but something is
+// already being done about it, which is a different thing to tell the reader
+// than a failure. Distinguished structurally rather than by inspecting the
+// error, since a deadline can arrive by several routes and only this answers
+// the question that matters: is waiting going to help?
+func (t *Toggl) YearPending(year int) bool {
+	if t == nil {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	key := t.yearKey(year)
+	_, fetching := t.inflight[key]
+	_, cached := t.cache[key]
+	return fetching && !cached
 }
 
 // YearStatus reports when the detailed report for the given year was last
@@ -382,8 +428,8 @@ func (t *Toggl) Year(ctx context.Context, year int) (*YearData, error) {
 	}
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, time.UTC)
 	end := time.Date(year, time.December, 31, 0, 0, 0, 0, time.UTC)
-	v, err := t.getCached(ctx, t.yearKey(year), start, end, func() (any, error) {
-		return t.fetchYear(ctx, start, end)
+	v, err := t.getCached(ctx, t.yearKey(year), start, end, func(fetchCtx context.Context) (any, error) {
+		return t.fetchYear(fetchCtx, start, end)
 	})
 	if err != nil {
 		return nil, err
@@ -450,8 +496,8 @@ func (t *Toggl) Projects(ctx context.Context) (map[int]Project, error) {
 	if t == nil {
 		return map[int]Project{}, nil
 	}
-	v, err := t.getCached(ctx, "projects", time.Time{}, time.Time{}, func() (any, error) {
-		return t.fetchProjects(ctx)
+	v, err := t.getCached(ctx, "projects", time.Time{}, time.Time{}, func(fetchCtx context.Context) (any, error) {
+		return t.fetchProjects(fetchCtx)
 	})
 	if err != nil {
 		return nil, err
@@ -500,8 +546,8 @@ func (t *Toggl) Workspaces(ctx context.Context) ([]Workspace, error) {
 	if t == nil {
 		return nil, nil
 	}
-	v, err := t.getCached(ctx, "workspaces", time.Time{}, time.Time{}, func() (any, error) {
-		return t.fetchWorkspaces(ctx)
+	v, err := t.getCached(ctx, "workspaces", time.Time{}, time.Time{}, func(fetchCtx context.Context) (any, error) {
+		return t.fetchWorkspaces(fetchCtx)
 	})
 	if err != nil {
 		return nil, err
@@ -549,8 +595,8 @@ func (t *Toggl) Clients(ctx context.Context, workspaceID int) ([]Client, error) 
 		return nil, nil
 	}
 	key := "clients|" + strconv.Itoa(workspaceID)
-	v, err := t.getCached(ctx, key, time.Time{}, time.Time{}, func() (any, error) {
-		return t.fetchClients(ctx, workspaceID)
+	v, err := t.getCached(ctx, key, time.Time{}, time.Time{}, func(fetchCtx context.Context) (any, error) {
+		return t.fetchClients(fetchCtx, workspaceID)
 	})
 	if err != nil {
 		return nil, err

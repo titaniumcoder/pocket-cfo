@@ -2,6 +2,9 @@ package tracker
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -79,7 +82,7 @@ func TestGetCachedFollowerGivesUpOnContext(t *testing.T) {
 	defer close(release)
 
 	go func() {
-		tg.getCached(context.Background(), "k", mar(1), mar(31), func() (any, error) {
+		tg.getCached(context.Background(), "k", mar(1), mar(31), func(context.Context) (any, error) {
 			close(started)
 			<-release
 			return "value", nil
@@ -96,6 +99,70 @@ func TestGetCachedFollowerGivesUpOnContext(t *testing.T) {
 	if elapsed := time.Since(begin); elapsed > 500*time.Millisecond {
 		t.Errorf("follower waited %s — it should give up at its own deadline, not the leader's", elapsed)
 	}
+}
+
+// TestComputeRendersPendingRatherThanWaiting is the cold-start case: nothing
+// cached, a fetch under way, and a reader in front of an empty page. The
+// request must come back promptly with a "still loading" state and an
+// auto-refresh, instead of holding the response open for the slowest call this
+// app makes — which is what made the dashboard feel broken.
+func TestComputeRendersPendingRatherThanWaiting(t *testing.T) {
+	defer withTogglPatience(50 * time.Millisecond)()
+
+	release := make(chan struct{})
+	defer close(release)
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if strings.Contains(r.URL.Path, "/search/time_entries") {
+			select {
+			case <-release:
+			case <-r.Context().Done():
+				return nil, r.Context().Err()
+			}
+		}
+		return jsonResponse(`[]`, nil), nil
+	})
+	client := &http.Client{Transport: rt}
+	trk := &Tracker{
+		Toggl: &Toggl{WorkspaceID: "ws", HTTP: client}, Holidays: &Holidays{HTTP: client},
+		HoursPerDay: 8, Loc: time.UTC, RateCents: 7500, RateCurrency: "EUR",
+	}
+
+	year := time.Now().In(trk.Loc).Year()
+	begin := time.Now()
+	f := trk.ComputeMonth(context.Background(), year, time.March)
+	elapsed := time.Since(begin)
+
+	if !f.TogglPending {
+		t.Error("TogglPending should be set: nothing cached and a fetch is in flight")
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("ComputeMonth took %s — it should give up at togglPatience, not wait out the fetch", elapsed)
+	}
+
+	// The rendered page has to actually ask the browser to come back, or the
+	// reader is left staring at a permanently empty panel.
+	w := httptest.NewRecorder()
+	RenderPage(w, f)
+	body := w.Body.String()
+	if !strings.Contains(body, `http-equiv="refresh"`) {
+		t.Error("a pending page must carry the meta refresh")
+	}
+	if !strings.Contains(body, "Fetching tracked hours from Toggl") {
+		t.Error("a pending page must say what it is waiting for")
+	}
+
+	// And the abandoned fetch must still be running on the shared context, so
+	// the next load finds it — that is what makes the refresh worth doing.
+	if !trk.Toggl.YearPending(year) {
+		t.Error("giving up on the wait must not have cancelled the fetch")
+	}
+}
+
+// withTogglPatience sets the per-request Toggl budget for one test.
+func withTogglPatience(d time.Duration) func() {
+	prev := togglPatience
+	togglPatience = d
+	return func() { togglPatience = prev }
 }
 
 // waitFor polls cond until it holds or the budget runs out. Polling rather

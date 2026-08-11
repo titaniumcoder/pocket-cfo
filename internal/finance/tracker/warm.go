@@ -19,7 +19,29 @@ const (
 	// and it does so off the request path where nobody is watching a
 	// spinner.
 	warmTimeout = 3 * time.Minute
+
+	// pendingRefresh is how many seconds the browser waits before reloading a
+	// page rendered in the pending state. A meta refresh rather than script:
+	// this app ships eight lines of JavaScript in total and this does not
+	// need a ninth. A string because it is concatenated into the template.
+	pendingRefresh = "5"
 )
+
+// togglPatience is how long a page request will wait on Toggl before rendering
+// without it. Short on purpose: the refresher owns keeping the data current,
+// and abandoning the wait no longer abandons the fetch (see Toggl.getCached),
+// so the cost of giving up early is one auto-refresh rather than a lost
+// result. A variable only so tests need not wait it out.
+var togglPatience = 5 * time.Second
+
+// waitBudget caps how long a caller will wait on Toggl, independently of
+// whatever budget the rest of its work has. Every read path that a page
+// request can reach must go through this — a single call left on the raw
+// request context would wait out the whole fetch and undo the point of the
+// short budget everywhere else.
+func waitBudget(parent context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(parent, togglPatience)
+}
 
 // Warm keeps the current calendar year's Toggl data hot in the background, so
 // page requests serve from cache instead of each paying for the fetch

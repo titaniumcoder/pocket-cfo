@@ -18,7 +18,7 @@ func TestGetCachedSingleFlights(t *testing.T) {
 	var calls int
 	var mu sync.Mutex
 
-	fn := func() (any, error) {
+	fn := func(context.Context) (any, error) {
 		mu.Lock()
 		calls++
 		mu.Unlock()
@@ -65,7 +65,7 @@ func TestGetCachedSingleFlightSharesFailure(t *testing.T) {
 	var calls int
 	var mu sync.Mutex
 
-	fn := func() (any, error) {
+	fn := func(context.Context) (any, error) {
 		mu.Lock()
 		calls++
 		mu.Unlock()
@@ -104,7 +104,7 @@ func TestBreakerStopsHammeringAFailingKey(t *testing.T) {
 
 	tg := &Toggl{}
 	calls := 0
-	fn := func() (any, error) { calls++; return nil, errors.New("boom") }
+	fn := func(context.Context) (any, error) { calls++; return nil, errors.New("boom") }
 
 	for i := range togglBreakerThreshold {
 		if _, err := tg.getCached(context.Background(), "k", mar(1), mar(31), fn); err == nil {
@@ -134,7 +134,7 @@ func TestBreakerServesStaleWhileOpen(t *testing.T) {
 
 	tg := &Toggl{}
 	fail := false
-	fn := func() (any, error) {
+	fn := func(context.Context) (any, error) {
 		if fail {
 			return nil, errors.New("boom")
 		}
@@ -170,7 +170,7 @@ func TestReloadClearsTheBreaker(t *testing.T) {
 
 	tg := &Toggl{}
 	calls := 0
-	fn := func() (any, error) { calls++; return nil, errors.New("boom") }
+	fn := func(context.Context) (any, error) { calls++; return nil, errors.New("boom") }
 
 	for range togglBreakerThreshold {
 		tg.getCached(context.Background(), "k", mar(1), mar(31), fn)

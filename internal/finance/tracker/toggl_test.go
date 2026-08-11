@@ -14,7 +14,7 @@ func mar(day int) time.Time {
 func TestGetCachedCachesForever(t *testing.T) {
 	tg := &Toggl{}
 	calls := 0
-	fn := func() (any, error) { calls++; return calls, nil }
+	fn := func(context.Context) (any, error) { calls++; return calls, nil }
 
 	for i := 0; i < 3; i++ {
 		v, err := tg.getCached(context.Background(), "k", mar(1), mar(31), fn)
@@ -33,7 +33,7 @@ func TestGetCachedCachesForever(t *testing.T) {
 func TestGetCachedDoesNotCacheErrors(t *testing.T) {
 	tg := &Toggl{}
 	calls := 0
-	fn := func() (any, error) { calls++; return nil, errors.New("boom") }
+	fn := func(context.Context) (any, error) { calls++; return nil, errors.New("boom") }
 
 	if _, err := tg.getCached(context.Background(), "k", mar(1), mar(31), fn); err == nil {
 		t.Error("expected error")
@@ -55,7 +55,7 @@ func TestGetCachedServesStaleOnRefreshFailure(t *testing.T) {
 	tg := &Toggl{}
 	fail := false
 	calls := 0
-	fn := func() (any, error) {
+	fn := func(context.Context) (any, error) {
 		calls++
 		if fail {
 			return nil, errors.New("boom")
@@ -107,9 +107,9 @@ func (t *Toggl) status(key string) (time.Time, bool) {
 
 func TestEvictRangeIntersecting(t *testing.T) {
 	tg := &Toggl{}
-	march := func() (any, error) { return "march", nil }
-	jan := func() (any, error) { return "jan", nil }
-	projects := func() (any, error) { return "projects", nil }
+	march := func(context.Context) (any, error) { return "march", nil }
+	jan := func(context.Context) (any, error) { return "jan", nil }
+	projects := func(context.Context) (any, error) { return "projects", nil }
 
 	tg.getCached(context.Background(), "march", mar(1), mar(31), march)
 	tg.getCached(context.Background(), "jan", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC), jan)
@@ -136,7 +136,7 @@ func TestYearStatus(t *testing.T) {
 	if at, stale := tg.YearStatus(2026); !at.IsZero() || stale {
 		t.Errorf("uncached year: %v/%v, want zero time and not stale", at, stale)
 	}
-	tg.getCached(context.Background(), tg.yearKey(2026), mar(1), mar(31), func() (any, error) {
+	tg.getCached(context.Background(), tg.yearKey(2026), mar(1), mar(31), func(context.Context) (any, error) {
 		return &YearData{}, nil
 	})
 	if at, stale := tg.YearStatus(2026); at.IsZero() || stale {

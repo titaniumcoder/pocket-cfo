@@ -45,6 +45,13 @@ func RenderEmailSent(w http.ResponseWriter) {
 	tmpl.ExecuteTemplate(w, "emailSent", nil)
 }
 
+// RenderSpending renders the admin-only spending drill-down. It is the only
+// template that receives transaction descriptions; see SpendingView.
+func RenderSpending(w http.ResponseWriter, v SpendingView) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	tmpl.ExecuteTemplate(w, "spending", v)
+}
+
 // RenderPage renders the full dashboard page — chrome, navigation, and the
 // computed ledger — in one response. f must already be fully computed (see
 // Tracker.ComputeMonth/ComputeYear); there's no separate placeholder/loading
@@ -111,6 +118,98 @@ var templates = `
   <p>If that address is authorized, a login link is on its way — check your inbox.</p>
   <p>The link expires shortly, so use it soon.</p>
   <p><a class="link" href="/">&larr; Back</a></p>
+</main>
+</body>
+</html>{{end}}
+
+{{define "spending"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PocketCFO — Spending {{.Month}}</title>
+` + favicon + `
+<link rel="stylesheet" href="/invoicing/static/app.css">
+</head>
+<body>
+<main>
+  <h1 class="print-title">PocketCFO — Spending {{.Month}}</h1>
+  {{template "sitehead" .Header}}
+
+  <section class="panel">
+    <div class="panel-title-row">
+      <h2 class="panel-title">Spending &mdash; {{.Month}}</h2>
+      <a class="period-link no-print" href="{{.BackURL}}">&larr; Back to {{.Month}}</a>
+    </div>
+
+    {{if .Err}}<p class="error">{{.Err}}</p>{{end}}
+
+    {{if not .Present}}
+    <p class="muted">No bank statement has been reconciled for {{.Month}} yet.</p>
+    {{else}}
+
+    {{if .Note}}<div class="row"><span class="stale-note">{{.Note}}</span></div>{{end}}
+
+    <h3>Coverage</h3>
+    <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Account</th><th class="col-secondary">From</th><th class="col-secondary">To</th><th class="col-secondary">Imported</th></tr></thead>
+      <tbody>
+        {{range .Coverage}}<tr><td>{{.Account}}</td><td class="col-secondary">{{.From}}</td><td class="col-secondary">{{.To}}</td><td class="col-secondary">{{.ImportedAt}}</td></tr>{{end}}
+      </tbody>
+    </table>
+    </div>
+
+    {{range .Groups}}
+    <h3>{{.Name}}{{if .Company}} <small>(company)</small>{{end}}</h3>
+    {{range .Categories}}
+    <div class="cat-block" id="cat-{{.ID}}">
+      <h4>{{.Name}}{{if .Mistimed}} <span class="mistimed-inline">&mdash; {{.Note}}</span>{{end}}</h4>
+      <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th class="col-secondary">Date</th><th>Description</th><th class="col-secondary">Account</th><th class="num">Amount</th></tr></thead>
+        <tbody>
+          {{range .Transactions}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td class="col-secondary">{{.Account}}</td><td class="num">{{eur .Cents}}</td></tr>{{end}}
+        </tbody>
+        <tfoot>
+          <tr><td class="col-secondary"></td><td>Actual</td><td class="col-secondary"></td><td class="num">{{eur .ActualCents}}</td></tr>
+          <tr><td class="col-secondary"></td><td>Planned</td><td class="col-secondary"></td><td class="num">{{eur .PlannedCents}}</td></tr>
+          <tr><td class="col-secondary"></td><td>Variance</td><td class="col-secondary"></td><td class="num{{if gt .VarianceCent 0}} neg{{end}}">{{eur .VarianceCent}}</td></tr>
+        </tfoot>
+      </table>
+      </div>
+    </div>
+    {{end}}
+    {{end}}
+
+    {{if .Unmatched}}
+    <h3>Not in this month&rsquo;s plan</h3>
+    <p class="muted">These cite a budget category that has no row this month &mdash; renamed, removed, or a one-off whose month has passed.</p>
+    <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th class="col-secondary">Date</th><th>Description</th><th>Category</th><th class="num">Amount</th></tr></thead>
+      <tbody>
+        {{range .Unmatched}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td>{{.Category}}</td><td class="num">{{eur .Cents}}</td></tr>{{end}}
+      </tbody>
+    </table>
+    </div>
+    {{end}}
+
+    <h3>Not budget expenses</h3>
+    <p class="muted">Every statement line deliberately left out of the figures, with the reason &mdash; so this page reconciles to the whole statement and a mis-ignored line is visible.</p>
+    {{if .Ignored}}
+    <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th class="col-secondary">Date</th><th>Description</th><th>Reason</th><th class="num">Amount</th></tr></thead>
+      <tbody>
+        {{range .Ignored}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td>{{.Reason}}</td><td class="num">{{eur .Cents}}</td></tr>{{end}}
+      </tbody>
+    </table>
+    </div>
+    {{else}}<p class="muted">None.</p>{{end}}
+
+    {{end}}
+  </section>
 </main>
 </body>
 </html>{{end}}

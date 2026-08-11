@@ -33,9 +33,14 @@ conventions established during scaffolding that aren't obvious from the code its
   reader should care, and the same rationale repeated at three call sites.
   Prefer one tight paragraph to five; a doc comment that has to be scrolled is
   usually explaining a design that should have been named better instead.
-- **`internal/schema/<model>/` holds generated code only.** `go generate ./...`
-  (or `make generate`) regenerates it from `schemas/*.json` via `go-jsonschema` — never
-  hand-edit files there.
+- **Generated types are build output, not source, and are not checked in.**
+  `go generate ./...` (or `make generate`) regenerates them from `schemas/*.json` and
+  `internal/finance/data/*.schema.json` via `go-jsonschema`; every one is gitignored, so
+  **a fresh clone does not compile until you run it.** CI, the Dockerfile and the release
+  workflow each run it as their first step. The generated file in
+  `internal/schema/<model>/` is the one named after its package (`invoice/invoice.go`) —
+  never hand-edit it. Anything else in that directory (`invoice/helpers.go` and the
+  tests) is ordinary hand-written code and is checked in normally.
 - **Build/commit ritual.** See "Agentic execution workflow" below.
 
 ## Releases

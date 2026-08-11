@@ -23,6 +23,7 @@ type Tracker struct {
 	Holidays     *Holidays
 	Budget       *Budget
 	Accounts     *Accounts
+	Actuals      *Actuals
 	HoursPerDay  float64
 	Loc          *time.Location
 	Personal     PersonalParams
@@ -643,6 +644,7 @@ func (t *Tracker) EvictMonth(year int, month time.Month) {
 		t.Budget.Evict()
 	}
 	t.Accounts.Evict()
+	t.Actuals.Evict()
 }
 
 // EvictYear backs the Reload button in year view. It also evicts the funding
@@ -656,6 +658,7 @@ func (t *Tracker) EvictYear(year int) {
 		t.Budget.Evict()
 	}
 	t.Accounts.Evict()
+	t.Actuals.Evict()
 }
 
 // fillMonthNav populates navigation for month view.

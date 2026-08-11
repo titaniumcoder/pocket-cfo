@@ -202,6 +202,7 @@ var templates = `
   <section class="panel income-panel">
     <h2 class="panel-title">Income</h2>
     <div class="ledger">
+      {{if .TogglStaleNote}}<div class="row"><span class="stale-note">{{.TogglStaleNote}}</span></div>{{end}}
       {{if or .TrackedErr .Tracked}}
       <h2>Tracked</h2>
       {{if .TrackedErr}}<div class="row"><span class="error">{{.TrackedErr}}</span></div>

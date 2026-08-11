@@ -21,8 +21,12 @@ import (
 // counts billable entries.
 //
 // Responses are cached in memory indefinitely to stay under Toggl's rate limit.
-// The cache is only cleared explicitly via EvictRange — the page's Reload button,
-// which drops the currently viewed month or year.
+// An entry is only ever invalidated explicitly, via EvictRange — the page's
+// Reload button, which marks the currently viewed month or year stale. Stale
+// means "refetch on next use", not "forget": the last good value is kept as a
+// fallback, because Toggl's detailed report is slow enough to time out
+// routinely and an out-of-date figure with an honest timestamp is worth far
+// more to the reader than an empty Income panel. See getCached.
 type Toggl struct {
 	Token       string
 	WorkspaceID string
@@ -36,21 +40,34 @@ type Toggl struct {
 type cacheEntry struct {
 	val        any
 	start, end time.Time // date range this entry covers (zero = not range-scoped)
-	fetchedAt  time.Time
+	fetchedAt  time.Time // when val was last fetched successfully
+	// stale marks an entry whose value is no longer trusted to be current:
+	// EvictRange set it (the Reload link), or a refresh failed. Either way
+	// val is retained — see getCached, which refetches a stale entry and
+	// falls back to val when that refetch fails.
+	stale bool
 }
 
 // getCached returns the cached value for key, or computes it via fn and stores it
 // forever, tagged with the date range it covers (zero start/end for entries that
 // aren't range-scoped, such as the project list). Cache hits, fetch starts, and
 // fetch outcomes (with timing) are logged to stdout for container log visibility.
+//
+// A fetch failure is only an error when there is nothing cached to fall back
+// on. With a previous value in hand this returns that value and no error,
+// leaving the entry stale so the next caller tries again; fetchedAt keeps
+// pointing at when the data was genuinely current, which is what the dashboard
+// shows the reader (see Tracker.compute's TogglStaleNote). The alternative —
+// propagating the error — blanks the whole Income panel over one slow request
+// to an API that times out routinely.
 func (t *Toggl) getCached(key string, start, end time.Time, fn func() (any, error)) (any, error) {
 	t.mu.Lock()
-	if e, ok := t.cache[key]; ok {
-		t.mu.Unlock()
-		log.Printf("toggl: %s — served from cache", key)
-		return e.val, nil
-	}
+	cached, hit := t.cache[key]
 	t.mu.Unlock()
+	if hit && !cached.stale {
+		log.Printf("toggl: %s — served from cache", key)
+		return cached.val, nil
+	}
 
 	log.Printf("toggl: %s — fetching…", key)
 	t0 := time.Now()
@@ -58,7 +75,11 @@ func (t *Toggl) getCached(key string, start, end time.Time, fn func() (any, erro
 	elapsed := time.Since(t0).Round(time.Millisecond)
 	if err != nil {
 		log.Printf("toggl: %s — failed after %s: %v", key, elapsed, err)
-		return nil, err
+		if !hit {
+			return nil, err
+		}
+		log.Printf("toggl: %s — serving stale data fetched %s", key, cached.fetchedAt.Format(time.RFC3339))
+		return cached.val, nil
 	}
 	log.Printf("toggl: %s — fetched in %s", key, elapsed)
 
@@ -71,10 +92,17 @@ func (t *Toggl) getCached(key string, start, end time.Time, fn func() (any, erro
 	return val, nil
 }
 
-// EvictRange drops cached responses whose date range intersects [start, end].
-// Entries that aren't range-scoped (e.g. the project list) are kept. A nil
-// Toggl (the tracked-hours layer disabled by config — see Tracker) is a
-// no-op, same convention as the other methods below.
+// EvictRange marks cached responses whose date range intersects [start, end]
+// stale, so the next read refetches them. Entries that aren't range-scoped
+// (e.g. the project list) are left alone. A nil Toggl (the tracked-hours layer
+// disabled by config — see Tracker) is a no-op, same convention as the other
+// methods below.
+//
+// Deliberately a mark rather than a delete: deleting would make a failed
+// refetch indistinguishable from "never fetched", which is precisely the case
+// where the previous figures are still the best answer available. Entries are
+// therefore never removed, which is fine — the key space is one entry per year
+// plus one project list.
 func (t *Toggl) EvictRange(start, end time.Time) {
 	if t == nil {
 		return
@@ -86,23 +114,26 @@ func (t *Toggl) EvictRange(start, end time.Time) {
 			continue
 		}
 		if !e.end.Before(start) && !e.start.After(end) {
-			delete(t.cache, k)
+			e.stale = true
+			t.cache[k] = e
 		}
 	}
 }
 
-// YearFetchedAt reports when the detailed report for the given year was fetched,
-// or the zero time if it isn't cached. A nil Toggl always reports the zero time.
-func (t *Toggl) YearFetchedAt(year int) time.Time {
+// YearStatus reports when the detailed report for the given year was last
+// fetched successfully, and whether that value is currently stale — awaiting a
+// refetch, or standing in for one that failed. An uncached year, or a nil Toggl,
+// reports the zero time and false.
+func (t *Toggl) YearStatus(year int) (fetchedAt time.Time, stale bool) {
 	if t == nil {
-		return time.Time{}
+		return time.Time{}, false
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if e, ok := t.cache[t.yearKey(year)]; ok {
-		return e.fetchedAt
+		return e.fetchedAt, e.stale
 	}
-	return time.Time{}
+	return time.Time{}, false
 }
 
 func (t *Toggl) yearKey(year int) string {

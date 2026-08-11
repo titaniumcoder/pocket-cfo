@@ -69,6 +69,14 @@ func TestFillYearNav(t *testing.T) {
 // fullTracker builds a Tracker whose Toggl + Holidays sources are backed by a
 // fake returning one billable project, one named project, and one holiday.
 func fullTracker() *Tracker {
+	trk, _ := fullTrackerWithBackend()
+	return trk
+}
+
+// fullTrackerWithBackend is fullTracker plus a handle on the fake backend, for
+// tests that need to make Toggl start failing partway through (b.failDetailed
+// is read per request, so it can be flipped after the tracker is built).
+func fullTrackerWithBackend() (*Tracker, *fakeBackend) {
 	row := `[{"project_id":1,"hourly_rate_in_cents":7500,"billable_amount_in_cents":150000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"2026-03-02T09:00:00+00:00"}]}]`
 	b := &fakeBackend{
 		detailed: func(page int) (string, string, string) { return row, "", "" },
@@ -88,7 +96,7 @@ func fullTracker() *Tracker {
 			EmployerRate: 0.1892, EmployeeRate: 0.1378,
 			MaxInsurableMonthly: 2112, IncomeTaxRate: 0.10,
 		},
-	}
+	}, b
 }
 
 func TestComputeMonthHappyPath(t *testing.T) {
@@ -620,22 +628,64 @@ func TestComputeSpendableOnlySetWhenHasHours(t *testing.T) {
 func TestEvictMonthAndYear(t *testing.T) {
 	trk := fullTracker()
 	// A month compute now fetches (and caches) the whole year.
-	trk.ComputeMonth(context.Background(), 2026, time.March)
-	if trk.Toggl.YearFetchedAt(2026).IsZero() {
-		t.Fatal("2026 should be cached after a month compute")
+	at, stale := trk.Toggl.YearStatus(2026)
+	if !at.IsZero() {
+		t.Fatal("2026 should not be cached before any compute")
 	}
-	// Evicting any month in the year drops the shared yearly cache.
+	trk.ComputeMonth(context.Background(), 2026, time.March)
+	if at, stale = trk.Toggl.YearStatus(2026); at.IsZero() || stale {
+		t.Fatalf("after a month compute: %v/%v, want cached and fresh", at, stale)
+	}
+	// Evicting any month in the year invalidates the shared yearly cache.
+	// The entry survives as a stale fallback (see Toggl.EvictRange) — what
+	// matters is that the next read refetches.
 	trk.EvictMonth(2026, time.March)
-	if !trk.Toggl.YearFetchedAt(2026).IsZero() {
-		t.Error("EvictMonth should drop the 2026 cache")
+	if _, stale = trk.Toggl.YearStatus(2026); !stale {
+		t.Error("EvictMonth should mark the 2026 cache stale")
 	}
 
 	trk.ComputeYear(context.Background(), 2026)
-	if trk.Toggl.YearFetchedAt(2026).IsZero() {
-		t.Fatal("2026 should be cached after compute")
+	if at, stale = trk.Toggl.YearStatus(2026); at.IsZero() || stale {
+		t.Fatalf("after a year compute: %v/%v, want cached and fresh", at, stale)
 	}
 	trk.EvictYear(2026)
-	if !trk.Toggl.YearFetchedAt(2026).IsZero() {
-		t.Error("EvictYear should drop the 2026 cache")
+	if _, stale = trk.Toggl.YearStatus(2026); !stale {
+		t.Error("EvictYear should mark the 2026 cache stale")
+	}
+}
+
+// TestComputeServesStaleTogglRatherThanBlanking is the user-visible half of the
+// stale mechanism: when Toggl stops answering, the page must still show the
+// tracked hours it last knew about, and must say so. Reporting TrackedErr
+// instead — the old behaviour — turned every transient timeout into an empty
+// Income panel.
+func TestComputeServesStaleTogglRatherThanBlanking(t *testing.T) {
+	trk, backend := fullTrackerWithBackend()
+
+	fresh := trk.ComputeMonth(context.Background(), 2026, time.March)
+	if fresh.TogglStaleNote != "" {
+		t.Fatalf("a healthy fetch must not be flagged stale: %q", fresh.TogglStaleNote)
+	}
+	if len(fresh.Tracked) != 1 {
+		t.Fatalf("tracked rows = %+v, want 1", fresh.Tracked)
+	}
+
+	// Reload, then Toggl starts failing.
+	trk.EvictMonth(2026, time.March)
+	backend.failDetailed = http.StatusInternalServerError
+
+	stale := trk.ComputeMonth(context.Background(), 2026, time.March)
+	if stale.TrackedErr != "" {
+		t.Errorf("TrackedErr = %q, want empty (the previous figures are still usable)", stale.TrackedErr)
+	}
+	if len(stale.Tracked) != len(fresh.Tracked) || stale.TotalCents != fresh.TotalCents {
+		t.Errorf("stale render = %d rows / %d cents, want the previous %d / %d",
+			len(stale.Tracked), stale.TotalCents, len(fresh.Tracked), fresh.TotalCents)
+	}
+	if stale.TogglStaleNote == "" {
+		t.Error("serving stale figures without saying so is the failure mode this guards against")
+	}
+	if !strings.Contains(stale.TogglStaleNote, stale.LastUpdated) {
+		t.Errorf("stale note %q should name when the data was fetched (%q)", stale.TogglStaleNote, stale.LastUpdated)
 	}
 }

@@ -127,6 +127,15 @@ type Figures struct {
 	MinimalMode      bool
 	MinimalToggleURL string // current month view + ?minimal=toggle
 
+	// TogglStaleNote is set when the tracked-hours figures on this page came
+	// from a cached copy because a refresh failed (see Toggl.getCached).
+	// Distinct from TrackedErr below: an error means there is nothing to
+	// show, this means what's shown is real but out of date. Saying so
+	// matters — the figures look exactly as confident either way, and
+	// silently serving yesterday's numbers is how a stale dashboard gets
+	// trusted.
+	TogglStaleNote string
+
 	// Billable tracked work this month, one row per project+rate (includes
 	// today) — excludes any project+month an issued invoice has already
 	// superseded (see Tracker.Invoiced/invoiceSuppresses).
@@ -357,8 +366,11 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 
 	result.computeFundingBalance(t, ctx, year, start, now, months, rateCents, bv)
 
-	if at := t.Toggl.YearFetchedAt(year); !at.IsZero() {
+	if at, stale := t.Toggl.YearStatus(year); !at.IsZero() {
 		result.LastUpdated = at.In(t.Loc).Format("02 Jan 15:04")
+		if stale {
+			result.TogglStaleNote = "Toggl didn't answer — tracked hours are the last ones fetched, on " + result.LastUpdated + "."
+		}
 	} else {
 		result.LastUpdated = "—"
 	}

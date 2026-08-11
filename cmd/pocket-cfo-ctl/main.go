@@ -32,6 +32,7 @@ var commands = map[string]func([]string) int{
 	"validate":  runValidate,
 	"invoices":  runInvoices,
 	"budget":    runBudget,
+	"actuals":   runActuals,
 }
 
 func main() {
@@ -75,6 +76,8 @@ func runHelp(_ []string) int {
 	fmt.Println("              the invoice files into paid-invoices.json, dropping `annulment`")
 	fmt.Println("  budget      budget ids [dir] [--dry-run] — fill a stable id into every budget.json")
 	fmt.Println("              category that lacks one; idempotent, safe to re-run")
+	fmt.Println("  actuals     actuals validate|status|categories [dir] — check recorded spending;")
+	fmt.Println("              validate --base-ref REF also refuses to let committed data vanish")
 	fmt.Println()
 	fmt.Println("Planned (not yet implemented):")
 	for _, c := range plannedCommands {

@@ -122,12 +122,20 @@ func (b *Budget) Evict() {
 // See categoryRowFor.
 type CategoryRow struct {
 	Name          string
+	CategoryID    string // budget.json id; what a recorded transaction points at
+	PlannedDate   string // the one-off's due month, "2026-10-01"; empty when recurring
 	PlannedCents  int
 	UpcomingCents int    // configured amount, shown ahead of time
 	UpcomingMonth string // e.g. "September 2026"
 	Note          string
 	URL           string // when set, the note renders as a link
 	Overridden    bool
+
+	// Filled by ApplyActuals, never by the budget itself.
+	ActualCents  int
+	HasActual    bool
+	ActualStatus string // "" | under | over | unbudgeted | mistimed
+	ActualNote   string // why a mistimed row is flagged
 }
 
 type LoanRow struct {
@@ -140,6 +148,10 @@ type CategoryGroupView struct {
 	Name         string
 	Rows         []CategoryRow
 	PlannedCents int // sum of Rows' PlannedCents
+
+	ActualCents int // sum of Rows' ActualCents; filled by ApplyActuals
+	HasActual   bool
+	HasMistimed bool // at least one row is charged in the wrong month
 }
 
 // BudgetView is what the dashboard renders, split by group kind. Private is
@@ -355,7 +367,10 @@ func categoryRowFor(c budgetdata.Category, plannedCents int, overridden bool, re
 
 // baseCategoryRow fills in the fields every branch below shares.
 func baseCategoryRow(c budgetdata.Category) CategoryRow {
-	row := CategoryRow{Name: c.Name}
+	row := CategoryRow{Name: c.Name, CategoryID: c.Id}
+	if c.Date != nil {
+		row.PlannedDate = *c.Date
+	}
 	if c.Note != nil {
 		row.Note = *c.Note
 	}

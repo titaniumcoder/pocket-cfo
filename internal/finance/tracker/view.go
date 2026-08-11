@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/titaniumcoder/pocket-cfo/internal/finance/budgetdata"
 	"github.com/titaniumcoder/pocket-cfo/internal/webui"
 )
 
@@ -166,6 +167,20 @@ type Figures struct {
 	PrivateTotalPlannedCents int
 	BudgetErr                string
 
+	// Recorded spending, shown beside the plan and folded into nothing. Every
+	// figure above stays planned-based. ShowActuals is false whenever the
+	// period has no imported file, and the page then renders byte-identically
+	// to one built without this layer at all.
+	ShowActuals           bool
+	ActualsNote           string // coverage caveat; empty once the period is fully read
+	PrivateActualCents    int
+	CompanyActualCents    int
+	PrivateUnmatchedCents int
+	CompanyUnmatchedCents int
+	Mistimed              []MistimedRow
+	ActualsErr            string
+	SpendingDetailURL     string // filled by cmd/pocketcfo for an admin session only
+
 	// The same cascade for the period that funds the viewed one: shifted back
 	// two months, since money earned in M is paid end of M+1 and spendable from
 	// M+2. Never the same period as Personal above. See Tracker.fundingIncome.
@@ -296,6 +311,8 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	}
 
 	bv := result.computeBudget(t, ctx, year, start, now, months)
+
+	result.computeActuals(t, ctx, year, start, now, months, &bv)
 
 	result.computePersonal(t, ctx, year, months, monthlyCompanyCents, bv)
 
@@ -836,4 +853,87 @@ func freeWorkdays(start, today time.Time, holidays, billable map[string]bool) in
 		count++
 	}
 	return count
+}
+
+// computeActuals decorates the already-built budget view with recorded
+// spending. It runs after computeBudget and before computePersonal: the
+// slices are shared, so the decoration is visible downstream, and none of it
+// touches a figure any downstream step reads.
+//
+// Nothing is shown for a period with no imported file, and a failure sets
+// ActualsErr and leaves the layer off — the same per-section degradation as
+// every other *Err field, so one bad month never takes down the page.
+func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, start, now time.Time, months int, bv *BudgetView) {
+	if t.Actuals == nil || f.BudgetErr != "" {
+		return
+	}
+
+	var av ActualsView
+	var err error
+	if months > 1 {
+		// Year view compares whole years or nothing. For the current year
+		// ForYear projects private spend forward from this month, so putting
+		// backward-looking actuals beside it would compare the wrong halves
+		// of the year.
+		if year >= now.Year() {
+			return
+		}
+		av, err = t.Actuals.ForYear(ctx, year)
+	} else {
+		av, err = t.Actuals.ForMonth(ctx, year, start.Month())
+	}
+	if err != nil {
+		f.ActualsErr = err.Error()
+		return
+	}
+	if !av.Present {
+		return
+	}
+
+	// The mistimed check spans the year, so it only applies in month view.
+	var charged map[string][]time.Month
+	if months == 1 {
+		if charged, err = t.Actuals.ChargedMonths(ctx, year); err != nil {
+			f.ActualsErr = err.Error()
+			return
+		}
+	}
+
+	ApplyActuals(bv, av, start.Month(), charged)
+
+	f.ShowActuals = true
+	f.ActualsNote = av.Note
+	f.Mistimed = MistimedRowsOf(*bv)
+	for _, g := range bv.Groups {
+		f.PrivateActualCents += g.ActualCents
+	}
+	for _, g := range bv.CompanyGroups {
+		f.CompanyActualCents += g.ActualCents
+	}
+	f.PrivateUnmatchedCents, f.CompanyUnmatchedCents = UnmatchedCents(*bv, av, t.companyCategoryIDs(ctx))
+	f.PrivateActualCents += f.PrivateUnmatchedCents
+	f.CompanyActualCents += f.CompanyUnmatchedCents
+}
+
+// companyCategoryIDs is the set of category ids in company-kind groups, so
+// unmatched spending lands in the ledger it came from. A failure here is not
+// worth an error: it only means unmatched company money is shown as private.
+func (t *Tracker) companyCategoryIDs(ctx context.Context) map[string]bool {
+	if t.Budget == nil {
+		return nil
+	}
+	bf, err := t.Budget.File(ctx)
+	if err != nil {
+		return nil
+	}
+	out := map[string]bool{}
+	for _, g := range bf.Groups {
+		if g.Kind != budgetdata.GroupKindCompany {
+			continue
+		}
+		for _, c := range g.Categories {
+			out[c.Id] = true
+		}
+	}
+	return out
 }

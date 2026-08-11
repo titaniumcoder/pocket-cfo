@@ -115,18 +115,18 @@ var templates = `
 </body>
 </html>{{end}}
 
-{{define "categoryGroups"}}{{range .}}
+{{define "categoryGroups"}}{{$show := .ShowActuals}}{{$detail := .SpendingDetailURL}}{{range .Groups}}
       <div class="group">
         <div class="group-header" onclick="this.closest('.group').classList.toggle('open')">
           <span class="label">{{.Name}} <span class="chevron">&#9656;</span></span>
-          <span class="amt neg">&minus;{{eur .PlannedCents}}</span>
+          {{if $show}}{{if .HasActual}}<span class="amt act{{if .HasMistimed}} mistimed{{end}}">{{eur .ActualCents}}</span>{{end}}{{end}}<span class="amt neg">&minus;{{eur .PlannedCents}}</span>
         </div>
         <div class="group-rows">
           {{range .Rows}}
           <div class="row{{if .UpcomingMonth}} planned{{end}}{{if .Overridden}} override{{end}}">
             <span class="label">{{.Name}}{{if .Note}} <span class="note">{{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Note}} <svg class="link-icon" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>{{else}}{{.Note}}{{end}}</span>{{end}}</span>
             <span class="mid">{{if .PlannedCents}}{{eur .PlannedCents}}{{else if .UpcomingMonth}}{{eur .UpcomingCents}} ({{.UpcomingMonth}}){{end}}</span>
-            <span class="amt"></span>
+            <span class="amt{{if $show}}{{if .ActualStatus}} {{.ActualStatus}}{{end}}{{end}}">{{if $show}}{{if .HasActual}}{{if $detail}}<a class="act-link" href="{{$detail}}#cat-{{.CategoryID}}">{{eur .ActualCents}}</a>{{else}}{{eur .ActualCents}}{{end}}{{end}}{{if .ActualNote}}<span class="act-note">{{.ActualNote}}</span>{{end}}{{if .PlannedCents}}<span class="plan-m">{{if .HasActual}}of {{end}}{{eur .PlannedCents}}</span>{{end}}{{end}}</span>
           </div>
           {{end}}
         </div>
@@ -245,7 +245,7 @@ var templates = `
       {{end}}
     </div>
 
-    <div class="ledger">
+    <div class="ledger{{if .ShowActuals}} with-actuals{{end}}">
       <h2>Personal income (Bulgaria)</h2>
       {{with .FundingPersonal}}
       {{if .Err}}<div class="row"><span class="error">{{.Err}}</span></div>
@@ -253,12 +253,14 @@ var templates = `
       <div class="row net{{if not $.Invoiced}} gap-below{{end}}"><span class="label">Company income{{if and .FundingLabel (not $.Invoiced)}} <small>(from {{if .FundingURL}}<a class="period-link" href="{{.FundingURL}}">{{.FundingLabel}}</a>{{else}}{{.FundingLabel}}{{end}})</small>{{end}}</span><span class="mid"></span><span class="amt goodamt">{{eur .CompanyIncomeCents}}</span></div>
       {{range $.Invoiced}}<div class="row acct"><span class="label">{{if .URL}}<a href="{{.URL}}">{{.Number}}</a>{{else}}{{.Number}}{{end}} <span class="note">invoiced, usable this month</span></span><span class="mid"></span><span class="amt">{{eur .AmountCents}}</span></div>{{end}}
       {{if $.Invoiced}}<div class="row gap-below"></div>{{end}}
-      {{template "categoryGroups" .CompanyGroups}}
+      {{template "categoryGroups" $.CompanyLedger}}
+      {{if $.ShowActuals}}{{if $.CompanyUnmatchedCents}}<div class="row"><span class="label">Not in this month&rsquo;s plan</span><span class="mid"></span><span class="amt unbudgeted">{{eur $.CompanyUnmatchedCents}}</span></div>{{end}}{{end}}
       <div class="row{{if .CompanyGroups}} gap-above{{end}}"><span class="label">Employer social ({{.EmployerPct}}%)</span><span class="mid"></span><span class="amt neg">&minus;{{eur .EmployerContribCents}}</span></div>
       <div class="row sub"><span class="label">Gross salary</span><span class="mid"></span><span class="amt total">{{eur .GrossSalaryCents}}</span></div>
       <div class="row"><span class="label">Employee social ({{.EmployeePct}}%)</span><span class="mid"></span><span class="amt neg">&minus;{{eur .EmployeeContribCents}}</span></div>
       <div class="row"><span class="label">Income tax ({{.IncomeTaxPct}}%)</span><span class="mid"></span><span class="amt neg">&minus;{{eur .IncomeTaxCents}}</span></div>
       <div class="row net neg"><span class="label">Total company expenses</span><span class="mid"></span><span class="amt neg">&minus;{{eur .CompanyExpensesCents}}</span></div>
+      {{if $.ShowActuals}}<div class="row"><span class="label">Actually spent</span><span class="mid"></span><span class="amt act">{{eur $.CompanyActualCents}}</span></div>{{end}}
       <div class="row net{{if lt .NetIncomeCents 0}} neg{{end}}"><span class="label">Net income</span><span class="mid"></span><span class="amt netamt">{{eur .NetIncomeCents}}</span></div>
       {{end}}
       {{end}}
@@ -271,16 +273,29 @@ var templates = `
       {{end}}
     </div>
 
-    <div class="ledger">
+    {{if .Mistimed}}<div class="ledger">
+      {{range .Mistimed}}<div class="row"><span class="mistimed-note">{{.Name}} &mdash; {{eur .Cents}}, {{.Note}}. Fix the date in budget.json.</span></div>
+      {{end}}
+    </div>{{end}}
+
+    <div class="ledger{{if .ShowActuals}} with-actuals{{end}}">
       {{if .BudgetErr}}<div class="row"><span class="error">{{.BudgetErr}}</span></div>
       {{else}}
-      {{template "categoryGroups" .PrivateGroups}}
+      {{if .ActualsErr}}<div class="row"><span class="error">{{.ActualsErr}}</span></div>{{end}}
+      {{if .ShowActuals}}{{if .ActualsNote}}<div class="row"><span class="stale-note">{{.ActualsNote}}</span></div>{{end}}
+      <div class="row colhead"><span class="label"></span><span class="mid">Planned</span><span class="amt">Actual</span></div>
+      {{end}}
+      {{template "categoryGroups" .PrivateLedger}}
+      {{if .ShowActuals}}{{if .PrivateUnmatchedCents}}
+      <div class="row"><span class="label">Not in this month&rsquo;s plan</span><span class="mid"></span><span class="amt unbudgeted">{{eur .PrivateUnmatchedCents}}</span></div>
+      {{end}}{{end}}
       {{end}}
     </div>
 
     {{if .ShowBalance}}
     <div class="ledger">
       <div class="row net neg"><span class="label">Total private expenses</span><span class="mid"></span><span class="amt neg">&minus;{{eur .PrivateTotalPlannedCents}}</span></div>
+      {{if .ShowActuals}}<div class="row"><span class="label">Actually spent</span><span class="mid"></span><span class="amt act">{{eur .PrivateActualCents}}</span></div>{{end}}
       <div class="row net balance{{if lt .BalanceCents 0}} neg{{end}}"><span class="label">Balance</span><span class="mid"></span><span class="amt netamt">{{eur .BalanceCents}}</span></div>
     </div>
     {{end}}

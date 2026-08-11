@@ -33,9 +33,34 @@ type Toggl struct {
 	ProjectIDs  string // optional comma-separated filter
 	HTTP        *http.Client
 
-	mu    sync.Mutex
-	cache map[string]cacheEntry
+	mu       sync.Mutex
+	cache    map[string]cacheEntry
+	inflight map[string]*fetchCall
+	breaker  map[string]breakerState
 }
+
+// fetchCall is one in-progress fetch that later callers for the same key wait
+// on instead of starting their own. val/err are written once, before done is
+// closed, and only read after — the close is the happens-before edge.
+type fetchCall struct {
+	done chan struct{}
+	val  any
+	err  error
+}
+
+// breakerState tracks consecutive failures per cache key. Once openUntil is in
+// the future no fetch is attempted at all: a Toggl outage otherwise turns every
+// page load into a fresh multi-second timeout, and those pile up.
+type breakerState struct {
+	failures  int
+	openUntil time.Time
+}
+
+const togglBreakerThreshold = 3
+
+// togglBreakerCooldown is how long a key is left alone after the threshold is
+// reached. A variable only so tests need not wait it out.
+var togglBreakerCooldown = time.Minute
 
 type cacheEntry struct {
 	val        any
@@ -63,33 +88,95 @@ type cacheEntry struct {
 func (t *Toggl) getCached(key string, start, end time.Time, fn func() (any, error)) (any, error) {
 	t.mu.Lock()
 	cached, hit := t.cache[key]
-	t.mu.Unlock()
 	if hit && !cached.stale {
+		t.mu.Unlock()
 		log.Printf("toggl: %s — served from cache", key)
 		return cached.val, nil
 	}
+	// Upstream has been failing: don't add another slow request to the pile.
+	if until := t.breaker[key].openUntil; time.Now().Before(until) {
+		t.mu.Unlock()
+		log.Printf("toggl: %s — upstream failing, not retrying before %s", key, until.Format(time.RFC3339))
+		return staleOr(key, cached, hit, fmt.Errorf("toggl: %s: upstream unavailable, not retried", key))
+	}
+	// One fetch per key: N concurrent readers of the same year would
+	// otherwise fire N identical year-wide reports at an API that is already
+	// the slow part.
+	if call, ok := t.inflight[key]; ok {
+		t.mu.Unlock()
+		log.Printf("toggl: %s — waiting on the fetch already in flight", key)
+		<-call.done
+		if call.err != nil {
+			return staleOr(key, cached, hit, call.err)
+		}
+		return call.val, nil
+	}
+	call := &fetchCall{done: make(chan struct{})}
+	if t.inflight == nil {
+		t.inflight = map[string]*fetchCall{}
+	}
+	t.inflight[key] = call
+	t.mu.Unlock()
 
 	log.Printf("toggl: %s — fetching…", key)
 	t0 := time.Now()
 	val, err := fn()
 	elapsed := time.Since(t0).Round(time.Millisecond)
+
+	// The result is published to waiters and the shared maps under one
+	// acquisition, so no caller can observe the key as neither in-flight nor
+	// resolved. close(done) happens after the unlock; waiters read val/err
+	// only after receiving on done, which the close orders for them.
+	t.mu.Lock()
+	delete(t.inflight, key)
+	if err != nil {
+		t.recordFailureLocked(key)
+	} else {
+		delete(t.breaker, key)
+		if t.cache == nil {
+			t.cache = map[string]cacheEntry{}
+		}
+		t.cache[key] = cacheEntry{val: val, start: start, end: end, fetchedAt: time.Now()}
+	}
+	call.val, call.err = val, err
+	t.mu.Unlock()
+	close(call.done)
+
 	if err != nil {
 		log.Printf("toggl: %s — failed after %s: %v", key, elapsed, err)
-		if !hit {
-			return nil, err
-		}
-		log.Printf("toggl: %s — serving stale data fetched %s", key, cached.fetchedAt.Format(time.RFC3339))
-		return cached.val, nil
+		return staleOr(key, cached, hit, err)
 	}
 	log.Printf("toggl: %s — fetched in %s", key, elapsed)
-
-	t.mu.Lock()
-	if t.cache == nil {
-		t.cache = map[string]cacheEntry{}
-	}
-	t.cache[key] = cacheEntry{val: val, start: start, end: end, fetchedAt: time.Now()}
-	t.mu.Unlock()
 	return val, nil
+}
+
+// staleOr returns the previous value for key when there is one, and err
+// otherwise — the single place that decides a failed fetch degrades to old
+// data rather than to nothing.
+func staleOr(key string, cached cacheEntry, hit bool, err error) (any, error) {
+	if !hit {
+		return nil, err
+	}
+	log.Printf("toggl: %s — serving stale data fetched %s", key, cached.fetchedAt.Format(time.RFC3339))
+	return cached.val, nil
+}
+
+// recordFailureLocked counts a failed fetch and opens the breaker once the
+// threshold is reached. Failures are deliberately not reset when it opens: the
+// first attempt after the cooldown is a probe, and if that fails too the
+// breaker reopens immediately rather than granting another three tries.
+// t.mu must be held.
+func (t *Toggl) recordFailureLocked(key string) {
+	if t.breaker == nil {
+		t.breaker = map[string]breakerState{}
+	}
+	b := t.breaker[key]
+	b.failures++
+	if b.failures >= togglBreakerThreshold {
+		b.openUntil = time.Now().Add(togglBreakerCooldown)
+		log.Printf("toggl: %s — %d consecutive failures, pausing fetches for %s", key, b.failures, togglBreakerCooldown)
+	}
+	t.breaker[key] = b
 }
 
 // EvictRange marks cached responses whose date range intersects [start, end]
@@ -118,6 +205,12 @@ func (t *Toggl) EvictRange(start, end time.Time) {
 			t.cache[k] = e
 		}
 	}
+	// Reload is an explicit "try again now", so it also reopens every circuit
+	// breaker — otherwise the button would quietly do nothing for up to a
+	// minute after an outage. Cleared wholesale rather than per matching cache
+	// entry, because the case that matters most is a key whose very first
+	// fetch failed: it has no cache entry for the loop above to match on.
+	clear(t.breaker)
 }
 
 // YearStatus reports when the detailed report for the given year was last

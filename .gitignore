@@ -22,6 +22,7 @@
 # all run it as their first step.
 /internal/finance/budgetdata/generated.go
 /internal/finance/accountsdata/generated.go
+/internal/finance/actualsdata/generated.go
 /internal/schema/issuer/issuer.go
 /internal/schema/recipient/recipient.go
 /internal/schema/invoice/invoice.go

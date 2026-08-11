@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/accountsdata"
+	"github.com/titaniumcoder/pocket-cfo/internal/finance/actualsdata"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/budgetdata"
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/invoice"
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/paidinvoices"
@@ -57,6 +58,7 @@ func runValidate(args []string) int {
 		return json.Unmarshal(b, &af)
 	})
 	problems += validatePaidInvoices(dataDir)
+	problems += validateActuals(dataDir)
 
 	if problems > 0 {
 		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: %d problem(s) found\n", problems)
@@ -64,6 +66,62 @@ func runValidate(args []string) int {
 	}
 	fmt.Println("pocket-cfo-ctl validate: OK")
 	return 0
+}
+
+// validateActuals checks every data/actuals/*.json against its schema and then
+// against budget.json's category ids. Like validatePaidInvoices this can't go
+// through validateFile, because the cross-file check needs the budget too.
+func validateActuals(dataDir string) int {
+	dir := filepath.Join(dataDir, "actuals")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0 // no month has been reconciled yet
+		}
+		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: read %s: %v\n", dir, err)
+		return 1
+	}
+
+	// A missing or broken budget.json is already reported on its own; here it
+	// just means the category cross-check is skipped rather than every
+	// transaction being reported as citing an unknown id.
+	var knownIDs map[string]bool
+	if b, err := os.ReadFile(filepath.Join(dataDir, "budget.json")); err == nil {
+		var bf budgetdata.BudgetFile
+		if json.Unmarshal(b, &bf) == nil {
+			knownIDs = map[string]bool{}
+			for _, g := range bf.Groups {
+				for _, c := range g.Categories {
+					knownIDs[c.Id] = true
+				}
+			}
+		}
+	}
+
+	problems := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		b, err := os.ReadFile(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: read %s: %v\n", path, err)
+			problems++
+			continue
+		}
+		var af actualsdata.ActualsFile
+		if err := json.Unmarshal(b, &af); err != nil {
+			fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: %s: %v\n", path, err)
+			problems++
+			continue
+		}
+		if err := actualsdata.ValidateActuals(af, actualsdata.MonthKeyOf(e.Name()), knownIDs); err != nil {
+			fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: %s: %v\n", path, err)
+			problems++
+		}
+	}
+	return problems
 }
 
 // validatePaidInvoices checks paid-invoices.json structurally and then against

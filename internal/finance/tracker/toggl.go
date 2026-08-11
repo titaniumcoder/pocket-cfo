@@ -85,7 +85,7 @@ type cacheEntry struct {
 // shows the reader (see Tracker.compute's TogglStaleNote). The alternative —
 // propagating the error — blanks the whole Income panel over one slow request
 // to an API that times out routinely.
-func (t *Toggl) getCached(key string, start, end time.Time, fn func() (any, error)) (any, error) {
+func (t *Toggl) getCached(ctx context.Context, key string, start, end time.Time, fn func() (any, error)) (any, error) {
 	t.mu.Lock()
 	cached, hit := t.cache[key]
 	if hit && !cached.stale {
@@ -105,7 +105,17 @@ func (t *Toggl) getCached(key string, start, end time.Time, fn func() (any, erro
 	if call, ok := t.inflight[key]; ok {
 		t.mu.Unlock()
 		log.Printf("toggl: %s — waiting on the fetch already in flight", key)
-		<-call.done
+		select {
+		case <-call.done:
+		case <-ctx.Done():
+			// The leader can be the background refresher, which has a much
+			// longer deadline than a page request and keeps running after
+			// this returns. Waiting it out would hand the caller's whole
+			// budget to someone else's fetch, so give up on our own terms
+			// and let the refresher finish in its own time.
+			log.Printf("toggl: %s — gave up waiting on the in-flight fetch", key)
+			return staleOr(key, cached, hit, ctx.Err())
+		}
 		if call.err != nil {
 			return staleOr(key, cached, hit, call.err)
 		}
@@ -211,6 +221,23 @@ func (t *Toggl) EvictRange(start, end time.Time) {
 	// entry, because the case that matters most is a key whose very first
 	// fetch failed: it has no cache entry for the loop above to match on.
 	clear(t.breaker)
+}
+
+// markStale forces the next read of key to refetch, leaving any circuit
+// breaker alone. This is the background refresher's invalidation, as distinct
+// from EvictRange's: Reload is the reader saying "try again now, ignore the
+// breaker", whereas a scheduled refresh has no business overriding a decision
+// to stop calling a failing API.
+func (t *Toggl) markStale(key string) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if e, ok := t.cache[key]; ok {
+		e.stale = true
+		t.cache[key] = e
+	}
 }
 
 // YearStatus reports when the detailed report for the given year was last
@@ -355,7 +382,7 @@ func (t *Toggl) Year(ctx context.Context, year int) (*YearData, error) {
 	}
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, time.UTC)
 	end := time.Date(year, time.December, 31, 0, 0, 0, 0, time.UTC)
-	v, err := t.getCached(t.yearKey(year), start, end, func() (any, error) {
+	v, err := t.getCached(ctx, t.yearKey(year), start, end, func() (any, error) {
 		return t.fetchYear(ctx, start, end)
 	})
 	if err != nil {
@@ -423,7 +450,7 @@ func (t *Toggl) Projects(ctx context.Context) (map[int]Project, error) {
 	if t == nil {
 		return map[int]Project{}, nil
 	}
-	v, err := t.getCached("projects", time.Time{}, time.Time{}, func() (any, error) {
+	v, err := t.getCached(ctx, "projects", time.Time{}, time.Time{}, func() (any, error) {
 		return t.fetchProjects(ctx)
 	})
 	if err != nil {
@@ -473,7 +500,7 @@ func (t *Toggl) Workspaces(ctx context.Context) ([]Workspace, error) {
 	if t == nil {
 		return nil, nil
 	}
-	v, err := t.getCached("workspaces", time.Time{}, time.Time{}, func() (any, error) {
+	v, err := t.getCached(ctx, "workspaces", time.Time{}, time.Time{}, func() (any, error) {
 		return t.fetchWorkspaces(ctx)
 	})
 	if err != nil {
@@ -522,7 +549,7 @@ func (t *Toggl) Clients(ctx context.Context, workspaceID int) ([]Client, error) 
 		return nil, nil
 	}
 	key := "clients|" + strconv.Itoa(workspaceID)
-	v, err := t.getCached(key, time.Time{}, time.Time{}, func() (any, error) {
+	v, err := t.getCached(ctx, key, time.Time{}, time.Time{}, func() (any, error) {
 		return t.fetchClients(ctx, workspaceID)
 	})
 	if err != nil {

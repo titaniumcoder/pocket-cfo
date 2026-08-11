@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -16,7 +17,7 @@ func TestGetCachedCachesForever(t *testing.T) {
 	fn := func() (any, error) { calls++; return calls, nil }
 
 	for i := 0; i < 3; i++ {
-		v, err := tg.getCached("k", mar(1), mar(31), fn)
+		v, err := tg.getCached(context.Background(), "k", mar(1), mar(31), fn)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -34,10 +35,10 @@ func TestGetCachedDoesNotCacheErrors(t *testing.T) {
 	calls := 0
 	fn := func() (any, error) { calls++; return nil, errors.New("boom") }
 
-	if _, err := tg.getCached("k", mar(1), mar(31), fn); err == nil {
+	if _, err := tg.getCached(context.Background(), "k", mar(1), mar(31), fn); err == nil {
 		t.Error("expected error")
 	}
-	if _, err := tg.getCached("k", mar(1), mar(31), fn); err == nil {
+	if _, err := tg.getCached(context.Background(), "k", mar(1), mar(31), fn); err == nil {
 		t.Error("expected error")
 	}
 	if calls != 2 {
@@ -62,7 +63,7 @@ func TestGetCachedServesStaleOnRefreshFailure(t *testing.T) {
 		return "good", nil
 	}
 
-	if _, err := tg.getCached("k", mar(1), mar(31), fn); err != nil {
+	if _, err := tg.getCached(context.Background(), "k", mar(1), mar(31), fn); err != nil {
 		t.Fatal(err)
 	}
 	if at, stale := tg.status("k"); at.IsZero() || stale {
@@ -72,7 +73,7 @@ func TestGetCachedServesStaleOnRefreshFailure(t *testing.T) {
 	// Reload marks it stale; the refetch behind it fails.
 	tg.EvictRange(mar(10), mar(20))
 	fail = true
-	v, err := tg.getCached("k", mar(1), mar(31), fn)
+	v, err := tg.getCached(context.Background(), "k", mar(1), mar(31), fn)
 	if err != nil {
 		t.Fatalf("a failed refresh with a previous value must not error: %v", err)
 	}
@@ -88,7 +89,7 @@ func TestGetCachedServesStaleOnRefreshFailure(t *testing.T) {
 
 	// Recovering replaces the value and clears the stale flag.
 	fail = false
-	if _, err := tg.getCached("k", mar(1), mar(31), fn); err != nil {
+	if _, err := tg.getCached(context.Background(), "k", mar(1), mar(31), fn); err != nil {
 		t.Fatal(err)
 	}
 	if _, stale := tg.status("k"); stale {
@@ -110,9 +111,9 @@ func TestEvictRangeIntersecting(t *testing.T) {
 	jan := func() (any, error) { return "jan", nil }
 	projects := func() (any, error) { return "projects", nil }
 
-	tg.getCached("march", mar(1), mar(31), march)
-	tg.getCached("jan", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC), jan)
-	tg.getCached("projects", time.Time{}, time.Time{}, projects) // not range-scoped
+	tg.getCached(context.Background(), "march", mar(1), mar(31), march)
+	tg.getCached(context.Background(), "jan", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC), jan)
+	tg.getCached(context.Background(), "projects", time.Time{}, time.Time{}, projects) // not range-scoped
 
 	// Evict a range overlapping March only.
 	tg.EvictRange(mar(10), mar(20))
@@ -135,7 +136,7 @@ func TestYearStatus(t *testing.T) {
 	if at, stale := tg.YearStatus(2026); !at.IsZero() || stale {
 		t.Errorf("uncached year: %v/%v, want zero time and not stale", at, stale)
 	}
-	tg.getCached(tg.yearKey(2026), mar(1), mar(31), func() (any, error) {
+	tg.getCached(context.Background(), tg.yearKey(2026), mar(1), mar(31), func() (any, error) {
 		return &YearData{}, nil
 	})
 	if at, stale := tg.YearStatus(2026); at.IsZero() || stale {

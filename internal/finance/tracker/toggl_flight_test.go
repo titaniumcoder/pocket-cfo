@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"testing"
@@ -33,7 +34,7 @@ func TestGetCachedSingleFlights(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results[i], errs[i] = tg.getCached("k", mar(1), mar(31), fn)
+			results[i], errs[i] = tg.getCached(context.Background(), "k", mar(1), mar(31), fn)
 		}()
 	}
 
@@ -78,7 +79,7 @@ func TestGetCachedSingleFlightSharesFailure(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, errs[i] = tg.getCached("k", mar(1), mar(31), fn)
+			_, errs[i] = tg.getCached(context.Background(), "k", mar(1), mar(31), fn)
 		}()
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -106,7 +107,7 @@ func TestBreakerStopsHammeringAFailingKey(t *testing.T) {
 	fn := func() (any, error) { calls++; return nil, errors.New("boom") }
 
 	for i := range togglBreakerThreshold {
-		if _, err := tg.getCached("k", mar(1), mar(31), fn); err == nil {
+		if _, err := tg.getCached(context.Background(), "k", mar(1), mar(31), fn); err == nil {
 			t.Fatalf("attempt %d: expected an error", i+1)
 		}
 	}
@@ -116,7 +117,7 @@ func TestBreakerStopsHammeringAFailingKey(t *testing.T) {
 
 	// Breaker is open now: further reads must not reach fn at all.
 	for range 5 {
-		if _, err := tg.getCached("k", mar(1), mar(31), fn); err == nil {
+		if _, err := tg.getCached(context.Background(), "k", mar(1), mar(31), fn); err == nil {
 			t.Error("expected an error while the breaker is open")
 		}
 	}
@@ -140,20 +141,20 @@ func TestBreakerServesStaleWhileOpen(t *testing.T) {
 		return "good", nil
 	}
 
-	if _, err := tg.getCached("k", mar(1), mar(31), fn); err != nil {
+	if _, err := tg.getCached(context.Background(), "k", mar(1), mar(31), fn); err != nil {
 		t.Fatal(err)
 	}
 	fail = true
 	for range togglBreakerThreshold {
 		tg.EvictRange(mar(10), mar(20)) // Reload: mark stale, reset the breaker
-		if v, err := tg.getCached("k", mar(1), mar(31), fn); err != nil || v != "good" {
+		if v, err := tg.getCached(context.Background(), "k", mar(1), mar(31), fn); err != nil || v != "good" {
 			t.Fatalf("got %v/%v, want the stale value and no error", v, err)
 		}
 	}
 
 	// Now let the breaker actually open, without a Reload clearing it.
-	tg.getCached("k", mar(1), mar(31), fn)
-	v, err := tg.getCached("k", mar(1), mar(31), fn)
+	tg.getCached(context.Background(), "k", mar(1), mar(31), fn)
+	v, err := tg.getCached(context.Background(), "k", mar(1), mar(31), fn)
 	if err != nil {
 		t.Errorf("open breaker with a cached value must not error: %v", err)
 	}
@@ -172,15 +173,15 @@ func TestReloadClearsTheBreaker(t *testing.T) {
 	fn := func() (any, error) { calls++; return nil, errors.New("boom") }
 
 	for range togglBreakerThreshold {
-		tg.getCached("k", mar(1), mar(31), fn)
+		tg.getCached(context.Background(), "k", mar(1), mar(31), fn)
 	}
-	tg.getCached("k", mar(1), mar(31), fn) // blocked by the open breaker
+	tg.getCached(context.Background(), "k", mar(1), mar(31), fn) // blocked by the open breaker
 	if calls != togglBreakerThreshold {
 		t.Fatalf("fn called %d times, want %d", calls, togglBreakerThreshold)
 	}
 
 	tg.EvictRange(mar(10), mar(20))
-	tg.getCached("k", mar(1), mar(31), fn)
+	tg.getCached(context.Background(), "k", mar(1), mar(31), fn)
 	if calls != togglBreakerThreshold+1 {
 		t.Errorf("fn called %d times after Reload, want %d — Reload must retry immediately", calls, togglBreakerThreshold+1)
 	}

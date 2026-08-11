@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"html/template"
 	"log"
 	"math"
@@ -125,6 +126,15 @@ func main() {
 		infoTmpl:         mustPageTemplate(templatesDir + "/info.html"),
 		emailRequestedAt: map[string]time.Time{},
 	}
+
+	// Keep the current year's Toggl data warm off the request path, so a page
+	// load serves from cache rather than paying for the slowest call this app
+	// makes. Started before the listener: on a scale-to-zero host the first
+	// request arrives moments after boot, and joining a fetch already in
+	// flight beats starting one.
+	warmCtx, stopWarming := context.WithCancel(context.Background())
+	defer stopWarming()
+	go s.tracker.Warm(warmCtx, togglRefreshInterval())
 
 	mux := http.NewServeMux()
 	// Under /invoicing/ (not the bare /static/ this had before the finance

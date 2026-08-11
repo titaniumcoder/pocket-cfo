@@ -4,8 +4,10 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	financeconfig "github.com/titaniumcoder/pocket-cfo/internal/finance/config"
+	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
 
 // dataDir is the one override point for this binary's hand-edited data —
@@ -44,6 +46,25 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// togglRefreshInterval is how often the background refresher re-reads the
+// current year from Toggl (see tracker.Tracker.Warm), overridable via
+// TOGGL_REFRESH_INTERVAL as a Go duration, e.g. "5m". An unparseable or
+// non-positive value falls back to the default with a warning rather than
+// failing startup: a typo here should not take the whole app down over what
+// is a tuning knob.
+func togglRefreshInterval() time.Duration {
+	raw := os.Getenv("TOGGL_REFRESH_INTERVAL")
+	if raw == "" {
+		return tracker.DefaultWarmInterval
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		log.Printf("TOGGL_REFRESH_INTERVAL=%q is not a positive duration; using %s", raw, tracker.DefaultWarmInterval)
+		return tracker.DefaultWarmInterval
+	}
+	return d
 }
 
 type config struct {

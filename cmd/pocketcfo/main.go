@@ -66,7 +66,7 @@ func buildTracker(cfg financeconfig.Config, httpClient *http.Client, budgetDir s
 			Token:       cfg.TogglToken,
 			WorkspaceID: cfg.TogglWorkspace,
 			ProjectIDs:  cfg.TogglProjects,
-			HTTP:        httpClient,
+			HTTP:        togglHTTPClient(httpClient),
 		}
 	}
 	return &tracker.Tracker{
@@ -86,6 +86,30 @@ func buildTracker(cfg financeconfig.Config, httpClient *http.Client, budgetDir s
 			IncomeTaxRate:       cfg.IncomeTaxRate,
 		},
 	}
+}
+
+// togglTimeout is the ceiling for one Toggl API call. Much longer than the
+// shared client's, because the Reports v3 detailed report is by a wide margin
+// the slowest thing this app calls — a year-wide query pages through several
+// POSTs, any one of which can take tens of seconds — while SES and the GitHub
+// OAuth callback want to fail fast. One 15s client for all four was why the
+// detailed report kept dying with "Client.Timeout exceeded while awaiting
+// headers".
+//
+// This only binds where the caller allows it: a page request is still capped
+// by requestTimeout (see finance.go), and a timeout there now degrades to the
+// previous figures rather than an error (see Toggl.getCached). It is the
+// background refresh, which carries its own generous deadline, that actually
+// gets the full budget.
+const togglTimeout = 60 * time.Second
+
+// togglHTTPClient derives the Toggl client from the shared one: same Transport
+// — so a test that injects a fake RoundTripper still reaches Toggl — with only
+// the timeout replaced.
+func togglHTTPClient(shared *http.Client) *http.Client {
+	c := *shared
+	c.Timeout = togglTimeout
+	return &c
 }
 
 func main() {

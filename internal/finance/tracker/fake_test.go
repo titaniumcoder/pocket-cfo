@@ -8,12 +8,18 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestMain silences the external-call logging during tests (it is verified
-// indirectly via behavior; the lines would otherwise flood test output).
+// indirectly via behavior; the lines would otherwise flood test output) and
+// collapses the Toggl retry backoff, which several tests would otherwise pay
+// in real seconds every time they drive a failing endpoint. The retry
+// behaviour itself is asserted by attempt counts (see toggl_retry_test.go),
+// not by elapsed time, so shortening the delay costs no coverage.
 func TestMain(m *testing.M) {
 	log.SetOutput(io.Discard)
+	togglBackoffBase = time.Millisecond
 	os.Exit(m.Run())
 }
 

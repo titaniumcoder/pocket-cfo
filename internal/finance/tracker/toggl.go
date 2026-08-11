@@ -465,17 +465,124 @@ func (t *Toggl) fetchClients(ctx context.Context, workspaceID int) ([]Client, er
 	return out, nil
 }
 
+const (
+	// togglAttempts is how many times one request is tried in total, not how
+	// many times it is retried.
+	togglAttempts   = 3
+	togglBackoffMax = 8 * time.Second
+)
+
+// togglBackoffBase is the first retry delay, doubling from there. A variable
+// rather than a constant purely so the package's own tests can shrink it —
+// otherwise every test that exercises a failing endpoint pays two real sleeps
+// (see TestMain in fake_test.go). Nothing outside tests writes it.
+var togglBackoffBase = 500 * time.Millisecond
+
+// do performs one Toggl API call, retrying a transient failure up to
+// togglAttempts times with exponential backoff.
+//
+// Worth retrying: a transport error (the detailed report times out often
+// enough that a second attempt frequently succeeds) and any 429 or 5xx —
+// Toggl rate-limits the reporting endpoints and, until now, the app simply
+// surfaced the 429 as a failure. A 4xx other than 429 is returned to the
+// caller untouched: retrying a 401 or a 404 only wastes the request budget.
+//
+// Retries are bounded by ctx, not just by the attempt count, so nothing here
+// can outlive the caller's deadline (see requestTimeout in cmd/pocketcfo) —
+// on a tight deadline this degrades to a single attempt, which is the same
+// behaviour as before.
 func (t *Toggl) do(ctx context.Context, method, url string, body io.Reader) (*http.Response, error) {
+	// Buffered so each attempt gets a fresh reader — a retry can't re-read
+	// a stream the previous attempt already consumed.
+	var payload []byte
+	if body != nil {
+		var err error
+		payload, err = io.ReadAll(body)
+		if err != nil {
+			return nil, fmt.Errorf("toggl: buffer request body: %w", err)
+		}
+	}
+
+	backoff := togglBackoffBase
+	var lastErr error
+	for attempt := 1; ; attempt++ {
+		resp, err := t.attempt(ctx, method, url, payload)
+		if err == nil && !retryableStatus(resp.StatusCode) {
+			return resp, nil
+		}
+
+		wait := backoff
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = apiError("toggl "+method, resp)
+			if after, ok := retryAfter(resp); ok {
+				wait = after
+			}
+			resp.Body.Close()
+		}
+
+		if attempt >= togglAttempts {
+			return nil, lastErr
+		}
+		log.Printf("toggl: attempt %d/%d failed (%v) — retrying in %s", attempt, togglAttempts, lastErr, wait)
+		if err := sleepCtx(ctx, wait); err != nil {
+			return nil, lastErr
+		}
+		if backoff *= 2; backoff > togglBackoffMax {
+			backoff = togglBackoffMax
+		}
+	}
+}
+
+func (t *Toggl) attempt(ctx context.Context, method, url string, payload []byte) (*http.Response, error) {
+	var body io.Reader
+	if payload != nil {
+		body = bytes.NewReader(payload)
+	}
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, err
 	}
-	if body != nil {
+	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	auth := base64.StdEncoding.EncodeToString([]byte(t.Token + ":api_token"))
 	req.Header.Set("Authorization", "Basic "+auth)
 	return t.client().Do(req)
+}
+
+// retryableStatus reports whether a status code is worth another attempt.
+func retryableStatus(code int) bool {
+	return code == http.StatusTooManyRequests || code >= 500
+}
+
+// retryAfter reads a Retry-After expressed in seconds, which is the form
+// Toggl sends. An HTTP-date, a malformed value or no header at all yields
+// ok=false, and the caller falls back to its own backoff.
+func retryAfter(resp *http.Response) (time.Duration, bool) {
+	v := strings.TrimSpace(resp.Header.Get("Retry-After"))
+	if v == "" {
+		return 0, false
+	}
+	secs, err := strconv.Atoi(v)
+	if err != nil || secs < 0 {
+		return 0, false
+	}
+	return time.Duration(secs) * time.Second, true
+}
+
+// sleepCtx waits for d, or returns early with ctx's error if the caller gives
+// up first — so a long Retry-After can never hold a request past its deadline.
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (t *Toggl) client() *http.Client {

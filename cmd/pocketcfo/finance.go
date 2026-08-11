@@ -144,7 +144,7 @@ func (s *server) renderFinancePage(w http.ResponseWriter, sess auth.Session, f t
 	// The drill-down carries statement descriptions, so only admins get a
 	// link; everyone else sees the figures as plain text.
 	if s.authorized(sess) && f.ShowActuals {
-		f.SpendingDetailURL = fmt.Sprintf("/spending/%d/%d", f.Year, f.MonthNum)
+		f.SpendingDetailURL = fmt.Sprintf("/%d/%d/spending", f.Year, f.MonthNum)
 	}
 	fillInvoiceLinks(f.Invoiced, f.ShowInvoicingLink)
 	tracker.RenderPage(w, f)

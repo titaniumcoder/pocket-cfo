@@ -69,7 +69,7 @@ var templates = `
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PocketCFO — Login</title>
 ` + favicon + `
-<link rel="stylesheet" href="/invoicing/static/app.css">
+<link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <main class="login">
@@ -88,7 +88,7 @@ var templates = `
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PocketCFO — Login</title>
 ` + favicon + `
-<link rel="stylesheet" href="/invoicing/static/app.css">
+<link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <main class="login">
@@ -110,7 +110,7 @@ var templates = `
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PocketCFO — Login</title>
 ` + favicon + `
-<link rel="stylesheet" href="/invoicing/static/app.css">
+<link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <main class="login">
@@ -129,7 +129,7 @@ var templates = `
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PocketCFO — Spending {{.Month}}</title>
 ` + favicon + `
-<link rel="stylesheet" href="/invoicing/static/app.css">
+<link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <main>
@@ -240,7 +240,7 @@ var templates = `
 {{if .TogglPending}}<meta http-equiv="refresh" content="` + pendingRefresh + `">{{end}}
 <title>PocketCFO — Finance</title>
 ` + favicon + `
-<link rel="stylesheet" href="/invoicing/static/app.css">
+<link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <main>

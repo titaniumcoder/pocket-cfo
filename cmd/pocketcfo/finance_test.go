@@ -579,3 +579,66 @@ func TestFinanceSpending_ReadOnlyIsForbidden(t *testing.T) {
 		t.Errorf("status = %d, want 403 for a readonly session", w.Code)
 	}
 }
+
+// TestRoutesRegisterWithoutConflict pins the mux shape. ServeMux panics at
+// registration when two patterns overlap with neither more specific, so this
+// is the only test that can catch a bad route addition.
+func TestRoutesRegisterWithoutConflict(t *testing.T) {
+	s := newTestClientServer(t)
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("route registration panicked: %v", r)
+		}
+	}()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /static/{file}", s.handleStatic)
+	mux.HandleFunc("GET /invoicing/invoices/{file}", s.handleInvoicePDF)
+	mux.HandleFunc("GET /invoicing/client/{token}", s.handleClientPortal)
+	mux.HandleFunc("GET /invoicing/client/{token}/invoices/{file}", s.handleClientInvoicePDF)
+	mux.HandleFunc("GET /{$}", s.financeCurrentMonth)
+	mux.HandleFunc("GET /{year}", s.financeYear)
+	mux.HandleFunc("GET /{year}/{month}", s.financeMonth)
+	mux.HandleFunc("GET /{year}/{month}/{action}", s.financeMonthSub)
+}
+
+func TestFinanceMonthSubRejectsAnUnknownAction(t *testing.T) {
+	s := newTestClientServer(t)
+	r := httptest.NewRequest(http.MethodGet, "/2026/8/nope", nil)
+	r.SetPathValue("action", "nope")
+	w := httptest.NewRecorder()
+
+	s.financeMonthSub(w, r)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404 — this pattern catches every stray three-segment path", w.Code)
+	}
+}
+
+func TestHandleStatic(t *testing.T) {
+	s := newTestClientServer(t)
+	t.Chdir(t.TempDir())
+	mustMkdirAll(t, staticDir)
+	mustWriteFile(t, filepath.Join(staticDir, "app.css"), "body{}")
+
+	tests := []struct {
+		name, file string
+		want       int
+	}{
+		{"serves a file", "app.css", http.StatusOK},
+		{"missing file", "nope.css", http.StatusNotFound},
+		{"path separator", "sub/x.css", http.StatusNotFound},
+		{"traversal", "../go.mod", http.StatusNotFound},
+		{"empty", "", http.StatusNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/static/x", nil)
+			r.SetPathValue("file", tt.file)
+			w := httptest.NewRecorder()
+			s.handleStatic(w, r)
+			if w.Code != tt.want {
+				t.Errorf("status = %d, want %d", w.Code, tt.want)
+			}
+		})
+	}
+}

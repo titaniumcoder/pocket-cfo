@@ -117,10 +117,10 @@ func main() {
 	go s.tracker.Warm(warmCtx, togglRefreshInterval())
 
 	mux := http.NewServeMux()
-	// Under /invoicing/ rather than a bare /static/: ServeMux can't
-	// disambiguate a two-segment wildcard from a subtree pattern at the same
-	// root, and /{year}/{month} owns the root.
-	mux.Handle("GET /invoicing/static/", http.StripPrefix("/invoicing/static/", http.FileServer(http.Dir(staticDir))))
+	// One segment, not a subtree: /static/ would overlap /{year}/{month} with
+	// neither more specific, whereas /static/{file} is strictly more specific
+	// and can't reach a three-segment path at all. Assets are flat.
+	mux.HandleFunc("GET /static/{file}", s.handleStatic)
 	mux.HandleFunc("GET /auth/login", s.handleLogin)
 	mux.HandleFunc("GET /auth/callback", s.handleCallback)
 	mux.HandleFunc("GET /auth/logout", s.handleLogout)
@@ -139,10 +139,11 @@ func main() {
 	mux.HandleFunc("GET /{$}", s.financeCurrentMonth)
 	mux.HandleFunc("GET /{year}", s.financeYear)
 	mux.HandleFunc("GET /{year}/{month}", s.financeMonth)
-	// /spending/{year}/{month}, not /{year}/{month}/spending: the latter
-	// conflicts with the /invoicing/static/ subtree above and ServeMux
-	// considers neither more specific.
-	mux.HandleFunc("GET /spending/{year}/{month}", s.financeSpending)
+	// {action} rather than a literal "spending": a literal third segment ties
+	// with /invoicing/invoices/{file} and /invoicing/client/{token}, which
+	// ServeMux rejects, whereas an all-wildcard pattern is strictly less
+	// specific than both and orders cleanly behind them.
+	mux.HandleFunc("GET /{year}/{month}/{action}", s.financeMonthSub)
 
 	addr := ":" + cfg.port
 	log.Printf("pocketcfo listening on %s", addr)
@@ -324,6 +325,38 @@ func (s *server) handleInvoicePDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := buildDir + "/" + file
+	if _, err := os.Stat(path); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	http.ServeFile(w, r, path)
+}
+
+// handleStatic serves one file from staticDir. Deliberately not a FileServer
+// subtree: a subtree pattern overlaps /{year}/{month} with neither more
+// specific, which is what forced the assets under /invoicing/ before. {file}
+// matches a single segment, so nested asset directories are not supported —
+// there are two files and they are flat.
+//
+// Unauthenticated, like the stylesheet the login page needs.
+// financeMonthSub routes the month view's sub-pages. Only "spending" exists;
+// anything else is a 404 rather than a redirect, since this pattern also
+// catches every stray three-segment path.
+func (s *server) financeMonthSub(w http.ResponseWriter, r *http.Request) {
+	if r.PathValue("action") != "spending" {
+		http.NotFound(w, r)
+		return
+	}
+	s.financeSpending(w, r)
+}
+
+func (s *server) handleStatic(w http.ResponseWriter, r *http.Request) {
+	file := r.PathValue("file")
+	if file == "" || strings.Contains(file, "/") || strings.Contains(file, "..") {
+		http.NotFound(w, r)
+		return
+	}
+	path := filepath.Join(staticDir, file)
 	if _, err := os.Stat(path); err != nil {
 		http.NotFound(w, r)
 		return

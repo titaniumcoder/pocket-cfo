@@ -1,9 +1,6 @@
-// Command pocketcfo is a GitHub-OAuth-gated web app combining a finance
-// tracker (predictions off a configured hourly rate, real invoiced income,
-// a hand-maintained expense budget) at "/" with a read-only invoicing
-// viewer at "/invoicing". See ARCHITECTURE.md §8. It assumes it is run from
-// the repo root (or, in the deployed image, from wherever the Dockerfile
-// copied web/, data/, and build/ to) — same convention as pocket-cfo-ctl.
+// Command pocketcfo is a GitHub-OAuth-gated web app: a finance tracker at "/"
+// and a read-only invoicing viewer at "/invoicing". See ARCHITECTURE.md §8.
+// Run from the repo root, or wherever the Dockerfile copied the data to.
 package main
 
 import (
@@ -39,27 +36,20 @@ type server struct {
 	clientTmpl *template.Template
 	infoTmpl   *template.Template
 
-	// tracker is the finance part's shared, cached-in-memory core (Toggl/
-	// Holidays/Budget caches, config-sourced rate) — see
-	// trackerForRequest, which shallow-copies it per request to rebuild
-	// just the Invoiced field from the latest invoice data.
+	// Shared and cached in memory; trackerForRequest shallow-copies it per
+	// request to rebuild just the Invoiced field.
 	tracker *tracker.Tracker
 
-	// emailRequestedAt backs allowEmailRequest's per-address cooldown — not
-	// persisted, so it resets on restart, which is fine for a soft throttle.
+	// Backs allowEmailRequest's cooldown. Not persisted; a soft throttle can
+	// afford to reset on restart.
 	emailRequestMu   sync.Mutex
 	emailRequestedAt map[string]time.Time
 }
 
-// buildTracker wires the finance tracker's core from cfg.finance — Toggl
-// stays nil (the tracked-hours layer disabled) when TOGGL_API_TOKEN/
-// TOGGL_WORKSPACE_ID aren't set, per PocketCFO's "Toggl is optional,
-// config-toggled" plan; Budget reads budget.json fresh from budgetDir at
-// runtime (DATA_DIR, default "data") — a real directory, not embedded, so a
-// volume mount at that path can swap in real data (recipients/, invoices/,
-// users.json, budget.json all together) without a rebuild. Invoiced is left
-// nil here — trackerForRequest fills it in fresh per request from real
-// invoice data.
+// buildTracker wires the tracker's core from cfg.finance. Toggl stays nil when
+// its credentials aren't set. Budget reads budgetDir at runtime rather than
+// embedding, so a volume mount can swap in real data without a rebuild.
+// Invoiced is left nil; trackerForRequest fills it per request.
 func buildTracker(cfg financeconfig.Config, httpClient *http.Client, budgetDir string) *tracker.Tracker {
 	var togglClient *tracker.Toggl
 	if cfg.TogglToken != "" && cfg.TogglWorkspace != "" {
@@ -126,11 +116,9 @@ func main() {
 	go s.tracker.Warm(warmCtx, togglRefreshInterval())
 
 	mux := http.NewServeMux()
-	// Under /invoicing/ (not the bare /static/ this had before the finance
-	// tracker's /{year}/{month} routes landed at root) -- Go's ServeMux
-	// can't disambiguate a generic two-segment wildcard from an unrelated
-	// subtree pattern at the same root, so invoicing's own static assets
-	// move under its own path prefix like everything else in Phase 5a.
+	// Under /invoicing/ rather than a bare /static/: ServeMux can't
+	// disambiguate a two-segment wildcard from a subtree pattern at the same
+	// root, and /{year}/{month} owns the root.
 	mux.Handle("GET /invoicing/static/", http.StripPrefix("/invoicing/static/", http.FileServer(http.Dir(staticDir))))
 	mux.HandleFunc("GET /auth/login", s.handleLogin)
 	mux.HandleFunc("GET /auth/callback", s.handleCallback)
@@ -146,10 +134,7 @@ func main() {
 	mux.HandleFunc("GET /invoicing", s.handleIndex)
 	mux.HandleFunc("GET /info", s.handleInfo)
 
-	// Finance tracker: the landing page. Toggl/Budget data is all served
-	// from in-memory cache after the first fetch (see
-	// Tracker.EvictMonth/EvictYear, the Reload link), so there's no
-	// meaningfully slow path here worth a separate loading state for.
+	// Finance tracker: the landing page.
 	mux.HandleFunc("GET /{$}", s.financeCurrentMonth)
 	mux.HandleFunc("GET /{year}", s.financeYear)
 	mux.HandleFunc("GET /{year}/{month}", s.financeMonth)
@@ -159,22 +144,17 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
 
-// mustPageTemplate parses the full-page template at path with the shared
-// site header (see internal/webui) already defined, so the page can invoke
-// {{template "sitehead" .Header}} instead of hand-rolling its own header
-// markup — the finance dashboard's own template set does the same, which is
-// what keeps the three pages' chrome identical. Takes a full path rather
-// than a bare name so tests can resolve templates/ absolutely before
-// chdir'ing into a fixture directory, and still build them exactly the way
-// main does.
+// mustPageTemplate parses a page with the shared site header already defined,
+// so it can invoke {{template "sitehead" .Header}} rather than hand-rolling
+// chrome. Takes a full path so tests can resolve templates/ absolutely before
+// chdir'ing into a fixture directory.
 func mustPageTemplate(path string) *template.Template {
 	t := template.Must(template.New(filepath.Base(path)).Funcs(templateFuncs).Parse(webui.HeaderTemplate))
 	return template.Must(t.ParseFiles(path))
 }
 
-// templateFuncs reuses internal/render's exact Bulgarian-format money and
-// date rendering, so the dashboard matches the PDFs instead of a second
-// implementation.
+// templateFuncs reuses internal/render's formatting so the dashboard matches
+// the PDFs rather than being a second implementation.
 var templateFuncs = template.FuncMap{
 	"money": render.FormatMoney,
 	"date":  render.FormatDate,
@@ -190,9 +170,8 @@ var templateFuncs = template.FuncMap{
 		}
 		return *i
 	},
-	// amount renders a plain float (the api2pdf balance, which arrives as
-	// a JSON number, not minor units) to two decimals in the same
-	// Bulgarian/European convention as every other figure in the app.
+	// amount renders a plain float (the api2pdf balance arrives as a JSON
+	// number, not minor units) in the same convention as every other figure.
 	"amount": func(v float64) string {
 		return render.FormatAmount(int64(math.Round(v * 100)))
 	},
@@ -232,11 +211,9 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// checkInvoicingAccess reports how an already-authenticated sess may reach
-// the invoicing dashboard: a users.json-listed, email-OTP session scoped to
-// finance only redirects to "/" instead — "users with access to both get
-// shared links, others land to wherever they have access to" (PocketCFO
-// plan §5.2) — and a session with neither part is forbidden outright.
+// checkInvoicingAccess routes an authenticated session: one scoped to finance
+// only is redirected to "/" so a shared link lands where it has access, and one
+// with neither part is forbidden.
 func (s *server) checkInvoicingAccess(sess auth.Session) (redirect string, forbidden bool) {
 	if s.authenticatedForPart(sess, users.PartInvoicing) {
 		return "", false
@@ -273,9 +250,8 @@ func (s *server) loadInvoicingView(r *http.Request, sess auth.Session) (any, err
 		return nil, err
 	}
 
-	// Portal links are bearer secrets for the client-portal tier (see
-	// client.go) — only the full authorized() tier gets to see them; the
-	// email-login readOnly tier gets everything else on the dashboard.
+	// Portal links are bearer secrets, so only the authorized() tier sees
+	// them; readOnly gets everything else on the dashboard.
 	var portalLinks map[int]string
 	if s.authorized(sess) {
 		portalLinks = s.portalLinks(recipients)
@@ -300,13 +276,10 @@ func (s *server) loadInvoicingView(r *http.Request, sess auth.Session) (any, err
 	}, nil
 }
 
-// pdfCurrentMap builds the admin-only "does the built PDF still match the
-// current JSON" indicator per invoice number (see ARCHITECTURE.md §5.1's
-// staleness rules and internal/render/staleness.go). The reference hash was
-// precomputed by pocket-cfo-ctl render; this only does the cheap current-side
-// comparison, never touching api2pdf. Missing/unloadable manifest is
-// treated as "nothing recorded yet" rather than a hard error — the
-// dashboard must still load.
+// pdfCurrentMap builds the "does the built PDF still match its JSON" indicator
+// per invoice. The reference hash was precomputed by pocket-cfo-ctl render, so
+// this is the cheap current-side comparison and never touches api2pdf. An
+// unloadable manifest means "nothing recorded yet": the dashboard must load.
 func pdfCurrentMap(invoices []*invoice.InvoiceJson) map[string]bool {
 	manifest, err := render.LoadManifest(renderManifestPath)
 	if err != nil {

@@ -1,16 +1,11 @@
-// Package webui holds the chrome shared by every PocketCFO dashboard page —
-// currently the site header (brand, top menu, session controls). It exists
-// because those pages are rendered by two different template systems: the
-// finance dashboard from a Go-embedded template set
-// (internal/finance/tracker), invoicing and info from files under
-// templates/. Neither can reach the other's templates, so the shared markup
-// lives here as a plain template source string that both parse, rather than
-// being hand-copied into each page — a copy is exactly how the three pages
-// drifted into three different headers in the first place.
+// Package webui holds the chrome shared by every dashboard page. It exists
+// because those pages come from two template systems that can't reach each
+// other — the finance dashboard from a Go-embedded set, invoicing and info from
+// templates/ — so the shared markup lives here as a source string both parse.
+// Hand-copying is how the three pages drifted into three different headers.
 //
-// The matching CSS lives in static/app.css (.topnav/.hdr-right/header),
-// including the header's own bottom spacing: the gap below the menu belongs
-// to the menu, not to whatever each page happens to render underneath it.
+// The matching CSS is in static/app.css, including the header's own bottom
+// spacing: the gap below the menu belongs to the menu.
 package webui
 
 import (
@@ -27,18 +22,14 @@ const (
 	PageInfo      = "info"
 )
 
-// Header is the data the shared site header renders from. The Show* flags
-// are "this session may reach that page at all" — the caller derives them
-// from the session (see cmd/pocketcfo), since only it knows the auth rules.
+// Header is what the shared site header renders from. The Show* flags mean
+// "this session may reach that page"; cmd/pocketcfo derives them, since only it
+// knows the auth rules.
 //
-// The header is deliberately identical on every page: brand, the pages
-// this session can reach, Logout, and who's signed in. Page-specific
-// controls (the finance dashboard's period navigation and Reload) live with
-// the content they act on, not up here — a header that changes shape
-// between pages reads as a different app on each one.
-//
-// There is no read-only marker: every session that reaches these pages is
-// read-only, so the badge told nobody anything.
+// Deliberately identical on every page. Page-specific controls live with the
+// content they act on — a header that changes shape between pages reads as a
+// different app on each one. There is no read-only marker: every session that
+// gets here is read-only, so the badge told nobody anything.
 type Header struct {
 	Login  string
 	Active string
@@ -48,12 +39,10 @@ type Header struct {
 	ShowInfo      bool
 }
 
-// AvatarURL is where to fetch this user's picture. An email login gets its
-// Gravatar; a GitHub login gets that account's avatar. Both are external
-// requests — the only ones any page in this app makes — and the Gravatar
-// URL necessarily discloses a hash of the address to gravatar.com. If that
-// trade isn't wanted, returning "" here falls the header back to Initials
-// below with no other change.
+// AvatarURL is the user's picture: Gravatar for an email login, GitHub's for a
+// GitHub one. These are the only external requests any page makes, and the
+// Gravatar URL necessarily discloses a hash of the address. Returning "" falls
+// back to Initials with no other change.
 func (h Header) AvatarURL() string {
 	login := strings.ToLower(strings.TrimSpace(h.Login))
 	if login == "" {
@@ -66,9 +55,8 @@ func (h Header) AvatarURL() string {
 	return "https://github.com/" + url.PathEscape(login) + ".png?size=64"
 }
 
-// Initials back the avatar: they render underneath the picture, so a login
-// with no avatar (or an image that fails to load) still shows something
-// recognisable rather than a broken-image icon.
+// Initials render underneath the avatar, so a missing or failed image still
+// shows something recognisable rather than a broken-image icon.
 func (h Header) Initials() string {
 	login := strings.TrimSpace(h.Login)
 	if login == "" {

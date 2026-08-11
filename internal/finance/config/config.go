@@ -1,12 +1,8 @@
 // Package config loads the finance tracker's own settings: config.json for
-// non-secret tunables (rates, filters, defaults — no JSON Schema here, same
-// deliberate exception invoicer's own config.json-equivalent doesn't have
-// either: this is small enough that a hand-written struct read with plain
-// encoding/json is simpler than adding codegen for it), plus a handful of
-// finance-specific environment variables Load reads directly. Everything
-// shared with the invoicing side (GitHub OAuth, session secret, users.json)
-// stays in cmd/pocketcfo's own config — this package only covers what's
-// specific to the finance part.
+// non-secret tunables, plus a few finance-specific env vars. Deliberately no
+// JSON Schema or codegen here — a hand-written struct is simpler at this size,
+// the one exception to the rule in AGENTS.md. Anything shared with invoicing
+// stays in cmd/pocketcfo's config.
 package config
 
 import (
@@ -17,12 +13,10 @@ import (
 	"strings"
 )
 
-// FileConfig is config.json's shape. Every field is optional; a nil pointer
-// (or a missing config.json entirely) falls back to the default baked into
-// Load. JSON tags are deliberately camelCase, unlike the rest of the app's
-// own wire formats (session/OTP/the net-income API, all snake_case) —
-// config.json is a hand-edited file in the private companion data repo, so
-// its existing key casing stays as-is rather than being forced to match.
+// FileConfig is config.json's shape. Every field is optional; a nil pointer, or
+// no file at all, falls back to Load's defaults. The tags are camelCase unlike
+// the app's snake_case wire formats: config.json is hand-edited in the private
+// data repo, and its existing casing stays as-is.
 type FileConfig struct {
 	HoursPerDay        *float64 `json:"hoursPerDay"`
 	TogglProjectIDs    []int    `json:"togglProjectIds"`

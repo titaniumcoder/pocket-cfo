@@ -6,40 +6,35 @@ import (
 	"time"
 )
 
-// fundingShiftMonths is the fixed calendar-month gap between when company
-// income is earned and when it becomes available to spend: salary earned in
-// month M is paid out at the end of month M+1, so it only funds expenses
-// from month M+2 onward. Applies uniformly to every viewed period — past,
-// current or future — never conditionally on "now".
+// fundingShiftMonths is the gap between earning company income and being able
+// to spend it: salary earned in M is paid end of M+1, so it funds expenses from
+// M+2. Applies uniformly to every viewed period, never conditionally on now.
 const fundingShiftMonths = -2
 
-// yearMonth identifies one calendar month unambiguously across year
-// boundaries. Unlike Tracker.compute's [start,end] (always within a single
-// calendar year), a funding or spendable period can cross into the previous
-// or next year, so it needs its own year, not just a time.Month.
+// yearMonth identifies a month across year boundaries. Unlike compute's
+// [start,end], which stays within one calendar year, a funding or spendable
+// period can cross into the previous or next one.
 type yearMonth struct {
 	Year  int
 	Month time.Month
 }
 
-// addMonths returns the month n calendar months away (n may be negative),
-// rolling over the year as needed.
+// addMonths returns the month n months away, rolling over the year.
 func (ym yearMonth) addMonths(n int) yearMonth {
 	t := time.Date(ym.Year, ym.Month, 1, 0, 0, 0, 0, time.UTC).AddDate(0, n, 0)
 	return yearMonth{t.Year(), t.Month()}
 }
 
-// String renders the month as e.g. "May 2026", for display labels.
+// String renders the month as e.g. "May 2026".
 func (ym yearMonth) String() string {
 	return time.Date(ym.Year, ym.Month, 1, 0, 0, 0, 0, time.UTC).Format("January 2006")
 }
 
-// ordinal totally orders yearMonth values chronologically (higher = later),
-// for the "on or before" comparisons invoiced.go's invoice horizon needs.
+// ordinal orders yearMonths chronologically, for invoiced.go's comparisons.
 func (ym yearMonth) ordinal() int { return ym.Year*12 + int(ym.Month) }
 
-// monthsBetween returns every calendar month from start to end inclusive, in
-// chronological order. Callers guarantee start <= end.
+// monthsBetween returns every month from start to end inclusive. Callers
+// guarantee start <= end.
 func monthsBetween(start, end yearMonth) []yearMonth {
 	const safetyCap = 36 // no viewed period in this app spans anywhere near this many months
 	months := make([]yearMonth, 0, 12)
@@ -52,52 +47,40 @@ func monthsBetween(start, end yearMonth) []yearMonth {
 	return months
 }
 
-// fundingRangeForMonth returns the single shifted month that actually funds
-// the given viewed month's expenses (month view) — the viewed month minus
-// two calendar months. May land in the previous calendar year (e.g. viewing
-// January -> November of the year before).
+// fundingRangeForMonth returns the month that funds the viewed month's
+// expenses: viewed minus two. May land in the previous year.
 func fundingRangeForMonth(year int, month time.Month) (start, end yearMonth) {
 	shifted := yearMonth{year, month}.addMonths(fundingShiftMonths)
 	return shifted, shifted
 }
 
-// fundingRangeForYear returns the shifted month range that funds the given
-// viewed year's expenses (year view) — the exact same start..December range
-// Budget.ForYear uses for private expenses (see privateExpenseStartMonth),
-// shifted back fundingShiftMonths months, so the two can never drift apart.
-// The end (December - 2 = October) never crosses a year boundary; the start
-// does whenever the expense range itself starts in January or February
-// (only possible when year == now.Year()), landing in November or December
-// of the previous year respectively.
+// fundingRangeForYear shifts back the exact start..December range ForYear uses
+// for private expenses, so the two can never drift apart. The end never crosses
+// a year boundary; the start does when the expense range begins in January or
+// February.
 func fundingRangeForYear(year int, now time.Time) (start, end yearMonth) {
 	expenseStart := yearMonth{year, privateExpenseStartMonth(year, now)}
 	expenseEnd := yearMonth{year, time.December}
 	return expenseStart.addMonths(fundingShiftMonths), expenseEnd.addMonths(fundingShiftMonths)
 }
 
-// spendRangeForMonth returns the single month a viewed income month becomes
-// spendable in — the mirror of fundingRangeForMonth, shifted forward instead
-// of back. Viewing November -> usable from January of the next year.
+// spendRangeForMonth mirrors fundingRangeForMonth, shifted forward instead of
+// back: viewing November means usable from January.
 func spendRangeForMonth(year int, month time.Month) (start, end yearMonth) {
 	shifted := yearMonth{year, month}.addMonths(-fundingShiftMonths)
 	return shifted, shifted
 }
 
-// spendRangeForYear returns the range a viewed year's Personal income
-// becomes spendable in. Personal income in year view always spans the full
-// viewed year (Jan-Dec — unlike private expenses' "remaining months" range),
-// so shifting it forward always crosses into the next calendar year at the
-// END: Jan+2..Dec+2 = March(year)..February(year+1).
+// spendRangeForYear shifts the full Jan-Dec income year forward, so unlike the
+// expense range it always crosses into the next year at the end:
+// March(year)..February(year+1).
 func spendRangeForYear(year int) (start, end yearMonth) {
 	start = yearMonth{year, time.January}.addMonths(-fundingShiftMonths)
 	end = yearMonth{year, time.December}.addMonths(-fundingShiftMonths)
 	return start, end
 }
 
-// rangeLabel renders a yearMonth range as bare text — "November 2025" for a
-// single month, "November 2025 – October 2026" for a range. Used for both
-// PersonalView.FundingLabel (inside "Company income (from ...)") and
-// Figures.SpendableLabel (inside "Income (for ...)").
+// rangeLabel renders a range as "November 2025" or "November 2025 – October 2026".
 func rangeLabel(start, end yearMonth) string {
 	if start == end {
 		return start.String()
@@ -105,12 +88,9 @@ func rangeLabel(start, end yearMonth) string {
 	return start.String() + " – " + end.String()
 }
 
-// linkForRange returns the navigation URL for a (possibly multi-month)
-// yearMonth range: a single month links straight to "/{year}/{month}"; a
-// multi-month range (always a year-view figure) links to the Year View of
-// majorityYear, since the shift only ever crosses a year boundary at one
-// end (the start for funding, the end for spendable) — the caller passes
-// whichever endpoint's year the range mostly belongs to.
+// linkForRange links a single month to "/{year}/{month}" and a multi-month
+// range to the year view of majorityYear. The shift only crosses a year
+// boundary at one end, so the caller passes whichever year the range mostly is.
 func linkForRange(start, end yearMonth, majorityYear int) string {
 	if start == end {
 		return fmt.Sprintf("/%d/%d", start.Year, int(start.Month))
@@ -118,19 +98,10 @@ func linkForRange(start, end yearMonth, majorityYear int) string {
 	return fmt.Sprintf("/%d", majorityYear)
 }
 
-// fundingIncome computes the full company-income → net-income cascade
-// (Figures.FundingPersonal) rendered in the Expenses panel. Only the raw
-// labor income (Tracked + Expected) is shifted back to [start,end] (the
-// viewed period minus fundingShiftMonths calendar months) — company-kind
-// expenses are a real-time business fact, not subject to the payroll lag
-// that motivates the shift in the first place (see fundingShiftMonths), so
-// companyExpensesEUR/companyGroups are the caller's already-computed VIEWED
-// period figures (Tracker.compute's bv.CompanyTotalSpentCents/CompanyGroups)
-// — unshifted, exactly as they were before this feature existed, so e.g. a
-// one-off cost dated 2026-09-01 shows/hides based on whichever month is
-// actually being browsed, never postponed by the income shift. rateCents is
-// the configured projection rate (Tracker.RateCents), reused as-is since
-// it's a plain config value anchored to no particular period.
+// fundingIncome computes the cascade rendered in the Expenses panel. Only labor
+// income is shifted back to [start,end]; companyExpensesEUR/companyGroups are
+// the caller's VIEWED-period figures, unshifted, since company expenses are a
+// real-time business fact rather than subject to the payroll lag.
 func (t *Tracker) fundingIncome(ctx context.Context, start, end yearMonth, now time.Time, rateCents int, companyExpensesEUR float64, companyGroups []CategoryGroupView) PersonalView {
 	label := rangeLabel(start, end)
 	url := linkForRange(start, end, end.Year)
@@ -140,12 +111,9 @@ func (t *Tracker) fundingIncome(ctx context.Context, start, end yearMonth, now t
 		return PersonalView{Err: err.Error(), FundingLabel: label, FundingURL: url}
 	}
 
-	// Spread the viewed period's total company expense evenly across the
-	// funding months purely so PersonalParams.breakdownMonths' per-month
-	// insurable cap has a same-length slice to pair each month's (real,
-	// varying) labor income against — the total deducted is exact
-	// regardless of how it's split across slots, and company expenses are
-	// rarely large enough to be cap-sensitive themselves.
+	// Spread evenly only so breakdownMonths' per-month cap has a same-length
+	// slice to pair against. The total deducted is exact however it is split,
+	// and company expenses are rarely large enough to be cap-sensitive.
 	perMonthExpenseEUR := companyExpensesEUR / float64(len(incomeEUR))
 	expensesEUR := make([]float64, len(incomeEUR))
 	for i := range expensesEUR {
@@ -159,16 +127,9 @@ func (t *Tracker) fundingIncome(ctx context.Context, start, end yearMonth, now t
 	return pv
 }
 
-// fundingLaborIncomeEUR sums, per funding month, Toggl-tracked cents plus
-// projected "expected" cents for whatever's left of that month relative to
-// real now (same workdayInfo-driven formula Tracker.compute uses, minus the
-// vacation-day deduction, which is tied to the *viewed* year's annual
-// allowance and doesn't apply to an unrelated funding period) — the raw
-// labor income the funding period earns, before any company-expense
-// deduction (see fundingIncome). Generalized from Tracker.compute's
-// per-viewed-month loop to an arbitrary, possibly year-boundary-crossing
-// list of calendar months, independent of whichever period is currently
-// being viewed.
+// fundingLaborIncomeEUR sums each funding month's labor income, before any
+// company-expense deduction. Generalizes compute's per-viewed-month loop to an
+// arbitrary, possibly year-crossing list of months.
 func (t *Tracker) fundingLaborIncomeEUR(ctx context.Context, months []yearMonth, now time.Time, rateCents int) ([]float64, error) {
 	if len(months) == 0 {
 		return nil, nil
@@ -204,9 +165,8 @@ func (t *Tracker) fundingLaborIncomeEUR(ctx context.Context, months []yearMonth,
 	return incomeEUR, nil
 }
 
-// fetchYearDataByYear fetches the Toggl yearly report for each distinct year
-// the funding months touch — a funding period spanning a year boundary (see
-// fundingRangeForMonth/Year) needs both years' data.
+// fetchYearDataByYear fetches a report per distinct year the funding months
+// touch; a period spanning a year boundary needs both.
 func (t *Tracker) fetchYearDataByYear(ctx context.Context, years []int) (map[int]*YearData, error) {
 	ydByYear := map[int]*YearData{}
 	for _, y := range years {
@@ -239,11 +199,9 @@ func (t *Tracker) fetchHolidaysByYear(ctx context.Context, years []int) (map[int
 	return holidaysByYear, nil
 }
 
-// monthLaborIncome computes one funding month's raw labor income: Toggl-
-// tracked cents plus projected "expected" cents for whatever's left of the
-// month relative to today (same workdayInfo-driven formula Tracker.compute
-// uses, minus the vacation-day deduction, which is tied to the *viewed*
-// year's annual allowance and doesn't apply to an unrelated funding period).
+// monthLaborIncome computes one funding month's labor income: tracked cents
+// plus projected cents for what's left of the month. No vacation deduction —
+// that allowance belongs to the viewed year, not an unrelated funding period.
 func (t *Tracker) monthLaborIncome(ym yearMonth, projects map[int]Project, yd *YearData, holidays map[string]bool, today time.Time, rateCents int) float64 {
 	monthStart := time.Date(ym.Year, ym.Month, 1, 0, 0, 0, 0, t.Loc)
 	monthEnd := monthStart.AddDate(0, 1, -1)
@@ -255,20 +213,14 @@ func (t *Tracker) monthLaborIncome(ym yearMonth, projects map[int]Project, yd *Y
 		}
 		trackedCents += a.AmountCents
 	}
-	// ym is a funding month, reached via fundingRangeForMonth(viewed) =
-	// viewed.addMonths(fundingShiftMonths) — i.e. ym = viewed - 2. The
-	// viewed month it funds is therefore ym.addMonths(-fundingShiftMonths) =
-	// ym + 2. An invoice's UsableCents is already keyed by the real
-	// calendar month it becomes usable in (due date + 1, see invoiced.go) —
-	// that's the VIEWED month, not ym — so look it up at ym+2, not at ym
-	// itself. Looking it up at ym directly double-shifts an already-correct
-	// due-date-derived timing by another two months.
+	// ym is a funding month, i.e. viewed - 2, so the month it funds is ym + 2.
+	// UsableCents is already keyed by the real calendar month it becomes usable
+	// in (due date + 1), which is that viewed month — looking it up at ym would
+	// double-shift an already-correct due-date-derived timing.
 	trackedCents += t.invoicedCentsForMonth(ym.addMonths(-fundingShiftMonths))
 
-	// workdayInfo naturally returns remaining=0 for a month wholly in
-	// the past (nothing in [monthStart,monthEnd] is after today) and
-	// counts every workday for a month wholly in the future — no
-	// special-casing needed, same as compute's own per-month loop.
+	// workdayInfo already returns 0 for a wholly past month and every workday
+	// for a wholly future one, so no special-casing is needed here.
 	remaining, todayIsWorkday := workdayInfo(monthStart, monthEnd, today, holidays)
 	days := remaining
 	todayTracked := yd.Days[today.Format("2006-01-02")]

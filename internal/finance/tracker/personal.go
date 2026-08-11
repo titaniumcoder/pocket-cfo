@@ -1,17 +1,13 @@
 package tracker
 
-// PersonalParams are the parameters for turning company income into net personal
-// income for a Bulgarian one-person company (EOOD) paying the owner a salary.
-// All rates are fractions (0.10 = 10%); all money is in EUR (Bulgaria adopted the
-// euro on 2026-01-01).
+// PersonalParams turns company income into net personal income for a Bulgarian
+// one-person company (EOOD) paying the owner a salary. Rates are fractions
+// (0.10 = 10%); money is in EUR.
 //
-// Company (business) expenses are deducted from company income before any of
-// this runs — see breakdown's companyExpensesEUR parameter — since that money
-// never becomes personal salary at all; only what's left becomes salary cost
-// (gross salary + employer social contributions). Gross salary and employer
-// social contributions are deductible, and both social contributions are
-// capped at the monthly maximum insurable income. Private (personal) spending
-// is tracked separately (see Budgeting) and deducted from Net income, not here.
+// Company expenses come off first (see breakdown's companyExpensesEUR), since
+// that money never becomes salary; only what's left becomes salary cost. Both
+// social contributions are capped at the monthly maximum insurable income.
+// Private spending is deducted from Net income elsewhere, not here.
 type PersonalParams struct {
 	EmployerRate        float64 // employer social + health contributions, e.g. 0.1892
 	EmployeeRate        float64 // employee social + health contributions, e.g. 0.1378
@@ -19,10 +15,9 @@ type PersonalParams struct {
 	IncomeTaxRate       float64 // personal income tax, e.g. 0.10
 }
 
-// PersonalView is the rendered company→personal waterfall. Money is in cents.
-// CompanyGroups is filled in by Tracker.compute (not breakdown/breakdownMonths,
-// which only deal with the numeric cascade) for display purposes — the
-// company-kind budget.json groups, shown under Company income.
+// PersonalView is the rendered waterfall, in cents. CompanyGroups is filled in
+// by Tracker.compute for display; breakdown/breakdownMonths only handle the
+// numeric cascade.
 type PersonalView struct {
 	Err string
 
@@ -36,14 +31,9 @@ type PersonalView struct {
 
 	CompanyGroups []CategoryGroupView
 
-	// FundingLabel/FundingURL identify which period's Company income this
-	// cascade was actually computed from — set only on Figures.FundingPersonal
-	// (the viewed period shifted back two calendar months; see
-	// Tracker.fundingIncome), left blank on Figures.Personal (the viewed
-	// period's own, API-only cascade, which needs no such label since it's
-	// already the period the caller asked about). Filled in by
-	// Tracker.fundingIncome, not breakdown/breakdownMonths (which only
-	// handle the numeric cascade), same as CompanyGroups above.
+	// Which period's Company income this cascade came from. Set only on
+	// Figures.FundingPersonal, where it differs from the viewed period; blank
+	// on Figures.Personal, which is already the period the caller asked about.
 	FundingLabel string // e.g. "November 2025"
 	FundingURL   string // jumps to that funding period
 
@@ -53,12 +43,9 @@ type PersonalView struct {
 	IncomeTaxPct string
 }
 
-// breakdown computes the waterfall over `months` months given the total company
-// income (EUR) for the whole period, minus companyExpensesEUR (business costs
-// for the same period — deducted first, since that money never becomes salary
-// at all). Salary is smoothed evenly across the months so the monthly
-// social-contribution cap applies correctly; the per-month figures are then
-// scaled back up by `months` for display.
+// breakdown computes the waterfall over `months` months. Salary is smoothed
+// evenly so the monthly social-contribution cap applies correctly, then the
+// per-month figures are scaled back up for display.
 func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, months int) PersonalView {
 	result := PersonalView{
 		EmployerPct:  formatNum(p.EmployerRate * 100),
@@ -110,11 +97,9 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 	return result
 }
 
-// breakdownMonths computes the personal-income waterfall month by month and
-// sums the results. This preserves monthly social-insurance caps for partial
-// years and uneven income. monthlyCompanyExpensesEUR must be the same length
-// as monthlyIncomeEUR (index i's company expenses apply to index i's income);
-// a shorter or nil slice treats missing months as zero company expenses.
+// breakdownMonths runs the waterfall month by month and sums, preserving the
+// monthly caps for partial years and uneven income. A short or nil
+// monthlyCompanyExpensesEUR treats missing months as zero.
 func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpensesEUR []float64) PersonalView {
 	result := PersonalView{
 		EmployerPct:  formatNum(p.EmployerRate * 100),

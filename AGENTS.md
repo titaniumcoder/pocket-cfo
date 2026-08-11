@@ -24,6 +24,15 @@ conventions established during scaffolding that aren't obvious from the code its
   `internal/finance/budgetdata/`) — never a hand-written struct for a *data* shape, even
   a small one; the one deliberate exception is `config.json` (pure deployment tunables,
   not data — see `internal/finance/config`).
+- **Let the code speak; comment only what it can't.** Keep a comment when it
+  records something unreachable from reading the function — a decision and its
+  reason ("marks stale rather than deletes, because a delete makes a failed
+  refetch look like never-fetched"), a non-obvious constraint, a domain rule
+  like the two-month funding shift, or a bug the shape of the code is guarding
+  against. Drop restatement of what the next line does, narration of why the
+  reader should care, and the same rationale repeated at three call sites.
+  Prefer one tight paragraph to five; a doc comment that has to be scrolled is
+  usually explaining a design that should have been named better instead.
 - **`internal/schema/<model>/` holds generated code only.** `go generate ./...`
   (or `make generate`) regenerates it from `schemas/*.json` via `go-jsonschema` — never
   hand-edit files there.

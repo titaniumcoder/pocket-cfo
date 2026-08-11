@@ -99,16 +99,16 @@ type InvoiceRow struct {
 }
 
 // deriveState computes the single ledger/lifecycle state a row is marked
-// with. Precedence — draft wins over paid/overdue/issued — mirrors
-// ARCHITECTURE.md §3.8's "annulled wins over everything" pattern applied one
-// level down: a draft is a lifecycle state, not a ledger state, and the
-// template keys both its badge and its PDF link off this single value so
-// the two can never disagree.
-func deriveState(inv *invoice.InvoiceJson, today time.Time) string {
+// with, given whether paid names this invoice. Precedence — draft wins over
+// paid/overdue/issued — mirrors ARCHITECTURE.md §3.8's "annulled wins over
+// everything" pattern applied one level down: a draft is a lifecycle state,
+// not a ledger state, and the template keys both its badge and its PDF link
+// off this single value so the two can never disagree.
+func deriveState(inv *invoice.InvoiceJson, paidOn *types.SerializableDate, today time.Time) string {
 	if inv.Status == invoice.InvoiceJsonStatusDraft {
 		return "draft"
 	}
-	if inv.Paid != nil {
+	if paidOn != nil {
 		return "paid"
 	}
 	if inv.DueDate.Time.Before(today) {
@@ -118,7 +118,9 @@ func deriveState(inv *invoice.InvoiceJson, today time.Time) string {
 }
 
 // Aggregate groups invoices (already loaded via LoadInvoices) by recipient
-// and computes the totals the dashboard shows. year selects a single
+// and computes the totals the dashboard shows. paid maps invoice number to
+// payment date (see LoadPaid); an invoice absent from it is unpaid.
+// year selects a single
 // issue-date year to scope TotalInFrame and the invoice rows to; nil means
 // "All". years is every distinct issue-date year present, for the nav,
 // always unfiltered. Outstanding is always computed across every year,
@@ -126,11 +128,11 @@ func deriveState(inv *invoice.InvoiceJson, today time.Time) string {
 // explicit requirement. now is the request-time clock used to derive
 // overdue/open state (ARCHITECTURE.md §3.8: computed at request time, never
 // stored) — callers pass time.Now(), tests pass a fixed clock.
-func Aggregate(invoices []*invoice.InvoiceJson, recipients []recipient.RecipientJson, year *int, now time.Time) (years []int, recipientRows []RecipientRow, invoiceRows []InvoiceRow, err error) {
+func Aggregate(invoices []*invoice.InvoiceJson, recipients []recipient.RecipientJson, paid map[string]types.SerializableDate, year *int, now time.Time) (years []int, recipientRows []RecipientRow, invoiceRows []InvoiceRow, err error) {
 	today := now.UTC()
 	today = time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC)
 
-	all, years, err := computeAll(invoices, today)
+	all, years, err := computeAll(invoices, paid, today)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -149,15 +151,17 @@ func Aggregate(invoices []*invoice.InvoiceJson, recipients []recipient.Recipient
 // state, computed once up front so both aggregateRecipientRows and
 // aggregateInvoiceRows can reuse it without recomputing money.Compute.
 type computedInvoice struct {
-	inv   *invoice.InvoiceJson
-	total int64
-	state string
+	inv    *invoice.InvoiceJson
+	total  int64
+	state  string
+	paidOn *types.SerializableDate
 }
 
 // computeAll computes each invoice's total/state and collects every
 // distinct issue-date year present, for the nav (always unfiltered by the
-// year selector).
-func computeAll(invoices []*invoice.InvoiceJson, today time.Time) (all []computedInvoice, years []int, err error) {
+// year selector). The paid lookup happens once here, so everything
+// downstream reads c.paidOn rather than repeating it.
+func computeAll(invoices []*invoice.InvoiceJson, paid map[string]types.SerializableDate, today time.Time) (all []computedInvoice, years []int, err error) {
 	all = make([]computedInvoice, 0, len(invoices))
 	yearSet := map[int]bool{}
 	for _, inv := range invoices {
@@ -165,7 +169,13 @@ func computeAll(invoices []*invoice.InvoiceJson, today time.Time) (all []compute
 		if err != nil {
 			return nil, nil, fmt.Errorf("compute totals for %s: %w", inv.Number, err)
 		}
-		all = append(all, computedInvoice{inv: inv, total: totals.GrandTotal, state: deriveState(inv, today)})
+		var paidOn *types.SerializableDate
+		if d, ok := paid[inv.Number]; ok {
+			paidOn = &d
+		}
+		all = append(all, computedInvoice{
+			inv: inv, total: totals.GrandTotal, state: deriveState(inv, paidOn, today), paidOn: paidOn,
+		})
 		yearSet[inv.IssueDate.Year()] = true
 	}
 	for y := range yearSet {
@@ -219,7 +229,7 @@ func aggregateRecipientRows(recipients []recipient.RecipientJson, all []computed
 			if inFrame(c) {
 				row.TotalInFrame += c.total
 			}
-			if c.inv.Paid == nil {
+			if c.paidOn == nil {
 				row.Outstanding += c.total
 			}
 		}
@@ -246,7 +256,7 @@ func aggregateInvoiceRows(all []computedInvoice, inFrame func(computedInvoice) b
 			RecipientName: c.inv.Recipient.LegalName,
 			IssueDate:     c.inv.IssueDate,
 			DueDate:       c.inv.DueDate,
-			Paid:          c.inv.Paid,
+			Paid:          c.paidOn,
 			GrandTotal:    c.total,
 			State:         c.state,
 		})

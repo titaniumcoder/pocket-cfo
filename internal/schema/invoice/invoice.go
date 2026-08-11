@@ -221,9 +221,6 @@ type InvoiceJson struct {
 	// Number corresponds to the JSON schema field "number".
 	Number string `json:"number" yaml:"number" mapstructure:"number"`
 
-	// Paid corresponds to the JSON schema field "paid".
-	Paid *types.SerializableDate `json:"paid" yaml:"paid" mapstructure:"paid"`
-
 	// Recipient corresponds to the JSON schema field "recipient".
 	Recipient RecipientSnapshot `json:"recipient" yaml:"recipient" mapstructure:"recipient"`
 
@@ -336,9 +333,6 @@ func (j *InvoiceJson) UnmarshalJSON(value []byte) error {
 	}
 	if _, ok := raw["number"]; raw != nil && !ok {
 		return fmt.Errorf("field number in InvoiceJson: required")
-	}
-	if _, ok := raw["paid"]; raw != nil && !ok {
-		return fmt.Errorf("field paid in InvoiceJson: required")
 	}
 	if _, ok := raw["recipient"]; raw != nil && !ok {
 		return fmt.Errorf("field recipient in InvoiceJson: required")

@@ -75,8 +75,9 @@ func mustDate(s string) types.SerializableDate {
 
 // TestTargetsFor pins the artifact set per invoice status/paid combination:
 // drafts get exactly one, always-overwritten target; issued invoices get a
-// write-once original that never shows paid regardless of inv.Paid, plus a
-// -paid.pdf only once inv.Paid is set.
+// write-once original that never shows paid, plus a -paid.pdf only once a
+// payment date is known. That date comes from paid-invoices.json, so it's an
+// argument now rather than a field on the invoice.
 //
 // Expected paths go through filepath.Join, same as targetsFor itself: hardcoded
 // forward slashes matched on Linux and failed on Windows, where buildDir joins
@@ -87,28 +88,39 @@ func TestTargetsFor(t *testing.T) {
 
 	t.Run("draft", func(t *testing.T) {
 		inv := invoice.InvoiceJson{Number: "INV-0000000009", Status: invoice.InvoiceJsonStatusDraft}
-		got := targetsFor(inv)
-		want := []target{{path: built("INV-0000000009-DRAFT.pdf"), overwrite: true, showPaid: false}}
+		got := targetsFor(inv, nil)
+		want := []target{{path: built("INV-0000000009-DRAFT.pdf"), overwrite: true}}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("targetsFor(draft) = %+v, want %+v", got, want)
 		}
 	})
 
+	// A draft named in paid-invoices.json is a validation error, not a
+	// second artifact — targetsFor must not invent a -paid.pdf for it.
+	t.Run("draft, wrongly marked paid", func(t *testing.T) {
+		inv := invoice.InvoiceJson{Number: "INV-0000000009", Status: invoice.InvoiceJsonStatusDraft}
+		got := targetsFor(inv, &paidDate)
+		want := []target{{path: built("INV-0000000009-DRAFT.pdf"), overwrite: true}}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("targetsFor(draft, paid) = %+v, want %+v", got, want)
+		}
+	})
+
 	t.Run("issued, unpaid", func(t *testing.T) {
 		inv := invoice.InvoiceJson{Number: "INV-0000000009", Status: invoice.InvoiceJsonStatusIssued}
-		got := targetsFor(inv)
-		want := []target{{path: built("INV-0000000009.pdf"), overwrite: false, showPaid: false}}
+		got := targetsFor(inv, nil)
+		want := []target{{path: built("INV-0000000009.pdf"), overwrite: false}}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("targetsFor(issued, unpaid) = %+v, want %+v", got, want)
 		}
 	})
 
 	t.Run("issued, paid", func(t *testing.T) {
-		inv := invoice.InvoiceJson{Number: "INV-0000000009", Status: invoice.InvoiceJsonStatusIssued, Paid: &paidDate}
-		got := targetsFor(inv)
+		inv := invoice.InvoiceJson{Number: "INV-0000000009", Status: invoice.InvoiceJsonStatusIssued}
+		got := targetsFor(inv, &paidDate)
 		want := []target{
-			{path: built("INV-0000000009.pdf"), overwrite: false, showPaid: false},
-			{path: built("INV-0000000009-paid.pdf"), overwrite: false, showPaid: true},
+			{path: built("INV-0000000009.pdf"), overwrite: false},
+			{path: built("INV-0000000009-paid.pdf"), overwrite: false, paidOn: &paidDate},
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("targetsFor(issued, paid) = %+v, want %+v", got, want)

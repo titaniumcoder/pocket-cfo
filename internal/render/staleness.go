@@ -34,7 +34,7 @@ func IsCurrent(inv *invoice.InvoiceJson, totals money.Totals, manifest Manifest)
 	if !ok {
 		return false
 	}
-	html, err := HTML(inv, totals, false)
+	html, err := HTML(inv, totals, nil)
 	if err != nil {
 		return false
 	}

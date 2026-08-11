@@ -69,7 +69,7 @@ func TestIsCurrent(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				html, err := HTML(inv, totals, false)
+				html, err := HTML(inv, totals, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -85,7 +85,7 @@ func TestIsCurrent(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				html, err := HTML(inv, totals, false)
+				html, err := HTML(inv, totals, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -123,19 +123,17 @@ func TestIsCurrent(t *testing.T) {
 		{
 			// The regression this whole split exists for: marking an invoice
 			// paid used to redden its row until the next render run, because
-			// IsCurrent also demanded a matching -paid.pdf. The badge judges
-			// the archived original and nothing else.
+			// IsCurrent also demanded a matching -paid.pdf. Payment now lives
+			// in paid-invoices.json, which IsCurrent never reads at all — the
+			// badge judges the archived original and nothing else.
 			name: "paid, with no -paid.pdf built yet",
 			setup: func(t *testing.T) (*invoice.InvoiceJson, money.Totals, Manifest) {
 				inv := stalenessFixture("INV-0000000001", invoice.InvoiceJsonStatusIssued)
-				paid := mustDate("2026-02-01")
-				inv.Paid = &paid
-
 				totals, err := money.Compute(inv)
 				if err != nil {
 					t.Fatal(err)
 				}
-				mainHTML, err := HTML(inv, totals, false)
+				mainHTML, err := HTML(inv, totals, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -147,14 +145,11 @@ func TestIsCurrent(t *testing.T) {
 			name: "a stale -paid.pdf is not the original's problem",
 			setup: func(t *testing.T) (*invoice.InvoiceJson, money.Totals, Manifest) {
 				inv := stalenessFixture("INV-0000000001", invoice.InvoiceJsonStatusIssued)
-				paid := mustDate("2026-02-01")
-				inv.Paid = &paid
-
 				totals, err := money.Compute(inv)
 				if err != nil {
 					t.Fatal(err)
 				}
-				mainHTML, err := HTML(inv, totals, false)
+				mainHTML, err := HTML(inv, totals, nil)
 				if err != nil {
 					t.Fatal(err)
 				}

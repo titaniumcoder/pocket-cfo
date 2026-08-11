@@ -13,8 +13,10 @@ zero-VAT branches the system must handle.
 
 ## 1. Principles
 
-1. **One JSON file per invoice**, containing everything: the document, whether it's paid,
-   whether it's annulled. One place to look, one place to edit.
+1. **One JSON file per invoice**, containing the document itself and nothing mutable.
+   Once issued it is never edited again — payment is recorded separately, in
+   `data/paid-invoices.json` (§3.6), so settling an invoice can't churn a file whose
+   whole value is that it doesn't change.
 2. **Nothing calculable is stored.** No line amounts, no subtotal, no VAT, no total — a
    stored figure is one that can disagree with its own lines.
 3. **Three PDFs per invoice, at most**:
@@ -162,8 +164,6 @@ BIC), logo, default currency. Example shape:
     }
   },
 
-  "paid": "2026-01-28",
-
   "annulment": null
 }
 ```
@@ -264,12 +264,29 @@ write it now anyway.
 
 ### 3.6 Payment
 
+Payment lives in its own file, `data/paid-invoices.json`, not in the invoice document:
+
 ```json
-"paid": "2026-01-28"
+{
+  "paid": [
+    { "invoice": "INV-0000000002", "date": "2026-01-28" }
+  ]
+}
 ```
 
-A date, or `null`. Nothing else — no amount, no method, no partial payments. If you're
-looking at the invoice at all, you know whether the money arrived.
+A date per invoice. Nothing else — no amount, no method, no partial payments. If you're
+looking at the invoice at all, you know whether the money arrived. An invoice absent from
+the list is unpaid, and a missing file means nothing has been paid yet.
+
+It sits outside the invoice because an issued invoice is write-once (§1) while payment is
+mutable: recording it inside the document meant every payment rewrote an immutable file,
+and made the dashboard's staleness badge (§5.1) report a not-yet-rendered `-paid.pdf` as
+if the JSON had drifted.
+
+An entry is an object rather than a bare number-to-date pair so a bank reference can be
+attached later without a schema break. `pocket-cfo-ctl validate` enforces what JSON Schema
+can't: no duplicate invoice numbers, every number resolves to an invoice that exists, and
+no draft is marked paid.
 
 Partial payments are deliberately unsupported. If that ever changes, this field becomes
 an array and the derived rules in §3.7 grow one line; nothing else in the design cares.
@@ -299,13 +316,13 @@ one comes up. Nothing in the design blocks on the answer.
 ### 3.8 Derived state
 
 ```
-annulled   annulment != null              ← wins over everything
-paid       paid != null
-overdue    paid == null, due_date < today   ← request-time only
-open       paid == null, due_date >= today
+annulled   annulment != null                    ← wins over everything
+paid       listed in paid-invoices.json
+overdue    not listed, due_date < today          ← request-time only
+open       not listed, due_date >= today
 
 outstanding = Σ grand_total of invoices that are neither paid nor annulled
-days_to_pay = paid − issue_date
+days_to_pay = payment date − issue_date
 ```
 
 They are automatically computed during rendering of the webapp and never precomputed. They can technically be cached
@@ -370,7 +387,8 @@ It should be paranoid.
   citation style.
 - **Gapless sequence**, no duplicate numbers, filename matches `number`.
 - `due_date >= issue_date`; both parse as real dates.
-- **`paid`**, if set, is a real date `>= issue_date`, and the invoice is not annulled.
+- **`paid-invoices.json`**: no duplicate invoice numbers, every number resolves to an
+  invoice that exists, and no draft is marked paid.
 - **`discounts`**: each entry has exactly one of `percent` or `amount`; the running total
   never goes negative.
 - **Annulment**: reason in both languages; `replacement_invoice`, if set, resolves and is
@@ -411,7 +429,7 @@ Three rules, one per artifact.
 |---|---|
 | `INV-….pdf` | Render if missing and status != `draft`. **Never overwrite.** |
 | `INV-….-draft.pdf` | Render if status is `draft`. Overwrite on each run of the action. |
-| `INV-….-paid.pdf` | Render if `paid` is set and it's missing, or if the JSON is newer. |
+| `INV-….-paid.pdf` | Render if the invoice is listed in `paid-invoices.json` and it's missing, or if the JSON is newer. |
 | `INV-….-ANUL.pdf` | Render if missing, or if the JSON is newer. |
 
 "Newer" means per-file git commit timestamps:
@@ -495,7 +513,8 @@ subset is the fix.
 
 - **`INV-….pdf`** — plain. Written once.
 - **`INV-….-paid.pdf`** — the invoice with a rotated `BEZAHLT · ПЛАТЕНО · PAID` stamp
-  carrying the payment date. Rendered as soon as `paid` is set.
+  carrying the payment date. Rendered as soon as the invoice is listed in
+  `paid-invoices.json`.
 - **`INV-….-ANUL.pdf`** — the original overprinted with
   `STORNIERT · АНУЛИРАНА · CANCELLED`, the reason, date, and replacement number.
 
@@ -545,7 +564,7 @@ one per locale via `golang.org/x/text/message` and enforce it in the template.
 `build/stats.json`, all **date-independent** facts:
 
 - Issued per month: count, total, split by regime.
-- Collected per month, keyed on `paid`. Deliberately a separate series from issued — cash
+- Collected per month, keyed on the payment date. Deliberately a separate series from issued — cash
   in versus work billed, and for a one-person company the gap between them is the number
   that actually matters.
 - Per client: lifetime revenue, invoice count, average value, **average days to pay**
@@ -613,7 +632,7 @@ addresses.
 | GET | `/invoices` — list, filter by state / client / period |
 | GET | `/invoices/{number}` |
 | GET | `/invoices/{number}.pdf` |
-| GET | `/invoices/{number}-paid.pdf` — 404 until `paid` is set |
+| GET | `/invoices/{number}-paid.pdf` — 404 until the invoice is listed in `paid-invoices.json` |
 | GET | `/invoices/{number}-ANUL.pdf` — 404 unless annulled |
 | GET | `/recipients`, `/recipients/{n}` |
 | GET | `/reports/vies?period=2026-07` |
@@ -651,8 +670,10 @@ access must be requested first.
 
 Deploy: single Go binary, any host, scale-to-zero fine — no local state.
 
-**Later, if hand-editing gets tiresome**: `POST /invoices/{n}/paid` setting the `paid`
-date through the GitHub Contents API using the visitor's own OAuth token.
+**Later, if hand-editing gets tiresome**: `POST /invoices/{n}/paid` appending to
+`data/paid-invoices.json` through the GitHub Contents API using the visitor's own OAuth
+token. Splitting payment out of the invoice document is what makes this a small, additive
+write rather than a rewrite of an issued invoice.
 No database appears, the commit is attributed to the actual person, and GitHub enforces
 write permission for you. That's the only write path worth adding — one-click payment
 marking is what keeps the statistics honest.
@@ -674,7 +695,7 @@ marking is what keeps the statistics honest.
   zero rejected.
 - **Staleness tests** over a git fixture repo, fake renderer counting calls: second build
   renders nothing; `status: draft` renders nothing; editing the template renders nothing;
-  setting `paid` renders only `-paid.pdf`; deleting `INV-….pdf` renders exactly that
+  listing an invoice in `paid-invoices.json` renders only `-paid.pdf`; deleting `INV-….pdf` renders exactly that
   one; a shallow clone fails loudly rather than silently re-rendering everything.
 - `stats` tests: annulment excluded from revenue, paid before and after the due date.
 - Nothing in the test job hits api2pdf.
@@ -698,7 +719,7 @@ costs money and churns the repo without failing.
 5. `build.yml`.
 6. Signing — earlier than you'd think, since it's the only tamper evidence.
 7. `pocket-cfo-ctl index`; app: list, detail, PDF download.
-8. `paid` date: validators, `-paid.pdf`, stats, dashboard.
+8. Payment (`data/paid-invoices.json`): validators, `-paid.pdf`, stats, dashboard.
 9. Annulment: schema, validators, `-ANUL.pdf`, stats exclusion. Confirm the
    annulment-vs-credit-note split with the accountant when the first one comes up.
 10. `pocket-cfo-ctl new` scaffolding — by then you'll know what you want it to fill in.

@@ -10,10 +10,13 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/atombender/go-jsonschema/pkg/types"
+
 	"github.com/titaniumcoder/pocket-cfo/internal/money"
 	"github.com/titaniumcoder/pocket-cfo/internal/render"
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/invoice"
 	"github.com/titaniumcoder/pocket-cfo/internal/sign"
+	"github.com/titaniumcoder/pocket-cfo/internal/stats"
 )
 
 // invoicesDir and buildDir default to the layout described in
@@ -26,6 +29,7 @@ import (
 var (
 	dataDir            = getenv("DATA_DIR", "data")
 	invoicesDir        = dataDir + "/invoices"
+	paidInvoicesPath   = dataDir + "/paid-invoices.json"
 	buildDir           = getenv("BUILD_DIR", "build")
 	renderManifestPath = buildDir + "/render-manifest.json"
 )
@@ -95,9 +99,19 @@ func runRender(args []string) int {
 		}
 	}
 
+	paid, err := stats.LoadPaid(paidInvoicesPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "pocket-cfo-ctl render:", err)
+		return 1
+	}
+
 	failed := 0
 	for _, number := range numbers {
-		if err := renderOne(context.Background(), renderer, signer, number, *force, *dryRun, manifest); err != nil {
+		var paidOn *types.SerializableDate
+		if d, ok := paid[number]; ok {
+			paidOn = &d
+		}
+		if err := renderOne(context.Background(), renderer, signer, number, *force, *dryRun, manifest, paidOn); err != nil {
 			fmt.Fprintf(os.Stderr, "pocket-cfo-ctl render: %s: %v\n", number, err)
 			failed++
 		}
@@ -162,7 +176,7 @@ func invoiceNumbers(explicit []string) ([]string, error) {
 	return numbers, nil
 }
 
-func renderOne(ctx context.Context, renderer render.Renderer, signer *sign.PDFSigner, number string, force, dryRun bool, manifest render.Manifest) error {
+func renderOne(ctx context.Context, renderer render.Renderer, signer *sign.PDFSigner, number string, force, dryRun bool, manifest render.Manifest, paidOn *types.SerializableDate) error {
 	path := filepath.Join(invoicesDir, number+".json")
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -184,7 +198,7 @@ func renderOne(ctx context.Context, renderer render.Renderer, signer *sign.PDFSi
 	var totals money.Totals
 	var haveTotals bool
 
-	for _, t := range targetsFor(inv) {
+	for _, t := range targetsFor(inv, paidOn) {
 		filename := filepath.Base(t.path)
 
 		if !t.overwrite && !force {
@@ -214,7 +228,7 @@ func renderOne(ctx context.Context, renderer render.Renderer, signer *sign.PDFSi
 			haveTotals = true
 		}
 
-		html, err := render.HTML(&inv, totals, t.showPaid)
+		html, err := render.HTML(&inv, totals, t.paidOn)
 		if err != nil {
 			return fmt.Errorf("render html: %w", err)
 		}
@@ -260,7 +274,7 @@ func backfillManifestEntry(inv *invoice.InvoiceJson, t target, filename string, 
 		}
 		haveTotals = true
 	}
-	html, err := render.HTML(inv, totals, t.showPaid)
+	html, err := render.HTML(inv, totals, t.paidOn)
 	if err != nil {
 		return totals, haveTotals, fmt.Errorf("backfill manifest for %s: %w", filename, err)
 	}
@@ -296,16 +310,17 @@ func removeStaleDraftPDF(inv invoice.InvoiceJson, dryRun bool) error {
 // target is one PDF artifact to (maybe) render for an invoice.
 type target struct {
 	path      string
-	overwrite bool // true: always re-render. false: write once, skip if it exists (unless --force).
-	showPaid  bool
+	overwrite bool                    // true: always re-render. false: write once, skip if it exists (unless --force).
+	paidOn    *types.SerializableDate // nil: render the original, as if unpaid
 }
 
 // targetsFor returns every PDF artifact inv should have. Drafts get exactly
 // one, always overwritten. Issued invoices get the original — written once,
-// kept forever, and always rendered as if unpaid regardless of inv.Paid —
-// plus a second -paid.pdf, with the paid badge/stamp, once inv.Paid is set.
+// kept forever, and always rendered as if unpaid — plus a second -paid.pdf,
+// with the paid badge/stamp, once paidOn is known. paidOn comes from
+// data/paid-invoices.json, not from the invoice document.
 // See ARCHITECTURE.md §5.1/§6.
-func targetsFor(inv invoice.InvoiceJson) []target {
+func targetsFor(inv invoice.InvoiceJson, paidOn *types.SerializableDate) []target {
 	if inv.Status == invoice.InvoiceJsonStatusDraft {
 		return []target{
 			{path: filepath.Join(buildDir, inv.Number+"-DRAFT.pdf"), overwrite: true},
@@ -313,11 +328,11 @@ func targetsFor(inv invoice.InvoiceJson) []target {
 	}
 
 	targets := []target{
-		{path: filepath.Join(buildDir, inv.Number+".pdf"), overwrite: false, showPaid: false},
+		{path: filepath.Join(buildDir, inv.Number+".pdf"), overwrite: false},
 	}
-	if inv.Paid != nil {
+	if paidOn != nil {
 		targets = append(targets, target{
-			path: filepath.Join(buildDir, inv.Number+"-paid.pdf"), overwrite: false, showPaid: true,
+			path: filepath.Join(buildDir, inv.Number+"-paid.pdf"), overwrite: false, paidOn: paidOn,
 		})
 	}
 	return targets

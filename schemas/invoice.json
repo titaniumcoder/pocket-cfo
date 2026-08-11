@@ -18,7 +18,6 @@
     "recipient",
     "lines",
     "tax",
-    "paid",
     "annulment"
   ],
   "properties": {
@@ -43,7 +42,6 @@
       "items": { "$ref": "#/$defs/discount" }
     },
     "tax": { "$ref": "#/$defs/tax" },
-    "paid": { "type": ["string", "null"], "format": "date" },
     "annulment": {
       "type": ["object", "null"],
       "$ref": "#/$defs/annulment"

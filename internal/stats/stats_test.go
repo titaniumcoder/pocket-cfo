@@ -101,14 +101,15 @@ func TestAggregate(t *testing.T) {
 
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 
-	paidDate := mustDate("2025-03-01")
+	// Payment lives in paid-invoices.json now, so it reaches Aggregate as a
+	// map rather than as a field on the invoice.
+	paid := map[string]types.SerializableDate{"INV-A1": mustDate("2025-03-01")}
 	invoices := []*invoice.InvoiceJson{
 		{
 			Number: "INV-A1", Title: "A1", Status: invoice.InvoiceJsonStatusIssued,
 			IssueDate: mustDate("2025-02-01"), DueDate: mustDate("2025-02-08"),
 			Recipient: invoice.RecipientSnapshot{Number: 1, LegalName: "Alice Ltd"},
 			Lines:     []invoice.Line{line(100000)}, // 1000.00
-			Paid:      &paidDate,
 		},
 		{
 			Number: "INV-A2", Title: "A2", Status: invoice.InvoiceJsonStatusIssued,
@@ -133,7 +134,7 @@ func TestAggregate(t *testing.T) {
 
 	states := map[string]string{}
 
-	years, recipientRows, invoiceRows, err := Aggregate(invoices, recipients, nil, now)
+	years, recipientRows, invoiceRows, err := Aggregate(invoices, recipients, paid, nil, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +169,7 @@ func TestAggregate(t *testing.T) {
 	}
 
 	year2025 := 2025
-	_, recipientRows2025, invoiceRows2025, err := Aggregate(invoices, recipients, &year2025, now)
+	_, recipientRows2025, invoiceRows2025, err := Aggregate(invoices, recipients, paid, &year2025, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +206,7 @@ func TestAggregateDraftOnlyRecipientShownWithZeroedLedger(t *testing.T) {
 		},
 	}
 
-	_, recipientRows, _, err := Aggregate(invoices, recipients, nil, now)
+	_, recipientRows, _, err := Aggregate(invoices, recipients, nil, nil, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +223,7 @@ func TestAggregateDraftOnlyRecipientShownWithZeroedLedger(t *testing.T) {
 
 	// Filtering to a year with no activity at all excludes her again.
 	otherYear := 2025
-	_, recipientRows2025, _, err := Aggregate(invoices, recipients, &otherYear, now)
+	_, recipientRows2025, _, err := Aggregate(invoices, recipients, nil, &otherYear, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +240,7 @@ func TestAggregateRecipientWithNoInvoicesAtAllNotShown(t *testing.T) {
 	}
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 
-	_, recipientRows, _, err := Aggregate(nil, recipients, nil, now)
+	_, recipientRows, _, err := Aggregate(nil, recipients, nil, nil, now)
 	if err != nil {
 		t.Fatal(err)
 	}

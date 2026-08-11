@@ -119,13 +119,13 @@ var templates = `
       <div class="group">
         <div class="group-header" onclick="this.closest('.group').classList.toggle('open')">
           <span class="label">{{.Name}} <span class="chevron">&#9656;</span></span>
-          <span class="amt neg">&minus;{{eur .SpentCents}}</span>
+          <span class="amt neg">&minus;{{eur .PlannedCents}}</span>
         </div>
         <div class="group-rows">
           {{range .Rows}}
-          <div class="row{{if .PlannedMonth}} planned{{end}}{{if .Overridden}} override{{end}}">
+          <div class="row{{if .UpcomingMonth}} planned{{end}}{{if .Overridden}} override{{end}}">
             <span class="label">{{.Name}}{{if .Note}} <span class="note">{{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Note}} <svg class="link-icon" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>{{else}}{{.Note}}{{end}}</span>{{end}}</span>
-            <span class="mid">{{if .SpentCents}}{{eur .SpentCents}}{{else if .PlannedMonth}}{{eur .PlannedCents}} ({{.PlannedMonth}}){{end}}</span>
+            <span class="mid">{{if .PlannedCents}}{{eur .PlannedCents}}{{else if .UpcomingMonth}}{{eur .UpcomingCents}} ({{.UpcomingMonth}}){{end}}</span>
             <span class="amt"></span>
           </div>
           {{end}}
@@ -280,7 +280,7 @@ var templates = `
 
     {{if .ShowBalance}}
     <div class="ledger">
-      <div class="row net neg"><span class="label">Total private expenses</span><span class="mid"></span><span class="amt neg">&minus;{{eur .PrivateTotalSpentCents}}</span></div>
+      <div class="row net neg"><span class="label">Total private expenses</span><span class="mid"></span><span class="amt neg">&minus;{{eur .PrivateTotalPlannedCents}}</span></div>
       <div class="row net balance{{if lt .BalanceCents 0}} neg{{end}}"><span class="label">Balance</span><span class="mid"></span><span class="amt netamt">{{eur .BalanceCents}}</span></div>
     </div>
     {{end}}

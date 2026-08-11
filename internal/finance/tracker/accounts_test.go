@@ -218,7 +218,7 @@ func TestAvailableIsOpeningPlusNetIncome(t *testing.T) {
 	if want := f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents; f.AvailableCents != want {
 		t.Errorf("AvailableCents = %d, want %d (opening + net income)", f.AvailableCents, want)
 	}
-	if want := f.AvailableCents - f.PrivateTotalSpentCents; f.BalanceCents != want {
+	if want := f.AvailableCents - f.PrivateTotalPlannedCents; f.BalanceCents != want {
 		t.Errorf("BalanceCents = %d, want %d (available - private expenses)", f.BalanceCents, want)
 	}
 }
@@ -374,7 +374,7 @@ func TestNoAccountsLayerLeavesBalanceUnchanged(t *testing.T) {
 	if f.ShowOpeningBalance {
 		t.Error("an empty accounts file must show no balance rows")
 	}
-	if f.BalanceCents != f.FundingPersonal.NetIncomeCents-f.PrivateTotalSpentCents {
+	if f.BalanceCents != f.FundingPersonal.NetIncomeCents-f.PrivateTotalPlannedCents {
 		t.Errorf("Balance = %d, want net income - private expenses with no accounts layer", f.BalanceCents)
 	}
 }

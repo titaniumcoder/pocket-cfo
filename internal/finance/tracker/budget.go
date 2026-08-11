@@ -114,18 +114,20 @@ func (b *Budget) Evict() {
 	b.cache = nil
 }
 
-// CategoryRow is one category's figure for a period, in cents. Planned* are
-// only set for a dated category whose month hasn't arrived yet; Overridden
-// marks a figure that came from an override rather than amount/minimal_amount.
+// CategoryRow is one category's figure for a period, in cents. Every figure
+// here is *planned* money read from budget.json — this app has never recorded
+// observed spending, which is why there is no Spent field. Upcoming* are set
+// only for a dated category whose month hasn't arrived yet; Overridden marks a
+// figure that came from an override rather than amount/minimal_amount.
 // See categoryRowFor.
 type CategoryRow struct {
-	Name         string
-	SpentCents   int
-	PlannedCents int    // configured amount, shown ahead of time
-	PlannedMonth string // e.g. "September 2026"
-	Note         string
-	URL          string // when set, the note renders as a link
-	Overridden   bool
+	Name          string
+	PlannedCents  int
+	UpcomingCents int    // configured amount, shown ahead of time
+	UpcomingMonth string // e.g. "September 2026"
+	Note          string
+	URL           string // when set, the note renders as a link
+	Overridden    bool
 }
 
 type LoanRow struct {
@@ -135,9 +137,9 @@ type LoanRow struct {
 
 // CategoryGroupView is one budget.json group's rows for a period.
 type CategoryGroupView struct {
-	Name       string
-	Rows       []CategoryRow
-	SpentCents int // sum of Rows' SpentCents
+	Name         string
+	Rows         []CategoryRow
+	PlannedCents int // sum of Rows' PlannedCents
 }
 
 // BudgetView is what the dashboard renders, split by group kind. Private is
@@ -145,11 +147,11 @@ type CategoryGroupView struct {
 // business expense, deducted from Company income *before* the salary cascade
 // (see PersonalParams.breakdown) since it never becomes salary at all.
 type BudgetView struct {
-	Groups          []CategoryGroupView
-	TotalSpentCents int
+	Groups            []CategoryGroupView
+	TotalPlannedCents int
 
-	CompanyGroups          []CategoryGroupView
-	CompanyTotalSpentCents int
+	CompanyGroups            []CategoryGroupView
+	CompanyTotalPlannedCents int
 }
 
 // ForMonth builds the budget view for one calendar month. A dated category is
@@ -164,12 +166,12 @@ func (b *Budget) ForMonth(ctx context.Context, year int, month time.Month, now t
 	}
 	key := monthKey(year, month)
 	minimal := b.IsMinimal()
-	spendFor := func(c budgetdata.Category) (int, bool) {
+	plannedFor := func(c budgetdata.Category) (int, bool) {
 		_, overridden := overrideFor(c, key)
 		return categoryCents(c, key, minimal), overridden
 	}
 	viewed := time.Date(year, month, 1, 0, 0, 0, 0, now.Location())
-	return buildBudgetView(bf, spendFor, spendFor, viewed, minimal), nil
+	return buildBudgetView(bf, plannedFor, plannedFor, viewed, minimal), nil
 }
 
 // privateExpenseStartMonth is where ForYear's private-category range starts:
@@ -197,21 +199,21 @@ func (b *Budget) ForYear(ctx context.Context, year int, now time.Time) (BudgetVi
 	}
 	privateStart := privateExpenseStartMonth(year, now)
 	// Overridden is meaningful for a single month, not a yearly aggregate.
-	privateSpend := func(c budgetdata.Category) (int, bool) {
+	privatePlanned := func(c budgetdata.Category) (int, bool) {
 		sum := 0
 		for m := privateStart; m <= time.December; m++ {
 			sum += categoryCents(c, monthKey(year, m), false)
 		}
 		return sum, false
 	}
-	companySpend := func(c budgetdata.Category) (int, bool) {
+	companyPlanned := func(c budgetdata.Category) (int, bool) {
 		sum := 0
 		for m := time.January; m <= time.December; m++ {
 			sum += categoryCents(c, monthKey(year, m), false)
 		}
 		return sum, false
 	}
-	return buildBudgetView(bf, privateSpend, companySpend, now, false), nil
+	return buildBudgetView(bf, privatePlanned, companyPlanned, now, false), nil
 }
 
 // CompanyExpensesByMonth returns each month's company-kind spend for the year,
@@ -237,38 +239,38 @@ func (b *Budget) CompanyExpensesByMonth(ctx context.Context, year int) (map[time
 	return result, nil
 }
 
-// buildBudgetView computes each category's figure, using privateSpend or
-// companySpend by group kind. ref and minimal are forwarded to categoryRowFor;
+// buildBudgetView computes each category's figure, using privatePlanned or
+// companyPlanned by group kind. ref and minimal are forwarded to categoryRowFor;
 // ForYear always passes minimal=false, since year view ignores the toggle.
-func buildBudgetView(bf budgetdata.BudgetFile, privateSpend, companySpend func(budgetdata.Category) (int, bool), ref time.Time, minimal bool) BudgetView {
+func buildBudgetView(bf budgetdata.BudgetFile, privatePlanned, companyPlanned func(budgetdata.Category) (int, bool), ref time.Time, minimal bool) BudgetView {
 	var view BudgetView
 	for _, g := range bf.Groups {
-		spendFor := privateSpend
+		plannedFor := privatePlanned
 		isCompany := g.Kind == budgetdata.GroupKindCompany
 		if isCompany {
-			spendFor = companySpend
+			plannedFor = companyPlanned
 		}
 		gv := CategoryGroupView{Name: g.Name}
 		for _, c := range g.Categories {
-			spentCents, overridden := spendFor(c)
-			row, ok := categoryRowFor(c, spentCents, overridden, ref, minimal)
+			plannedCents, overridden := plannedFor(c)
+			row, ok := categoryRowFor(c, plannedCents, overridden, ref, minimal)
 			if !ok {
 				continue
 			}
 			gv.Rows = append(gv.Rows, row)
-			gv.SpentCents += row.SpentCents
+			gv.PlannedCents += row.PlannedCents
 		}
 		if len(gv.Rows) == 0 {
-			// Deliberately not "SpentCents == 0": a group of future-planned
+			// Deliberately not "PlannedCents == 0": a group of future-planned
 			// one-offs also sums to zero but still has rows to render.
 			continue
 		}
 		if isCompany {
 			view.CompanyGroups = append(view.CompanyGroups, gv)
-			view.CompanyTotalSpentCents += gv.SpentCents
+			view.CompanyTotalPlannedCents += gv.PlannedCents
 		} else {
 			view.Groups = append(view.Groups, gv)
-			view.TotalSpentCents += gv.SpentCents
+			view.TotalPlannedCents += gv.PlannedCents
 		}
 	}
 	return view
@@ -336,19 +338,19 @@ func nextNonZeroMonth(c budgetdata.Category, ref time.Time, minimal bool) (time.
 }
 
 // categoryRowFor decides whether and how a category renders, given its
-// already-computed spentCents.
-func categoryRowFor(c budgetdata.Category, spentCents int, overridden bool, ref time.Time, minimal bool) (CategoryRow, bool) {
+// already-computed plannedCents.
+func categoryRowFor(c budgetdata.Category, plannedCents int, overridden bool, ref time.Time, minimal bool) (CategoryRow, bool) {
 	row := baseCategoryRow(c)
 
-	if spentCents == 0 && c.Date == nil && overridden {
+	if plannedCents == 0 && c.Date == nil && overridden {
 		if preview, ok := zeroedRecurringPreview(c, row, ref, minimal); ok {
 			return preview, true
 		}
 	}
-	if spentCents > 0 || c.Date == nil {
-		return normalRow(row, spentCents, overridden), true
+	if plannedCents > 0 || c.Date == nil {
+		return normalRow(row, plannedCents, overridden), true
 	}
-	return datedCategoryRow(c, row, spentCents, overridden, ref, minimal)
+	return datedCategoryRow(c, row, plannedCents, overridden, ref, minimal)
 }
 
 // baseCategoryRow fills in the fields every branch below shares.
@@ -374,16 +376,16 @@ func zeroedRecurringPreview(c budgetdata.Category, row CategoryRow, ref time.Tim
 		return CategoryRow{}, false
 	}
 	nextKey := monthKey(next.Year(), next.Month())
-	row.PlannedCents = eurToCents(categoryAmount(c, nextKey, minimal))
+	row.UpcomingCents = eurToCents(categoryAmount(c, nextKey, minimal))
 	_, row.Overridden = overrideFor(c, nextKey)
-	row.PlannedMonth = next.Format("January 2006")
+	row.UpcomingMonth = next.Format("January 2006")
 	return row, true
 }
 
 // normalRow renders the common case: a recurring category, or a dated one due
 // inside the viewed period.
-func normalRow(row CategoryRow, spentCents int, overridden bool) CategoryRow {
-	row.SpentCents = spentCents
+func normalRow(row CategoryRow, plannedCents int, overridden bool) CategoryRow {
+	row.PlannedCents = plannedCents
 	row.Overridden = overridden
 	return row
 }
@@ -394,20 +396,20 @@ func normalRow(row CategoryRow, spentCents int, overridden bool) CategoryRow {
 // ref differs by caller. ForMonth passes the viewed month, so browsing shows a
 // one-off as upcoming until its due month regardless of today's date; ForYear
 // passes real now, since its own remaining-months logic already depends on it.
-func datedCategoryRow(c budgetdata.Category, row CategoryRow, spentCents int, overridden bool, ref time.Time, minimal bool) (CategoryRow, bool) {
+func datedCategoryRow(c budgetdata.Category, row CategoryRow, plannedCents int, overridden bool, ref time.Time, minimal bool) (CategoryRow, bool) {
 	d, err := time.Parse("2006-01-02", *c.Date)
 	if err != nil {
 		// ValidateBudget enforces the format, but don't hide a category over
 		// a parse error; show it plainly.
-		row.SpentCents = spentCents
+		row.PlannedCents = plannedCents
 		row.Overridden = overridden
 		return row, true
 	}
 	if d.Year() > ref.Year() || (d.Year() == ref.Year() && d.Month() > ref.Month()) {
 		dueKey := monthKey(d.Year(), d.Month())
-		row.PlannedCents = eurToCents(categoryAmount(c, dueKey, minimal))
+		row.UpcomingCents = eurToCents(categoryAmount(c, dueKey, minimal))
 		_, row.Overridden = overrideFor(c, dueKey)
-		row.PlannedMonth = d.Format("January 2006")
+		row.UpcomingMonth = d.Format("January 2006")
 		return row, true
 	}
 	return CategoryRow{}, false

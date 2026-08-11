@@ -59,6 +59,7 @@ main.login { max-width: 760px; }
   .layout { grid-template-columns: minmax(0, 1fr) 260px; }
 }
 .income-panel .hrs-m { display: none; }
+.plan-m { display: none; }
 
 /* Tablet range: keep the desktop-shaped grids (3-column ledger, full
    tables) but tighten spacing — the mobile breakpoint below actively
@@ -166,6 +167,16 @@ main h2.panel-title { font-size: 1.05rem; text-transform: none; letter-spacing: 
 .row.net.neg { background: var(--net-bg-neg); }
 .row.net .label { font-weight: 700; }
 .row.net .amt { font-weight: 700; }
+.amt.act { font-weight: 500; opacity: .85; }
+.amt.over { color: var(--danger); }
+.amt.under { color: var(--good); }
+.amt.unbudgeted { color: var(--warn); }
+.amt.mistimed { color: var(--danger); font-weight: 700; }
+.group-header .amt.act { margin-right: 1.25rem; font-weight: 500; opacity: .75; }
+.act-note { display: block; font-size: .78em; font-weight: 400; opacity: .75; }
+.act-link { color: inherit; text-decoration: none; border-bottom: 1px dotted currentColor; }
+.row.colhead { opacity: .5; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; padding: .2rem 0 0; }
+.mistimed-note { grid-column: 1 / -1; color: var(--danger); font-size: .82rem; background: var(--danger-bg, rgba(220,38,38,.08)); border-radius: 8px; padding: .5rem .7rem; margin: .1rem 0 .3rem; }
 .amt.netamt { color: var(--good-strong); }
 .row.net.neg .amt.netamt { color: var(--danger); }
 .row.balance { padding-top: .7rem; padding-bottom: .7rem; border: 1px solid var(--net-border); }
@@ -408,4 +419,24 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
   a { color: inherit; text-decoration: none; }
   .panel { border: 1px solid #000; padding: .5rem .75rem; border-radius: 0; }
   .panel + .panel { margin-top: 1rem; }
+}
+
+/* Actuals on a phone. Scoped to .ledger.with-actuals so a month with no
+   imported file keeps showing its planned figures in .mid, and to
+   .group-rows .row so Net income / Balance / account rows in the same ledger
+   are untouched. Mirrors the .income-panel pattern above. */
+@media (max-width: 600px) {
+  .ledger.with-actuals .group-rows .row .mid { display: none; }
+  .ledger.with-actuals .group-rows .row .amt {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+  .ledger.with-actuals .plan-m {
+    display: block;
+    font-size: .8em;
+    font-weight: 400;
+    opacity: .6;
+  }
+  .row.colhead { display: none; }
 }

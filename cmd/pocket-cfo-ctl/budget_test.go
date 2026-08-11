@@ -9,9 +9,8 @@ import (
 	"testing"
 )
 
-// legacyBudget is budget.json as it looks before the migration: no ids, and
-// the deliberate hand-maintained formatting — one category per line, keys in
-// a chosen order, a nested overrides array — that the rewrite must preserve.
+// legacyBudget is budget.json before the migration, in the hand-maintained
+// formatting the rewrite must preserve.
 const legacyBudget = `{
   "$schema": "../internal/finance/data/budget.schema.json",
   "groups": [
@@ -138,9 +137,8 @@ func TestBudgetIDsIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestBudgetIDsKeepsExistingIDs pins the promise an id makes: it outlives a
-// rename, so a category that already has one is never re-derived from its
-// current name.
+// TestBudgetIDsKeepsExistingIDs: an id outlives a rename, so one already
+// present is never regenerated.
 func TestBudgetIDsKeepsExistingIDs(t *testing.T) {
 	dir := writeBudget(t, `{
   "groups": [
@@ -164,8 +162,7 @@ func TestBudgetIDsKeepsExistingIDs(t *testing.T) {
 }
 
 // TestBudgetIDsGivesIdenticalNamesDistinctIDs covers what a name-derived id
-// had to special-case: "Hotel" under two similarly-named groups. Nothing about
-// the category feeds the id, so there is nothing to disambiguate.
+// had to special-case. Nothing about the category feeds the id now.
 func TestBudgetIDsGivesIdenticalNamesDistinctIDs(t *testing.T) {
 	dir := writeBudget(t, `{
   "groups": [
@@ -194,8 +191,8 @@ func TestBudgetIDsDryRunWritesNothing(t *testing.T) {
 	}
 }
 
-// TestBudgetIDsResultIsValid is the self-check that makes byte surgery safe:
-// the rewritten file must satisfy the real schema and the real business rules.
+// TestBudgetIDsResultIsValid: the rewritten file must satisfy the real schema
+// and business rules.
 func TestBudgetIDsResultIsValid(t *testing.T) {
 	dir := writeBudget(t, legacyBudget)
 	if code := runBudgetIDs([]string{dir}); code != 0 {
@@ -247,8 +244,7 @@ func TestBudgetUnknownSubcommand(t *testing.T) {
 	}
 }
 
-// TestBudgetIDsRejectsMalformedJSON keeps the failure legible rather than
-// producing a half-edited file.
+// TestBudgetIDsRejectsMalformedJSON: fail rather than half-edit.
 func TestBudgetIDsRejectsMalformedJSON(t *testing.T) {
 	dir := writeBudget(t, `{"groups": [`)
 	if code := runBudgetIDs([]string{dir}); code == 0 {

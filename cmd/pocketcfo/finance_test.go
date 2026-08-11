@@ -472,10 +472,8 @@ func TestHandleIndex_AuthorizedRendersInvoicingDashboard(t *testing.T) {
 	}
 }
 
-// TestHandleIndex_DraftRowHasNoStaleBadge pins the "drafts get no badge"
-// rule. A draft's -DRAFT.pdf is re-rendered on every render run, so any edit
-// since the last one correctly reports "not current" — but for a document
-// you're still writing that's noise, not a warning.
+// TestHandleIndex_DraftRowHasNoStaleBadge: a draft's -DRAFT.pdf is
+// re-rendered every run, so "not current" is noise rather than a warning.
 func TestHandleIndex_DraftRowHasNoStaleBadge(t *testing.T) {
 	s := newTestClientServer(t)
 	s.cfg.env = "prod"
@@ -551,8 +549,7 @@ func TestHandleIndex_BothPartsSessionShowsFinanceNavButNotInfo(t *testing.T) {
 	}
 }
 
-// TestFinanceSpending_AnonymousRedirectsToLogin mirrors handleInfo: a
-// logged-out admin shouldn't hit a dead-end 403 on a page they're entitled to.
+// TestFinanceSpending_AnonymousRedirectsToLogin mirrors handleInfo.
 func TestFinanceSpending_AnonymousRedirectsToLogin(t *testing.T) {
 	s := newTestClientServer(t)
 	s.cfg.env = "prod"
@@ -567,9 +564,8 @@ func TestFinanceSpending_AnonymousRedirectsToLogin(t *testing.T) {
 	}
 }
 
-// TestFinanceSpending_ReadOnlyIsForbidden pins the tier: the drill-down is the
-// only page carrying statement descriptions, so an email-OTP session is
-// refused even though it can see the dashboard.
+// TestFinanceSpending_ReadOnlyIsForbidden: the drill-down carries statement
+// descriptions, so an email-OTP session is refused.
 func TestFinanceSpending_ReadOnlyIsForbidden(t *testing.T) {
 	s := newTestClientServer(t)
 	s.cfg.env = "prod"

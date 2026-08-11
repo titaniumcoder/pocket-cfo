@@ -115,15 +115,13 @@ func (b *Budget) Evict() {
 }
 
 // CategoryRow is one category's figure for a period, in cents. Every figure
-// here is *planned* money read from budget.json — this app has never recorded
-// observed spending, which is why there is no Spent field. Upcoming* are set
-// only for a dated category whose month hasn't arrived yet; Overridden marks a
-// figure that came from an override rather than amount/minimal_amount.
-// See categoryRowFor.
+// here is planned money from budget.json; ActualCents is filled separately by
+// ApplyActuals. Upcoming* are set only for a dated category whose month hasn't
+// arrived yet.
 type CategoryRow struct {
 	Name          string
-	CategoryID    string // budget.json id; what a recorded transaction points at
-	PlannedDate   string // the one-off's due month, "2026-10-01"; empty when recurring
+	CategoryID    string // what a recorded transaction points at
+	PlannedDate   string // a one-off's due month; empty when recurring
 	PlannedCents  int
 	UpcomingCents int    // configured amount, shown ahead of time
 	UpcomingMonth string // e.g. "September 2026"
@@ -131,7 +129,7 @@ type CategoryRow struct {
 	URL           string // when set, the note renders as a link
 	Overridden    bool
 
-	// Filled by ApplyActuals, never by the budget itself.
+	// Filled by ApplyActuals.
 	ActualCents  int
 	HasActual    bool
 	ActualStatus string // "" | under | over | unbudgeted | mistimed
@@ -149,9 +147,9 @@ type CategoryGroupView struct {
 	Rows         []CategoryRow
 	PlannedCents int // sum of Rows' PlannedCents
 
-	ActualCents int // sum of Rows' ActualCents; filled by ApplyActuals
+	ActualCents int // sum of Rows' ActualCents
 	HasActual   bool
-	HasMistimed bool // at least one row is charged in the wrong month
+	HasMistimed bool
 }
 
 // BudgetView is what the dashboard renders, split by group kind. Private is

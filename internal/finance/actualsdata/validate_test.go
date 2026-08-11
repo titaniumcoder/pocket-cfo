@@ -124,9 +124,8 @@ func TestValidateActuals(t *testing.T) {
 	}
 }
 
-// TestValidateActualsReportsEveryBreach is the reason this validator
-// accumulates instead of failing fast: the file is machine-written in bulk,
-// so one error per fix-and-rerun cycle is the wrong shape.
+// TestValidateActualsReportsEveryBreach is why this validator accumulates
+// instead of failing fast.
 func TestValidateActualsReportsEveryBreach(t *testing.T) {
 	f := validFile()
 	f.Transactions[0].Amount = 0
@@ -145,7 +144,7 @@ func TestValidateActualsReportsEveryBreach(t *testing.T) {
 }
 
 // TestValidateActualsNilKnownIDsSkipsTheCrossCheck covers the runtime loader,
-// which has no budget file to hand and must not refuse to render because of it.
+// which has no budget file to hand.
 func TestValidateActualsNilKnownIDsSkipsTheCrossCheck(t *testing.T) {
 	f := validFile()
 	f.Transactions[0].Category = strp("something.unrecognised")

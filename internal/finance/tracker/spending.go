@@ -9,12 +9,9 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/webui"
 )
 
-// SpendingView is the admin-only drill-down: every transaction behind the
-// dashboard's figures, grouped the way the dashboard groups them.
-//
-// This is the only place a statement description is ever rendered. The
-// dashboard's Figures deliberately carries none, so a non-admin session's
-// HTML cannot contain one however the template is later edited.
+// SpendingView is the admin-only drill-down. It is the only place a statement
+// description is rendered: Figures carries none, so a non-admin's HTML cannot
+// contain one however the template is later edited.
 type SpendingView struct {
 	Header  webui.Header
 	Month   string // "August 2026"
@@ -66,9 +63,9 @@ type SpendingTx struct {
 	Category    string // unmatched lines only
 }
 
-// ComputeSpending assembles the detail page for one month. A month with no
-// imported file returns Present=false, and the handler renders a short "not
-// reconciled" page rather than 404 — the month exists, it just has no data.
+// ComputeSpending assembles the detail page for one month. An unreconciled
+// month returns Present=false rather than an error: it exists, it just has no
+// data.
 func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Month) SpendingView {
 	v := SpendingView{
 		Month:   fmt.Sprintf("%s %d", month.String(), year),
@@ -114,8 +111,7 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 		byCategory[*tx.Category] = append(byCategory[*tx.Category], row)
 	}
 
-	// The dashboard's own view supplies the planned figures and the mistimed
-	// grading, so the two pages can never disagree about a category.
+	// Reusing the dashboard's view keeps the two pages from disagreeing.
 	var bv BudgetView
 	if t.Budget != nil {
 		if built, berr := t.Budget.ForMonth(ctx, year, month, time.Now().In(t.locOrUTC())); berr == nil {

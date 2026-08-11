@@ -421,10 +421,9 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
   .panel + .panel { margin-top: 1rem; }
 }
 
-/* Actuals on a phone. Scoped to .ledger.with-actuals so a month with no
-   imported file keeps showing its planned figures in .mid, and to
-   .group-rows .row so Net income / Balance / account rows in the same ledger
-   are untouched. Mirrors the .income-panel pattern above. */
+/* Scoped to .ledger.with-actuals so a month with no imported file keeps its
+   planned figures in .mid, and to .group-rows .row so Net income / Balance /
+   account rows are untouched. */
 @media (max-width: 600px) {
   .ledger.with-actuals .group-rows .row .mid { display: none; }
   .ledger.with-actuals .group-rows .row .amt {
@@ -441,7 +440,6 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
   .row.colhead { display: none; }
 }
 
-/* Spending drill-down (admin only). */
 .cat-block { margin: 1.2rem 0 1.8rem; }
 .cat-block h4 { margin: 0 0 .4rem; font-size: 1rem; }
 .mistimed-inline { color: var(--danger); font-weight: 600; font-size: .9rem; }

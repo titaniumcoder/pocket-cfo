@@ -45,8 +45,8 @@ func RenderEmailSent(w http.ResponseWriter) {
 	tmpl.ExecuteTemplate(w, "emailSent", nil)
 }
 
-// RenderSpending renders the admin-only spending drill-down. It is the only
-// template that receives transaction descriptions; see SpendingView.
+// RenderSpending renders the admin-only spending drill-down, the only
+// template that receives transaction descriptions.
 func RenderSpending(w http.ResponseWriter, v SpendingView) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	tmpl.ExecuteTemplate(w, "spending", v)

@@ -86,8 +86,7 @@ func TestActualsUnknownSubcommand(t *testing.T) {
 	}
 }
 
-// gitRepo turns dir into a committed git repository, or skips the test when
-// git isn't available.
+// gitRepo turns dir into a committed git repository, or skips the test.
 func gitRepo(t *testing.T, dir string) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -109,8 +108,7 @@ func TestActualsValidateBaseRefCatchesARemoval(t *testing.T) {
 	dir := actualsDir(t)
 	gitRepo(t, dir)
 
-	// Rebuild August from a statement covering only part of the month: the
-	// figures still add up, which is exactly why this needs catching.
+	// The figures still add up, which is why this needs catching.
 	shrunk := `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-02","to":"2026-08-31","imported_at":"2026-09-01"}],
 		"transactions":[{"id":"t2","date":"2026-08-03","description":"LIDL","amount":210.4,"account":"A","category":"00000000-0000-4000-8000-000000000002"}]}`
 	if err := os.WriteFile(filepath.Join(dir, "actuals", "2026-08.json"), []byte(shrunk), 0o644); err != nil {
@@ -158,8 +156,7 @@ func TestActualsValidateBaseRefAllowsAdditions(t *testing.T) {
 	}
 }
 
-// TestActualsValidateHonoursTheCommitTrailer covers the path CI uses, where
-// there is no flag to pass.
+// TestActualsValidateHonoursTheCommitTrailer covers the path CI uses.
 func TestActualsValidateHonoursTheCommitTrailer(t *testing.T) {
 	dir := actualsDir(t)
 	gitRepo(t, dir)

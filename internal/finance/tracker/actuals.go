@@ -19,18 +19,12 @@ func actualsPath(year int, month time.Month) string {
 	return fmt.Sprintf("actuals/%04d-%02d.json", year, int(month))
 }
 
-// Actuals reads data/actuals/YYYY-MM.json — what was *actually* spent, as
-// reconciled from bank statements — and caches each month until evicted.
-//
-// Unlike Budget, a missing file is not an error: most months simply haven't
-// been reconciled, and that must render as "nothing to show" rather than as a
-// failure. Same optional-layer contract as Accounts.
-//
-// Nothing here feeds any arithmetic. Balance, Available to spend, Total
-// private expenses and the account roll-forward all stay planned-based; these
-// figures are shown beside the plan and never folded into it.
+// Actuals reads data/actuals/YYYY-MM.json and caches each month until
+// evicted. Unlike Budget, a missing file is not an error: an unreconciled
+// month renders as nothing at all, the same optional-layer contract Accounts
+// has.
 type Actuals struct {
-	FS fs.FS // A nil FS means not configured, as with Accounts.
+	FS fs.FS // nil means not configured
 
 	mu    sync.Mutex
 	cache map[string]*actualsResult // keyed "2026-08"
@@ -44,11 +38,11 @@ type actualsResult struct {
 
 // ActualsView is one period's recorded spending, ready to display.
 type ActualsView struct {
-	Present    bool           // false: no file for this period — render nothing at all
+	Present    bool
 	Complete   bool           // coverage reaches month end for every account it names
-	ByCategory map[string]int // budget category id -> cents; ignored lines excluded
+	ByCategory map[string]int // category id -> cents; ignored lines excluded
 	TotalCents int
-	Note       string // the coverage caveat; empty when Complete
+	Note       string // coverage caveat; empty when Complete
 }
 
 // ForMonth returns the recorded spending for one month.
@@ -63,9 +57,8 @@ func (a *Actuals) ForMonth(ctx context.Context, year int, month time.Month) (Act
 	return viewOf(res.file, year, month), nil
 }
 
-// ForYear sums whichever months of the year have been reconciled. Complete
-// requires all twelve present and individually complete, so a partly-imported
-// year never reads as a finished one.
+// ForYear sums whichever months have been reconciled. Complete requires all
+// twelve, so a partly-imported year never reads as a finished one.
 func (a *Actuals) ForYear(ctx context.Context, year int) (ActualsView, error) {
 	out := ActualsView{ByCategory: map[string]int{}}
 	months := 0
@@ -99,10 +92,9 @@ func (a *Actuals) ForYear(ctx context.Context, year int) (ActualsView, error) {
 	return out, nil
 }
 
-// ChargedMonths reports, per budget category id, which months of the year it
-// was actually charged in. It exists for the mistimed-one-off check, which
-// has to look outside the month being viewed: a cost budgeted for August and
-// paid in July is invisible from either month alone.
+// ChargedMonths reports which months each category was charged in. The
+// mistimed check needs it: a cost budgeted for August and paid in July is
+// invisible from either month alone.
 func (a *Actuals) ChargedMonths(ctx context.Context, year int) (map[string][]time.Month, error) {
 	if a == nil || a.FS == nil {
 		return nil, nil
@@ -128,16 +120,14 @@ func (a *Actuals) ChargedMonths(ctx context.Context, year int) (map[string][]tim
 	return out, nil
 }
 
-// TransactionsForMonth returns the month's raw document, for the admin-only
-// spending page. Deliberately separate from ForMonth: descriptions must never
-// reach the dashboard's Figures, so the only way to get them is to ask.
+// TransactionsForMonth returns the raw document, for the admin-only spending
+// page. Separate from ForMonth so descriptions never reach Figures.
 func (a *Actuals) TransactionsForMonth(ctx context.Context, year int, month time.Month) (actualsdata.ActualsFile, bool, error) {
 	res := a.month(ctx, year, month)
 	return res.file, res.present, res.err
 }
 
-// Evict drops every cached month, so the existing Reload link picks up a
-// fresh data-repo commit.
+// Evict drops every cached month.
 func (a *Actuals) Evict() {
 	if a == nil {
 		return
@@ -176,7 +166,6 @@ func (a *Actuals) fetch(year int, month time.Month) actualsResult {
 	content, err := fs.ReadFile(a.FS, path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			// Optional layer: an unreconciled month is absence, not failure.
 			return actualsResult{}
 		}
 		return actualsResult{err: fmt.Errorf("actuals: reading %s: %w", path, err)}
@@ -185,10 +174,9 @@ func (a *Actuals) fetch(year int, month time.Month) actualsResult {
 	if err := json.Unmarshal(content, &af); err != nil {
 		return actualsResult{err: fmt.Errorf("actuals: parse %s: %w", path, err)}
 	}
-	// Structural rules only. The category cross-check needs budget.json,
-	// which this layer has no business loading — an id that no longer
-	// resolves is bucketed as unmatched rather than blanking the page.
-	// pocket-cfo-ctl validate is where that is caught properly.
+	// Structural rules only: the category cross-check needs budget.json, and
+	// an id that stopped resolving must degrade to an unmatched bucket rather
+	// than blank the page. pocket-cfo-ctl validate does it properly.
 	if err := actualsdata.ValidateActuals(af, monthKey(year, month), nil); err != nil {
 		return actualsResult{err: fmt.Errorf("actuals: %s: %w", path, err)}
 	}
@@ -196,9 +184,8 @@ func (a *Actuals) fetch(year int, month time.Month) actualsResult {
 	return actualsResult{file: af, present: true}
 }
 
-// viewOf reduces one month's document to the figures the dashboard needs.
-// Ignored lines are excluded everywhere: they exist so the file reconciles to
-// the whole statement, not so they can be counted.
+// viewOf reduces one month to the figures the dashboard needs. Ignored lines
+// are excluded everywhere.
 func viewOf(af actualsdata.ActualsFile, year int, month time.Month) ActualsView {
 	v := ActualsView{Present: true, ByCategory: map[string]int{}}
 	for _, tx := range af.Transactions {
@@ -216,12 +203,10 @@ func viewOf(af actualsdata.ActualsFile, year int, month time.Month) ActualsView 
 	return v
 }
 
-// coverageComplete reports whether every account the file names was read from
-// the first of the month to the last, merging that account's ranges first so
-// two weekly imports that meet still count as continuous.
-//
-// It cannot know about an account that was never imported at all — that is
-// Hermes' job, and it is why the note names the accounts that *were* read.
+// coverageComplete reports whether every account named was read from the
+// first of the month to the last, merging each account's ranges so two weekly
+// imports that meet count as continuous. It cannot know about an account
+// never imported at all, which is why the note names those that were.
 func coverageComplete(af actualsdata.ActualsFile, year int, month time.Month) bool {
 	if len(af.Coverage) == 0 {
 		return false
@@ -266,9 +251,7 @@ func spansMonth(ranges []actualsdata.Coverage, first, last time.Time) bool {
 	return !reached.Before(last)
 }
 
-// coverageNote is the one-line caveat shown when a month is only partly read.
-// A fully reconciled month gets no note: there is nothing to warn about, and
-// the colour of the figures already carries it.
+// coverageNote is shown only when a month is partly read.
 func coverageNote(af actualsdata.ActualsFile) string {
 	earliest := ""
 	var accounts []string

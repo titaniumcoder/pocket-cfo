@@ -68,15 +68,15 @@ func runValidate(args []string) int {
 	return 0
 }
 
-// validateActuals checks every data/actuals/*.json against its schema and then
-// against budget.json's category ids. Like validatePaidInvoices this can't go
-// through validateFile, because the cross-file check needs the budget too.
+// validateActuals checks every data/actuals/*.json against its schema and
+// budget.json's category ids. Like validatePaidInvoices it can't go through
+// validateFile, which sees one file at a time.
 func validateActuals(dataDir string) int {
 	dir := filepath.Join(dataDir, "actuals")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return 0 // no month has been reconciled yet
+			return 0
 		}
 		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: read %s: %v\n", dir, err)
 		return 1

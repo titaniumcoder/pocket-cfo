@@ -14,15 +14,12 @@ func MonthKeyOf(name string) string {
 	return name[:7]
 }
 
-// ValidateActuals checks what the JSON Schema can't express. knownIDs is the
-// set of budget category ids a transaction may cite; a nil map skips that
-// check, which is what the runtime loader does — it has no budget file to
-// hand and degrades by bucketing unrecognised ids instead of refusing to
-// render.
+// ValidateActuals checks what the JSON Schema can't express. A nil knownIDs
+// skips the category cross-check, which is what the runtime loader does.
 //
-// Unlike ValidateBudget, this reports every breach rather than the first.
-// The file is machine-written in bulk, so one error per fix-and-rerun cycle
-// is the wrong shape for a 200-line statement import.
+// Unlike ValidateBudget it reports every breach rather than the first: the
+// file is machine-written in bulk, so one error per rerun is the wrong shape
+// for a 200-line import.
 func ValidateActuals(af ActualsFile, monthKey string, knownIDs map[string]bool) error {
 	var problems []error
 
@@ -32,8 +29,7 @@ func ValidateActuals(af ActualsFile, monthKey string, knownIDs map[string]bool) 
 
 	start, err := time.Parse("2006-01", af.Month)
 	if err != nil {
-		// Without a parseable month nothing else can be range-checked, so
-		// report that alone rather than a cascade of confusing failures.
+		// Nothing else can be range-checked without a parseable month.
 		return errors.Join(append(problems, fmt.Errorf("month %q is not a real month", af.Month))...)
 	}
 	end := start.AddDate(0, 1, -1)

@@ -62,6 +62,8 @@ otherwise `source .envrc` before running `pocket-cfo-ctl render` or `cmd/pocketc
 |---|---|---|
 | `ENV` | `cmd/pocketcfo` | GitHub OAuth login is only enforced when this is exactly `prod` — unset/anything else skips auth entirely, so local dev needs none of the `GITHUB_OAUTH_*`/`SESSION_SECRET`/`PUBLIC_BASE_URL` vars below. A real deployment sets it to `prod`. |
 | `API2PDF_KEY` | `pocket-cfo-ctl render` | api2pdf API key |
+| `HERMES_API_TOKEN` | `cmd/pocketcfo` | optional — bearer token for the Hermes API. Unset means `/api/` is never registered, so the endpoints don't exist rather than returning 401 |
+| `GITHUB_DATA_TOKEN` | `cmd/pocketcfo` | optional — fine-grained PAT with `contents: write` on the data repo only, for writing reconciled months back as commits |
 | `SIGN_CERT_B64` / `SIGN_KEY_B64` / `SIGN_KEY_PASS` | `pocket-cfo-ctl render` | base64 PEM cert/key `pocket-cfo-ctl render` certifies each PDF with; unset skips signing entirely (see `make dev-cert` below and ARCHITECTURE.md §6) |
 | `GITHUB_OAUTH_CLIENT_ID` / `_SECRET` | `cmd/pocketcfo`, prod only | the GitHub OAuth App above |
 | `SESSION_SECRET` | `cmd/pocketcfo`, prod only | any random string; encrypts the session cookie |

@@ -86,6 +86,12 @@ func (s *server) configGroups() []configGroup {
 			{Name: "API2PDF_KEY", Value: maskSecret(c.api2pdfKey), Secret: true},
 			{Name: "TOGGL_API_TOKEN", Value: maskSecret(f.TogglToken), Secret: true},
 		}},
+		{Name: "Hermes API", Rows: []configRow{
+			{Name: "HERMES_API_TOKEN", Value: maskSecret(c.hermesAPIToken), Secret: true},
+			{Name: "GITHUB_DATA_TOKEN", Value: maskSecret(c.githubDataToken), Secret: true},
+			{Name: "API routes", Value: enabledIf(c.hermesAPIToken != "")},
+			{Name: "Writes", Value: enabledIf(c.githubDataToken != "")},
+		}},
 		{Name: "Email (Amazon SES)", Rows: []configRow{
 			{Name: "AWS_REGION", Value: orUnset(c.sesRegion)},
 			{Name: "SES_FROM_EMAIL", Value: orUnset(c.sesFromEmail)},
@@ -105,4 +111,12 @@ func (s *server) configGroups() []configGroup {
 			{Name: "incomeTaxRate", Value: strconv.FormatFloat(f.IncomeTaxRate, 'f', -1, 64)},
 		}},
 	}
+}
+
+// enabledIf renders a derived, non-secret on/off row.
+func enabledIf(on bool) string {
+	if on {
+		return "enabled"
+	}
+	return "disabled"
 }

@@ -48,12 +48,9 @@ func getenv(key, fallback string) string {
 	return fallback
 }
 
-// togglRefreshInterval is how often the background refresher re-reads the
-// current year from Toggl (see tracker.Tracker.Warm), overridable via
-// TOGGL_REFRESH_INTERVAL as a Go duration, e.g. "5m". An unparseable or
-// non-positive value falls back to the default with a warning rather than
-// failing startup: a typo here should not take the whole app down over what
-// is a tuning knob.
+// togglRefreshInterval reads TOGGL_REFRESH_INTERVAL as a Go duration, e.g.
+// "5m" (see tracker.Tracker.Warm). A bad value warns and falls back rather than
+// failing startup — a typo in a tuning knob shouldn't take the app down.
 func togglRefreshInterval() time.Duration {
 	raw := os.Getenv("TOGGL_REFRESH_INTERVAL")
 	if raw == "" {

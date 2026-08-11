@@ -9,9 +9,7 @@ import (
 	"time"
 )
 
-// TestWarmFillsTheCacheWithoutARequest is the point of the refresher: the
-// year's data should be sitting in the cache before anybody loads a page, so
-// the request never pays for the fetch.
+// The year's data should be cached before anybody loads a page.
 func TestWarmFillsTheCacheWithoutARequest(t *testing.T) {
 	trk, _ := fullTrackerWithBackend()
 	year := time.Now().In(trk.Loc).Year()
@@ -30,9 +28,8 @@ func TestWarmFillsTheCacheWithoutARequest(t *testing.T) {
 	}, "the current year to be warmed into the cache")
 }
 
-// TestWarmRefreshesOnTheTicker: a warmed entry must not simply sit there —
-// each tick has to invalidate and refetch, or the dashboard would show boot
-// time's figures forever.
+// Each tick must invalidate and refetch, or the dashboard shows boot-time
+// figures forever.
 func TestWarmRefreshesOnTheTicker(t *testing.T) {
 	trk, _ := fullTrackerWithBackend()
 	year := time.Now().In(trk.Loc).Year()
@@ -54,8 +51,7 @@ func TestWarmRefreshesOnTheTicker(t *testing.T) {
 	}, "a second warm pass to replace the first fetch")
 }
 
-// TestWarmWithoutTogglReturnsImmediately: tracked hours are optional, and a
-// nil Toggl must not leave a ticker spinning over nothing.
+// A nil Toggl must not leave a ticker spinning over nothing.
 func TestWarmWithoutTogglReturnsImmediately(t *testing.T) {
 	trk := &Tracker{Loc: time.UTC}
 	done := make(chan struct{})
@@ -70,11 +66,8 @@ func TestWarmWithoutTogglReturnsImmediately(t *testing.T) {
 	}
 }
 
-// TestGetCachedFollowerGivesUpOnContext is what makes the refresher safe to
-// have in front of a page request. The refresher's fetch runs on a multi-minute
-// deadline; a request that joins it must leave on its own schedule rather than
-// inheriting that one, or the warmer would hold pages open instead of freeing
-// them.
+// A request joining the refresher's multi-minute fetch must leave on its own
+// deadline, or the warmer holds pages open instead of freeing them.
 func TestGetCachedFollowerGivesUpOnContext(t *testing.T) {
 	tg := &Toggl{}
 	started := make(chan struct{})
@@ -101,11 +94,8 @@ func TestGetCachedFollowerGivesUpOnContext(t *testing.T) {
 	}
 }
 
-// TestComputeRendersPendingRatherThanWaiting is the cold-start case: nothing
-// cached, a fetch under way, and a reader in front of an empty page. The
-// request must come back promptly with a "still loading" state and an
-// auto-refresh, instead of holding the response open for the slowest call this
-// app makes — which is what made the dashboard feel broken.
+// Cold start: nothing cached, a fetch under way. The request must return
+// promptly with a loading state and an auto-refresh.
 func TestComputeRendersPendingRatherThanWaiting(t *testing.T) {
 	defer withTogglPatience(50 * time.Millisecond)()
 
@@ -139,8 +129,6 @@ func TestComputeRendersPendingRatherThanWaiting(t *testing.T) {
 		t.Errorf("ComputeMonth took %s — it should give up at togglPatience, not wait out the fetch", elapsed)
 	}
 
-	// The rendered page has to actually ask the browser to come back, or the
-	// reader is left staring at a permanently empty panel.
 	w := httptest.NewRecorder()
 	RenderPage(w, f)
 	body := w.Body.String()
@@ -151,8 +139,7 @@ func TestComputeRendersPendingRatherThanWaiting(t *testing.T) {
 		t.Error("a pending page must say what it is waiting for")
 	}
 
-	// And the abandoned fetch must still be running on the shared context, so
-	// the next load finds it — that is what makes the refresh worth doing.
+	// The abandoned fetch must still be running, or the refresh finds nothing.
 	if !trk.Toggl.YearPending(year) {
 		t.Error("giving up on the wait must not have cancelled the fetch")
 	}
@@ -165,9 +152,8 @@ func withTogglPatience(d time.Duration) func() {
 	return func() { togglPatience = prev }
 }
 
-// waitFor polls cond until it holds or the budget runs out. Polling rather
-// than synchronising because the thing under test is a background loop with no
-// completion signal of its own.
+// waitFor polls cond until it holds or the budget runs out — the loop under
+// test has no completion signal of its own.
 func waitFor(t *testing.T, budget time.Duration, cond func() bool, what string) {
 	t.Helper()
 	deadline := time.Now().Add(budget)

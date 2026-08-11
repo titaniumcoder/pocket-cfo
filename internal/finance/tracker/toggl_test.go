@@ -46,11 +46,8 @@ func TestGetCachedDoesNotCacheErrors(t *testing.T) {
 	}
 }
 
-// TestGetCachedServesStaleOnRefreshFailure is the whole point of the stale
-// mechanism: once a value has been fetched successfully, a later failure must
-// degrade to that value rather than to an error. A blanked Income panel is a
-// worse answer than a figure from an hour ago, given the detailed report times
-// out routinely.
+// Once a value has been fetched, a later failure must degrade to it rather
+// than to an error.
 func TestGetCachedServesStaleOnRefreshFailure(t *testing.T) {
 	tg := &Toggl{}
 	fail := false
@@ -118,8 +115,7 @@ func TestEvictRangeIntersecting(t *testing.T) {
 	// Evict a range overlapping March only.
 	tg.EvictRange(mar(10), mar(20))
 
-	// Eviction marks stale rather than deleting — the value stays as a
-	// fallback for a refetch that fails. See EvictRange.
+	// Eviction marks stale rather than deleting; see EvictRange.
 	if e, ok := tg.cache["march"]; !ok || !e.stale {
 		t.Errorf("march entry: present=%v stale=%v, want present and stale", ok, e.stale)
 	}

@@ -10,9 +10,8 @@ import (
 	"time"
 )
 
-// countingTransport records every attempt and replays a scripted sequence of
-// outcomes. The last entry repeats once the script runs out, so a test can
-// script "fail, fail, then succeed" or "always fail" without counting exactly.
+// countingTransport replays a scripted sequence of outcomes, repeating the last
+// entry once the script runs out.
 type countingTransport struct {
 	calls    int
 	bodies   []string
@@ -48,10 +47,8 @@ func transportError() (*http.Response, error) {
 	return nil, errors.New("context deadline exceeded (Client.Timeout exceeded while awaiting headers)")
 }
 
-// togglWith builds a Toggl over rt. The retry backoff is already collapsed to
-// a millisecond for the whole test binary (see TestMain), so these tests
-// assert attempt counts rather than elapsed time — except TestDoHonoursRetryAfter,
-// which needs a real wait and gets one from the header itself.
+// togglWith builds a Toggl over rt. Backoff is collapsed binary-wide by
+// TestMain, so these assert attempt counts rather than elapsed time.
 func togglWith(rt http.RoundTripper) *Toggl {
 	return &Toggl{Token: "tok", WorkspaceID: "ws", HTTP: &http.Client{Transport: rt}}
 }
@@ -90,8 +87,7 @@ func TestDoRetriesTransientFailures(t *testing.T) {
 			wantErr:   true,
 		},
 		{
-			// A 401 or 404 is a real answer, not a blip. Retrying it only
-			// burns the request budget, so it comes straight back.
+			// A real answer, not a blip — retrying only burns the budget.
 			name:      "401 is not retried",
 			outcomes:  []func() (*http.Response, error){status(http.StatusUnauthorized, nil)},
 			wantCalls: 1,
@@ -120,10 +116,8 @@ func TestDoRetriesTransientFailures(t *testing.T) {
 	}
 }
 
-// TestDoResendsTheBodyOnRetry guards the thing that quietly breaks when a
-// retry loop is bolted onto a POST: the first attempt consumes the reader, and
-// every later one sends an empty body. The detailed report is a POST whose
-// body carries the date range, so an empty retry would silently query nothing.
+// The first attempt consumes the reader, so without buffering a retry posts an
+// empty body — and the detailed report's body carries the date range.
 func TestDoResendsTheBodyOnRetry(t *testing.T) {
 	rt := &countingTransport{outcomes: []func() (*http.Response, error){
 		status(http.StatusInternalServerError, nil),
@@ -144,9 +138,7 @@ func TestDoResendsTheBodyOnRetry(t *testing.T) {
 	}
 }
 
-// TestDoHonoursRetryAfter checks the header is actually waited on: with
-// Retry-After: 1 the call cannot return before roughly a second, whereas the
-// default backoff for a first retry is 500ms.
+// Retry-After: 1 must hold the call for ~1s, well past the default backoff.
 func TestDoHonoursRetryAfter(t *testing.T) {
 	rt := &countingTransport{outcomes: []func() (*http.Response, error){
 		status(http.StatusTooManyRequests, map[string]string{"Retry-After": "1"}),
@@ -168,9 +160,8 @@ func TestDoHonoursRetryAfter(t *testing.T) {
 	}
 }
 
-// TestDoStopsRetryingWhenContextExpires: the retry loop must never outlive the
-// caller's deadline. With a 50ms budget and a 30s Retry-After, the call has to
-// give up almost immediately rather than sleeping through the request.
+// The retry loop must never outlive the caller's deadline: a 50ms budget
+// against a 30s Retry-After has to give up at once.
 func TestDoStopsRetryingWhenContextExpires(t *testing.T) {
 	rt := &countingTransport{outcomes: []func() (*http.Response, error){
 		status(http.StatusTooManyRequests, map[string]string{"Retry-After": "30"}),

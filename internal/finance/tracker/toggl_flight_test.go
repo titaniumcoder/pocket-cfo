@@ -8,10 +8,7 @@ import (
 	"time"
 )
 
-// TestGetCachedSingleFlights: N readers arriving for the same key while a fetch
-// is in progress must share that one fetch. Before this, ten concurrent loads
-// of the same year fired ten identical year-wide detailed reports at the API
-// that is already the slow part.
+// Readers arriving for the same key mid-fetch must share that one fetch.
 func TestGetCachedSingleFlights(t *testing.T) {
 	tg := &Toggl{}
 	release := make(chan struct{})
@@ -57,8 +54,7 @@ func TestGetCachedSingleFlights(t *testing.T) {
 	}
 }
 
-// TestGetCachedSingleFlightSharesFailure: followers must see the leader's
-// failure rather than each starting their own doomed fetch.
+// Followers see the leader's failure rather than starting their own.
 func TestGetCachedSingleFlightSharesFailure(t *testing.T) {
 	tg := &Toggl{}
 	release := make(chan struct{})
@@ -96,9 +92,8 @@ func TestGetCachedSingleFlightSharesFailure(t *testing.T) {
 	}
 }
 
-// TestBreakerStopsHammeringAFailingKey pins the pile-up fix: after
-// togglBreakerThreshold consecutive failures the key is left alone entirely,
-// so a Toggl outage stops turning every page load into a fresh timeout.
+// After togglBreakerThreshold failures the key is left alone entirely, so an
+// outage stops turning every page load into a fresh timeout.
 func TestBreakerStopsHammeringAFailingKey(t *testing.T) {
 	defer withBreakerCooldown(time.Hour)()
 
@@ -126,9 +121,8 @@ func TestBreakerStopsHammeringAFailingKey(t *testing.T) {
 	}
 }
 
-// TestBreakerServesStaleWhileOpen: with a previous value in hand, an open
-// breaker must hand that back rather than an error — the whole point is to
-// stop calling Toggl, not to stop rendering figures.
+// An open breaker still hands back a cached value: the point is to stop calling
+// Toggl, not to stop rendering figures.
 func TestBreakerServesStaleWhileOpen(t *testing.T) {
 	defer withBreakerCooldown(time.Hour)()
 
@@ -163,8 +157,8 @@ func TestBreakerServesStaleWhileOpen(t *testing.T) {
 	}
 }
 
-// TestReloadClearsTheBreaker: Reload means "try again now", including when the
-// very first fetch failed and there is no cache entry to hang the reset off.
+// Reload means "try again now", including when the first fetch failed and there
+// is no cache entry to hang the reset off.
 func TestReloadClearsTheBreaker(t *testing.T) {
 	defer withBreakerCooldown(time.Hour)()
 

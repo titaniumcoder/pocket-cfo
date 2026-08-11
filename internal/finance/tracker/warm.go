@@ -7,56 +7,35 @@ import (
 )
 
 const (
-	// DefaultWarmInterval is how often the background refresher re-reads the
-	// current year. Toggl entries are hand-logged over a working day, so
-	// anything finer buys accuracy nobody can perceive at the cost of an API
-	// this app is already trying to lean on less.
 	DefaultWarmInterval = 15 * time.Minute
 
-	// warmTimeout bounds one background refresh. Far longer than any page
-	// request would tolerate, which is the point: the refresher is the only
-	// caller that can afford to wait out a slow year-wide detailed report,
-	// and it does so off the request path where nobody is watching a
-	// spinner.
+	// warmTimeout bounds one background refresh — far longer than a page would
+	// tolerate, which is the point of doing it off the request path.
 	warmTimeout = 3 * time.Minute
 
-	// pendingRefresh is how many seconds the browser waits before reloading a
-	// page rendered in the pending state. A meta refresh rather than script:
-	// this app ships eight lines of JavaScript in total and this does not
-	// need a ninth. A string because it is concatenated into the template.
+	// pendingRefresh is the meta-refresh delay, in seconds, on a page rendered
+	// before Toggl answered. A string because it is concatenated into the
+	// template.
 	pendingRefresh = "5"
 )
 
-// togglPatience is how long a page request will wait on Toggl before rendering
-// without it. Short on purpose: the refresher owns keeping the data current,
-// and abandoning the wait no longer abandons the fetch (see Toggl.getCached),
-// so the cost of giving up early is one auto-refresh rather than a lost
-// result. A variable only so tests need not wait it out.
+// togglPatience is how long a page request waits on Toggl before rendering
+// without it. Short, because giving up no longer abandons the fetch (see
+// Toggl.getCached) — the cost is one auto-refresh, not a lost result.
+// A variable only so tests can shrink it.
 var togglPatience = 5 * time.Second
 
-// waitBudget caps how long a caller will wait on Toggl, independently of
-// whatever budget the rest of its work has. Every read path that a page
-// request can reach must go through this — a single call left on the raw
-// request context would wait out the whole fetch and undo the point of the
-// short budget everywhere else.
+// waitBudget caps how long a caller waits on Toggl, independently of the rest
+// of its budget. Every Toggl read a page request can reach must go through it;
+// one call left on the raw request context waits out the whole fetch and undoes
+// the short budget everywhere else.
 func waitBudget(parent context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(parent, togglPatience)
 }
 
-// Warm keeps the current calendar year's Toggl data hot in the background, so
-// page requests serve from cache instead of each paying for the fetch
-// themselves. It refreshes once immediately, then every `every`, and returns
-// when ctx is cancelled.
-//
-// This is what takes Toggl off the request path. A request that arrives while
-// a refresh is in flight joins it through getCached's single-flight and waits
-// only as long as its own deadline allows (see getCached); the refresh carries
-// on regardless, so the next request finds the answer waiting. Combined with
-// serving stale data on failure, the dashboard stops depending on Toggl being
-// reachable at the moment somebody loads it.
-//
-// A nil Toggl (tracked hours disabled by config) returns immediately rather
-// than spinning a pointless ticker.
+// Warm keeps the current year's Toggl data hot so page requests serve from
+// cache. It refreshes once immediately, then every `every`, until ctx is
+// cancelled. A nil Toggl (tracked hours disabled) returns at once.
 func (t *Tracker) Warm(ctx context.Context, every time.Duration) {
 	if t.Toggl == nil {
 		return
@@ -76,32 +55,28 @@ func (t *Tracker) Warm(ctx context.Context, every time.Duration) {
 	}
 }
 
-// warmOnce refreshes the current year and the project list. Failures are
-// logged and dropped: the refresher's job is to keep the cache warm when it
-// can, and getCached has already recorded the failure against the circuit
-// breaker for everyone else's benefit.
+// warmOnce refreshes the current year and the project list, logging and
+// dropping failures — getCached has already recorded them against the breaker.
 func (t *Tracker) warmOnce(parent context.Context) {
 	ctx, cancel := context.WithTimeout(parent, warmTimeout)
 	defer cancel()
 
 	year := time.Now().In(t.location()).Year()
-	// Invalidate before reading, or a still-fresh entry would be served back
-	// and the refresh would be a no-op. markStale rather than EvictRange:
-	// this must not clear a circuit breaker (see markStale).
+	// Invalidate first, or a fresh entry is served back and this is a no-op.
+	// markStale, not EvictRange: a scheduled refresh must not clear the breaker.
 	t.Toggl.markStale(t.Toggl.yearKey(year))
 	if _, err := t.Toggl.Year(ctx, year); err != nil {
 		log.Printf("toggl: background refresh of %d failed: %v", year, err)
 	}
-	// Not marked stale first: project names effectively never change, so this
-	// is a cache hit after the first success. It stays in the loop so a failed
-	// first fetch heals on the next tick instead of waiting for a page load.
+	// Not invalidated: project names never change, so this is a cache hit after
+	// the first success. Kept in the loop so a failed first fetch heals here
+	// rather than waiting for a page load.
 	if _, err := t.Toggl.Projects(ctx); err != nil {
 		log.Printf("toggl: background refresh of projects failed: %v", err)
 	}
 }
 
-// location is Loc, defaulting to UTC so a zero-value Tracker in a test doesn't
-// panic on the nil *time.Location.
+// location defaults to UTC so a zero-value Tracker doesn't panic on a nil Loc.
 func (t *Tracker) location() *time.Location {
 	if t.Loc == nil {
 		return time.UTC

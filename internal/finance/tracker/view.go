@@ -127,21 +127,11 @@ type Figures struct {
 	MinimalMode      bool
 	MinimalToggleURL string // current month view + ?minimal=toggle
 
-	// TogglPending marks the cold-start case: no Toggl data cached yet, but a
-	// fetch is in flight for it (see Toggl.YearPending). The page renders
-	// immediately with the Income section marked as loading and asks the
-	// browser to come back shortly, rather than holding the response open for
-	// the slowest call this app makes. Separate from TrackedErr, which means
-	// the figures genuinely aren't coming.
-	TogglPending bool
-
-	// TogglStaleNote is set when the tracked-hours figures on this page came
-	// from a cached copy because a refresh failed (see Toggl.getCached).
-	// Distinct from TrackedErr below: an error means there is nothing to
-	// show, this means what's shown is real but out of date. Saying so
-	// matters — the figures look exactly as confident either way, and
-	// silently serving yesterday's numbers is how a stale dashboard gets
-	// trusted.
+	// The three states the Toggl layer can be in, beyond "fine". TogglPending:
+	// nothing cached yet but a fetch is running, so the page renders a loading
+	// Income section and a meta refresh. TogglStaleNote: real figures, out of
+	// date because a refresh failed. TrackedErr (below): nothing is coming.
+	TogglPending   bool
 	TogglStaleNote string
 
 	// Billable tracked work this month, one row per project+rate (includes
@@ -312,12 +302,8 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	// today's tracked time only matters when today falls inside the period.
 	isCurrentPeriod := !today.Before(start) && !today.After(end)
 
-	// Toggl gets its own, much shorter slice of the request's budget. The
-	// background refresher (Tracker.Warm) is what actually keeps this data
-	// current; a page's job is to use whatever is ready, not to sit through a
-	// year-wide detailed report. Giving up here no longer kills the fetch —
-	// it is detached and shared (see Toggl.getCached) — so the next load, or
-	// the auto-refresh below, picks up the result.
+	// Toggl gets a short slice of the request's budget: Tracker.Warm keeps the
+	// data current, and a page's job is to use whatever is ready.
 	togglCtx, cancelToggl := waitBudget(ctx)
 	defer cancelToggl()
 
@@ -325,7 +311,6 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	// One yearly fetch feeds tracked rows, the rate, today's status and the
 	// billable-day set; filter it to the period in question.
 	yd, terr := t.Toggl.Year(togglCtx, year)
-	// Nothing cached but a fetch is running: the page is early, not broken.
 	result.TogglPending = terr != nil && t.Toggl.YearPending(year)
 	aggs := aggregatesInRange(yd, start, end)
 	todayErr := terr // today's status shares the yearly fetch's fate

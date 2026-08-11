@@ -318,7 +318,7 @@ func TestFundingIncomeInvoicedUsesCorrectMonthNotDoubleShifted(t *testing.T) {
 const testBudgetJSONCompanyDated = `{
   "groups": [
     { "name": "Company - Equipment", "kind": "company", "categories": [
-      { "name": "Computer", "amount": 3000, "date": "2026-09-01" }
+      { "id": "00000000-0000-4000-8000-000000000012", "name": "Computer", "amount": 3000, "date": "2026-09-01" }
     ]}
   ]
 }`

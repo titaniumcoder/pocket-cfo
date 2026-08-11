@@ -16,11 +16,14 @@ func validateDate(field, date string) error {
 	return nil
 }
 
-// ValidateBudget checks what the JSON Schema can't express: category names
-// are unique within their own group (not across the whole file — a category
-// is always shown nested under its group header, so "Hotel" under both
-// "Company - Vienna Trip" and "Galati Trips" is unambiguous on the page; only
-// a repeat within the same group is actually a mistake), every category has
+// ValidateBudget checks what the JSON Schema can't express: category ids are
+// unique across the *whole file* — deliberately a wider scope than name,
+// because an id is what a recorded transaction in data/actuals/ points at, so
+// two categories sharing one would silently merge their spending; category
+// names are unique within their own group (not across the whole file — a
+// category is always shown nested under its group header, so "Hotel" under
+// both "Company - Vienna Trip" and "Galati Trips" is unambiguous on the page;
+// only a repeat within the same group is actually a mistake), every category has
 // a positive amount (a zero-euro line is almost certainly a mistake — note
 // this only applies to the base amount; an override may still be 0, to skip
 // a specific month), a dated category's date is a real calendar date, a
@@ -30,9 +33,17 @@ func validateDate(field, date string) error {
 // (if any) are real calendar dates with no duplicate months and non-negative
 // amounts, and loan names are unique.
 func ValidateBudget(f BudgetFile) error {
+	seenID := map[string]string{} // id -> the category that already claimed it
 	for _, g := range f.Groups {
 		seen := map[string]bool{}
 		for _, c := range g.Categories {
+			if c.Id == "" {
+				return fmt.Errorf("category %q in group %q has no id", c.Name, g.Name)
+			}
+			if owner, ok := seenID[c.Id]; ok {
+				return fmt.Errorf("category id %q is used by both %q and %q — an id must be unique across the whole file", c.Id, owner, c.Name)
+			}
+			seenID[c.Id] = c.Name
 			if seen[c.Name] {
 				return fmt.Errorf("category name %q is used more than once in group %q", c.Name, g.Name)
 			}

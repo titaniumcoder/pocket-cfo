@@ -5,44 +5,44 @@
       "name": "Housing",
       "kind": "private",
       "categories": [
-        { "name": "Rent", "amount": 900 },
-        { "name": "Utilities", "amount": 140, "minimal_amount": 90 },
-        { "name": "Internet + Phone", "amount": 45 }
+        { "id": "cda32171-4d88-4dbc-9861-aa40aa79b168", "name": "Rent", "amount": 900 },
+        { "id": "cc0938b5-8c0a-41ef-8c6b-3801382b6e53", "name": "Utilities", "amount": 140, "minimal_amount": 90 },
+        { "id": "de0fad0e-cf16-48f4-820e-1dbbfe973ac0", "name": "Internet + Phone", "amount": 45 }
       ]
     },
     {
       "name": "Food",
       "kind": "private",
       "categories": [
-        { "name": "Groceries", "amount": 350 },
-        { "name": "Restaurants", "amount": 200, "minimal_amount": 80, "note": "Eating out a few times a week" }
+        { "id": "b1b665cd-f752-42e7-9b3f-b8f6ca8d7745", "name": "Groceries", "amount": 350 },
+        { "id": "4fc0cee8-09fa-4bcd-9db1-819239e52b07", "name": "Restaurants", "amount": 200, "minimal_amount": 80, "note": "Eating out a few times a week" }
       ]
     },
     {
       "name": "Private Expenses",
       "kind": "private",
       "categories": [
-        { "name": "Clothes & Household", "amount": 120, "minimal_amount": 0 },
-        { "name": "Transport", "amount": 60 },
-        { "name": "Gym", "amount": 40, "overrides": [{ "month": "2026-08-01", "amount": 0 }], "note": "Paused for August, resumes September" },
-        { "name": "Diverse", "amount": 300, "minimal_amount": 100, "note": "Reserve for unexpected expenses" }
+        { "id": "3ba97530-4988-4f7d-806b-4a524531bdc2", "name": "Clothes & Household", "amount": 120, "minimal_amount": 0 },
+        { "id": "6424f761-29ff-48e2-a635-223cbd099a66", "name": "Transport", "amount": 60 },
+        { "id": "1e467917-a742-47ae-8b4c-e5a807584409", "name": "Gym", "amount": 40, "overrides": [{ "month": "2026-08-01", "amount": 0 }], "note": "Paused for August, resumes September" },
+        { "id": "186b10b8-7264-4c90-a7a2-9a962a436d45", "name": "Diverse", "amount": 300, "minimal_amount": 100, "note": "Reserve for unexpected expenses" }
       ]
     },
     {
       "name": "Company - Operations",
       "kind": "company",
       "categories": [
-        { "name": "Accounting", "amount": 150 },
-        { "name": "Office", "amount": 200 },
-        { "name": "Diverse (Company)", "amount": 150, "minimal_amount": 0 }
+        { "id": "7e2aef1e-2ba0-40c5-be3c-894485a98c0c", "name": "Accounting", "amount": 150 },
+        { "id": "b20e4b1f-b8fd-4263-ab5a-157384a14afc", "name": "Office", "amount": 200 },
+        { "id": "177bfe40-550f-4512-beb6-421db65e8144", "name": "Diverse (Company)", "amount": 150, "minimal_amount": 0 }
       ]
     },
     {
       "name": "Company - Subscriptions",
       "kind": "company",
       "categories": [
-        { "name": "Dev Tools", "amount": 90, "note": "IDE/AI tooling subscriptions" },
-        { "name": "Cloud Hosting", "amount": 40 }
+        { "id": "3b5e3d2b-9672-4e3d-844c-e94505c5a416", "name": "Dev Tools", "amount": 90, "note": "IDE/AI tooling subscriptions" },
+        { "id": "88764526-b073-4495-9d34-502a7ffd48d7", "name": "Cloud Hosting", "amount": 40 }
       ]
     },
     {
@@ -50,6 +50,7 @@
       "kind": "company",
       "categories": [
         {
+          "id": "673a5141-e272-425e-bdf4-8a487c387d49",
           "name": "Laptop",
           "amount": 1800,
           "minimal_amount": 0,

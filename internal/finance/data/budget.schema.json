@@ -37,9 +37,15 @@
     },
     "category": {
       "type": "object",
-      "required": ["name", "amount"],
+      "required": ["id", "name", "amount"],
       "additionalProperties": false,
       "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "description": "Stable identifier that a transaction in data/actuals/ points at. Unique across the whole file, not just within a group (unlike name). Deliberately a UUID rather than a slug of the name: it must survive renaming the category or moving it to another group, and an id that looks derived from the name invites someone to 'correct' it on rename — which is exactly what would orphan every transaction ever matched to it. Assign with `pocket-cfo-ctl budget ids`, look one up with `pocket-cfo-ctl actuals categories`, and never reuse a retired id."
+        },
         "name": { "type": "string", "minLength": 1 },
         "amount": {
           "type": "number",

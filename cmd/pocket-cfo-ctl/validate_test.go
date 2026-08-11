@@ -40,7 +40,7 @@ func TestRunValidate_ValidSampleData(t *testing.T) {
 	writeJSON(t, "data/budget.json", map[string]any{
 		"groups": []map[string]any{
 			{"name": "Housing", "kind": "private", "categories": []map[string]any{
-				{"name": "Rent", "amount": 900},
+				{"id": "00000000-0000-4000-8000-000000000001", "name": "Rent", "amount": 900},
 			}},
 		},
 	})
@@ -58,8 +58,10 @@ func TestRunValidate_InvalidBudgetFails(t *testing.T) {
 	writeJSON(t, "data/budget.json", map[string]any{
 		"groups": []map[string]any{
 			{"name": "Housing", "kind": "private", "categories": []map[string]any{
-				{"name": "Rent", "amount": 900},
-				{"name": "Rent", "amount": 100},
+				// Distinct ids on purpose: this case is about a duplicate
+				// *name*, so it must not trip the id check first.
+				{"id": "00000000-0000-4000-8000-000000000013", "name": "Rent", "amount": 900},
+				{"id": "00000000-0000-4000-8000-000000000014", "name": "Rent", "amount": 100},
 			}},
 		},
 	})

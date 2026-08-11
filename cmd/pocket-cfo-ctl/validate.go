@@ -82,21 +82,7 @@ func validateActuals(dataDir string) int {
 		return 1
 	}
 
-	// A missing or broken budget.json is already reported on its own; here it
-	// just means the category cross-check is skipped rather than every
-	// transaction being reported as citing an unknown id.
-	var knownIDs map[string]bool
-	if b, err := os.ReadFile(filepath.Join(dataDir, "budget.json")); err == nil {
-		var bf budgetdata.BudgetFile
-		if json.Unmarshal(b, &bf) == nil {
-			knownIDs = map[string]bool{}
-			for _, g := range bf.Groups {
-				for _, c := range g.Categories {
-					knownIDs[c.Id] = true
-				}
-			}
-		}
-	}
+	knownIDs := budgetCategoryIDs(dataDir)
 
 	problems := 0
 	for _, e := range entries {

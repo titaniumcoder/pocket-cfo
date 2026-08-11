@@ -80,10 +80,12 @@
               {{if and .Paid (ne .State "draft")}}
               <a class="paid-link col-secondary" href="/invoicing/invoices/{{.Number}}-paid.pdf">(paid)</a>
               {{end}}
-              {{if index $.PDFCurrent .Number}}
-              <span class="pdf-status pdf-current col-secondary" title="Built PDF matches the current JSON">up to date</span>
-              {{else}}
-              <span class="pdf-status pdf-stale col-secondary" title="Built PDF does not (yet) match the current JSON">stale</span>
+              {{if ne .State "draft"}}
+                {{if index $.PDFCurrent .Number}}
+                <span class="pdf-status pdf-current col-secondary" title="Built PDF matches the current JSON">up to date</span>
+                {{else}}
+                <span class="pdf-status pdf-stale col-secondary" title="Built PDF does not (yet) match the current JSON">stale</span>
+                {{end}}
               {{end}}
             </div>
           </td>

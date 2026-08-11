@@ -121,7 +121,11 @@ func TestIsCurrent(t *testing.T) {
 			wantCurrent: false,
 		},
 		{
-			name: "paid variant mismatch",
+			// The regression this whole split exists for: marking an invoice
+			// paid used to redden its row until the next render run, because
+			// IsCurrent also demanded a matching -paid.pdf. The badge judges
+			// the archived original and nothing else.
+			name: "paid, with no -paid.pdf built yet",
 			setup: func(t *testing.T) (*invoice.InvoiceJson, money.Totals, Manifest) {
 				inv := stalenessFixture("INV-0000000001", invoice.InvoiceJsonStatusIssued)
 				paid := mustDate("2026-02-01")
@@ -135,14 +139,31 @@ func TestIsCurrent(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				// Main variant's hash is correct; the paid variant's is
-				// deliberately wrong.
+				return inv, totals, Manifest{"INV-0000000001.pdf": HashHTML(mainHTML)}
+			},
+			wantCurrent: true,
+		},
+		{
+			name: "a stale -paid.pdf is not the original's problem",
+			setup: func(t *testing.T) (*invoice.InvoiceJson, money.Totals, Manifest) {
+				inv := stalenessFixture("INV-0000000001", invoice.InvoiceJsonStatusIssued)
+				paid := mustDate("2026-02-01")
+				inv.Paid = &paid
+
+				totals, err := money.Compute(inv)
+				if err != nil {
+					t.Fatal(err)
+				}
+				mainHTML, err := HTML(inv, totals, false)
+				if err != nil {
+					t.Fatal(err)
+				}
 				return inv, totals, Manifest{
 					"INV-0000000001.pdf":      HashHTML(mainHTML),
 					"INV-0000000001-paid.pdf": "wrong-hash",
 				}
 			},
-			wantCurrent: false,
+			wantCurrent: true,
 		},
 	}
 	for _, tt := range tests {

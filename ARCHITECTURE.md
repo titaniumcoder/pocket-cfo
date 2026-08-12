@@ -604,8 +604,9 @@ Auth: GitHub OAuth App, scopes `read:user repo`. On callback,
 Cache in an encrypted session cookie, 10-minute TTL. Everything behind auth — there is no
 public route.
 
-**Second, lesser-trust path: email login.** Anyone on a fixed allowlist
-(`OTP_ALLOWED_EMAILS`) can request a login link at `/auth/email` — a signed,
+**Second, lesser-trust path: email login.** Anyone listed in the private data
+repo's `$DATA_DIR/users.json` (see `internal/users`, `schemas/users.json`)
+can request a login link at `/auth/email` — a signed,
 self-expiring token (`internal/auth/otp.go`) emailed via Amazon SES
 (`internal/mail`, AWS SDK for Go v2), valid for 15 minutes. Clicking it sets the same encrypted
 session cookie, but with `Permission = "readonly"` and a 7-day TTL
@@ -662,9 +663,9 @@ identity is verified in. Not needed: `ses:SendRawEmail` (the app only sends
 a plain-text `SendEmail`, never raw MIME) or any `ses:Get*`/`ses:List*`
 identity-management actions (those are for verifying the identity yourself
 via the console/CLI, not something the running app ever calls). If the SES
-account is still in the sandbox, every recipient in `OTP_ALLOWED_EMAILS` —
-not just `SES_FROM_EMAIL` — must also be a verified identity, or production
-access must be requested first.
+account is still in the sandbox, every address in `users.json` — not just
+`SES_FROM_EMAIL` — must also be a verified identity, or production access
+must be requested first.
 
 Deploy: single Go binary, any host, scale-to-zero fine — no local state.
 
@@ -705,31 +706,27 @@ costs money and churns the repo without failing.
 
 ---
 
-## 10. Build order
+## 10. What is built, and what is deliberately not
 
-0. **Font spike.** Google Fonts link with `display=block`, `delay: 1500`, POST hardcoded
-   Cyrillic + German HTML to api2pdf, look at the PDF. 20 minutes, de-risks the thing
-   most likely to eat an afternoon.
-1. Schema + `money` (discounts, VAT grouping) + `pocket-cfo-ctl validate`, with the totals
-   test against both references.
-2. `tax.Resolve` + catalog + the §4.3 validators. **Get this right before rendering.**
-3. Template; reproduce both references exactly. Golden HTML tests green.
-4. `pocket-cfo-ctl render` → api2pdf → `build/`, with the §5.1 rules, `--force`, `--dry-run`.
-5. `build.yml`.
-6. Signing — earlier than you'd think, since it's the only tamper evidence.
-7. `pocket-cfo-ctl index`; app: list, detail, PDF download.
-8. Payment (`data/paid-invoices.json`): validators, `-paid.pdf`, stats, dashboard.
-9. Annulment, when the first one actually happens — this is what restores §3.7:
-   schema, validators, `-ANUL.pdf`, stats exclusion. Confirm the
-   annulment-vs-credit-note split with the accountant then.
-10. `pocket-cfo-ctl new` scaffolding — by then you'll know what you want it to fill in.
-11. DeepL as a PR-opening workflow.
-12. VIES + monthly reports.
+Steps 1–8 of the original build order are done and released: schema and `money`,
+`tax.Resolve` and the §4.3 validators, the template against both reference invoices,
+`pocket-cfo-ctl render` through api2pdf, `build.yml`, signing, the index and the web
+app, and payment in `data/paid-invoices.json`. The finance tracker was added alongside
+them and has its own conventions inline in `internal/finance`.
 
-Steps 1–8 are the system. Everything after is additive.
+What remains is additive, and each item is deferred for a reason rather than pending:
+
+- **Annulment** (§3.7), when the first one actually happens — schema, validators,
+  `-ANUL.pdf`, stats exclusion. Confirm the annulment-versus-credit-note split with the
+  accountant then; guessing at it now would bake in the wrong one.
+- **`pocket-cfo-ctl new` scaffolding**, once it is clear what it should fill in.
+- **DeepL as a PR-opening workflow**, and **VIES plus monthly reports**.
 
 ---
 
-## 11. Open questions
+## 11. Settled questions
 
-- Number format: `1.000,00 €` or `10 200,00 €` — pick one and freeze it.
+- **Number format.** Frozen as `10 200,00 €` — non-breaking space for thousands, comma
+  for the decimal, symbol last. `render.formatMoney` is the only implementation and
+  `TestFormatMoney` asserts the literal bytes, because "looks right" and "is right"
+  diverge silently on an invisible U+00A0.

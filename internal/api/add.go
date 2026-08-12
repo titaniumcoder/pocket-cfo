@@ -41,18 +41,15 @@ type AddResult struct {
 
 // AddTransactions records statement lines that are not in the file yet.
 //
-// It cannot remove anything, and not by policy: the merge only ever appends
-// to a slice it just read, and refuseDestruction proves that about its own
-// output before committing. That is what lets it drop base_sha — the whole
-// purpose of an optimistic lock was to stop a stale whole-month document
-// erasing lines it had never seen, and this endpoint has no whole-month
-// document to be stale.
+// It cannot remove anything, and not by policy: the merge only appends to a
+// slice it just read, and refuseDestruction proves that of its own output
+// before committing. That is what lets it drop base_sha — an optimistic lock
+// existed to stop a stale whole-month document erasing lines it never saw, and
+// there is no whole-month document here.
 //
-// New lines go at the end rather than being sorted into place. Sorting reads
-// better in the abstract, but it would move every existing line in the diff,
-// and the one property this endpoint is sold on — that it touched nothing
-// that was already there — is exactly the property a reviewer should be able
-// to confirm at a glance in git log.
+// New lines go at the end rather than sorted into place, so the commit shows
+// what was added and nothing else — which is the property a reviewer needs to
+// confirm at a glance.
 func (s *Service) AddTransactions(ctx context.Context, req AddRequest) (*AddResult, error) {
 	if len(req.Transactions) == 0 && len(req.Coverage) == 0 {
 		return nil, errorf(CodeInvalidRequest, "send at least one transaction or coverage range")

@@ -66,25 +66,17 @@ func (b Bands) String() string {
 	return strings.Join(parts, ", ")
 }
 
-// applied describes what this schedule actually charged on a base of this
-// size — "18.92%" for a salary under the ceiling, "18.92% up to 2,112" for one
-// above it — for the row that reports the money it charged.
+// applied describes what this schedule charged on a base of this size:
+// "18.92%" when nothing bound it, "18.92% up to 2,112" when a boundary did,
+// "18.92% on a 933 minimum base" when the charge was levied on a raised base.
 //
-// This replaces a blended charged-over-base percentage, which above a ceiling
-// is a number that appears in no law and no config file: 18.92% up to 2,112 on
-// a salary of 10,000 came out at 4%, and 4% is not a rate anyone set. What a
-// reader wants from that column is the rate that was used and the boundary
-// that bound it.
+// It replaces a blended charged-over-base percentage, which above a ceiling is
+// a number in no law and no config file — 18.92% up to 2,112 on a salary of
+// 10,000 read as 4%.
 //
-// A band the base passed clean through names the boundary that stopped it. The
-// band the base came to rest inside names no boundary, because none applied.
-// A trailing zero-rate band is dropped: a ceiling charges nothing above itself
-// and "up to 2,112" has already said where it stopped — but a real top rate
-// (UK employee NI at 2% above the upper limit) is not zero and still shows.
-//
-// minBase is what the charge was actually levied on when the base fell below
-// it, which is the same misreporting in the other direction: the money was
-// charged on 933, not on the 400 that was paid, so the row says so.
+// A trailing zero-rate band is dropped, since "up to 2,112" has already said
+// where the charge stopped; a real top rate (UK employee NI at 2%) is not zero
+// and still shows.
 func (b Bands) applied(base, minBase float64) string {
 	if base <= 0 || len(b) == 0 {
 		return ""
@@ -120,18 +112,15 @@ func (b Bands) applied(base, minBase float64) string {
 }
 
 // PartySchedule is one party's contribution rules as an entry states them.
-// Both fields carry forward independently: an entry that gives only new bands
-// keeps the minBase already in force.
+// Both fields carry forward independently, but a band list is one indivisible
+// statement: giving Bands replaces the list whole rather than patching it,
+// since there is no sensible way to merge a newly published schedule into an
+// old one band at a time.
 //
-// A band list is one indivisible statement, so giving Bands replaces the whole
-// list rather than patching it — there is no sensible way to merge "the
-// legislature published a new schedule" into an old one band at a time.
-//
-// Bands lives inside this struct rather than being the party itself so that a
-// sliding scale — Germany's Übergangsbereich, France's réduction générale — can
-// arrive later as a sibling field. Those are formulas, not flat bands, and no
-// amount of band nesting expresses them; leaving the room costs nothing now and
-// is the awkward thing to retrofit.
+// Bands sits inside a struct rather than being the party itself so a sliding
+// scale — Germany's Übergangsbereich, France's réduction générale — can arrive
+// as a sibling field. Those are formulas, not bands, and retrofitting the room
+// for them later is the awkward part.
 type PartySchedule struct {
 	// MinBase raises the base a contribution is computed on when the salary is
 	// lower than it. It is NOT a band: a band can only change a rate applied to

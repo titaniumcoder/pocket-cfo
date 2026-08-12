@@ -75,9 +75,44 @@ otherwise `source .envrc` before running `pocket-cfo-ctl render` or `cmd/pocketc
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `cmd/pocketcfo`, prod only | AWS credentials for SES, read by the AWS SDK's default credential chain (not by this app's own config) — needs only `ses:SendEmail` on the `SES_FROM_EMAIL` identity, see ARCHITECTURE.md §8 |
 | `TOGGL_API_TOKEN` / `TOGGL_WORKSPACE_ID` | `cmd/pocketcfo`, optional | Toggl credentials for the finance tracker's tracked-hours layer; unset leaves it disabled, predictions still run off the configured hourly rate |
 | `TOGGL_REFRESH_INTERVAL` | `cmd/pocketcfo`, optional | default `15m` — how often the current year's Toggl data is refreshed in the background so page requests serve from cache instead of waiting on the API (see `tracker.Tracker.Warm`). A Go duration, e.g. `5m`; an unparseable or non-positive value logs a warning and falls back to the default |
-| `CONFIG_FILE` | `cmd/pocketcfo`, optional | default `config.json` — non-secret finance tunables (hourly rate, currency, social rates, `hoursPerDay`, ...); see `internal/finance/config` |
+| `CONFIG_FILE` | `cmd/pocketcfo`, optional | default `config.json` — non-secret finance tunables: `hourlyRateCents`, `currency`, `hoursPerDay`, `annualVacationDays`, plus the three dated blocks below. See `internal/finance/config`, whose `FileConfig` doc comment is the reference for each |
 | `BUILD_DIR` | `cmd/pocketcfo`/`pocket-cfo-ctl` | optional, default `build` — rendered PDFs (generated output, kept separate from `DATA_DIR`'s hand-edited data) |
 | `TEMPLATES_DIR` / `STATIC_DIR` | `cmd/pocketcfo`; `TEMPLATES_DIR` also `pocket-cfo-ctl render` | optional, default to `templates` / `static`; override for a deployment with its own branding |
+
+### `config.json`'s dated blocks
+
+Three settings are lists of dated entries rather than single values, because the thing
+they describe changes on a date and last year's figures have to stay reproducible. Each
+entry states only what changed; anything it omits carries forward.
+
+| Block | What it decides |
+|---|---|
+| `legislation` | Every government-set payroll figure — both parties' contribution schedules as marginal bands, the income tax bands, the minimum wage. There are no built-in defaults: a figure no entry states is zero, and the page says so rather than inventing a plausible rate. |
+| `salary` | Whether a month pays a full salary, only the statutory minimum, or none at all. Absent means every month is full. |
+| `startMonth` | The first month budgeting covers. Earlier months are not offered at all, and the year it falls in is aggregated from it rather than from January. |
+
+```json
+{
+  "startMonth": "2026-04",
+  "legislation": [
+    { "from": "2026-01",
+      "contributions": {
+        "employer": { "bands": [ {"from": 0, "rate": 0.1892}, {"from": 2112, "rate": 0} ] },
+        "employee": { "bands": [ {"from": 0, "rate": 0.1378}, {"from": 2112, "rate": 0} ] }
+      },
+      "incomeTax": { "bands": [ {"from": 0, "rate": 0.10} ] } },
+    { "from": "2026-07", "minimumWage": 1077 }
+  ],
+  "salary": [ { "from": "2026-09", "to": "2026-10", "mode": "minimum" } ]
+}
+```
+
+Bands are marginal — a rate applies only to the slice of the base inside its own band —
+which is why a contribution ceiling is an ordinary band with a rate of `0` rather than a
+field of its own. A malformed entry is a startup failure, not a warning: these are legal
+obligations, and a typo that silently disables one is the failure the setting exists to
+prevent. `/info` renders both blocks back as one line each, to be compared against the
+file by eye.
 
 ## Building and running
 

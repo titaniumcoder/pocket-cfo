@@ -21,11 +21,10 @@ type PersonalParams struct {
 	// unreproducible.
 	Legislation Legislation
 
-	// Salary is which months pay a full salary, only the statutory minimum, or
-	// none at all. Separate from Legislation because it is a decision, not a
-	// law: the legislature sets what a salary costs, the owner decides whether
-	// to draw one. An empty plan means every month is full, which is what the
-	// cascade did before there was a choice.
+	// Salary decides whether a month draws one at all — separate from
+	// Legislation because that is a decision, not a law. An empty plan means
+	// every month is full, which is what the cascade did before there was a
+	// choice. The config shape is documented on config.FileConfig.Salary.
 	Salary SalaryPlan
 }
 
@@ -124,10 +123,9 @@ func (r PartyRules) cost(gross float64) float64 { return gross + r.on(gross) }
 // the band boundaries rather than searching: find the segment whose cost
 // bracket contains the money available, then divide by that segment's slope.
 //
-// One flat rate makes this available/(1+rate), which is what it was before
-// bands; a rate: 0 band on top reproduces "the contribution is capped, so the
-// rest is salary"; and an uncapped non-zero top band — UK employer NI at 15%
-// with no ceiling — stays correct where both of those would silently overpay.
+// The general form reproduces the two special cases it replaced, and stays
+// correct for an uncapped non-zero top band — UK employer NI at 15% — where
+// both of those would have silently overpaid.
 func (r PartyRules) grossAffordable(available float64) float64 {
 	if available <= 0 {
 		return 0

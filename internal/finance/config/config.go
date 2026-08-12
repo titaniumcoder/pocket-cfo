@@ -72,6 +72,28 @@ type FileConfig struct {
 	// Unexported, so a hand-built FileConfig carries no legislation — which is
 	// now an ordinary state, not a trigger for anything.
 	legislation tracker.Legislation
+
+	// Salary is which months pay a full salary, only the statutory minimum, or
+	// none at all. Legislation says what a salary costs; this says whether one
+	// was drawn, which is a decision rather than a law.
+	//
+	// Each entry is a dated stretch: from is required, to is inclusive and
+	// optional, and an entry without one runs until the next begins — the same
+	// carry-forward the legislation block uses, so the two read alike. Any
+	// month no entry covers pays a full salary, so an absent block leaves
+	// every month exactly as it was.
+	//
+	//	"salary": [
+	//	  { "from": "2026-04", "to": "2026-06", "mode": "minimum" },
+	//	  { "from": "2026-09", "mode": "none" }
+	//	]
+	//
+	// minimum pays exactly the statutory minimum however much was affordable,
+	// leaving the difference in the company; none pays nothing at all, so
+	// nothing is contributed or taxed either.
+	Salary []tracker.SalaryEntry `json:"salary"`
+
+	salary tracker.SalaryPlan
 }
 
 // LoadFileConfig reads config.json from path. A missing file is fine and
@@ -95,6 +117,17 @@ func LoadFileConfig(path string) (FileConfig, error) {
 	// silently disabling one is the failure the setting exists to prevent, so
 	// it is the one part of this file that does not degrade quietly.
 	if fc.legislation, err = tracker.ParseLegislation(fc.Legislation); err != nil {
+		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	if fc.salary, err = tracker.ParseSalaryPlan(fc.Salary); err != nil {
+		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	// A month set to the minimum with no minimum wage in force pays nothing,
+	// which is a different decision from the one that was written down — and
+	// one the page would report as a salary of zero without ever saying why.
+	// The two blocks only meet here, so this is the only place that can catch
+	// it.
+	if err := tracker.ValidateSalaryAgainstLegislation(fc.salary, fc.legislation); err != nil {
 		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	return fc, nil
@@ -121,6 +154,7 @@ type Config struct {
 
 	AnnualVacationDays int
 	Legislation        tracker.Legislation
+	Salary             tracker.SalaryPlan
 }
 
 // Load merges fc (already loaded via LoadFileConfig) with the
@@ -145,6 +179,7 @@ func Load(fc FileConfig) Config {
 		// reads the entries. Nothing is substituted when a file states no
 		// legislation: it then charges nothing, which is what it says.
 		Legislation: fc.legislation,
+		Salary:      fc.salary,
 	}
 }
 

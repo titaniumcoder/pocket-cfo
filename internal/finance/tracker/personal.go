@@ -20,6 +20,13 @@ type PersonalParams struct {
 	// and keeping some of them undated is what made last year's figures
 	// unreproducible.
 	Legislation Legislation
+
+	// Salary is which months pay a full salary, only the statutory minimum, or
+	// none at all. Separate from Legislation because it is a decision, not a
+	// law: the legislature sets what a salary costs, the owner decides whether
+	// to draw one. An empty plan means every month is full, which is what the
+	// cascade did before there was a choice.
+	Salary SalaryPlan
 }
 
 // PersonalView is the rendered waterfall, in cents. CompanyGroups is filled in
@@ -41,6 +48,14 @@ type PersonalView struct {
 	// than what the company could afford.
 	MinimumWageCents int
 	MinimumEnforced  bool
+
+	// Mode is what this period did about salary. Over a range it is the mode
+	// only if every month agreed; MonthsAtMinimum and MonthsWithoutSalary
+	// count the ones that did not, because a year with two unpaid months has
+	// no single answer and picking one would be a guess.
+	Mode                SalaryMode
+	MonthsAtMinimum     int
+	MonthsWithoutSalary int
 
 	// NoLegislation says no figure was in force for this period at all — the
 	// months before the earliest entry, or a config.json that states none.
@@ -161,33 +176,49 @@ func oneRate(base, minBase float64, b Bands) []RateLine {
 // breakdown computes the waterfall over `months` months. Salary is smoothed
 // evenly so that monthly band boundaries apply correctly, then the per-month
 // figures are scaled back up for display.
-func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, months int, r Rules) PersonalView {
+func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, months int, r Rules, mode SalaryMode) PersonalView {
 	var result PersonalView
 	if months <= 0 {
 		months = 1
 	}
 	result.NoLegislation = r.nothingInForce()
+	result.Mode = mode
 
 	monthlyRawIncome := totalIncomeEUR / float64(months)
 	monthlyCompanyExpenses := companyExpensesEUR / float64(months)
 	monthlyIncome := toCent(monthlyRawIncome - monthlyCompanyExpenses)
 
-	gross := toCent(r.Employer.grossAffordable(monthlyIncome))
-	if gross < 0 {
+	var gross float64
+	switch mode {
+	case SalaryNone:
+		// Nobody was on the payroll, so there is nothing to charge on. The
+		// zeros fall out of the arithmetic below rather than being written
+		// here: PartyRules.on already refuses to invent a payroll from a
+		// MinBase when no salary was paid.
 		gross = 0
-	}
-	// The floor goes on last, after the affordability arithmetic, because it
-	// is not an affordability question: an employed person is owed the
-	// statutory minimum whether the company earned it or not. Everything
-	// downstream — both contributions, the tax, the net — is then computed on
-	// what is actually paid.
-	if r.MinimumEUR > 0 && gross < r.MinimumEUR {
+	case SalaryMinimum:
+		// Exactly the minimum, whatever was affordable. The whole point is to
+		// leave the difference in the company, so the affordability solve is
+		// not consulted at all.
 		gross = toCent(r.MinimumEUR)
-		result.MinimumEnforced = true
+	default:
+		gross = toCent(r.Employer.grossAffordable(monthlyIncome))
+		if gross < 0 {
+			gross = 0
+		}
+		// The floor goes on last, after the affordability arithmetic, because
+		// it is not an affordability question: an employed person is owed the
+		// statutory minimum whether the company earned it or not. Everything
+		// downstream — both contributions, the tax, the net — is then computed
+		// on what is actually paid.
+		if r.MinimumEUR > 0 && gross < r.MinimumEUR {
+			gross = toCent(r.MinimumEUR)
+			result.MinimumEnforced = true
+		}
 	}
 
 	employerContrib := toCent(r.Employer.on(gross))
-	if !result.MinimumEnforced && gross > 0 {
+	if mode == SalaryFull && !result.MinimumEnforced && gross > 0 {
 		// Take the salary as what is left of the period's money once the
 		// employer's contribution is paid, so the ledger column subtracts
 		// exactly rather than to within a cent. This moves gross only by the
@@ -242,8 +273,23 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 		// Each month gets the figures that were in force in it, so a year
 		// spanning a January increase is summed against both rather than
 		// against one of them twice.
-		m := p.breakdown(income, companyExpenses, 1, p.rulesFor(start.addMonths(i)))
+		ym := start.addMonths(i)
+		mode := p.Salary.modeFor(ym)
+		m := p.breakdown(income, companyExpenses, 1, p.rulesFor(ym), mode)
 		one = m
+		switch mode {
+		case SalaryMinimum:
+			result.MonthsAtMinimum++
+		case SalaryNone:
+			result.MonthsWithoutSalary++
+		}
+		if i == 0 {
+			result.Mode = mode
+		} else if result.Mode != mode {
+			// Months disagreed, so the range has no one mode. The counts above
+			// are what the page says instead.
+			result.Mode = ""
+		}
 		if m.MinimumEnforced {
 			result.MinimumEnforced = true
 		}

@@ -110,6 +110,7 @@ func (s *server) configGroups() []configGroup {
 			{Name: "currency", Value: orUnset(f.Currency)},
 			{Name: "annualVacationDays", Value: strconv.Itoa(f.AnnualVacationDays)},
 			{Name: "legislation", Value: legislationSummary(f.Legislation)},
+			{Name: "salary", Value: salarySummary(f.Salary)},
 		}},
 	}
 }
@@ -123,6 +124,21 @@ func legislationSummary(periods tracker.Legislation) string {
 	}
 	parts := make([]string, 0, len(periods))
 	for _, p := range periods {
+		parts = append(parts, p.String())
+	}
+	return strings.Join(parts, " · ")
+}
+
+// salarySummary renders the months that do something other than pay a full
+// salary. Whether a salary was drawn is as checkable from /info as what it
+// cost, and "every month is full" is worth stating rather than leaving as a
+// blank row.
+func salarySummary(plan tracker.SalaryPlan) string {
+	if len(plan) == 0 {
+		return "every month pays a full salary"
+	}
+	parts := make([]string, 0, len(plan))
+	for _, p := range plan {
 		parts = append(parts, p.String())
 	}
 	return strings.Join(parts, " · ")

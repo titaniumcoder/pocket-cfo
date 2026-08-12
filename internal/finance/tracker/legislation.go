@@ -397,8 +397,7 @@ func (p LegislationPeriod) String() string {
 	if p.IncomeTax != nil {
 		parts = append(parts, "tax "+p.IncomeTax.String())
 	}
-	when := fmt.Sprintf("%04d-%02d", p.From.Year, int(p.From.Month))
-	return fmt.Sprintf("%s: %s", when, strings.Join(parts, ", "))
+	return fmt.Sprintf("%s: %s", p.From.configForm(), strings.Join(parts, ", "))
 }
 
 func parseMonthOrDay(s string) (yearMonth, error) {
@@ -423,9 +422,13 @@ func parseMonthOrDay(s string) (yearMonth, error) {
 // A month resolving to zero is a real answer and the honest one, but it does
 // look like a working payslip, so breakdown flags it — see
 // PersonalView.NoLegislation.
-func (p PersonalParams) rulesFor(ym yearMonth) Rules {
+func (p PersonalParams) rulesFor(ym yearMonth) Rules { return p.Legislation.rulesAt(ym) }
+
+// rulesAt is rulesFor without needing a PersonalParams around it, so config
+// validation can ask the same question the cascade asks.
+func (l Legislation) rulesAt(ym yearMonth) Rules {
 	var r Rules
-	for _, period := range p.Legislation {
+	for _, period := range l {
 		if period.From.ordinal() > ym.ordinal() {
 			break
 		}

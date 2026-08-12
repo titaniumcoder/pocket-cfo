@@ -136,11 +136,50 @@ var templates = `
   <h1 class="print-title">PocketCFO — Spending {{.Month}}</h1>
   {{template "sitehead" .Header}}
 
-  <section class="panel">
-    <div class="panel-title-row">
-      <h2 class="panel-title">Spending &mdash; {{.Month}}</h2>
-      <a class="period-link no-print" href="{{.BackURL}}">&larr; Back to {{.Month}}</a>
+  <nav class="periodnav no-print">
+    <div class="periodnav-left">
+      <div class="segmented">
+        <a href="{{.OverviewURL}}">Overview</a>
+        <a href="{{.SpendingURL}}" class="active">Spending</a>
+      </div>
     </div>
+
+    <div class="periodnav-center">
+      {{with .Nav}}
+      {{if .PrevDisabled}}
+      <span class="arrow disabled" aria-disabled="true" aria-label="Previous" title="Previous">` + chevronLeft + `</span>
+      {{else}}
+      <a class="arrow" href="{{.PrevURL}}" aria-label="Previous" title="Previous">` + chevronLeft + `</a>
+      {{end}}
+      <select id="msel" onchange="navSpending()" aria-label="Month">
+        {{$m := .MonthNum}}{{range .Months}}<option value="{{.Num}}"{{if eq .Num $m}} selected{{end}}>{{.Name}}</option>{{end}}
+      </select>
+      <select id="ysel" onchange="navSpending()" aria-label="Year">
+        {{$y := .Year}}{{range .Years}}<option value="{{.}}"{{if eq . $y}} selected{{end}}>{{.}}</option>{{end}}
+      </select>
+      {{if .NextDisabled}}
+      <span class="arrow disabled" aria-disabled="true" aria-label="Next" title="Next">` + chevronRight + `</span>
+      {{else}}
+      <a class="arrow" href="{{.NextURL}}" aria-label="Next" title="Next">` + chevronRight + `</a>
+      {{end}}
+      {{end}}
+    </div>
+
+    <div class="periodnav-right">
+      <a class="link" href="{{.Nav.TodayURL}}">Today</a>
+      <a class="link" href="{{.RefreshURL}}">Reload</a>
+    </div>
+  </nav>
+  <script>
+    function navSpending() {
+      var y = document.getElementById('ysel').value;
+      var m = document.getElementById('msel').value;
+      location.href = '/' + y + '/' + m + '/spending';
+    }
+  </script>
+
+  <section class="panel">
+    <h2 class="panel-title">Spending &mdash; {{.Month}}</h2>
 
     {{if .Err}}<p class="error">{{.Err}}</p>{{end}}
 
@@ -212,11 +251,32 @@ var templates = `
     var a = e.target.closest('.copy-tx');
     if (!a) return;
     e.preventDefault();
-    navigator.clipboard.writeText(a.dataset.copy).then(function () {
+    var done = function () {
       a.textContent = 'copied';
       setTimeout(function () { a.textContent = 'copy'; }, 1500);
-    });
-  });
+    };
+    // navigator.clipboard needs a secure context. Over plain HTTP it is
+    // simply absent, and the link would do nothing at all with no hint why —
+    // so fall back to selecting the text, which leaves Ctrl-C working.
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(a.dataset.copy).then(done, fallback);
+    } else {
+      fallback();
+    }
+    function fallback() {
+      var box = document.createElement('textarea');
+      box.value = a.dataset.copy;
+      box.setAttribute('readonly', '');
+      box.style.position = 'fixed';
+      box.style.opacity = '0';
+      document.body.appendChild(box);
+      box.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+      document.body.removeChild(box);
+      a.textContent = ok ? 'copied' : 'copy failed';
+      setTimeout(function () { a.textContent = 'copy'; }, 1500);
+    }
 </script>
 </body>
 </html>{{end}}

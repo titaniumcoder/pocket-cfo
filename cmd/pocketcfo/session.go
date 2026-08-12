@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
 	"github.com/titaniumcoder/pocket-cfo/internal/users"
@@ -61,14 +62,38 @@ func (s *server) authenticated(sess auth.Session) bool {
 // invoicing by users.json part, info by the stricter authorized() tier — so
 // the menu can never offer a link to a page the session would be bounced
 // from. active is the page currently being viewed (see webui.Page*).
-func (s *server) header(sess auth.Session, active string) webui.Header {
+func (s *server) header(sess auth.Session, active string, period webui.Period) webui.Header {
+	if period.Year == 0 {
+		period = s.currentPeriod()
+	}
 	return webui.Header{
 		Login:         sess.Login,
 		Active:        active,
 		ShowFinance:   sess.HasPart(users.PartFinance),
+		ShowSpending:  s.showSpending(sess),
 		ShowInvoicing: sess.HasPart(users.PartInvoicing),
 		ShowInfo:      s.authorized(sess),
+		Period:        period,
 	}
+}
+
+// currentPeriod is the fallback for a page reached without one: today, in the
+// tracker's own zone, which is what every menu link pointed at before periods
+// were carried at all.
+func (s *server) currentPeriod() webui.Period {
+	now := time.Now()
+	if s.tracker != nil && s.tracker.Loc != nil {
+		now = now.In(s.tracker.Loc)
+	}
+	return webui.Period{Year: now.Year(), Month: int(now.Month())}
+}
+
+// showSpending mirrors financeSpending's own gate. It carries statement
+// descriptions, so it is admin-only like /info; and a deployment with no
+// actuals directory has nothing to show, so it gets no entry rather than one
+// leading to a permanently empty page.
+func (s *server) showSpending(sess auth.Session) bool {
+	return s.authorized(sess) && s.tracker != nil && s.tracker.Actuals.Configured()
 }
 
 func (s *server) secureCookies() bool {

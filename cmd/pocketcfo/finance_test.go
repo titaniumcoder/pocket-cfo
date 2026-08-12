@@ -1,12 +1,15 @@
 package main
 
 import (
+	"html/template"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
@@ -331,10 +334,10 @@ func TestFinanceCurrentMonth_BothPartsSessionShowsInvoicingNavButNotInfo(t *test
 		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, `href="/invoicing"`) {
+	if !strings.Contains(body, `>Invoicing</a>`) {
 		t.Error("a session with both parts should see the Invoicing nav link")
 	}
-	if strings.Contains(body, `href="/info"`) {
+	if strings.Contains(body, `>Info</a>`) {
 		t.Error("a readonly session must never see the Info nav link")
 	}
 }
@@ -541,10 +544,10 @@ func TestHandleIndex_BothPartsSessionShowsFinanceNavButNotInfo(t *testing.T) {
 		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, `href="/"`) {
+	if !strings.Contains(body, `>Finance</a>`) {
 		t.Error("a session with both parts should see the Finance nav link")
 	}
-	if strings.Contains(body, `href="/info"`) {
+	if strings.Contains(body, `>Info</a>`) {
 		t.Error("a readonly session must never see the Info nav link")
 	}
 }
@@ -639,4 +642,225 @@ func TestHandleStatic(t *testing.T) {
 			}
 		})
 	}
+}
+
+// adminFinanceRequest is authorizedRequest against an arbitrary path: the
+// spending page is admin-only, so every menu test below needs a push session.
+func adminFinanceRequest(t *testing.T, s *server, path string) *http.Request {
+	t.Helper()
+	encoded, err := auth.Encode(s.cfg.sessionSecret, auth.NewSession("octocat", "push", time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodGet, path, nil)
+	r.AddCookie(&http.Cookie{Name: sessionCookie, Value: encoded})
+	return r
+}
+
+// withActuals points the tracker at an actuals directory, which is what makes
+// the Spending menu entry appear at all.
+func withActuals(s *server, files fstest.MapFS) {
+	s.tracker.Actuals = &tracker.Actuals{FS: files}
+}
+
+// TestSpendingNav_AdminSeesItInTheMenu: the page is reachable from the menu
+// rather than only from a figure on the dashboard, so it can be opened
+// without first finding a month that has one.
+func TestSpendingNav_AdminSeesItInTheMenu(t *testing.T) {
+	s := newFinanceTestServer(t)
+	withActuals(s, fstest.MapFS{})
+	w := httptest.NewRecorder()
+
+	s.financeMonth(w, withPathValues(adminFinanceRequest(t, s, "/2026/8"), "2026", "8"))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `href="/2026/8/spending">Spending</a>`) {
+		t.Error("the menu should offer Spending for the month being viewed")
+	}
+}
+
+// TestSpendingNav_HiddenWithoutActuals: an entry leading to a page that can
+// never have content is worse than no entry.
+func TestSpendingNav_HiddenWithoutActuals(t *testing.T) {
+	s := newFinanceTestServer(t)
+	s.tracker.Actuals = nil
+	w := httptest.NewRecorder()
+
+	s.financeMonth(w, withPathValues(adminFinanceRequest(t, s, "/2026/8"), "2026", "8"))
+
+	if strings.Contains(w.Body.String(), ">Spending</a>") {
+		t.Error("no actuals directory configured — the entry should be absent")
+	}
+}
+
+// TestSpendingNav_HiddenForReadOnly mirrors financeSpending's 403: the menu
+// never offers a page the session would be bounced from.
+func TestSpendingNav_HiddenForReadOnly(t *testing.T) {
+	s := newFinanceTestServer(t)
+	withActuals(s, fstest.MapFS{})
+	w := httptest.NewRecorder()
+
+	s.financeMonth(w, withPathValues(readOnlyRequest(t, s, "/2026/8", []string{users.PartFinance}), "2026", "8"))
+
+	if strings.Contains(w.Body.String(), ">Spending</a>") {
+		t.Error("a readonly session must never see a link to the drill-down")
+	}
+}
+
+// TestSpendingNav_YearViewLinksAMonth: the menu target must be a month even
+// when the dashboard is showing a year, or the link lands on /2026/0/spending
+// and bounces back to the dashboard.
+func TestSpendingNav_YearViewLinksAMonth(t *testing.T) {
+	s := newFinanceTestServer(t)
+	withActuals(s, fstest.MapFS{})
+	r := adminFinanceRequest(t, s, "/2026")
+	r.SetPathValue("year", "2026")
+	w := httptest.NewRecorder()
+
+	s.financeYear(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), `/0/spending`) {
+		t.Error("year view produced a monthless spending URL")
+	}
+	if !strings.Contains(w.Body.String(), `/spending">Spending</a>`) {
+		t.Error("the menu entry is missing in year view")
+	}
+}
+
+func withPathValues(r *http.Request, year, month string) *http.Request {
+	r.SetPathValue("year", year)
+	r.SetPathValue("month", month)
+	return r
+}
+
+// navHref pulls one menu entry's href out of a rendered page.
+func navHref(t *testing.T, body, label string) string {
+	t.Helper()
+	start := strings.Index(body, `<nav class="topnav">`)
+	if start < 0 {
+		t.Fatal("the page has no menu")
+	}
+	nav := body[start : start+strings.Index(body[start:], "</nav>")]
+	i := strings.Index(nav, ">"+label+"</a>")
+	if i < 0 {
+		t.Fatalf("no %s entry in the menu: %s", label, nav)
+	}
+	link := nav[:i]
+	open := strings.LastIndex(link, `href="`)
+	return strings.ReplaceAll(link[open+len(`href="`):strings.LastIndex(link, `"`)], "&amp;", "&")
+}
+
+// TestMenuKeepsTheMonth is the whole point of carrying a period: changing
+// page must not also change the month you are reading. Every entry on the
+// dashboard for August 2026 has to come back to August 2026.
+func TestMenuKeepsTheMonth(t *testing.T) {
+	s := newFinanceTestServer(t)
+	withActuals(s, fstest.MapFS{})
+	w := httptest.NewRecorder()
+	s.financeMonth(w, withPathValues(adminFinanceRequest(t, s, "/2026/8"), "2026", "8"))
+	body := w.Body.String()
+
+	for label, want := range map[string]string{
+		"Finance":   "/2026/8",
+		"Spending":  "/2026/8/spending",
+		"Invoicing": "/invoicing?year=2026&month=8",
+		"Info":      "/info?year=2026&month=8",
+	} {
+		if got := navHref(t, body, label); got != want {
+			t.Errorf("%s link = %q, want %q", label, got, want)
+		}
+	}
+}
+
+// TestMonthSurvivesARoundTrip: info has no month of its own, so it has to
+// carry the one it was reached with — otherwise every visit costs you your
+// place.
+func TestMonthSurvivesARoundTrip(t *testing.T) {
+	tmpl := infoTemplate(t) // before newFinanceTestServer chdirs away from the repo
+	s := newFinanceTestServer(t)
+	withActuals(s, fstest.MapFS{})
+
+	w := httptest.NewRecorder()
+	s.financeMonth(w, withPathValues(adminFinanceRequest(t, s, "/2026/3"), "2026", "3"))
+	viaInfo := navHref(t, w.Body.String(), "Info")
+	if viaInfo != "/info?year=2026&month=3" {
+		t.Fatalf("Info link = %q", viaInfo)
+	}
+
+	s.infoTmpl = tmpl
+	w = httptest.NewRecorder()
+	s.handleInfo(w, adminFinanceRequest(t, s, viaInfo))
+	if w.Code != http.StatusOK {
+		t.Fatalf("info status = %d, body: %s", w.Code, w.Body.String())
+	}
+	if back := navHref(t, w.Body.String(), "Finance"); back != "/2026/3" {
+		t.Errorf("Finance link from info = %q, want the month we arrived with", back)
+	}
+}
+
+// TestYearViewHandsOnTheYear: a year view has no month to keep, so the trip
+// back is the year — not January, and not today.
+func TestYearViewHandsOnTheYear(t *testing.T) {
+	s := newFinanceTestServer(t)
+	withActuals(s, fstest.MapFS{})
+	r := adminFinanceRequest(t, s, "/2025")
+	r.SetPathValue("year", "2025")
+	w := httptest.NewRecorder()
+	s.financeYear(w, r)
+	body := w.Body.String()
+
+	if got := navHref(t, body, "Finance"); got != "/2025" {
+		t.Errorf("Finance link = %q, want the year view", got)
+	}
+	if got := navHref(t, body, "Info"); got != "/info?year=2025" {
+		t.Errorf("Info link = %q, want the year alone", got)
+	}
+	if got := navHref(t, body, "Spending"); !strings.HasPrefix(got, "/2025/") {
+		t.Errorf("Spending link = %q, want a month inside the viewed year", got)
+	}
+}
+
+// TestInvoicingFallsBackToAllForAnEmptyYear: the menu now carries a year that
+// may have no invoices in it, and an empty table under a selector with nothing
+// highlighted reads as data loss.
+func TestInvoicingFallsBackToAllForAnEmptyYear(t *testing.T) {
+	s := newTestClientServer(t)
+	s.cfg.env = "prod"
+	s.cfg.sessionSecret = "test-secret"
+	t.Chdir(t.TempDir())
+	writeFixtures(t)
+
+	r := readOnlyRequest(t, s, "/invoicing?year=1999&month=4", []string{users.PartFinance, users.PartInvoicing})
+	w := httptest.NewRecorder()
+
+	s.handleIndex(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	// 1999 renders no chip of its own, so the tell is that All is selected
+	// again and the invoices are back.
+	if !strings.Contains(body, `href="/invoicing" class="active"`) {
+		t.Error("a year with no invoices should fall back to All")
+	}
+	if !strings.Contains(body, "INV-0000000001") {
+		t.Error("the invoice table is empty; the unknown year was still applied")
+	}
+}
+
+// infoTemplate resolves templates/info.html absolutely, since the finance
+// tests chdir into a fixture directory first.
+func infoTemplate(t *testing.T) *template.Template {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return mustPageTemplate(filepath.Join(wd, "..", "..", "templates", "info.html"))
 }

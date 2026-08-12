@@ -65,7 +65,7 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	view := infoView{
-		Header:       s.header(sess, webui.PageInfo),
+		Header:       s.header(sess, webui.PageInfo, webui.ParsePeriod(r.URL.Query().Get("year"), r.URL.Query().Get("month"))),
 		ConfigGroups: s.configGroups(),
 	}
 

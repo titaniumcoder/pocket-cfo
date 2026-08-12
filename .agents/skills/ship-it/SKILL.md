@@ -7,7 +7,7 @@ description: >
   never commit by hand instead of via this skill. Triggers on "ship it",
   "ship this", "commit this step", or finishing a plan subtask.
 metadata:
-  short-description: "gofmt/vet/build/test/manual-test/docker build, then one commit"
+  short-description: "gofmt/vet/build/test/manual-test, then one commit"
 ---
 
 # ship-it
@@ -29,14 +29,24 @@ step fails — fix the failure (or report it and stop) instead.
 6. **Manual test** — actually run the changed behavior (start the server and
    hit the route, or run the CLI command) rather than trusting the automated
    checks alone. Describe what was exercised and what was observed.
-7. **`docker build .`** (or the relevant Dockerfile target) — must succeed.
-   Skip only for changes that can't affect the image (e.g. a pure doc/plan
-   file edit) — state explicitly why it was skipped when you do.
-8. **Commit** — stage only the files belonging to this one step (never a
+7. **Commit** — stage only the files belonging to this one step (never a
    blanket `git add -A`), write a commit message describing this step alone,
    and create the commit. Do not push. Do not batch multiple unrelated steps
    into one commit, and do not amend a previous commit to fold in more work.
 
-If any of steps 1-7 fails, stop and fix the root cause before retrying from
+If any of steps 1-6 fails, stop and fix the root cause before retrying from
 that step — never commit past a failing check, and never use `--no-verify` to
 route around a failing hook.
+
+## The image is CI's job, not this skill's
+
+Do not run `docker build` here. The `Build` workflow builds the image on every
+push to `main` and the `Release` workflow builds and publishes it on a tag, so
+building it locally duplicates a check that runs anyway — and it is the check
+most likely to be unavailable (no daemon, no `docker` group), which turns a
+green step into a paragraph of hedging about why it was skipped.
+
+Once the commit is pushed, track the run instead of building anything:
+`gh run list --limit 3` to find it, then `gh run watch <id> --exit-status`.
+Report whether it went green. If it fails, that is a real failure to fix, not
+a footnote — the image is what actually gets deployed.

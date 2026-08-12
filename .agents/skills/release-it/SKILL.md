@@ -74,11 +74,11 @@ cancel. Do not proceed past this point without an explicit yes.
 Only after Phase 3's confirmation:
 
 1. Run the full check: `gofmt -l .` (clean), `go generate ./...`,
-   `go vet ./...`, `go build ./...`, `go test ./...`, and `docker build .`
-   if the Docker CLI is available (`which docker`) — if it's not, say so
-   explicitly rather than skipping silently, same convention as `ship-it`.
-   Stop and fix (or report and stop) on any failure — never tag a release
-   that doesn't pass its own checks.
+   `go vet ./...`, `go build ./...`, `go test ./...`. Do not run
+   `docker build` — the release workflow builds the image itself, and step 6
+   below watches that build rather than duplicating it here. Stop and fix (or
+   report and stop) on any failure — never tag a release that doesn't pass
+   its own checks.
 2. If `origin/main` needs a push (per Phase 1), push it now:
    `git push origin main`.
 3. Create an annotated tag with the categorized summary as its message:
@@ -87,6 +87,13 @@ Only after Phase 3's confirmation:
    `.github/workflows/release.yml`'s GHCR image publish — nothing else does.
 5. Create the GitHub Release from the same notes:
    `gh release create vX.Y.Z --title vX.Y.Z --notes "<summary>"`.
-6. Report back: the release URL, the tag pushed, and that the GHCR image
-   publish is running (point at the Actions run, don't wait/poll for it
-   unless the user asks).
+6. **Track the image build to completion.** The tag push is what triggers
+   `.github/workflows/release.yml`'s GHCR publish, and that build is the only
+   place the image is checked at all — a release whose image never built is a
+   release that cannot be deployed. Find the run with `gh run list --limit 3`
+   and wait on it with `gh run watch <id> --exit-status`; a push to `main` in
+   the same breath starts a second `Build` run worth watching too. Run these
+   in the background rather than blocking, and report each conclusion.
+7. Report back: the release URL, the tag pushed, and whether the image build
+   went green. If it failed, say so plainly and treat it as a broken release
+   to fix, not a footnote — do not describe the release as done.

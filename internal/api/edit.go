@@ -11,16 +11,6 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/actualsdata"
 )
 
-// Edit changes what one recorded transaction is attributed to, and nothing
-// else about it.
-//
-// Exactly one of Category, Ignored, Untracked or Splits is set, and it
-// replaces whatever the line carried before — that is what makes "this
-// ignored line was actually groceries" expressible, and it is the only kind
-// of clearing this can do. The statement facts (date, description, amount,
-// account) are not here at all: they are what the bank said, and an endpoint
-// that could rewrite them would be an endpoint that could quietly make the
-// file stop matching the statement.
 type Edit struct {
 	ID    string `json:"id"`
 	Month string `json:"month,omitempty"`
@@ -31,22 +21,17 @@ type Edit struct {
 	Splits    []actualsdata.Split `json:"splits,omitempty"`
 }
 
-// EditRequest is a batch, because the common correction is a batch: every
-// Parkmart line in August to Groceries is one call and one commit, not one
-// commit and one redeploy per line.
 type EditRequest struct {
 	Edits  []Edit `json:"edits"`
 	Reason string `json:"reason,omitempty"`
 }
 
-// MonthEdit is one month this call committed.
 type MonthEdit struct {
 	Month  string `json:"month"`
 	SHA    string `json:"sha"`
 	Edited int    `json:"edited"`
 }
 
-// EditResult reports what changed where.
 type EditResult struct {
 	Edited        int         `json:"edited"`
 	Unchanged     []string    `json:"unchanged,omitempty"`
@@ -54,14 +39,6 @@ type EditResult struct {
 	DeployPending bool        `json:"deploy_pending"`
 }
 
-// EditTransactions re-attributes recorded lines.
-//
-// There is no base_sha. The endpoint reads each month as it currently stands
-// and touches only the ids it was given, so a change someone else made to a
-// different line is merged rather than clobbered — the race an optimistic
-// lock existed to prevent cannot arise when nothing is being replaced
-// wholesale. It cannot add a line and it cannot remove one; refuseDestruction
-// proves that about its own output before anything is committed.
 func (s *Service) EditTransactions(ctx context.Context, req EditRequest) (*EditResult, error) {
 	if len(req.Edits) == 0 {
 		return nil, errorf(CodeInvalidRequest, "edits is required")
@@ -70,8 +47,6 @@ func (s *Service) EditTransactions(ctx context.Context, req EditRequest) (*EditR
 		return nil, errorf(CodeWriteNotConfigured, "writes are not configured")
 	}
 
-	// Everything that can be judged without reading a file is judged first, so
-	// a malformed batch costs no round trips and lands no partial write.
 	seen := map[string]bool{}
 	for i, e := range req.Edits {
 		if strings.TrimSpace(e.ID) == "" {
@@ -99,8 +74,6 @@ func (s *Service) EditTransactions(ctx context.Context, req EditRequest) (*EditR
 	if err != nil {
 		return nil, err
 	}
-	// A mistyped category is the likeliest thing to be wrong about a batch, so
-	// it is caught before the first month is read rather than after.
 	for i, e := range req.Edits {
 		for _, id := range citedCategories(e) {
 			if !knownIDs[id] {
@@ -162,9 +135,6 @@ func (s *Service) planEdit(ctx context.Context, month string, edits []Edit, know
 		at[tx.Id] = i
 	}
 
-	// A batch is all-or-nothing per month: an id that isn't there usually
-	// means the wrong month or a stale list, and applying the rest would
-	// half-do what was asked while reporting success.
 	var missing []string
 	for _, e := range edits {
 		if _, ok := at[e.ID]; !ok {
@@ -195,7 +165,6 @@ func (s *Service) planEdit(ctx context.Context, month string, edits []Edit, know
 	if verr := actualsdata.ValidateActuals(doc, month, knownIDs); verr != nil {
 		return plannedEdit{}, &Error{Code: CodeValidationFailed, Message: verr.Error()}
 	}
-	// Mutation is the point here, so only removals are refused.
 	if derr := refuseDestruction(before, doc, true); derr != nil {
 		return plannedEdit{}, derr
 	}
@@ -208,9 +177,6 @@ func (s *Service) planEdit(ctx context.Context, month string, edits []Edit, know
 	return p, nil
 }
 
-// applyEdit sets the one disposition the edit carries and clears the rest, so
-// a line never ends up carrying two answers. Everything the bank said about
-// the line is copied through untouched.
 func applyEdit(tx actualsdata.Transaction, e Edit) actualsdata.Transaction {
 	tx.Category, tx.Ignored, tx.Untracked, tx.Splits = nil, nil, nil, nil
 	switch {
@@ -251,7 +217,6 @@ func checkDisposition(i int, e Edit) error {
 	return nil
 }
 
-// citedCategories is every budget id an edit names, on the line or in a part.
 func citedCategories(e Edit) []string {
 	var out []string
 	if e.Category != nil && *e.Category != "" {
@@ -275,11 +240,6 @@ func countSet(flags ...bool) int {
 	return n
 }
 
-// groupEditsByMonth resolves each edit to a month, looking one up only when
-// the caller did not say. get_actuals and search_transactions both return the
-// month beside every id, so passing it is free — and it is also the only
-// reliable answer, since the lookup reads the deployed checkout, which lags
-// the repo by a deploy and so cannot see a line added minutes ago.
 func (s *Service) groupEditsByMonth(ctx context.Context, edits []Edit) (map[string][]Edit, error) {
 	out := map[string][]Edit{}
 	var index map[string]string
@@ -309,9 +269,6 @@ func (s *Service) groupEditsByMonth(ctx context.Context, edits []Edit) (map[stri
 	return out, nil
 }
 
-// transactionMonths maps every recorded id to the month it is filed under.
-// Months are cached by the tracker, so this is one pass over files that a
-// page render has usually loaded already.
 func (s *Service) transactionMonths(ctx context.Context) (map[string]string, error) {
 	out := map[string]string{}
 	now := s.now().Year()

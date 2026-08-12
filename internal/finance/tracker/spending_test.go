@@ -107,6 +107,27 @@ func TestSpendingNavBoundsMatchTheDashboard(t *testing.T) {
 
 const yearRangeForTest = 2
 
+// TestCopyLinkWorksWithoutASecureContext: navigator.clipboard is absent over
+// plain HTTP, and the link would then do nothing at all with no hint why.
+func TestCopyLinkWorksWithoutASecureContext(t *testing.T) {
+	trk := actualsTracker(t, map[string]string{
+		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-09","imported_at":"2026-08-10"}],
+			"transactions":[{"id":"t1","date":"2026-08-03","description":"LIDL","amount":210.4,"account":"A","category":"00000000-0000-4000-8000-000000000001"}]}`,
+	})
+	rec := httptest.NewRecorder()
+	RenderSpending(rec, trk.ComputeSpending(context.Background(), 2026, time.August))
+	body := rec.Body.String()
+
+	if !strings.Contains(body, "if (navigator.clipboard)") {
+		t.Error("the copy link assumes a secure context")
+	}
+	for _, want := range []string{"execCommand", "copy failed"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("no %s fallback; the link would fail silently over plain HTTP", want)
+		}
+	}
+}
+
 // TestDashboardHasNoCoverageBanner: reconciliation belongs on the spending
 // screen only.
 func TestDashboardHasNoCoverageBanner(t *testing.T) {

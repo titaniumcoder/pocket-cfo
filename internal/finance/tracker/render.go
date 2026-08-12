@@ -251,11 +251,32 @@ var templates = `
     var a = e.target.closest('.copy-tx');
     if (!a) return;
     e.preventDefault();
-    navigator.clipboard.writeText(a.dataset.copy).then(function () {
+    var done = function () {
       a.textContent = 'copied';
       setTimeout(function () { a.textContent = 'copy'; }, 1500);
-    });
-  });
+    };
+    // navigator.clipboard needs a secure context. Over plain HTTP it is
+    // simply absent, and the link would do nothing at all with no hint why —
+    // so fall back to selecting the text, which leaves Ctrl-C working.
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(a.dataset.copy).then(done, fallback);
+    } else {
+      fallback();
+    }
+    function fallback() {
+      var box = document.createElement('textarea');
+      box.value = a.dataset.copy;
+      box.setAttribute('readonly', '');
+      box.style.position = 'fixed';
+      box.style.opacity = '0';
+      document.body.appendChild(box);
+      box.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+      document.body.removeChild(box);
+      a.textContent = ok ? 'copied' : 'copy failed';
+      setTimeout(function () { a.textContent = 'copy'; }, 1500);
+    }
 </script>
 </body>
 </html>{{end}}

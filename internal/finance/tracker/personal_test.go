@@ -12,13 +12,22 @@ func params() PersonalParams { return testLegislation(0.1892, 0.1378, 2112, 0.10
 func testParams() PersonalParams { return params() }
 
 // testLegislation wraps four rates as the single always-in-force period a
-// config with no dated entries resolves to.
+// config with no dated entries resolves to. It keeps the pre-bands vocabulary
+// on purpose — a ceiling is now a band with a rate of zero, and translating it
+// here rather than in forty call sites is what lets every test written before
+// bands keep saying what it meant.
 func testLegislation(employer, employee, maxInsurable, tax float64) PersonalParams {
 	return PersonalParams{Legislation: Legislation{{
-		From:         FromTheStart,
-		EmployerRate: &employer, EmployeeRate: &employee,
-		MaxInsurable: &maxInsurable, IncomeTaxRate: &tax,
+		From:      FromTheStart,
+		Employer:  cappedAt(employer, maxInsurable),
+		Employee:  cappedAt(employee, maxInsurable),
+		IncomeTax: Bands{{From: 0, Rate: tax}},
 	}}}
+}
+
+// cappedAt is one rate up to a ceiling and nothing above it — Bulgaria's shape.
+func cappedAt(rate, ceiling float64) *PartySchedule {
+	return &PartySchedule{Bands: Bands{{From: 0, Rate: rate}, {From: ceiling, Rate: 0}}}
 }
 
 func TestBreakdownCappedSalary(t *testing.T) {

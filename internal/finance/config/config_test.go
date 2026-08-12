@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
@@ -63,15 +64,18 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.HourlyRateCents != 0 {
 		t.Errorf("HourlyRateCents = %v, want default 0 (unset)", cfg.HourlyRateCents)
 	}
-	// The rates live in one default period rather than as loose fields, so a
+	// The schedules live in one default period rather than as loose fields, so a
 	// file that says nothing still has a complete, visible set of figures
-	// rather than four zeroes.
+	// rather than empty ones.
 	if len(cfg.Legislation) != 1 {
 		t.Fatalf("Legislation = %v, want one default period", cfg.Legislation)
 	}
 	def := cfg.Legislation[0]
-	if def.EmployerRate == nil || *def.EmployerRate != 0.1892 || def.EmployeeRate == nil || *def.EmployeeRate != 0.1378 {
-		t.Errorf("default social rates = %+v, want 0.1892/0.1378", def)
+	wantEmployer := tracker.Bands{{From: 0, Rate: 0.1892}, {From: 2112, Rate: 0}}
+	wantEmployee := tracker.Bands{{From: 0, Rate: 0.1378}, {From: 2112, Rate: 0}}
+	if def.Employer == nil || !reflect.DeepEqual(def.Employer.Bands, wantEmployer) ||
+		def.Employee == nil || !reflect.DeepEqual(def.Employee.Bands, wantEmployee) {
+		t.Errorf("default contribution bands = %+v, want 18.92%%/13.78%% up to a 2112 ceiling", def)
 	}
 	if def.MinimumWage != nil {
 		t.Errorf("a default minimum wage of %v was invented; nobody is employed until the file says so", *def.MinimumWage)
@@ -139,6 +143,13 @@ func TestLoadFileConfigRefusesMalformedLegislation(t *testing.T) {
 		"a negative amount":         `{"legislation":[{"from":"2026-07","minimumWage":-5}]}`,
 		"two entries for a month":   `{"legislation":[{"from":"2026-07","minimumWage":1077},{"from":"2026-07-20","minimumWage":1100}]}`,
 		"an entry changing nothing": `{"legislation":[{"from":"2026-07"}]}`,
+		"bands not starting at 0":   `{"legislation":[{"from":"2026-07","contributions":{"employer":{"bands":[{"from":100,"rate":0.1}]}}}]}`,
+		"bands out of order":        `{"legislation":[{"from":"2026-07","contributions":{"employer":{"bands":[{"from":0,"rate":0.1},{"from":0,"rate":0.2}]}}}]}`,
+		// A file still on the v0.15.0 keys must not start. The fallback to
+		// built-in defaults means a half-migrated one reports plausible wrong
+		// numbers, which is worse than refusing.
+		"the retired flat rates": `{"legislation":[{"from":"2026-07","socialEmployerRate":0.1892,"socialMaxInsurableMonthly":2112}]}`,
+		"the retired tax rate":   `{"legislation":[{"from":"2026-07","incomeTaxRate":0.10}]}`,
 	}
 	for name, body := range bad {
 		t.Run(name, func(t *testing.T) {
@@ -158,7 +169,8 @@ func TestLoadFileConfigRefusesMalformedLegislation(t *testing.T) {
 func TestLoadResolvesLegislation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	body := `{"legislation":[
-		{"from":"2027-01","minimumWage":1150,"socialEmployerRate":0.199},
+		{"from":"2027-01","minimumWage":1150,
+		 "contributions":{"employer":{"bands":[{"from":0,"rate":0.199},{"from":2400,"rate":0}]}}},
 		{"from":"2026-07","minimumWage":1077}]}`
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -176,11 +188,12 @@ func TestLoadResolvesLegislation(t *testing.T) {
 	}
 	// A figure an entry never mentions stays nil rather than becoming zero,
 	// which is what lets it carry forward instead of resetting.
-	if got[0].EmployerRate != nil {
-		t.Errorf("July's entry invented an employer rate: %v", *got[0].EmployerRate)
+	if got[0].Employer != nil {
+		t.Errorf("July's entry invented an employer schedule: %+v", got[0].Employer)
 	}
-	if got[1].EmployerRate == nil || *got[1].EmployerRate != 0.199 {
-		t.Errorf("January's rate did not survive: %+v", got[1])
+	want := tracker.Bands{{From: 0, Rate: 0.199}, {From: 2400, Rate: 0}}
+	if got[1].Employer == nil || !reflect.DeepEqual(got[1].Employer.Bands, want) {
+		t.Errorf("January's schedule did not survive: %+v", got[1])
 	}
 }
 
@@ -193,7 +206,7 @@ func TestNoLegislationFallsBackToTheDefaults(t *testing.T) {
 	if len(got) != 1 || got[0].From != tracker.FromTheStart {
 		t.Fatalf("Legislation = %v, want one undated default period", got)
 	}
-	if got[0].IncomeTaxRate == nil || *got[0].IncomeTaxRate != 0.10 {
-		t.Errorf("default tax rate = %+v", got[0])
+	if !reflect.DeepEqual(got[0].IncomeTax, tracker.Bands{{From: 0, Rate: 0.10}}) {
+		t.Errorf("default tax bands = %v, want a flat 10%%", got[0].IncomeTax)
 	}
 }

@@ -234,7 +234,7 @@ func (b *Budget) ForYear(ctx context.Context, year int, now time.Time) (BudgetVi
 
 // CompanyExpensesByMonth returns each month's company-kind spend for the year,
 // all twelve unconditionally (see ForYear). Year view needs the per-month
-// breakdown for the monthly social-insurance cap (PersonalParams.
+// breakdown because contribution bands are monthly thresholds (PersonalParams.
 // breakdownMonths); ForYear's aggregate isn't enough on its own.
 func (b *Budget) CompanyExpensesByMonth(ctx context.Context, year int) (map[time.Month]int, error) {
 	bf, err := b.File(ctx)

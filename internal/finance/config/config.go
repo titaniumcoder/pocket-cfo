@@ -38,16 +38,27 @@ type FileConfig struct {
 	// undated tax rate:
 	//
 	//   "legislation": [
-	//     { "from": "2026-01", "socialEmployerRate": 0.1892,
-	//       "socialEmployeeRate": 0.1378, "socialMaxInsurableMonthly": 2112,
-	//       "incomeTaxRate": 0.10 },
+	//     { "from": "2026-01",
+	//       "contributions": {
+	//         "employer": { "bands": [ {"from": 0, "rate": 0.1892}, {"from": 2112, "rate": 0} ] },
+	//         "employee": { "bands": [ {"from": 0, "rate": 0.1378}, {"from": 2112, "rate": 0} ] }
+	//       },
+	//       "incomeTax": { "bands": [ {"from": 0, "rate": 0.10} ] } },
 	//     { "from": "2026-07", "minimumWage": 1077 },
 	//     { "from": "2027-01", "minimumWage": 1150,
-	//       "socialMaxInsurableMonthly": 2400, "socialEmployerRate": 0.199 }
+	//       "contributions": {
+	//         "employer": { "bands": [ {"from": 0, "rate": 0.199}, {"from": 2400, "rate": 0} ] }
+	//       } }
 	//   ]
 	//
+	// Bands are marginal: a rate applies only to the slice of the base inside
+	// its own band, which is why a ceiling is a band with a rate of zero rather
+	// than a field of its own. Each party has its own schedule, because
+	// employer and employee thresholds genuinely differ.
+	//
 	// An entry states what changed, not what stayed: every figure is optional
-	// and carries forward. Rates and the ceiling also apply backwards from the
+	// and carries forward, though a band list is one indivisible statement and
+	// replaces its predecessor whole. Schedules also apply backwards from the
 	// earliest entry, since a month has to have a tax rate; the minimum wage
 	// does not, because employment has a start date. Omitted entirely, the
 	// defaults in defaultLegislation apply.
@@ -98,10 +109,8 @@ type Config struct {
 	HourlyRateCents int
 	Currency        string
 
-	MaxInsurableMonthly float64
-	IncomeTaxRate       float64
-	AnnualVacationDays  int
-	Legislation         tracker.Legislation
+	AnnualVacationDays int
+	Legislation        tracker.Legislation
 }
 
 // Load merges fc (already loaded via LoadFileConfig) with the
@@ -133,16 +142,16 @@ func Load(fc FileConfig) Config {
 // than leaving a reader to guess where the numbers came from. No minimum wage,
 // since nobody is employed until the file says they are.
 func defaultLegislation() tracker.Legislation {
+	capped := func(rate float64) *tracker.PartySchedule {
+		return &tracker.PartySchedule{Bands: tracker.Bands{{From: 0, Rate: rate}, {From: 2112, Rate: 0}}}
+	}
 	return tracker.Legislation{{
-		From:          tracker.FromTheStart,
-		EmployerRate:  ptr(0.1892),
-		EmployeeRate:  ptr(0.1378),
-		MaxInsurable:  ptr(2112.0),
-		IncomeTaxRate: ptr(0.10),
+		From:      tracker.FromTheStart,
+		Employer:  capped(0.1892),
+		Employee:  capped(0.1378),
+		IncomeTax: tracker.Bands{{From: 0, Rate: 0.10}},
 	}}
 }
-
-func ptr(v float64) *float64 { return &v }
 
 func legislationOrDefault(entries []tracker.LegislationEntry) tracker.Legislation {
 	periods, err := tracker.ParseLegislation(entries)

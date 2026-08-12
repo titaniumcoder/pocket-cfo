@@ -10,10 +10,11 @@
   "legislation": [
     {
       "from": "2026-01",
-      "socialEmployerRate": 0.1892,
-      "socialEmployeeRate": 0.1378,
-      "socialMaxInsurableMonthly": 2112,
-      "incomeTaxRate": 0.10
+      "contributions": {
+        "employer": { "bands": [ { "from": 0, "rate": 0.1892 }, { "from": 2112, "rate": 0 } ] },
+        "employee": { "bands": [ { "from": 0, "rate": 0.1378 }, { "from": 2112, "rate": 0 } ] }
+      },
+      "incomeTax": { "bands": [ { "from": 0, "rate": 0.10 } ] }
     },
     { "from": "2026-07", "minimumWage": 1077 }
   ]

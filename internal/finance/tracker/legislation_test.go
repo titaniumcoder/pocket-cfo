@@ -18,7 +18,8 @@ func bulgaria() PersonalParams {
 	p := params()
 	p.Legislation = append(p.Legislation,
 		LegislationPeriod{From: yearMonth{2026, time.July}, MinimumWage: f64(1077)},
-		LegislationPeriod{From: yearMonth{2027, time.January}, MinimumWage: f64(1150), MaxInsurable: f64(2400), EmployerRate: f64(0.199)},
+		LegislationPeriod{From: yearMonth{2027, time.January}, MinimumWage: f64(1150),
+			Employer: cappedAt(0.199, 2400), Employee: cappedAt(0.1378, 2400)},
 	)
 	return p
 }
@@ -35,10 +36,10 @@ func TestRulesCarryForward(t *testing.T) {
 	if before.MinimumEUR != 0 {
 		t.Errorf("June 2026 has a floor of %.2f — employment had not started", before.MinimumEUR)
 	}
-	// The rates still apply, though: a month has to have a tax rate, so the
+	// The schedules still apply, though: a month has to have a tax rate, so the
 	// oldest figures on file also describe everything before them.
-	if before.EmployerRate != base.EmployerRate || before.MaxInsurableEUR != base.MaxInsurableEUR {
-		t.Errorf("June 2026 lost its rates: %+v", before)
+	if !reflect.DeepEqual(before.Employer, base.Employer) {
+		t.Errorf("June 2026 lost its employer schedule: %+v", before.Employer)
 	}
 
 	summer := p.rulesFor(yearMonth{2026, time.August})
@@ -47,17 +48,20 @@ func TestRulesCarryForward(t *testing.T) {
 	}
 	// July's entry named only the minimum wage, so everything else is still
 	// the baseline.
-	if summer.EmployerRate != base.EmployerRate || summer.MaxInsurableEUR != base.MaxInsurableEUR {
-		t.Errorf("July's entry changed figures it never mentioned: %+v", summer)
+	if !reflect.DeepEqual(summer.Employer, base.Employer) {
+		t.Errorf("July's entry changed a schedule it never mentioned: %+v", summer.Employer)
 	}
 
 	after := p.rulesFor(yearMonth{2027, time.March})
-	if after.MinimumEUR != 1150 || after.MaxInsurableEUR != 2400 || after.EmployerRate != 0.199 {
-		t.Errorf("March 2027 = %+v, want the January package", after)
+	if after.MinimumEUR != 1150 {
+		t.Errorf("March 2027 minimum = %.2f, want the January package's 1150", after.MinimumEUR)
+	}
+	if !reflect.DeepEqual(after.Employer.Bands, Bands{{From: 0, Rate: 0.199}, {From: 2400, Rate: 0}}) {
+		t.Errorf("March 2027 employer = %v, want the January package", after.Employer.Bands)
 	}
 	// And the figures January did not mention are carried forward, not reset.
-	if after.EmployeeRate != base.EmployeeRate || after.IncomeTaxRate != base.IncomeTaxRate {
-		t.Errorf("January reset figures it never mentioned: %+v", after)
+	if !reflect.DeepEqual(after.IncomeTax, base.IncomeTax) {
+		t.Errorf("January reset the tax bands it never mentioned: %v", after.IncomeTax)
 	}
 }
 
@@ -79,8 +83,9 @@ func TestARateChangeReachesTheArithmetic(t *testing.T) {
 	}
 }
 
-// TestInsurableCapIsDatedToo: the cap is legislation like everything else, and
-// raising it lifts the contribution base with it.
+// TestInsurableCapIsDatedToo: the ceiling is legislation like everything else —
+// now the boundary of the rate: 0 band — and raising it lifts the contribution
+// base with it.
 func TestInsurableCapIsDatedToo(t *testing.T) {
 	p := bulgaria()
 	income := 20000.0 // comfortably past either cap
@@ -99,9 +104,13 @@ func TestInsurableCapIsDatedToo(t *testing.T) {
 // historic figure moves.
 func TestNoLegislationIsTheOldBehaviour(t *testing.T) {
 	plain := params()
-	want := Rules{MaxInsurableEUR: 2112, EmployerRate: 0.1892, EmployeeRate: 0.1378, IncomeTaxRate: 0.10}
+	want := Rules{
+		Employer:  PartyRules{Bands: Bands{{From: 0, Rate: 0.1892}, {From: 2112, Rate: 0}}},
+		Employee:  PartyRules{Bands: Bands{{From: 0, Rate: 0.1378}, {From: 2112, Rate: 0}}},
+		IncomeTax: Bands{{From: 0, Rate: 0.10}},
+	}
 	for _, ym := range []yearMonth{{2020, time.January}, {2026, time.August}, {2030, time.December}} {
-		if got := plain.rulesFor(ym); got != want {
+		if got := plain.rulesFor(ym); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s resolved to %+v, want %+v in every month", ym, got, want)
 		}
 	}
@@ -225,7 +234,7 @@ func TestParseLegislation(t *testing.T) {
 	bad := map[string][]LegislationEntry{
 		"not a month":      {{From: "July 2026", MinimumWage: f64(1077)}},
 		"no date at all":   {{MinimumWage: f64(1077)}},
-		"a negative rate":  {{From: "2026-07", SocialEmployerRate: f64(-0.1)}},
+		"a negative rate":  {{From: "2026-07", Contributions: employerEntry(band(0, -0.1))}},
 		"two for a month":  {{From: "2026-07", MinimumWage: f64(1077)}, {From: "2026-07-15", MinimumWage: f64(1100)}},
 		"changing nothing": {{From: "2026-07"}},
 	}
@@ -271,13 +280,15 @@ func TestEnforcedMinimumIsVisible(t *testing.T) {
 // before July means there was no floor in June, because there was no job.
 func TestRatesApplyBackwardsFromTheEarliestEntry(t *testing.T) {
 	p := PersonalParams{Legislation: Legislation{
-		{From: yearMonth{2026, time.January}, EmployerRate: f64(0.1892), EmployeeRate: f64(0.1378),
-			MaxInsurable: f64(2112), IncomeTaxRate: f64(0.10)},
+		{From: yearMonth{2026, time.January}, Employer: cappedAt(0.1892, 2112),
+			Employee: cappedAt(0.1378, 2112), IncomeTax: Bands{{From: 0, Rate: 0.10}}},
 		{From: yearMonth{2026, time.July}, MinimumWage: f64(1077)},
 	}}
 
 	past := p.rulesFor(yearMonth{2024, time.March})
-	if past.EmployerRate != 0.1892 || past.EmployeeRate != 0.1378 || past.IncomeTaxRate != 0.10 || past.MaxInsurableEUR != 2112 {
+	if !reflect.DeepEqual(past.Employer.Bands, Bands{{From: 0, Rate: 0.1892}, {From: 2112, Rate: 0}}) ||
+		!reflect.DeepEqual(past.Employee.Bands, Bands{{From: 0, Rate: 0.1378}, {From: 2112, Rate: 0}}) ||
+		!reflect.DeepEqual(past.IncomeTax, Bands{{From: 0, Rate: 0.10}}) {
 		t.Errorf("March 2024 = %+v, want the oldest figures on file rather than zeroes", past)
 	}
 	if past.MinimumEUR != 0 {

@@ -104,8 +104,14 @@ type editArg struct {
 	Splits    []splitArg `json:"splits,omitempty" jsonschema:"replace the line's attribution with these parts, which must add up to its amount. Set exactly one of category, ignored, untracked or splits per edit"`
 }
 
+// Both fields are optional so that "I read through the 20th and there was
+// nothing new" is expressible — a coverage-only call is a real import, and it
+// moves the completeness the dashboard withholds judgement on. Marking
+// transactions required here would also have made the two surfaces disagree:
+// REST accepts that call, and the schema would have refused it with a
+// validation message from the SDK rather than one of ours.
 type addArgs struct {
-	Transactions []txArg       `json:"transactions" jsonschema:"the statement lines to record. Send only lines not already in the file"`
+	Transactions []txArg       `json:"transactions,omitempty" jsonschema:"the statement lines to record. Send only lines not already in the file. May be omitted when you are only reporting coverage"`
 	Coverage     []coverageArg `json:"coverage,omitempty" jsonschema:"which account was read through which dates. One range per month — a range may not cross a month boundary. Required for any month that has never been reconciled"`
 }
 

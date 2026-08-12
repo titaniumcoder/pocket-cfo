@@ -366,3 +366,33 @@ func TestMCPBodyIsCapped(t *testing.T) {
 		t.Errorf("a %d-byte body was accepted", len(huge))
 	}
 }
+
+// TestMCPAndRESTAgreeOnCoverageOnlyAdd: reporting that you read further into a
+// month and found nothing new is a real import — it moves the completeness the
+// dashboard withholds judgement on. Both surfaces must accept it and give the
+// same answer, and the MCP one must not refuse it in the SDK's schema layer
+// before the service is ever reached.
+func TestMCPAndRESTAgreeOnCoverageOnlyAdd(t *testing.T) {
+	body := `{"coverage":[{"account":"A","from":"2026-08-01","to":"2026-09-15","imported_at":"2026-09-16"}]}`
+
+	s := putServer(t)
+	r := httptest.NewRequest(http.MethodPost, "/api/actuals/add", strings.NewReader(body))
+	r.Header.Set("Authorization", "Bearer "+apiTestToken)
+	r.Header.Set("Content-Type", "application/json")
+	rest := httptest.NewRecorder()
+	s.routes().ServeHTTP(rest, r)
+
+	w := mcpCall(t, s, apiTestToken,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add_transactions","arguments":`+body+`}}`)
+	mcp := w.Body.String()
+
+	// The range crosses a month boundary, so both must refuse it — and for the
+	// same reason, in our words rather than the schema validator's.
+	const reason = "crosses a month boundary"
+	if !strings.Contains(rest.Body.String(), reason) {
+		t.Errorf("REST said %s, want the boundary refusal", rest.Body)
+	}
+	if !strings.Contains(mcp, reason) {
+		t.Errorf("MCP said %s, want the boundary refusal — a required-property error means the schema refused it first", mcp)
+	}
+}

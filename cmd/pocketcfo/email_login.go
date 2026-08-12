@@ -86,7 +86,7 @@ func (s *server) handleEmailLoginCallback(w http.ResponseWriter, r *http.Request
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(auth.ReadOnlyTTL),
 	})
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, s.destinationAfterLogin(w, r), http.StatusFound)
 }
 
 // emailLoginAvailable hides the option when users.json is empty or unreadable,

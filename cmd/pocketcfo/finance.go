@@ -101,6 +101,7 @@ func (s *server) authenticatedForPart(sess auth.Session, part string) bool {
 func (s *server) financeSession(w http.ResponseWriter, r *http.Request) (auth.Session, bool) {
 	sess, ok := s.currentSession(r)
 	if !ok || !s.authenticated(sess) {
+		s.rememberDestination(w, r)
 		tracker.RenderLogin(w, "", s.emailLoginAvailable())
 		return sess, false
 	}
@@ -276,6 +277,7 @@ func isMinimalToggle(r *http.Request) bool {
 func (s *server) financeSpending(w http.ResponseWriter, r *http.Request) {
 	sess, ok := s.currentSession(r)
 	if !ok || !s.authenticated(sess) {
+		s.rememberDestination(w, r)
 		http.Redirect(w, r, "/auth/login", http.StatusFound)
 		return
 	}

@@ -474,7 +474,11 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
    and hands that width to every row, so one 36-character id would squeeze
    Description down the entire page. Fixed widths make the columns useful as
    well as identical; only Description flexes. */
-.spend-grid { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) 11rem 5.5rem 1.75rem; column-gap: 1.5rem; align-items: baseline; }
+/* Stretch, not baseline: each cell carries its own bottom rule, and a
+   baseline-aligned cell is only as tall as its own content — so a row whose
+   description wraps to three lines drew three rules at three heights. Stretched
+   cells all end where the row does. */
+.spend-grid { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) 11rem 5.5rem 1.75rem; column-gap: 1.5rem; align-items: stretch; }
 .spend-grid > .sg-row { display: contents; }
 .spend-grid > * { padding: .6rem 0; border-bottom: 1px solid var(--panel-border); }
 .spend-grid > .sg-row > * { padding: .6rem 0; border-bottom: 1px solid var(--panel-border); min-width: 0; }
@@ -494,7 +498,7 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
 
 /* Coverage keeps its own grid — different columns entirely — but the same
    idea, so its four columns are stable however long an account name is. */
-.cov-grid { display: grid; grid-template-columns: minmax(0, 1fr) 7rem 7rem 7rem; column-gap: 1.5rem; align-items: baseline; }
+.cov-grid { display: grid; grid-template-columns: minmax(0, 1fr) 7rem 7rem 7rem; column-gap: 1.5rem; align-items: stretch; }
 .cov-grid > * { padding: .5rem 0; border-bottom: 1px solid var(--panel-border); }
 .cov-head { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; opacity: .55; font-weight: 600; }
 

@@ -53,6 +53,7 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	// are and that it isn't enough. Otherwise a logged-out admin just
 	// gets a dead-end 403 on a page they're perfectly entitled to.
 	if !ok || !s.authenticated(sess) {
+		s.rememberDestination(w, r)
 		http.Redirect(w, r, "/auth/login", http.StatusFound)
 		return
 	}

@@ -87,12 +87,14 @@ func TestActualStatus(t *testing.T) {
 			wantStatus: ActualUnbudgeted,
 		},
 		{
-			// No plan to be off, so the floor is all there is — and fifteen
-			// euros is not a finding.
-			name:       "a trivial charge against a zero budget is not worth a flag",
+			// The tolerance excuses a figure for missing a number someone
+			// chose. There is no number here, so nothing to excuse: an
+			// unplanned charge is worth seeing at any size, because seeing it
+			// is how it gets budgeted next time.
+			name:       "even a small charge against a zero budget is worth seeing",
 			row:        CategoryRow{CategoryID: "a", PlannedCents: 0, ActualCents: 1500, HasActual: true},
 			complete:   true,
-			wantStatus: "",
+			wantStatus: ActualUnbudgeted,
 		},
 		{
 			name:       "a one-off charged in the wrong month outranks over",
@@ -389,5 +391,62 @@ func TestGroupHeaderColumnsMatchItsRows(t *testing.T) {
 	// And the column header exists on both ledgers, so the two numbers are labelled.
 	if got := strings.Count(body, `class="row colhead"`); got != 2 {
 		t.Errorf("found %d column headers, want one per ledger", got)
+	}
+}
+
+// TestGroupCarriesTheWorstRowInside: a collapsed group has to say that
+// something in it wants a look. Grading the group's own total would not —
+// one category 300 over and another 300 under net out to a group that reads
+// as perfectly on plan.
+func TestGroupCarriesTheWorstRowInside(t *testing.T) {
+	tests := []struct {
+		name     string
+		statuses []string
+		want     string
+	}{
+		{"nothing to say", []string{"", ""}, ""},
+		{"one under", []string{"", ActualUnder}, ActualUnder},
+		{"over outranks under", []string{ActualUnder, ActualOver}, ActualOver},
+		{"order does not matter", []string{ActualOver, ActualUnder}, ActualOver},
+		{"unbudgeted outranks under", []string{ActualUnder, ActualUnbudgeted}, ActualUnbudgeted},
+		{"mistimed outranks everything", []string{ActualOver, ActualMistimed, ActualUnder}, ActualMistimed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ""
+			for _, s := range tt.statuses {
+				got = worseStatus(got, s)
+			}
+			if got != tt.want {
+				t.Errorf("group status = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestGroupFlagSurvivesANettingOut is the case the group total cannot show:
+// the two rows cancel exactly, so the group's own numbers say on plan while
+// one category inside is 300 over.
+func TestGroupFlagSurvivesANettingOut(t *testing.T) {
+	bv := BudgetView{Groups: []CategoryGroupView{{
+		Name:         "Living",
+		PlannedCents: 200000, // summed by buildBudgetView, not by ApplyActuals
+		Rows: []CategoryRow{
+			{CategoryID: "a", PlannedCents: 100000},
+			{CategoryID: "b", PlannedCents: 100000},
+		},
+	}}}
+	av := ActualsView{
+		Present: true, Complete: true,
+		ByCategory: map[string]int{"a": 130000, "b": 70000},
+	}
+	ApplyActuals(&bv, av, time.August, nil)
+
+	g := bv.Groups[0]
+	if g.ActualCents != g.PlannedCents {
+		t.Fatalf("the fixture does not net out: actual %d, planned %d", g.ActualCents, g.PlannedCents)
+	}
+	if g.Status != ActualOver {
+		t.Errorf("group status = %q, want %q — one row is 300 over", g.Status, ActualOver)
 	}
 }

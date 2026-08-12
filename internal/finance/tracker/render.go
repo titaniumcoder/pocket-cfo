@@ -298,7 +298,7 @@ var templates = `
       <div class="group">
         <div class="group-header" onclick="this.closest('.group').classList.toggle('open')">
           <span class="label">{{.Name}} <span class="chevron">&#9656;</span></span>
-          {{if $show}}<span class="mid">{{eur .PlannedCents}}</span><span class="amt act{{if .HasMistimed}} flagged{{end}}">{{if .HasMistimed}}{{mark "mistimed"}}{{end}}{{if .HasActual}}{{eur .ActualCents}}{{end}}<span class="plan-m">{{if .HasActual}}of {{end}}{{eur .PlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .PlannedCents}}</span>{{end}}
+          {{if $show}}<span class="mid">{{eur .PlannedCents}}</span><span class="amt act{{if .Status}} flagged{{end}}">{{mark .Status}}{{if .HasActual}}{{eur .ActualCents}}{{end}}<span class="plan-m">{{if .HasActual}}of {{end}}{{eur .PlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .PlannedCents}}</span>{{end}}
         </div>
         <div class="group-rows">
           {{range .Rows}}

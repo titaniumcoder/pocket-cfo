@@ -150,6 +150,12 @@ type CategoryGroupView struct {
 	ActualCents int // sum of Rows' ActualCents
 	HasActual   bool
 	HasMistimed bool
+
+	// Status is the grade of whichever row inside most wants attention, not
+	// a grade of the group's own total. A collapsed group has to be able to
+	// say that something in there needs a look; a group total that nets out
+	// to on-plan hides exactly that.
+	Status string
 }
 
 // BudgetView is what the dashboard renders, split by group kind. Private is

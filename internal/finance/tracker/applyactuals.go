@@ -52,6 +52,7 @@ func applyToGroups(groups []CategoryGroupView, av ActualsView, viewed time.Month
 			if row.ActualStatus == ActualMistimed {
 				g.HasMistimed = true
 			}
+			g.Status = worseStatus(g.Status, row.ActualStatus)
 		}
 	}
 }
@@ -67,6 +68,30 @@ func onPlanTolerance(plannedCents int) int {
 		return pct
 	}
 	return floor
+}
+
+// statusRank orders the grades so a group can carry the one that most wants
+// attention. Anything demanding action outranks the news that a category came
+// in cheap.
+func statusRank(status string) int {
+	switch status {
+	case ActualMistimed:
+		return 4
+	case ActualOver:
+		return 3
+	case ActualUnbudgeted:
+		return 2
+	case ActualUnder:
+		return 1
+	}
+	return 0
+}
+
+func worseStatus(a, b string) string {
+	if statusRank(b) > statusRank(a) {
+		return b
+	}
+	return a
 }
 
 // actualStatus grades one row. Over-plan fires immediately because no further
@@ -91,7 +116,10 @@ func actualStatus(row CategoryRow, coverageComplete bool, viewed time.Month, cha
 	over := row.ActualCents - row.PlannedCents
 	tolerance := onPlanTolerance(row.PlannedCents)
 	switch {
-	case row.PlannedCents == 0 && over > tolerance:
+	// No tolerance here: the band excuses a figure for missing a number
+	// someone chose, and there is no number. Every unplanned charge is worth
+	// seeing, because seeing it is how it gets budgeted next time.
+	case row.PlannedCents == 0 && row.ActualCents > 0:
 		return ActualUnbudgeted, ""
 	case over > tolerance:
 		return ActualOver, ""

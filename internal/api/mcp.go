@@ -10,22 +10,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// This file is the only place the MCP SDK is imported, and no SDK type crosses
-// into the service: deleting it leaves the REST surface and every service
-// method untouched. The conformance tests drive /mcp over raw HTTP with
-// hand-written JSON-RPC rather than the SDK's client, so they would equally
-// validate a hand-rolled replacement.
-//
-// The dependency is a departure from AGENTS.md's stdlib-first rule, recorded
-// there: this is a moving external wire protocol with strict framing where
-// being subtly wrong presents as silence — Hermes seeing no tools at the
-// moment you need the reconciliation — rather than as an error.
-
-// MCPHandler exposes the service as MCP tools over streamable HTTP.
-//
-// Authentication is NOT here: the caller wraps this in the same bearer gate as
-// /api/, so initialize and tools/list are refused before a byte of JSON-RPC is
-// parsed and an unauthenticated caller learns nothing about the tool surface.
 func (s *Service) MCPHandler(version string) http.Handler {
 	server := mcp.NewServer(&mcp.Implementation{Name: "pocket-cfo", Version: version}, nil)
 	s.registerTools(server)
@@ -60,14 +44,6 @@ type searchArgs struct {
 type reconciliationArgs struct {
 	Year int `json:"year,omitempty" jsonschema:"the year to report, defaults to the current one"`
 }
-
-// The write tools take their own argument types rather than the generated
-// actualsdata ones. Two reasons, both about what Hermes is handed: the
-// generated types carry no jsonschema tags, so every field it has to fill in
-// would arrive undocumented — the rich descriptions in actuals.schema.json
-// never reach MCP — and their *string fields render as ["null","string"]
-// unions, which invite a literal null where "leave it out" is meant. Plain
-// strings here, converted below, so an omitted field is simply absent.
 
 type splitArg struct {
 	Amount    float64 `json:"amount" jsonschema:"euros for this part, same sign convention as the line. Never 0, and the parts must add up to the line's own amount"`
@@ -104,12 +80,6 @@ type editArg struct {
 	Splits    []splitArg `json:"splits,omitempty" jsonschema:"replace the line's attribution with these parts, which must add up to its amount. Set exactly one of category, ignored, untracked or splits per edit"`
 }
 
-// Both fields are optional so that "I read through the 20th and there was
-// nothing new" is expressible — a coverage-only call is a real import, and it
-// moves the completeness the dashboard withholds judgement on. Marking
-// transactions required here would also have made the two surfaces disagree:
-// REST accepts that call, and the schema would have refused it with a
-// validation message from the SDK rather than one of ours.
 type addArgs struct {
 	Transactions []txArg       `json:"transactions,omitempty" jsonschema:"the statement lines to record. Send only lines not already in the file. May be omitted when you are only reporting coverage"`
 	Coverage     []coverageArg `json:"coverage,omitempty" jsonschema:"which account was read through which dates. One range per month — a range may not cross a month boundary. Required for any month that has never been reconciled"`
@@ -120,8 +90,6 @@ type editArgs struct {
 	Reason string    `json:"reason,omitempty" jsonschema:"why, in one line; lands in the commit message"`
 }
 
-// optional turns an omitted field into an absent one rather than an empty
-// string, which the schema would reject and the validator would call undecided.
 func optional(s string) *string {
 	if s == "" {
 		return nil
@@ -187,10 +155,6 @@ type moveArgs struct {
 	BaseSHA    string `json:"base_sha" jsonschema:"the sha of budget.json this edit is based on"`
 }
 
-// MCP requires a tool's structured content to be a JSON object. A service
-// method that returns a slice would put an array at the top level, which a
-// strict client rejects outright — so the three that do are wrapped here, in
-// the adapter, rather than reshaping a service the REST surface is happy with.
 type categoriesResult struct {
 	Categories []Category `json:"categories"`
 }
@@ -293,9 +257,6 @@ func (s *Service) registerTools(server *mcp.Server) {
 	})
 }
 
-// result adapts a service return into a tool result. A service error becomes a
-// tool error carrying the same code the REST adapter would map, so the two
-// surfaces say the same thing.
 func result[T any](out T, err error) (*mcp.CallToolResult, any, error) {
 	if err != nil {
 		return &mcp.CallToolResult{

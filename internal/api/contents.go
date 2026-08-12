@@ -12,27 +12,18 @@ import (
 	"strings"
 )
 
-// ErrNotFound means the path doesn't exist at that ref — a month never
-// committed, which is a normal state rather than a failure.
 var ErrNotFound = errors.New("not found")
 
-// Store is the git side of a write. The interface exists so the pipeline is
-// testable without a fake GitHub, and so it can never accidentally reach a
-// filesystem: the app must not write its own DATA_DIR, which is an ephemeral
-// mounted checkout whose changes would be lost on restart and diverge from
-// git.
 type Store interface {
 	Get(ctx context.Context, path string) (content []byte, sha string, err error)
 	Put(ctx context.Context, path string, content []byte, baseSHA, message string) (sha string, err error)
 }
 
-// ContentsClient writes through the GitHub Contents API, so every accepted
-// write is a commit that can be read and reverted.
 type ContentsClient struct {
 	HTTP    *http.Client
-	Repo    string // "owner/name"
+	Repo    string
 	Token   string
-	BaseURL string // defaults to https://api.github.com; the httptest seam
+	BaseURL string
 }
 
 func (c *ContentsClient) baseURL() string {
@@ -69,7 +60,6 @@ type contentsResponse struct {
 	SHA     string `json:"sha"`
 }
 
-// Get returns the file's decoded content and its blob sha.
 func (c *ContentsClient) Get(ctx context.Context, path string) ([]byte, string, error) {
 	url := fmt.Sprintf("%s/repos/%s/contents/%s", c.baseURL(), c.Repo, path)
 	resp, err := c.do(ctx, http.MethodGet, url, nil)
@@ -89,7 +79,6 @@ func (c *ContentsClient) Get(ctx context.Context, path string) ([]byte, string, 
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return nil, "", fmt.Errorf("github GET %s: %w", path, err)
 	}
-	// GitHub wraps base64 at 60 columns.
 	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(body.Content, "\n", ""))
 	if err != nil {
 		return nil, "", fmt.Errorf("github GET %s: decoding content: %w", path, err)
@@ -109,9 +98,6 @@ type putResponse struct {
 	} `json:"content"`
 }
 
-// Put commits content at path. An empty baseSHA creates the file; a mismatch
-// is GitHub's own 409, which the caller maps to a conflict so Hermes re-reads
-// rather than clobbering.
 func (c *ContentsClient) Put(ctx context.Context, path string, content []byte, baseSHA, message string) (string, error) {
 	url := fmt.Sprintf("%s/repos/%s/contents/%s", c.baseURL(), c.Repo, path)
 	body, err := json.Marshal(putRequest{

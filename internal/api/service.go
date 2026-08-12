@@ -14,32 +14,22 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
 
-// Service answers Hermes' reads from the same cached loaders the dashboard
-// uses, so the two can't disagree. It never sees an *http.Request, a session
-// or a cookie: authentication lives entirely in the adapters.
 type Service struct {
 	Budget   *tracker.Budget
 	Accounts *tracker.Accounts
 	Actuals  *tracker.Actuals
 
-	// Store is the git side of a write; nil means writes are not configured.
-	// ActualsPrefix defaults to DefaultActualsPrefix.
 	Store         Store
 	ActualsPrefix string
 	BudgetPath    string
 
-	// Now is injected by tests; nil means time.Now.
 	Now func() time.Time
 
-	// Start is the first month budgeting covers, zero for none. The tracker
-	// uses it to bound a year's aggregation; the reconciliation report follows,
-	// so it does not list months the app itself refuses to show.
 	Start time.Time
 }
 
 var monthRE = regexp.MustCompile(`^\d{4}-(0[1-9]|1[0-2])$`)
 
-// ParseMonth accepts "2026-08".
 func ParseMonth(s string) (int, time.Month, error) {
 	if !monthRE.MatchString(s) {
 		return 0, 0, errorf(CodeInvalidRequest, "month %q must look like 2026-08", s)
@@ -51,8 +41,6 @@ func ParseMonth(s string) (int, time.Month, error) {
 	return t.Year(), t.Month(), nil
 }
 
-// Category is one budget category, as the only legal value of a transaction's
-// `category` field.
 type Category struct {
 	ID    string `json:"id"`
 	Group string `json:"group"`
@@ -61,7 +49,6 @@ type Category struct {
 	Date  string `json:"date,omitempty"`
 }
 
-// Categories lists every category id a transaction may cite.
 func (s *Service) Categories(ctx context.Context) ([]Category, error) {
 	idx, err := s.Budget.CategoryIndex(ctx)
 	if err != nil {
@@ -75,14 +62,12 @@ func (s *Service) Categories(ctx context.Context) ([]Category, error) {
 	return out, nil
 }
 
-// PlannedCategory is a category with its figure for one month.
 type PlannedCategory struct {
 	Category
 	PlannedCents int  `json:"planned_cents"`
 	Overridden   bool `json:"overridden"`
 }
 
-// MonthBudget is the plan for one month.
 type MonthBudget struct {
 	Month             string            `json:"month"`
 	Categories        []PlannedCategory `json:"categories"`
@@ -90,7 +75,6 @@ type MonthBudget struct {
 	TotalCompanyCents int               `json:"total_company_cents"`
 }
 
-// BudgetForMonth returns the plan for one month, overrides applied.
 func (s *Service) BudgetForMonth(ctx context.Context, month string) (*MonthBudget, error) {
 	year, m, err := ParseMonth(month)
 	if err != nil {
@@ -103,9 +87,6 @@ func (s *Service) BudgetForMonth(ctx context.Context, month string) (*MonthBudge
 	return monthBudgetOf(month, planned), nil
 }
 
-// BudgetForYear returns twelve month buckets. Deliberately not a single
-// year-wide total: Budget.ForYear's private range starts at today's month, so
-// one figure would change from day to day with nothing to explain why.
 func (s *Service) BudgetForYear(ctx context.Context, year string) ([]*MonthBudget, error) {
 	y, err := strconv.Atoi(year)
 	if err != nil || y < 1970 || y > 9999 {
@@ -141,14 +122,11 @@ func monthBudgetOf(month string, planned []tracker.PlannedCategory) *MonthBudget
 	return mb
 }
 
-// Account is one account name, so a transaction spells it the way the rest of
-// the system does.
 type Account struct {
 	Name string `json:"name"`
 	AsOf string `json:"as_of,omitempty"`
 }
 
-// Accounts lists the known account names.
 func (s *Service) AccountsList(ctx context.Context) ([]Account, error) {
 	af, err := s.Accounts.File(ctx)
 	if err != nil {
@@ -162,24 +140,14 @@ func (s *Service) AccountsList(ctx context.Context) ([]Account, error) {
 	return out, nil
 }
 
-// ActualsMonth is one committed month document.
 type ActualsMonth struct {
 	Month        string                    `json:"month"`
 	Coverage     []actualsdata.Coverage    `json:"coverage"`
 	Transactions []actualsdata.Transaction `json:"transactions"`
 
-	// SHA is what a later write passes back as base_sha. Empty when writes
-	// aren't configured, since there is then nothing to pass it to.
 	SHA string `json:"sha,omitempty"`
 }
 
-// ActualsFor returns the committed document for a month, or not_found.
-//
-// With writes configured it reads through the store rather than DATA_DIR, so
-// the document and the sha describe the same commit. The mounted checkout
-// lags by a deploy: serving its bytes with a fresh sha would let a merge be
-// built on a document that is no longer what the sha names, and the write
-// would then be accepted.
 func (s *Service) ActualsFor(ctx context.Context, month string) (*ActualsMonth, error) {
 	year, m, err := ParseMonth(month)
 	if err != nil {
@@ -217,14 +185,11 @@ func (s *Service) actualsFromStore(ctx context.Context, month string) (*ActualsM
 	return &ActualsMonth{Month: af.Month, Coverage: af.Coverage, Transactions: af.Transactions, SHA: sha}, nil
 }
 
-// The year range every endpoint accepts. Wide enough never to be the reason
-// a real request fails, narrow enough that a typo is caught as one.
 const (
 	minYear = 1970
 	maxYear = 9999
 )
 
-// FoundTransaction is one committed transaction, with the month it came from.
 type FoundTransaction struct {
 	Month       string  `json:"month"`
 	ID          string  `json:"id"`
@@ -236,12 +201,9 @@ type FoundTransaction struct {
 	Ignored     string  `json:"ignored,omitempty"`
 	Untracked   string  `json:"untracked,omitempty"`
 
-	// Splits is set instead of Category/Ignored/Untracked when the line paid
-	// for more than one thing. The parts add up to Amount.
 	Splits []FoundSplit `json:"splits,omitempty"`
 }
 
-// FoundSplit is one part of a split statement line.
 type FoundSplit struct {
 	Amount    float64 `json:"amount"`
 	Category  string  `json:"category,omitempty"`
@@ -258,24 +220,18 @@ func anyPart(parts []actualsdata.Part, match func(actualsdata.Part) bool) bool {
 	return false
 }
 
-// SearchQuery narrows a transaction search. An empty Query matches everything.
 type SearchQuery struct {
 	Query          string
-	From           string // "2026-01", inclusive
-	To             string // "2026-12", inclusive
+	From           string
+	To             string
 	Category       string
 	Account        string
 	IncludeIgnored bool
-	// OnlyUntracked narrows to lines still waiting on a decision, which is
-	// how Hermes finds the cash it parked last month without reading twelve
-	// files. Untracked lines are in the results by default either way —
-	// unlike ignored ones, the whole point of untracked is being found again.
-	OnlyUntracked bool
-	Limit         int
-	Years         []int // which years to scan; defaults to the current one
+	OnlyUntracked  bool
+	Limit          int
+	Years          []int
 }
 
-// SearchResult carries the matches plus whether the limit truncated them.
 type SearchResult struct {
 	Transactions []FoundTransaction `json:"transactions"`
 	Truncated    bool               `json:"truncated"`
@@ -286,9 +242,6 @@ const (
 	maxSearchLimit     = 500
 )
 
-// Search is what replaces a rules file: Hermes asks whether it has seen a
-// description before and gets the answer from committed history rather than
-// from its own memory. Newest month first.
 func (s *Service) Search(ctx context.Context, q SearchQuery) (*SearchResult, error) {
 	limit := q.Limit
 	switch {
@@ -319,10 +272,6 @@ func (s *Service) Search(ctx context.Context, q SearchQuery) (*SearchResult, err
 		}
 		for _, tx := range af.Transactions {
 			parts := actualsdata.PartsOf(tx)
-			// A split line is one result carrying its parts, not one result
-			// per part: Hermes searches to learn how a merchant was treated
-			// last time, and "50 cleaning, 50 restaurant out of 100" is the
-			// answer. Its filters therefore match if any part matches.
 			if !q.IncludeIgnored && !anyPart(parts, func(p actualsdata.Part) bool { return p.Ignored == "" }) {
 				continue
 			}
@@ -361,11 +310,6 @@ func (s *Service) Search(ctx context.Context, q SearchQuery) (*SearchResult, err
 	return out, nil
 }
 
-// scanYears works out which years a search covers: the explicit list, else
-// the span from/to describes, else the current year. This lives here rather
-// than in an adapter because both adapters need it and only one of them had
-// it — a search for "2025-03" through MCP scanned 2026 and found nothing,
-// silently, while the same search over REST worked.
 func scanYears(q SearchQuery, currentYear int) []int {
 	if len(q.Years) > 0 {
 		return q.Years
@@ -386,7 +330,6 @@ func scanYears(q SearchQuery, currentYear int) []int {
 	if lo == 0 {
 		return []int{currentYear}
 	}
-	// Filled in, so from=2024-01&to=2026-12 scans 2025 as well.
 	out := make([]int, 0, hi-lo+1)
 	for y := lo; y <= hi; y++ {
 		out = append(out, y)
@@ -405,8 +348,6 @@ func yearOf(bound string) (int, error) {
 	return y, nil
 }
 
-// monthsToScan returns the month keys to search, newest first, honouring
-// from/to when given.
 func (s *Service) monthsToScan(ctx context.Context, q SearchQuery) ([]string, error) {
 	years := scanYears(q, s.now().Year())
 	var keys []string
@@ -439,7 +380,6 @@ func (s *Service) monthsToScan(ctx context.Context, q SearchQuery) ([]string, er
 	return out, nil
 }
 
-// MonthStatus tells Hermes where it left off.
 type MonthStatus struct {
 	Month            string                 `json:"month"`
 	Present          bool                   `json:"present"`
@@ -451,28 +391,18 @@ type MonthStatus struct {
 	Complete         bool                   `json:"complete"`
 	Mistimed         []MistimedCharge       `json:"mistimed,omitempty"`
 
-	// UntrackedCount and UntrackedCents are money that has left the account
-	// and still belongs to no category. Reported here so Hermes can see which
-	// months have unfinished business without opening each one, and so a
-	// month never quietly counts as done while cash is still unattributed.
-	// Never part of ActualCents.
 	UntrackedCount int `json:"untracked_count"`
 	UntrackedCents int `json:"untracked_cents"`
 }
 
-// MistimedCharge is a one-off charged in a month other than the one it is
-// budgeted for — the same red flag the dashboard shows, so Hermes doesn't
-// have to recompute it.
 type MistimedCharge struct {
 	CategoryID  string `json:"category_id"`
 	Name        string `json:"name"`
-	PlannedFor  string `json:"planned_for"` // "2026-10"
-	ChargedIn   string `json:"charged_in"`  // "2026-08"
+	PlannedFor  string `json:"planned_for"`
+	ChargedIn   string `json:"charged_in"`
 	AmountCents int    `json:"amount_cents"`
 }
 
-// Reconciliation reports each month of a year: coverage, counts, planned vs
-// actual, and any mistimed charge.
 func (s *Service) Reconciliation(ctx context.Context, year int) ([]MonthStatus, error) {
 	if year < minYear || year > maxYear {
 		return nil, errorf(CodeInvalidRequest, "year must look like 2026")
@@ -510,11 +440,6 @@ func (s *Service) Reconciliation(ctx context.Context, year int) ([]MonthStatus, 
 				parts := actualsdata.PartsOf(tx)
 				spent := 0
 				for _, p := range parts {
-					// Attributed money only. Testing for a category rather
-					// than for the absence of an ignored reason is what keeps
-					// untracked cash out of the total: it has been spent, but
-					// against no category, so comparing it to a plan would
-					// misstate the plan and the spending both.
 					if p.Category != "" {
 						spent += eurToCents(p.Amount)
 					}
@@ -525,8 +450,6 @@ func (s *Service) Reconciliation(ctx context.Context, year int) ([]MonthStatus, 
 				if anyPart(parts, func(p actualsdata.Part) bool { return p.Untracked != "" }) {
 					st.UntrackedCount++
 				}
-				// Ignored counts lines, not parts, and a part-ignored split
-				// is not an ignored line — its money is still in the total.
 				if !anyPart(parts, func(p actualsdata.Part) bool { return p.Ignored == "" }) {
 					st.IgnoredCount++
 					continue
@@ -545,16 +468,6 @@ func (s *Service) Reconciliation(ctx context.Context, year int) ([]MonthStatus, 
 	return out, nil
 }
 
-// mistimedIn reports both directions of a mistimed one-off, matching what
-// actualStatus renders on the dashboard: a charge that landed in a month the
-// plan didn't expect, and a month the plan expects a charge in that has
-// already been paid elsewhere. The second is invisible from this month's
-// transactions alone — there are none to look at — which is what charged is
-// for, and is the case that would otherwise look fine while the money is
-// already gone.
-//
-// Like the dashboard, this only runs for a month that has been reconciled: an
-// unread month says nothing either way rather than guessing.
 func mistimedIn(af actualsdata.ActualsFile, year int, viewed time.Month, planned []tracker.PlannedCategory, idx map[string]tracker.PlannedCategory, charged map[string][]time.Month) []MistimedCharge {
 	here := monthKey(year, viewed)
 	var out []MistimedCharge
@@ -576,9 +489,6 @@ func mistimedIn(af actualsdata.ActualsFile, year int, viewed time.Month, planned
 				continue
 			}
 			due, err := dueMonth(cat.Date)
-			// Compared as year-and-month: a one-off dated next August is not
-			// the same plan as this August, and reading it as one hides a
-			// real charge.
 			if err != nil || due == here {
 				continue
 			}
@@ -586,8 +496,6 @@ func mistimedIn(af actualsdata.ActualsFile, year int, viewed time.Month, planned
 			out = append(out, MistimedCharge{
 				CategoryID: id, Name: cat.Name,
 				PlannedFor: due, ChargedIn: here,
-				// The part's own amount: a laptop bought inside a 2 000 card
-				// settlement is a 1 800 problem, not a 2 000 one.
 				AmountCents: eurToCents(part.Amount),
 			})
 		}
@@ -609,15 +517,12 @@ func mistimedIn(af actualsdata.ActualsFile, year int, viewed time.Month, planned
 		out = append(out, MistimedCharge{
 			CategoryID: c.ID, Name: c.Name,
 			PlannedFor: here, ChargedIn: monthKey(year, elsewhere),
-			// Nothing was charged here, so the plan's own figure is the
-			// amount at stake — the same fallback MistimedRowsOf makes.
 			AmountCents: c.PlannedCents,
 		})
 	}
 	return out
 }
 
-// dueMonth renders a category's date as the month key it belongs to.
 func dueMonth(date string) (string, error) {
 	d, err := time.Parse("2006-01-02", date)
 	if err != nil {

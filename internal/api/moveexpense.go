@@ -13,12 +13,10 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/budgetdata"
 )
 
-// DefaultBudgetPath is where the plan lives in the data repo.
 const DefaultBudgetPath = "data/budget.json"
 
 var dayRE = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 
-// MoveRequest shifts one one-off to the month it was actually charged in.
 type MoveRequest struct {
 	CategoryID string `json:"category_id"`
 	FromMonth  string `json:"from_month"`
@@ -27,7 +25,6 @@ type MoveRequest struct {
 	BaseSHA    string `json:"base_sha"`
 }
 
-// MoveResult reports the commit.
 type MoveResult struct {
 	CategoryID    string `json:"category_id"`
 	Name          string `json:"name"`
@@ -37,13 +34,6 @@ type MoveResult struct {
 	DeployPending bool   `json:"deploy_pending"`
 }
 
-// MovePlannedExpense changes one dated category's month and nothing else.
-//
-// Deliberately not general budget.json write access: the plan drives every
-// figure on the dashboard, so a general endpoint there has a far larger blast
-// radius than actuals. This cannot change an amount, add or remove a
-// category, touch overrides, or move anything that isn't already a one-off —
-// and it proves that about its own output before committing.
 func (s *Service) MovePlannedExpense(ctx context.Context, req MoveRequest) (*MoveResult, error) {
 	if req.CategoryID == "" {
 		return nil, errorf(CodeInvalidRequest, "category_id is required")
@@ -101,11 +91,6 @@ func (s *Service) MovePlannedExpense(ctx context.Context, req MoveRequest) (*Mov
 		}
 	}
 
-	// Keep the day, move the month: the day is informational, and preserving
-	// it keeps the diff to the part that matters. Clamped to the target
-	// month's length, since the 31st of February is not a date — moving a
-	// one-off dated the 31st into a shorter month is an ordinary request, and
-	// it used to reach ValidateBudget and come back as a 500.
 	newDate, err := movedDate(*cat.Date, req.ToMonth)
 	if err != nil {
 		return nil, err
@@ -134,9 +119,6 @@ func (s *Service) MovePlannedExpense(ctx context.Context, req MoveRequest) (*Mov
 	}, nil
 }
 
-// movedDate re-dates a one-off into another month, keeping the day where the
-// month is long enough to have it and clamping to the last day where it is
-// not: 2026-01-31 moved to February becomes 2026-02-28.
 func movedDate(date, toMonth string) (string, error) {
 	year, month, err := ParseMonth(toMonth)
 	if err != nil {
@@ -179,9 +161,6 @@ func monthOf(date string) string {
 	return date[:7]
 }
 
-// setCategoryDate rewrites one category's date, leaving every other byte as it
-// was. budget.json is hand-maintained; re-marshalling would reorder and
-// reformat the whole file for a one-field change.
 func setCategoryDate(src []byte, categoryID, newDate string) ([]byte, error) {
 	if !dayRE.MatchString(newDate) {
 		return nil, errorf(CodeInternal, "computed date %q is malformed", newDate)
@@ -205,7 +184,7 @@ func setCategoryDate(src []byte, categoryID, newDate string) ([]byte, error) {
 		if err := expectDelim(dec, '['); err != nil {
 			return nil, errorf(CodeUpstream, "budget.json: %v", err)
 		}
-		for dec.More() { // group
+		for dec.More() {
 			if err := expectDelim(dec, '{'); err != nil {
 				return nil, errorf(CodeUpstream, "budget.json: %v", err)
 			}
@@ -223,7 +202,7 @@ func setCategoryDate(src []byte, categoryID, newDate string) ([]byte, error) {
 				if err := expectDelim(dec, '['); err != nil {
 					return nil, errorf(CodeUpstream, "budget.json: %v", err)
 				}
-				for dec.More() { // category
+				for dec.More() {
 					out, done, err := rewriteCategory(dec, src, categoryID, newDate)
 					if err != nil {
 						return nil, err
@@ -244,8 +223,6 @@ func setCategoryDate(src []byte, categoryID, newDate string) ([]byte, error) {
 	return nil, errorf(CodeInvalidRequest, "no category %q in budget.json", categoryID)
 }
 
-// rewriteCategory consumes one category object. When it is the target, it
-// returns the whole file with that category's date replaced or inserted.
 func rewriteCategory(dec *json.Decoder, src []byte, categoryID, newDate string) (out []byte, done bool, err error) {
 	if derr := expectDelim(dec, '{'); derr != nil {
 		return nil, false, errorf(CodeUpstream, "budget.json: %v", derr)
@@ -255,9 +232,6 @@ func rewriteCategory(dec *json.Decoder, src []byte, categoryID, newDate string) 
 	id := ""
 	dateStart, dateEnd := -1, -1
 	for dec.More() {
-		// InputOffset sits after the previous value, so step over the comma
-		// and whitespace to the key's own opening quote — otherwise replacing
-		// the pair would swallow the separator.
 		before := keyStart(src, int(dec.InputOffset()))
 		key, kerr := objectKey(dec)
 		if kerr != nil {
@@ -288,8 +262,6 @@ func rewriteCategory(dec *json.Decoder, src []byte, categoryID, newDate string) 
 
 	var buf bytes.Buffer
 	if dateStart >= 0 {
-		// Everything up to the key is kept verbatim, including the comma and
-		// the indentation that led into it.
 		buf.Write(src[:dateStart])
 		buf.WriteString(`"date": "` + newDate + `"`)
 		buf.Write(src[dateEnd:])
@@ -302,9 +274,6 @@ func rewriteCategory(dec *json.Decoder, src []byte, categoryID, newDate string) 
 	return buf.Bytes(), true, nil
 }
 
-// verifyOnlyDateChanged proves the edit did exactly one thing before anything
-// is committed. Byte surgery on the file that drives every figure is only safe
-// if it checks its own work.
 func verifyOnlyDateChanged(before, after []byte, categoryID, newDate string) error {
 	var bf budgetdata.BudgetFile
 	if err := json.Unmarshal(after, &bf); err != nil {
@@ -333,8 +302,6 @@ func verifyOnlyDateChanged(before, after []byte, categoryID, newDate string) err
 	return nil
 }
 
-// stripCategoryDate removes the date from the one category being moved, so
-// the rest of the document can be compared for equality.
 func stripCategoryDate(doc any, categoryID string) {
 	root, ok := doc.(map[string]any)
 	if !ok {
@@ -362,7 +329,6 @@ func stripCategoryDate(doc any, categoryID string) {
 	}
 }
 
-// The JSON walking helpers, shared with the actuals write path.
 func expectDelim(dec *json.Decoder, want json.Delim) error {
 	tok, err := dec.Token()
 	if err != nil {
@@ -404,8 +370,6 @@ func skipValue(dec *json.Decoder) error {
 	return dec.Decode(&raw)
 }
 
-// keyStart advances from a decoder offset to the opening quote of the next
-// object key, stepping over the separating comma and any whitespace.
 func keyStart(src []byte, from int) int {
 	for i := from; i < len(src); i++ {
 		if src[i] == '"' {

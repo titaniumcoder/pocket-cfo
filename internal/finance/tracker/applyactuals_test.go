@@ -24,8 +24,44 @@ func TestActualStatus(t *testing.T) {
 		},
 		{
 			name:       "over plan fires immediately, regardless of coverage",
-			row:        CategoryRow{CategoryID: "a", PlannedCents: 35000, ActualCents: 36600, HasActual: true},
+			row:        CategoryRow{CategoryID: "a", PlannedCents: 35000, ActualCents: 40000, HasActual: true},
 			wantStatus: ActualOver,
+		},
+		{
+			// 5% of 350 is 17.50, so the €20 floor is what applies.
+			name:       "sixteen euros over a 350 budget is on plan",
+			row:        CategoryRow{CategoryID: "a", PlannedCents: 35000, ActualCents: 36600, HasActual: true},
+			wantStatus: "",
+		},
+		{
+			// The case that prompted the band: 5% of 1500 is 75.
+			name:       "two euros over a 1500 budget is on plan",
+			row:        CategoryRow{CategoryID: "a", PlannedCents: 150000, ActualCents: 150200, HasActual: true},
+			complete:   true,
+			wantStatus: "",
+		},
+		{
+			// The case that separates the two halves of the rule: above the
+			// €20 floor, below 5% of 1 500. Only the percentage can excuse it.
+			name:       "fifty euros over a 1500 budget is still within five percent",
+			row:        CategoryRow{CategoryID: "a", PlannedCents: 150000, ActualCents: 155000, HasActual: true},
+			wantStatus: "",
+		},
+		{
+			name:       "eighty euros over a 1500 budget clears the five percent",
+			row:        CategoryRow{CategoryID: "a", PlannedCents: 150000, ActualCents: 158000, HasActual: true},
+			wantStatus: ActualOver,
+		},
+		{
+			name:       "twenty-one euros over a small budget clears the floor",
+			row:        CategoryRow{CategoryID: "a", PlannedCents: 4000, ActualCents: 6100, HasActual: true},
+			wantStatus: ActualOver,
+		},
+		{
+			name:       "under by less than the tolerance is on plan, not good news",
+			row:        CategoryRow{CategoryID: "a", PlannedCents: 150000, ActualCents: 149000, HasActual: true},
+			complete:   true,
+			wantStatus: "",
 		},
 		{
 			name:       "under plan is withheld until the month is fully read",
@@ -49,6 +85,14 @@ func TestActualStatus(t *testing.T) {
 			row:        CategoryRow{CategoryID: "a", PlannedCents: 0, ActualCents: 4000, HasActual: true},
 			complete:   true,
 			wantStatus: ActualUnbudgeted,
+		},
+		{
+			// No plan to be off, so the floor is all there is — and fifteen
+			// euros is not a finding.
+			name:       "a trivial charge against a zero budget is not worth a flag",
+			row:        CategoryRow{CategoryID: "a", PlannedCents: 0, ActualCents: 1500, HasActual: true},
+			complete:   true,
+			wantStatus: "",
 		},
 		{
 			name:       "a one-off charged in the wrong month outranks over",

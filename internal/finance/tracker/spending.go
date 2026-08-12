@@ -55,6 +55,7 @@ type SpendingCategory struct {
 	PlannedCents int
 	ActualCents  int
 	VarianceCent int
+	Status       string // the dashboard's own grade, so the two screens agree
 	Mistimed     bool
 	Note         string
 	Transactions []SpendingTx
@@ -178,6 +179,7 @@ func spendingGroups(groups []CategoryGroupView, company bool, byCategory map[str
 				PlannedCents: row.PlannedCents,
 				ActualCents:  row.ActualCents,
 				VarianceCent: row.ActualCents - row.PlannedCents,
+				Status:       row.ActualStatus,
 				Mistimed:     row.ActualStatus == ActualMistimed,
 				Note:         row.ActualNote,
 				Transactions: txs,

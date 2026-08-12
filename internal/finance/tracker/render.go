@@ -10,7 +10,20 @@ import (
 var tmpl = template.Must(template.Must(template.New("").Funcs(template.FuncMap{
 	"eur":        formatEuro,
 	"truncHours": truncHours,
+	"mark":       statusMark,
 }).Parse(webui.HeaderTemplate)).Parse(templates))
+
+// statusMark is the icon for a budget grade, and empty for a figure that is
+// on plan — the common case, which should say nothing at all.
+func statusMark(status string) template.HTML {
+	switch status {
+	case ActualUnder:
+		return template.HTML(markUnder)
+	case ActualOver, ActualUnbudgeted, ActualMistimed:
+		return template.HTML(markOver)
+	}
+	return ""
+}
 
 // loginData is the login template's data: errMsg is shown when non-empty;
 // showEmailLogin hides the "Continue with email" option entirely when no
@@ -201,7 +214,7 @@ var templates = `
     <h3>{{.Name}}{{if .Company}} <small>(company)</small>{{end}}</h3>
     {{range .Categories}}
     <div class="cat-block" id="cat-{{.ID}}">
-      <h4>{{.Name}}{{if .Mistimed}} <span class="mistimed-inline">&mdash; {{.Note}}</span>{{end}}</h4>
+      <h4>{{.Name}}{{if .Mistimed}} <span class="mistimed-inline">{{mark "mistimed"}}{{.Note}}</span>{{end}}</h4>
       <div class="table-wrap">
       <table class="data">
         <thead><tr><th class="col-secondary">Date</th><th>Description</th><th class="col-secondary">Account</th><th class="num">Amount</th><th class="copy-col no-print"></th></tr></thead>
@@ -209,7 +222,7 @@ var templates = `
           {{range .Transactions}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td class="col-secondary">{{.Account}}</td><td class="num">{{eur .Cents}}</td><td class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes">copy</a></td></tr>{{end}}
         </tbody>
         <tfoot>
-          <tr><td class="col-secondary"></td><td></td><td class="budget-of">(Budget: {{eur .PlannedCents}})</td><td class="num{{if gt .VarianceCent 0}} neg{{end}}">{{eur .ActualCents}}</td><td class="copy-col no-print"></td></tr>
+          <tr><td class="col-secondary"></td><td></td><td class="budget-of">(Budget: {{eur .PlannedCents}})</td><td class="num{{if .Status}} flagged{{end}}">{{mark .Status}}{{eur .ActualCents}}</td><td class="copy-col no-print"></td></tr>
         </tfoot>
       </table>
       </div>
@@ -285,14 +298,14 @@ var templates = `
       <div class="group">
         <div class="group-header" onclick="this.closest('.group').classList.toggle('open')">
           <span class="label">{{.Name}} <span class="chevron">&#9656;</span></span>
-          {{if $show}}<span class="mid">{{eur .PlannedCents}}</span><span class="amt act{{if .HasMistimed}} mistimed{{end}}">{{if .HasActual}}{{eur .ActualCents}}{{end}}<span class="plan-m">{{if .HasActual}}of {{end}}{{eur .PlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .PlannedCents}}</span>{{end}}
+          {{if $show}}<span class="mid">{{eur .PlannedCents}}</span><span class="amt act{{if .HasMistimed}} flagged{{end}}">{{if .HasMistimed}}{{mark "mistimed"}}{{end}}{{if .HasActual}}{{eur .ActualCents}}{{end}}<span class="plan-m">{{if .HasActual}}of {{end}}{{eur .PlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .PlannedCents}}</span>{{end}}
         </div>
         <div class="group-rows">
           {{range .Rows}}
           <div class="row{{if .UpcomingMonth}} planned{{end}}{{if .Overridden}} override{{end}}">
             <span class="label">{{.Name}}{{if .Note}} <span class="note">{{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Note}} <svg class="link-icon" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>{{else}}{{.Note}}{{end}}</span>{{end}}</span>
             <span class="mid">{{if .PlannedCents}}{{eur .PlannedCents}}{{else if .UpcomingMonth}}{{eur .UpcomingCents}} ({{.UpcomingMonth}}){{end}}</span>
-            <span class="amt{{if $show}}{{if .ActualStatus}} {{.ActualStatus}}{{end}}{{end}}">{{if $show}}{{if .HasActual}}{{if $detail}}<a class="act-link" href="{{$detail}}#cat-{{.CategoryID}}">{{eur .ActualCents}}</a>{{else}}{{eur .ActualCents}}{{end}}{{end}}{{if .ActualNote}}<span class="act-note">{{.ActualNote}}</span>{{end}}{{if .PlannedCents}}<span class="plan-m">{{if .HasActual}}of {{end}}{{eur .PlannedCents}}</span>{{end}}{{end}}</span>
+            <span class="amt{{if $show}}{{if .ActualStatus}} flagged{{end}}{{end}}">{{if $show}}{{mark .ActualStatus}}{{if .HasActual}}{{if $detail}}<a class="act-link" href="{{$detail}}#cat-{{.CategoryID}}">{{eur .ActualCents}}</a>{{else}}{{eur .ActualCents}}{{end}}{{end}}{{if .ActualNote}}<span class="act-note">{{.ActualNote}}</span>{{end}}{{if .PlannedCents}}<span class="plan-m">{{if .HasActual}}of {{end}}{{eur .PlannedCents}}</span>{{end}}{{end}}</span>
           </div>
           {{end}}
         </div>
@@ -441,7 +454,7 @@ var templates = `
     </div>
 
     {{if .Mistimed}}<div class="ledger">
-      {{range .Mistimed}}<div class="row"><span class="mistimed-note">{{.Name}} &mdash; {{eur .Cents}}, {{.Note}}. Fix the date in budget.json.</span></div>
+      {{range .Mistimed}}<div class="row"><span class="mistimed-note">{{mark "mistimed"}}{{.Name}} &mdash; {{eur .Cents}}, {{.Note}}. Fix the date in budget.json.</span></div>
       {{end}}
     </div>{{end}}
 
@@ -492,6 +505,14 @@ const githubMark = `<svg class="gh-mark" viewBox="0 0 24 24" width="18" height="
 // chevronLeft/chevronRight replace the guillemets the period arrows used
 // to draw: a real icon centres on its own box, so it lines up with the
 // month/year selects instead of riding high on the text baseline.
+// markUnder and markOver are the only signal a budget comparison gets, next
+// to bold text. Colour is reserved for the sign of an amount, so spending it
+// on over/under budget as well left a page where red could mean either — and
+// so meant neither loudly.
+const markUnder = `<svg class="mark" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>under budget</title><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5s1.3 1.8 3.5 1.8 3.5-1.8 3.5-1.8"/><line x1="9" y1="9.5" x2="9.01" y2="9.5"/><line x1="15" y1="9.5" x2="15.01" y2="9.5"/></svg>`
+
+const markOver = `<svg class="mark" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>over budget</title><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9.5" x2="12" y2="13.5"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`
+
 const chevronLeft = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>`
 
 const chevronRight = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`

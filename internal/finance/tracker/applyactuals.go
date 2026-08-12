@@ -56,9 +56,23 @@ func applyToGroups(groups []CategoryGroupView, av ActualsView, viewed time.Month
 	}
 }
 
+// onPlanTolerance is how far a figure may sit from its budget and still count
+// as on plan: twenty euros, or five percent, whichever is larger. Below that
+// the difference says nothing — a budget is a round number someone chose, not
+// a measurement, and flagging 1 502 against 1 500 trains you to ignore the
+// flag that matters.
+func onPlanTolerance(plannedCents int) int {
+	const floor = 2000 // €20
+	if pct := plannedCents / 20; pct > floor {
+		return pct
+	}
+	return floor
+}
+
 // actualStatus grades one row. Over-plan fires immediately because no further
 // statement data can make it untrue; under-plan waits for complete coverage,
-// since on the 5th of the month every category is trivially under.
+// since on the 5th of the month every category is trivially under. Both only
+// once the gap clears onPlanTolerance.
 func actualStatus(row CategoryRow, coverageComplete bool, viewed time.Month, charged map[string][]time.Month) (status, note string) {
 	if due, ok := plannedMonth(row.PlannedDate); ok && charged != nil {
 		if row.HasActual && due != viewed {
@@ -74,12 +88,14 @@ func actualStatus(row CategoryRow, coverageComplete bool, viewed time.Month, cha
 	if !row.HasActual {
 		return "", ""
 	}
+	over := row.ActualCents - row.PlannedCents
+	tolerance := onPlanTolerance(row.PlannedCents)
 	switch {
-	case row.PlannedCents == 0 && row.ActualCents > 0:
+	case row.PlannedCents == 0 && over > tolerance:
 		return ActualUnbudgeted, ""
-	case row.ActualCents > row.PlannedCents:
+	case over > tolerance:
 		return ActualOver, ""
-	case row.ActualCents < row.PlannedCents && coverageComplete:
+	case -over > tolerance && coverageComplete:
 		return ActualUnder, ""
 	}
 	return "", ""

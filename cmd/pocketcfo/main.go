@@ -168,6 +168,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	sess, ok := s.currentSession(r)
 	if !ok || !s.authenticated(sess) {
+		s.rememberDestination(w, r)
 		tracker.RenderLogin(w, "", s.emailLoginAvailable())
 		return
 	}
@@ -300,6 +301,7 @@ func pdfCurrentMap(invoices []*invoice.InvoiceJson) map[string]bool {
 func (s *server) handleInvoicePDF(w http.ResponseWriter, r *http.Request) {
 	sess, ok := s.currentSession(r)
 	if !ok || !s.authenticated(sess) {
+		s.rememberDestination(w, r)
 		http.Redirect(w, r, "/auth/login", http.StatusFound)
 		return
 	}

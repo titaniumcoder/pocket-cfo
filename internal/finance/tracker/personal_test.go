@@ -5,13 +5,20 @@ import (
 	"time"
 )
 
-func params() PersonalParams {
-	return PersonalParams{
-		EmployerRate:        0.1892,
-		EmployeeRate:        0.1378,
-		MaxInsurableMonthly: 2112,
-		IncomeTaxRate:       0.10,
-	}
+// params is the Bulgarian figures as one undated period — what every test
+// written before dated legislation assumed, and still means.
+func params() PersonalParams { return testLegislation(0.1892, 0.1378, 2112, 0.10) }
+
+func testParams() PersonalParams { return params() }
+
+// testLegislation wraps four rates as the single always-in-force period a
+// config with no dated entries resolves to.
+func testLegislation(employer, employee, maxInsurable, tax float64) PersonalParams {
+	return PersonalParams{Legislation: Legislation{{
+		From:         FromTheStart,
+		EmployerRate: &employer, EmployeeRate: &employee,
+		MaxInsurable: &maxInsurable, IncomeTaxRate: &tax,
+	}}}
 }
 
 func TestBreakdownCappedSalary(t *testing.T) {

@@ -109,10 +109,6 @@ func (s *server) configGroups() []configGroup {
 			{Name: "hourlyRateCents", Value: strconv.Itoa(f.HourlyRateCents)},
 			{Name: "currency", Value: orUnset(f.Currency)},
 			{Name: "annualVacationDays", Value: strconv.Itoa(f.AnnualVacationDays)},
-			{Name: "socialEmployerRate", Value: strconv.FormatFloat(f.EmployerRate, 'f', -1, 64)},
-			{Name: "socialEmployeeRate", Value: strconv.FormatFloat(f.EmployeeRate, 'f', -1, 64)},
-			{Name: "socialMaxInsurableMonthly", Value: strconv.FormatFloat(f.MaxInsurableMonthly, 'f', -1, 64)},
-			{Name: "incomeTaxRate", Value: strconv.FormatFloat(f.IncomeTaxRate, 'f', -1, 64)},
 			{Name: "legislation", Value: legislationSummary(f.Legislation)},
 		}},
 	}

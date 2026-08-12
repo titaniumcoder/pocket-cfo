@@ -31,25 +31,26 @@ type FileConfig struct {
 	HourlyRateCents *int    `json:"hourlyRateCents"`
 	Currency        *string `json:"currency"`
 
-	SocialEmployerRate        *float64 `json:"socialEmployerRate"`
-	SocialEmployeeRate        *float64 `json:"socialEmployeeRate"`
-	SocialMaxInsurableMonthly *float64 `json:"socialMaxInsurableMonthly"`
-	IncomeTaxRate             *float64 `json:"incomeTaxRate"`
-	AnnualVacationDays        *int     `json:"annualVacationDays"`
+	AnnualVacationDays *int `json:"annualVacationDays"`
 
-	// Legislation is every dated change to the payroll figures above, plus
-	// the minimum wage, which has no undated form:
+	// Legislation is every government-set figure the salary cascade uses, and
+	// the only place any of them is configured — there is no such thing as an
+	// undated tax rate:
 	//
 	//   "legislation": [
+	//     { "from": "2026-01", "socialEmployerRate": 0.1892,
+	//       "socialEmployeeRate": 0.1378, "socialMaxInsurableMonthly": 2112,
+	//       "incomeTaxRate": 0.10 },
 	//     { "from": "2026-07", "minimumWage": 1077 },
 	//     { "from": "2027-01", "minimumWage": 1150,
 	//       "socialMaxInsurableMonthly": 2400, "socialEmployerRate": 0.199 }
 	//   ]
 	//
-	// The flat keys above are the baseline, in force until a period says
-	// otherwise. An entry states what changed, not what stayed. The earliest
-	// minimumWage is also when employment began: before it there is no floor,
-	// because there was no job.
+	// An entry states what changed, not what stayed: every figure is optional
+	// and carries forward. Rates and the ceiling also apply backwards from the
+	// earliest entry, since a month has to have a tax rate; the minimum wage
+	// does not, because employment has a start date. Omitted entirely, the
+	// defaults in defaultLegislation apply.
 	Legislation []tracker.LegislationEntry `json:"legislation"`
 }
 
@@ -97,8 +98,6 @@ type Config struct {
 	HourlyRateCents int
 	Currency        string
 
-	EmployerRate        float64
-	EmployeeRate        float64
 	MaxInsurableMonthly float64
 	IncomeTaxRate       float64
 	AnnualVacationDays  int
@@ -122,21 +121,33 @@ func Load(fc FileConfig) Config {
 		HourlyRateCents: intOr(fc.HourlyRateCents, 0),
 		Currency:        strOr(fc.Currency, "EUR"),
 
-		EmployerRate:        floatOr(fc.SocialEmployerRate, 0.1892),
-		EmployeeRate:        floatOr(fc.SocialEmployeeRate, 0.1378),
-		MaxInsurableMonthly: floatOr(fc.SocialMaxInsurableMonthly, 2112),
-		IncomeTaxRate:       floatOr(fc.IncomeTaxRate, 0.10),
-		AnnualVacationDays:  intOr(fc.AnnualVacationDays, 25),
+		AnnualVacationDays: intOr(fc.AnnualVacationDays, 25),
 		// Already validated by LoadFileConfig, which is the only way to get a
 		// FileConfig with entries in it.
-		Legislation: mustParseLegislation(fc.Legislation),
+		Legislation: legislationOrDefault(fc.Legislation),
 	}
 }
 
-func mustParseLegislation(entries []tracker.LegislationEntry) tracker.Legislation {
+// defaultLegislation is what applies when config.json says nothing: Bulgaria's
+// figures as of 2026, dated so /info shows them like any other period rather
+// than leaving a reader to guess where the numbers came from. No minimum wage,
+// since nobody is employed until the file says they are.
+func defaultLegislation() tracker.Legislation {
+	return tracker.Legislation{{
+		From:          tracker.FromTheStart,
+		EmployerRate:  ptr(0.1892),
+		EmployeeRate:  ptr(0.1378),
+		MaxInsurable:  ptr(2112.0),
+		IncomeTaxRate: ptr(0.10),
+	}}
+}
+
+func ptr(v float64) *float64 { return &v }
+
+func legislationOrDefault(entries []tracker.LegislationEntry) tracker.Legislation {
 	periods, err := tracker.ParseLegislation(entries)
-	if err != nil {
-		return nil
+	if err != nil || len(periods) == 0 {
+		return defaultLegislation()
 	}
 	return periods
 }

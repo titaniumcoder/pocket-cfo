@@ -16,10 +16,10 @@ func f64(v float64) *float64 { return &v }
 // figures at once and leaves the rest alone.
 func bulgaria() PersonalParams {
 	p := params()
-	p.Legislation = Legislation{
-		{From: yearMonth{2026, time.July}, MinimumWage: f64(1077)},
-		{From: yearMonth{2027, time.January}, MinimumWage: f64(1150), MaxInsurable: f64(2400), EmployerRate: f64(0.199)},
-	}
+	p.Legislation = append(p.Legislation,
+		LegislationPeriod{From: yearMonth{2026, time.July}, MinimumWage: f64(1077)},
+		LegislationPeriod{From: yearMonth{2027, time.January}, MinimumWage: f64(1150), MaxInsurable: f64(2400), EmployerRate: f64(0.199)},
+	)
 	return p
 }
 
@@ -29,12 +29,16 @@ func bulgaria() PersonalParams {
 func TestRulesCarryForward(t *testing.T) {
 	p := bulgaria()
 
+	base := params().rulesFor(testMonth)
+
 	before := p.rulesFor(yearMonth{2026, time.June})
 	if before.MinimumEUR != 0 {
 		t.Errorf("June 2026 has a floor of %.2f — employment had not started", before.MinimumEUR)
 	}
-	if before.EmployerRate != p.EmployerRate || before.MaxInsurableEUR != p.MaxInsurableMonthly {
-		t.Errorf("before any period the baseline should apply, got %+v", before)
+	// The rates still apply, though: a month has to have a tax rate, so the
+	// oldest figures on file also describe everything before them.
+	if before.EmployerRate != base.EmployerRate || before.MaxInsurableEUR != base.MaxInsurableEUR {
+		t.Errorf("June 2026 lost its rates: %+v", before)
 	}
 
 	summer := p.rulesFor(yearMonth{2026, time.August})
@@ -43,7 +47,7 @@ func TestRulesCarryForward(t *testing.T) {
 	}
 	// July's entry named only the minimum wage, so everything else is still
 	// the baseline.
-	if summer.EmployerRate != p.EmployerRate || summer.MaxInsurableEUR != p.MaxInsurableMonthly {
+	if summer.EmployerRate != base.EmployerRate || summer.MaxInsurableEUR != base.MaxInsurableEUR {
 		t.Errorf("July's entry changed figures it never mentioned: %+v", summer)
 	}
 
@@ -52,7 +56,7 @@ func TestRulesCarryForward(t *testing.T) {
 		t.Errorf("March 2027 = %+v, want the January package", after)
 	}
 	// And the figures January did not mention are carried forward, not reset.
-	if after.EmployeeRate != p.EmployeeRate || after.IncomeTaxRate != p.IncomeTaxRate {
+	if after.EmployeeRate != base.EmployeeRate || after.IncomeTaxRate != base.IncomeTaxRate {
 		t.Errorf("January reset figures it never mentioned: %+v", after)
 	}
 }
@@ -95,12 +99,10 @@ func TestInsurableCapIsDatedToo(t *testing.T) {
 // historic figure moves.
 func TestNoLegislationIsTheOldBehaviour(t *testing.T) {
 	plain := params()
+	want := Rules{MaxInsurableEUR: 2112, EmployerRate: 0.1892, EmployeeRate: 0.1378, IncomeTaxRate: 0.10}
 	for _, ym := range []yearMonth{{2020, time.January}, {2026, time.August}, {2030, time.December}} {
-		if got := plain.rulesFor(ym); got != (Rules{
-			MaxInsurableEUR: plain.MaxInsurableMonthly, EmployerRate: plain.EmployerRate,
-			EmployeeRate: plain.EmployeeRate, IncomeTaxRate: plain.IncomeTaxRate,
-		}) {
-			t.Errorf("%s resolved to %+v, want the plain baseline", ym, got)
+		if got := plain.rulesFor(ym); got != want {
+			t.Errorf("%s resolved to %+v, want %+v in every month", ym, got, want)
 		}
 	}
 }
@@ -257,5 +259,35 @@ func TestEnforcedMinimumIsVisible(t *testing.T) {
 	RenderPage(rec, quiet)
 	if strings.Contains(rec.Body.String(), "statutory minimum") {
 		t.Error("a comfortable month mentions the minimum wage")
+	}
+}
+
+// TestRatesApplyBackwardsFromTheEarliestEntry: a month has to have a tax rate.
+// If the earliest entry is 2026-01 and you look at 2025, the honest answer is
+// the oldest figures on file — not zero, which would render a salary with no
+// deductions at all and look like a working page.
+//
+// The minimum wage is the exception and only ever applies forwards: no entry
+// before July means there was no floor in June, because there was no job.
+func TestRatesApplyBackwardsFromTheEarliestEntry(t *testing.T) {
+	p := PersonalParams{Legislation: Legislation{
+		{From: yearMonth{2026, time.January}, EmployerRate: f64(0.1892), EmployeeRate: f64(0.1378),
+			MaxInsurable: f64(2112), IncomeTaxRate: f64(0.10)},
+		{From: yearMonth{2026, time.July}, MinimumWage: f64(1077)},
+	}}
+
+	past := p.rulesFor(yearMonth{2024, time.March})
+	if past.EmployerRate != 0.1892 || past.EmployeeRate != 0.1378 || past.IncomeTaxRate != 0.10 || past.MaxInsurableEUR != 2112 {
+		t.Errorf("March 2024 = %+v, want the oldest figures on file rather than zeroes", past)
+	}
+	if past.MinimumEUR != 0 {
+		t.Errorf("March 2024 has a floor of %.2f — the minimum wage must not reach backwards", past.MinimumEUR)
+	}
+
+	// And a salary computed there still has deductions, which is the failure
+	// zeroed rates would actually produce.
+	v := p.breakdown(5000, 0, 1, past)
+	if v.EmployeeContribCents == 0 || v.IncomeTaxCents == 0 {
+		t.Errorf("a month before the earliest entry paid no contributions or tax: %+v", v)
 	}
 }

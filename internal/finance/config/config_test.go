@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
 
 func TestLoadFileConfig_MissingFileIsFine(t *testing.T) {
@@ -61,8 +63,18 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.HourlyRateCents != 0 {
 		t.Errorf("HourlyRateCents = %v, want default 0 (unset)", cfg.HourlyRateCents)
 	}
-	if cfg.EmployerRate != 0.1892 || cfg.EmployeeRate != 0.1378 {
-		t.Errorf("social rates = %v/%v, want defaults 0.1892/0.1378", cfg.EmployerRate, cfg.EmployeeRate)
+	// The rates live in one default period rather than as loose fields, so a
+	// file that says nothing still has a complete, visible set of figures
+	// rather than four zeroes.
+	if len(cfg.Legislation) != 1 {
+		t.Fatalf("Legislation = %v, want one default period", cfg.Legislation)
+	}
+	def := cfg.Legislation[0]
+	if def.EmployerRate == nil || *def.EmployerRate != 0.1892 || def.EmployeeRate == nil || *def.EmployeeRate != 0.1378 {
+		t.Errorf("default social rates = %+v, want 0.1892/0.1378", def)
+	}
+	if def.MinimumWage != nil {
+		t.Errorf("a default minimum wage of %v was invented; nobody is employed until the file says so", *def.MinimumWage)
 	}
 	if cfg.AnnualVacationDays != 25 {
 		t.Errorf("AnnualVacationDays = %d, want default 25", cfg.AnnualVacationDays)
@@ -172,10 +184,16 @@ func TestLoadResolvesLegislation(t *testing.T) {
 	}
 }
 
-// TestNoLegislationIsNoChange: the flat rates apply throughout and no minimum
-// wage is enforced, which is the right answer for a company with no employees.
-func TestNoLegislationIsNoChange(t *testing.T) {
-	if got := Load(FileConfig{}).Legislation; len(got) != 0 {
-		t.Errorf("Legislation = %v with nothing configured, want empty", got)
+// TestNoLegislationFallsBackToTheDefaults: a file that says nothing still has
+// a complete set of figures, dated so /info shows where they came from. Zero
+// rates would mean a salary with no deductions at all, which is not a subtle
+// kind of wrong.
+func TestNoLegislationFallsBackToTheDefaults(t *testing.T) {
+	got := Load(FileConfig{}).Legislation
+	if len(got) != 1 || got[0].From != tracker.FromTheStart {
+		t.Fatalf("Legislation = %v, want one undated default period", got)
+	}
+	if got[0].IncomeTaxRate == nil || *got[0].IncomeTaxRate != 0.10 {
+		t.Errorf("default tax rate = %+v", got[0])
 	}
 }

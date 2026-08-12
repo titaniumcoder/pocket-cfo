@@ -52,13 +52,52 @@ func applyToGroups(groups []CategoryGroupView, av ActualsView, viewed time.Month
 			if row.ActualStatus == ActualMistimed {
 				g.HasMistimed = true
 			}
+			g.Status = worseStatus(g.Status, row.ActualStatus)
 		}
 	}
 }
 
+// onPlanTolerance is how far a figure may sit from its budget and still count
+// as on plan: twenty euros, or five percent, whichever is larger. Below that
+// the difference says nothing — a budget is a round number someone chose, not
+// a measurement, and flagging 1 502 against 1 500 trains you to ignore the
+// flag that matters.
+func onPlanTolerance(plannedCents int) int {
+	const floor = 2000 // €20
+	if pct := plannedCents / 20; pct > floor {
+		return pct
+	}
+	return floor
+}
+
+// statusRank orders the grades so a group can carry the one that most wants
+// attention. Anything demanding action outranks the news that a category came
+// in cheap.
+func statusRank(status string) int {
+	switch status {
+	case ActualMistimed:
+		return 4
+	case ActualOver:
+		return 3
+	case ActualUnbudgeted:
+		return 2
+	case ActualUnder:
+		return 1
+	}
+	return 0
+}
+
+func worseStatus(a, b string) string {
+	if statusRank(b) > statusRank(a) {
+		return b
+	}
+	return a
+}
+
 // actualStatus grades one row. Over-plan fires immediately because no further
 // statement data can make it untrue; under-plan waits for complete coverage,
-// since on the 5th of the month every category is trivially under.
+// since on the 5th of the month every category is trivially under. Both only
+// once the gap clears onPlanTolerance.
 func actualStatus(row CategoryRow, coverageComplete bool, viewed time.Month, charged map[string][]time.Month) (status, note string) {
 	if due, ok := plannedMonth(row.PlannedDate); ok && charged != nil {
 		if row.HasActual && due != viewed {
@@ -74,12 +113,17 @@ func actualStatus(row CategoryRow, coverageComplete bool, viewed time.Month, cha
 	if !row.HasActual {
 		return "", ""
 	}
+	over := row.ActualCents - row.PlannedCents
+	tolerance := onPlanTolerance(row.PlannedCents)
 	switch {
+	// No tolerance here: the band excuses a figure for missing a number
+	// someone chose, and there is no number. Every unplanned charge is worth
+	// seeing, because seeing it is how it gets budgeted next time.
 	case row.PlannedCents == 0 && row.ActualCents > 0:
 		return ActualUnbudgeted, ""
-	case row.ActualCents > row.PlannedCents:
+	case over > tolerance:
 		return ActualOver, ""
-	case row.ActualCents < row.PlannedCents && coverageComplete:
+	case -over > tolerance && coverageComplete:
 		return ActualUnder, ""
 	}
 	return "", ""

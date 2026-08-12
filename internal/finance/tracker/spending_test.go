@@ -3,6 +3,8 @@ package tracker
 import (
 	"context"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -143,5 +145,74 @@ func TestDashboardHasNoCoverageBanner(t *testing.T) {
 	RenderPage(rec, f)
 	if strings.Contains(rec.Body.String(), "Reconciled through") {
 		t.Error("the dashboard carries a coverage banner; it belongs on the spending screen")
+	}
+}
+
+// TestOffPlanIsWeightAndAMarkNotColour: colour on these pages means the sign
+// of an amount. Using it for over/under budget as well left a red that could
+// mean either, so a budget grade is bold plus one icon and nothing else.
+func TestOffPlanIsWeightAndAMarkNotColour(t *testing.T) {
+	trk := actualsTracker(t, map[string]string{
+		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+			"transactions":[{"id":"t1","date":"2026-08-03","description":"LIDL","amount":2000,"account":"A","category":"00000000-0000-4000-8000-000000000001"}]}`,
+	})
+	f := trk.ComputeMonth(context.Background(), 2026, time.August)
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	body := rec.Body.String()
+
+	for _, gone := range []string{`class="amt over"`, `class="amt under"`, `class="amt unbudgeted"`, `class="amt mistimed"`} {
+		if strings.Contains(body, gone) {
+			t.Errorf("%s is back; a budget grade is not a colour", gone)
+		}
+	}
+	if !strings.Contains(body, "flagged") {
+		t.Error("nothing is marked off-plan, though the fixture overspends by a mile")
+	}
+	if !strings.Contains(body, "over budget</title>") {
+		t.Error("the overspend carries no warning mark")
+	}
+}
+
+// TestOnPlanSaysNothing is the point of the tolerance: two euros against a
+// 1 000 budget is not news, and a page that flags it teaches you to ignore
+// the flag that matters. Five percent of 1 000 is 50, so 1 002 is on plan.
+func TestOnPlanSaysNothing(t *testing.T) {
+	trk := actualsTracker(t, map[string]string{
+		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+			"transactions":[{"id":"t1","date":"2026-08-03","description":"LIDL","amount":1002,"account":"A","category":"00000000-0000-4000-8000-000000000001"}]}`,
+	})
+	f := trk.ComputeMonth(context.Background(), 2026, time.August)
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	body := rec.Body.String()
+
+	if strings.Contains(body, "over budget</title>") {
+		t.Error("two euros over a 1000 budget was flagged")
+	}
+	if strings.Contains(body, "flagged") {
+		t.Error("a figure inside the tolerance was set in bold")
+	}
+}
+
+// TestBudgetGradesAreNotColoured reads the stylesheet, because the template
+// test above cannot: it can only prove the HTML stops naming a status, not
+// that the mark and the bold text stay colourless. Colour here means the sign
+// of an amount and nothing else.
+func TestBudgetGradesAreNotColoured(t *testing.T) {
+	css, err := os.ReadFile(filepath.Join("..", "..", "..", "static", "app.css"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(css), "\n") {
+		if !strings.Contains(line, ".flagged") && !strings.Contains(line, ".mark") {
+			continue
+		}
+		if strings.Contains(line, "color:") {
+			t.Errorf("a budget grade is coloured again: %s", strings.TrimSpace(line))
+		}
+	}
+	if !strings.Contains(string(css), ".flagged { font-weight: 700; }") {
+		t.Error("off-plan is no longer set in bold")
 	}
 }

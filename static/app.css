@@ -170,14 +170,15 @@ main h2.panel-title { font-size: 1.05rem; text-transform: none; letter-spacing: 
 .amt.act { font-weight: 500; opacity: .85; }
 .group-header .amt.act { font-weight: 700; opacity: 1; }
 .group-header .mid { font-style: normal; }
-.amt.over { color: var(--danger); }
-.amt.under { color: var(--good); }
-.amt.unbudgeted { color: var(--warn); }
-.amt.mistimed { color: var(--danger); font-weight: 700; }
+/* Off-plan reads as weight and a mark, never as colour: colour on this page
+   means the sign of an amount, and a red that could mean either "negative" or
+   "over budget" means neither. */
+.flagged { font-weight: 700; }
+.mark { vertical-align: -2px; margin-right: .3em; opacity: .85; }
 .act-note { display: block; font-size: .78em; font-weight: 400; opacity: .75; }
 .act-link { color: inherit; text-decoration: none; border-bottom: 1px dotted currentColor; }
 .row.colhead { opacity: .5; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; padding: .2rem 0 0; }
-.mistimed-note { grid-column: 1 / -1; color: var(--danger); font-size: .82rem; background: var(--danger-bg, rgba(220,38,38,.08)); border-radius: 8px; padding: .5rem .7rem; margin: .1rem 0 .3rem; }
+.mistimed-note { grid-column: 1 / -1; font-weight: 700; font-size: .82rem; background: var(--hover-bg); border-radius: 8px; padding: .5rem .7rem; margin: .1rem 0 .3rem; }
 .amt.netamt { color: var(--good-strong); }
 .row.net.neg .amt.netamt { color: var(--danger); }
 .row.balance { padding-top: .7rem; padding-bottom: .7rem; border: 1px solid var(--net-border); }
@@ -445,7 +446,7 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
 
 .cat-block { margin: 1.2rem 0 1.8rem; }
 .cat-block h4 { margin: 0 0 .4rem; font-size: 1rem; }
-.mistimed-inline { color: var(--danger); font-weight: 600; font-size: .9rem; }
+.mistimed-inline { font-weight: 700; font-size: .9rem; }
 .muted { opacity: .6; font-size: .88rem; }
 .budget-of { text-align: right; opacity: .55; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .copy-col { width: 1%; white-space: nowrap; text-align: right; }

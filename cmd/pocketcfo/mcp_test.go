@@ -396,3 +396,72 @@ func TestMCPAndRESTAgreeOnCoverageOnlyAdd(t *testing.T) {
 		t.Errorf("MCP said %s, want the boundary refusal — a required-property error means the schema refused it first", mcp)
 	}
 }
+
+// TestMCPResultsAreObjects: MCP requires a tool's structured content to be a
+// JSON object. A service method returning a slice puts an array at the top
+// level, which a strict client rejects outright — the whole tool becomes
+// unusable, which is how list_budget_categories, list_accounts and
+// get_reconciliation_status were all broken at once without a test noticing.
+func TestMCPResultsAreObjects(t *testing.T) {
+	s := apiServer(t, apiTestToken, "prod")
+
+	calls := map[string]string{
+		"list_budget_categories":    `{}`,
+		"list_accounts":             `{}`,
+		"get_reconciliation_status": `{"year":2026}`,
+		"search_transactions":       `{"years":[2026]}`,
+		"get_budget":                `{"period":"2026-08"}`,
+		"get_actuals":               `{"month":"2026-08"}`,
+	}
+	for name, args := range calls {
+		t.Run(name, func(t *testing.T) {
+			w := mcpCall(t, s, apiTestToken,
+				`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"`+name+`","arguments":`+args+`}}`)
+			resp := decodeRPC(t, w.Body.String())
+			result, ok := resp["result"].(map[string]any)
+			if !ok {
+				t.Fatalf("no result: %s", w.Body)
+			}
+			switch sc := result["structuredContent"].(type) {
+			case nil, map[string]any:
+			case []any:
+				t.Errorf("structuredContent is a top-level array of %d, which MCP forbids", len(sc))
+			default:
+				t.Errorf("structuredContent is %T, want an object", sc)
+			}
+		})
+	}
+}
+
+// TestMCPListsNameTheirCollection: wrapping a list in an object only helps if
+// the key is the obvious one, since it is what a caller reads the result from.
+func TestMCPListsNameTheirCollection(t *testing.T) {
+	s := apiServer(t, apiTestToken, "prod")
+	for tool, key := range map[string]string{
+		"list_budget_categories":    "categories",
+		"list_accounts":             "accounts",
+		"get_reconciliation_status": "months",
+	} {
+		t.Run(tool, func(t *testing.T) {
+			args := `{}`
+			if tool == "get_reconciliation_status" {
+				args = `{"year":2026}`
+			}
+			w := mcpCall(t, s, apiTestToken,
+				`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"`+tool+`","arguments":`+args+`}}`)
+			resp := decodeRPC(t, w.Body.String())
+			sc, _ := resp["result"].(map[string]any)["structuredContent"].(map[string]any)
+			if _, ok := sc[key]; !ok {
+				t.Errorf("%s result has keys %v, want one called %q", tool, keysOf(sc), key)
+			}
+		})
+	}
+}
+
+func keysOf(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}

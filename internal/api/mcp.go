@@ -187,6 +187,22 @@ type moveArgs struct {
 	BaseSHA    string `json:"base_sha" jsonschema:"the sha of budget.json this edit is based on"`
 }
 
+// MCP requires a tool's structured content to be a JSON object. A service
+// method that returns a slice would put an array at the top level, which a
+// strict client rejects outright — so the three that do are wrapped here, in
+// the adapter, rather than reshaping a service the REST surface is happy with.
+type categoriesResult struct {
+	Categories []Category `json:"categories"`
+}
+
+type accountsResult struct {
+	Accounts []Account `json:"accounts"`
+}
+
+type reconciliationResult struct {
+	Months []MonthStatus `json:"months"`
+}
+
 func (s *Service) registerTools(server *mcp.Server) {
 	tool := func(name, desc string, readOnly bool) *mcp.Tool {
 		return &mcp.Tool{
@@ -197,9 +213,10 @@ func (s *Service) registerTools(server *mcp.Server) {
 	}
 
 	mcp.AddTool(server, tool("list_budget_categories",
-		"Every budget category id, with its group, name and kind. These ids are the ONLY legal value for a transaction's category field — never invent one, and never parse budget.json yourself.",
+		"Every budget category id, with its group, name and kind, under a categories key. These ids are the ONLY legal value for a transaction's category field — never invent one, and never parse budget.json yourself. If the category you need is not listed it does not exist yet: ask for it to be created rather than guessing an id.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
-		return result(s.Categories(ctx))
+		out, err := s.Categories(ctx)
+		return result(categoriesResult{Categories: out}, err)
 	})
 
 	mcp.AddTool(server, tool("get_budget",
@@ -227,19 +244,21 @@ func (s *Service) registerTools(server *mcp.Server) {
 	})
 
 	mcp.AddTool(server, tool("get_reconciliation_status",
-		"Per month for a year: coverage, transaction counts, planned versus actual, how much is still untracked, and any one-off charged in a month other than the one it is budgeted for. Tells you where you left off — a month with untracked money is not finished, and untracked_cents is never part of actual_cents.",
+		"Per month for a year, under a months key: coverage, transaction counts, planned versus actual, how much is still untracked, and any one-off charged in a month other than the one it is budgeted for. Tells you where you left off — a month with untracked money is not finished, and untracked_cents is never part of actual_cents.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, a reconciliationArgs) (*mcp.CallToolResult, any, error) {
 		year := a.Year
 		if year == 0 {
 			year = s.now().Year()
 		}
-		return result(s.Reconciliation(ctx, year))
+		out, err := s.Reconciliation(ctx, year)
+		return result(reconciliationResult{Months: out}, err)
 	})
 
 	mcp.AddTool(server, tool("list_accounts",
-		"The account names the rest of the system uses. Spell a transaction's account field exactly as listed here.",
+		"The account names the rest of the system uses, under an accounts key. Spell a transaction's account field exactly as listed here.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
-		return result(s.AccountsList(ctx))
+		out, err := s.AccountsList(ctx)
+		return result(accountsResult{Accounts: out}, err)
 	})
 
 	mcp.AddTool(server, tool("add_transactions",

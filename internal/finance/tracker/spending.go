@@ -32,6 +32,13 @@ type SpendingView struct {
 	Ignored   []SpendingTx // not budget expenses; listed so the page reconciles to the statement
 	Unmatched []SpendingTx // cites a category that no longer resolves
 
+	// Untracked is money that left the account and has not been decided yet.
+	// Listed first and loudly, because it is the only section on this page that
+	// is a question rather than a record.
+	Untracked      []SpendingTx
+	UntrackedCents int
+	UntrackedCount int
+
 	TotalCents   int // every categorised line, matched or not
 	IgnoredCount int
 	Err          string
@@ -117,6 +124,9 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 		v.Err = err.Error()
 		return v
 	}
+	if untracked, uerr := t.Actuals.UntrackedMonths(ctx, year); uerr == nil {
+		markUntrackedMonths(v.Nav.Months, untracked)
+	}
 
 	byCategory := map[string][]SpendingTx{}
 	for _, tx := range af.Transactions {
@@ -132,6 +142,13 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 			// Restaurant next to a statement showing 100 reads as an error.
 			if split {
 				row.PartOf = formatEuro(eurToCents(tx.Amount))
+			}
+			if part.Untracked != "" {
+				row.Reason = part.Untracked
+				v.Untracked = append(v.Untracked, row)
+				v.UntrackedCount++
+				v.UntrackedCents += row.Cents
+				continue
 			}
 			if part.Ignored != "" {
 				row.Reason = part.Ignored

@@ -44,8 +44,16 @@ func (a *Actuals) Configured() bool { return a != nil && a.FS != nil }
 type ActualsView struct {
 	Present    bool
 	Complete   bool           // coverage reaches month end for every account it names
-	ByCategory map[string]int // category id -> cents; ignored lines excluded
+	ByCategory map[string]int // category id -> cents; ignored and untracked excluded
 	TotalCents int
+
+	// UntrackedCents is money that left the account and belongs to no category
+	// yet. Never in ByCategory or TotalCents: it has been spent, but against
+	// nothing, so putting it in a total that gets compared to a plan would
+	// misstate the spending and the plan at once. UntrackedCount is lines, not
+	// parts.
+	UntrackedCents int
+	UntrackedCount int
 }
 
 // ForMonth returns the recorded spending for one month.
@@ -83,6 +91,8 @@ func (a *Actuals) ForYear(ctx context.Context, year int) (ActualsView, error) {
 			out.ByCategory[id] += cents
 		}
 		out.TotalCents += mv.TotalCents
+		out.UntrackedCents += mv.UntrackedCents
+		out.UntrackedCount += mv.UntrackedCount
 	}
 	if months == 0 {
 		return ActualsView{}, nil
@@ -115,6 +125,33 @@ func (a *Actuals) ChargedMonths(ctx context.Context, year int) (map[string][]tim
 			}
 			seen[*tx.Category] = true
 			out[*tx.Category] = append(out[*tx.Category], m)
+		}
+	}
+	return out, nil
+}
+
+// UntrackedMonths reports how much each month of a year still has undecided,
+// omitting the months with none. It backs the marker on the month picker, so
+// unfinished business is visible from any month rather than only from the one
+// it is sitting in — which is the whole reason parking a line under untracked
+// is allowed.
+//
+// Months are cached, so after the first read this is a walk over memory.
+func (a *Actuals) UntrackedMonths(ctx context.Context, year int) (map[time.Month]int, error) {
+	if a == nil || a.FS == nil {
+		return nil, nil
+	}
+	out := map[time.Month]int{}
+	for m := time.January; m <= time.December; m++ {
+		res := a.month(ctx, year, m)
+		if res.err != nil {
+			return nil, res.err
+		}
+		if !res.present {
+			continue
+		}
+		if v := viewOf(res.file, year, m); v.UntrackedCents != 0 {
+			out[m] = v.UntrackedCents
 		}
 	}
 	return out, nil
@@ -185,17 +222,29 @@ func (a *Actuals) fetch(year int, month time.Month) actualsResult {
 }
 
 // viewOf reduces one month to the figures the dashboard needs. Ignored lines
-// are excluded everywhere.
+// are excluded everywhere, and so is untracked cash — it is counted separately
+// so a month can say how much is still undecided without that money reaching
+// any total it would misstate.
 func viewOf(af actualsdata.ActualsFile, year int, month time.Month) ActualsView {
 	v := ActualsView{Present: true, ByCategory: map[string]int{}}
 	for _, tx := range af.Transactions {
+		untracked := false
 		for _, part := range actualsdata.PartsOf(tx) {
+			if part.Untracked != "" {
+				v.UntrackedCents += eurToCents(part.Amount)
+				untracked = true
+			}
 			if part.Category == "" {
 				continue
 			}
 			cents := eurToCents(part.Amount)
 			v.ByCategory[part.Category] += cents
 			v.TotalCents += cents
+		}
+		// Counted per line, like the reconciliation's ignored count: a split
+		// with one undecided part is one line to come back to, not two.
+		if untracked {
+			v.UntrackedCount++
 		}
 	}
 	v.Complete = coverageComplete(af, year, month)

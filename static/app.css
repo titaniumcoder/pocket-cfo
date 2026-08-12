@@ -535,6 +535,11 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
 .cat-block { margin: 1.2rem 0 1.8rem; }
 .cat-block h4 { margin: 0 0 .4rem; font-size: 1rem; }
 .mistimed-inline { font-weight: 700; font-size: .9rem; }
+/* Untracked cash is a question, not a figure, so it reads as weight and a mark
+   like every other flag on these pages — see .flagged. It is deliberately not
+   given a colour of its own: colour here means the sign of an amount. */
+.untracked-mark { font-weight: 700; font-size: .82rem; white-space: nowrap; }
+.spend-grid > h3.sg-untracked { font-weight: 700; }
 .muted { opacity: .6; font-size: .88rem; }
 .budget-of { text-align: right; opacity: .55; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* A part of a split says what it is a part of: 50 under Restaurant against a

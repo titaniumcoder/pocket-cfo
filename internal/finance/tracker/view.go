@@ -61,6 +61,12 @@ type HolidayView struct {
 type MonthOption struct {
 	Num  int
 	Name string
+
+	// Untracked marks a month that still has money nobody has placed. An
+	// <option> cannot carry markup, so it is a bullet appended to the name —
+	// enough to see from any month which others have unfinished business,
+	// without opening each one.
+	Untracked bool
 }
 
 // Figures holds everything the dashboard renders. A non-empty *Err field means
@@ -177,7 +183,14 @@ type Figures struct {
 	CompanyUnmatchedCents int
 	Mistimed              []MistimedRow
 	ActualsErr            string
-	SpendingDetailURL     string // filled by cmd/pocketcfo, admin sessions only
+
+	// UntrackedCents is money out of the account that belongs to no category
+	// yet. It marks the month in the title and nothing else: it is in none of
+	// the figures above, and this page shows no euro amount for it — the place
+	// to deal with it is the spending page, which lists the lines.
+	UntrackedCents    int
+	UntrackedCount    int
+	SpendingDetailURL string // filled by cmd/pocketcfo, admin sessions only
 
 	// ShowSpendingLink is the menu entry, which exists in year view too —
 	// unlike SpendingDetailURL, which is deliberately empty there because no
@@ -729,6 +742,18 @@ func monthNav(now, start time.Time, url func(int, time.Month) string) MonthNav {
 	return nav
 }
 
+// markUntrackedMonths flags the months that still have undecided money, for the
+// picker. Separate from monthNav because only the two pages that read actuals
+// can answer it, and monthNav is also built where there is no Actuals loader
+// at all.
+func markUntrackedMonths(months []MonthOption, untracked map[time.Month]int) {
+	for i := range months {
+		if untracked[time.Month(months[i].Num)] != 0 {
+			months[i].Untracked = true
+		}
+	}
+}
+
 // fillMonthNav populates navigation for month view.
 func (f *Figures) fillMonthNav(now, start time.Time) {
 	nav := monthNav(now, start, monthURL)
@@ -901,6 +926,13 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 		return
 	}
 
+	// The picker is marked before any of the early returns below: which months
+	// still have undecided money is worth seeing even from a year view, or from
+	// a month that has not been reconciled at all.
+	if untracked, uerr := t.Actuals.UntrackedMonths(ctx, year); uerr == nil {
+		markUntrackedMonths(f.Months, untracked)
+	}
+
 	var av ActualsView
 	var err error
 	if months > 1 {
@@ -917,6 +949,8 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 		f.ActualsErr = err.Error()
 		return
 	}
+	f.UntrackedCents, f.UntrackedCount = av.UntrackedCents, av.UntrackedCount
+
 	if !av.Present {
 		return
 	}

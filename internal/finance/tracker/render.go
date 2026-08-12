@@ -11,6 +11,7 @@ var tmpl = template.Must(template.Must(template.New("").Funcs(template.FuncMap{
 	"eur":        formatEuro,
 	"truncHours": truncHours,
 	"mark":       statusMark,
+	"untracked":  untrackedMark,
 	"out":        outEuro,
 	"outClass":   outClass,
 }).Parse(webui.HeaderTemplate)).Parse(templates))
@@ -52,6 +53,16 @@ func statusMark(status string) template.HTML {
 		return template.HTML(markOver)
 	}
 	return ""
+}
+
+// untrackedMark is the marker beside a month's title when it still has money
+// nobody has placed. Empty for a month with none, so the ordinary case says
+// nothing at all — same rule statusMark follows.
+func untrackedMark(count int) template.HTML {
+	if count <= 0 {
+		return ""
+	}
+	return template.HTML(markUntracked)
 }
 
 // loginData is the login template's data: errMsg is shown when non-empty;
@@ -169,7 +180,7 @@ var templates = `
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PocketCFO — Spending {{.Month}}</title>
+<title>PocketCFO — Spending {{.Month}}{{if .UntrackedCount}} &bull;{{end}}</title>
 ` + favicon + `
 <link rel="stylesheet" href="/static/app.css">
 </head>
@@ -189,7 +200,7 @@ var templates = `
       <a class="arrow" href="{{.PrevURL}}" aria-label="Previous" title="Previous">` + chevronLeft + `</a>
       {{end}}
       <select id="msel" onchange="navSpending()" aria-label="Month">
-        {{$m := .MonthNum}}{{range .Months}}<option value="{{.Num}}"{{if eq .Num $m}} selected{{end}}>{{.Name}}</option>{{end}}
+        {{$m := .MonthNum}}{{range .Months}}<option value="{{.Num}}"{{if eq .Num $m}} selected{{end}}>{{.Name}}{{if .Untracked}} &bull;{{end}}</option>{{end}}
       </select>
       <select id="ysel" onchange="navSpending()" aria-label="Year">
         {{$y := .Year}}{{range .Years}}<option value="{{.}}"{{if eq . $y}} selected{{end}}>{{.}}</option>{{end}}
@@ -216,7 +227,7 @@ var templates = `
   </script>
 
   <section class="panel">
-    <h2 class="panel-title">Spending &mdash; {{.Month}}</h2>
+    <h2 class="panel-title">Spending &mdash; {{.Month}}{{if .UntrackedCount}} <span class="untracked-mark" title="cash not yet placed">{{untracked .UntrackedCount}}{{eur .UntrackedCents}} untracked</span>{{end}}</h2>
 
     {{if .Err}}<p class="error">{{.Err}}</p>{{end}}
 
@@ -251,6 +262,13 @@ var templates = `
       <p class="sg-span muted">These cite a budget category that has no row this month &mdash; renamed, removed, or a one-off whose month has passed.</p>
       <div class="sg-row"><span class="sg-head col-secondary">Date</span><span class="sg-head sg-desc">Description</span><span class="sg-head col-secondary">Category</span><span class="sg-head num">Amount</span><span class="sg-head copy-col no-print"></span></div>
       {{range .Unmatched}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}</span><span class="col-secondary">{{.Category}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
+      {{end}}
+
+      {{if .Untracked}}
+      <h3 class="sg-span sg-untracked">{{untracked .UntrackedCount}}Untracked cash &mdash; {{eur .UntrackedCents}}</h3>
+      <p class="sg-span muted">Money that has left the account and has not been decided yet. It is in none of the figures on this page or the dashboard, so until it is placed the month is not finished. Copy a line to tell Hermes what it was.</p>
+      <div class="sg-row"><span class="sg-head col-secondary">Date</span><span class="sg-head sg-desc">Description</span><span class="sg-head col-secondary">Note</span><span class="sg-head num">Amount</span><span class="sg-head copy-col no-print"></span></div>
+      {{range .Untracked}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}</span><span class="col-secondary">{{.Reason}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
       {{end}}
 
       <h3 class="sg-span">Not budget expenses</h3>
@@ -332,7 +350,7 @@ var templates = `
 </head>
 <body>
 <main>
-  <h1 class="print-title">PocketCFO — Finance {{.Month}}</h1>
+  <h1 class="print-title">PocketCFO — Finance {{.Month}}{{if .UntrackedCount}} &bull;{{end}}</h1>
   {{template "sitehead" .Header}}
 
   <div class="layout">
@@ -358,7 +376,7 @@ var templates = `
       </select>
       {{else}}
       <select id="msel" onchange="navMonth()" aria-label="Month">
-        {{range .Months}}<option value="{{.Num}}"{{if eq .Num $.MonthNum}} selected{{end}}>{{.Name}}</option>{{end}}
+        {{range .Months}}<option value="{{.Num}}"{{if eq .Num $.MonthNum}} selected{{end}}>{{.Name}}{{if .Untracked}} &bull;{{end}}</option>{{end}}
       </select>
       <select id="ysel" onchange="navMonth()" aria-label="Year">
         {{range .Years}}<option value="{{.}}"{{if eq . $.Year}} selected{{end}}>{{.}}</option>{{end}}
@@ -372,6 +390,7 @@ var templates = `
     </div>
 
     <div class="periodnav-right">
+      {{if and .UntrackedCount .SpendingDetailURL}}<a class="link untracked-mark" href="{{.SpendingDetailURL}}" title="cash not yet placed">{{untracked .UntrackedCount}}untracked</a>{{end}}
       <a class="link" href="{{.TodayURL}}">Today</a>
       <a class="link" href="{{.RefreshURL}}">Reload</a>
     </div>
@@ -517,6 +536,12 @@ const githubMark = `<svg class="gh-mark" viewBox="0 0 24 24" width="18" height="
 // on over/under budget as well left a page where red could mean either — and
 // so meant neither loudly.
 const markUnder = `<svg class="mark" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>under budget</title><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5s1.3 1.8 3.5 1.8 3.5-1.8 3.5-1.8"/><line x1="9" y1="9.5" x2="9.01" y2="9.5"/><line x1="15" y1="9.5" x2="15.01" y2="9.5"/></svg>`
+
+// markUntracked flags money that left the account and belongs to nowhere yet.
+// Deliberately not markOver: an overspend is a judgement about a figure, this
+// is a question waiting for an answer, and reusing the warning icon would say
+// the wrong thing about both.
+const markUntracked = `<svg class="mark" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>untracked cash</title><circle cx="12" cy="12" r="9"/><path d="M9.2 9.3a2.9 2.9 0 0 1 5.6 1c0 1.9-2.8 2.4-2.8 4"/><line x1="12" y1="17.5" x2="12.01" y2="17.5"/></svg>`
 
 const markOver = `<svg class="mark" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>over budget</title><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9.5" x2="12" y2="13.5"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`
 

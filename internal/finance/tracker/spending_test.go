@@ -618,3 +618,101 @@ func TestRowRulesEndTogether(t *testing.T) {
 		}
 	}
 }
+
+// untrackedActualsJSON: a whole line nobody has placed, a split with one part
+// still undecided, and an ordinary categorised line to compare against.
+const untrackedActualsJSON = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+	"transactions":[
+		{"id":"x1","date":"2026-08-03","description":"LIDL","amount":1000,"account":"A","category":"rent"},
+		{"id":"x2","date":"2026-08-14","description":"ATM WITHDRAWAL","amount":100,"account":"A","untracked":"cash, not spent yet"},
+		{"id":"x3","date":"2026-08-20","description":"ATM VARNA","amount":50,"account":"A","splits":[
+			{"amount":20,"category":"rent"},
+			{"amount":30,"untracked":"still in my wallet"}]}]}`
+
+// TestSpendingPageShowsUntrackedCash: the money is excluded from every figure,
+// so the page listing it is the only thing that stops it being forgotten.
+func TestSpendingPageShowsUntrackedCash(t *testing.T) {
+	trk := actualsTracker(t, map[string]string{"actuals/2026-08.json": untrackedActualsJSON})
+	v := trk.ComputeSpending(context.Background(), 2026, time.August)
+
+	if v.UntrackedCount != 2 {
+		t.Errorf("UntrackedCount = %d, want 2 — the whole line and the split's part", v.UntrackedCount)
+	}
+	if v.UntrackedCents != 13000 {
+		t.Errorf("UntrackedCents = %d, want 13000 — 100 plus the split's 30", v.UntrackedCents)
+	}
+	// The page's own total is categorised money only.
+	if v.TotalCents != 102000 {
+		t.Errorf("TotalCents = %d, want 102000 — the 1000 line and the split's categorised 20, and neither untracked amount", v.TotalCents)
+	}
+	if len(v.Ignored) != 0 {
+		t.Errorf("untracked money landed in the ignored bucket: %+v", v.Ignored)
+	}
+
+	rec := httptest.NewRecorder()
+	RenderSpending(rec, v)
+	body := rec.Body.String()
+	for _, want := range []string{"Untracked cash", "cash, not spent yet", "still in my wallet", "untracked cash"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the spending page never says %q", want)
+		}
+	}
+	// The month is marked, so an untracked line is visible before scrolling.
+	if !strings.Contains(body, "untracked</span></h2>") {
+		t.Error("the month title carries no untracked marker")
+	}
+	// And the picker marks it, so the other months can see it too.
+	if !strings.Contains(body, "August &bull;</option>") {
+		t.Errorf("the month picker does not mark August")
+	}
+}
+
+// TestUntrackedCashReachesNoFinanceFigure is the promise the whole feature
+// rests on: it is visible on the spending page and nowhere in the money.
+func TestUntrackedCashReachesNoFinanceFigure(t *testing.T) {
+	ctx := context.Background()
+
+	// The same file twice, once with the two untracked amounts and once
+	// without, so any figure that moved was reading money it should not.
+	withOnly := `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+		"transactions":[
+			{"id":"x1","date":"2026-08-03","description":"LIDL","amount":1000,"account":"A","category":"rent"},
+			{"id":"x3","date":"2026-08-20","description":"ATM VARNA","amount":20,"account":"A","category":"rent"}]}`
+
+	with := actualsTracker(t, map[string]string{"actuals/2026-08.json": untrackedActualsJSON}).ComputeMonth(ctx, 2026, time.August)
+	without := actualsTracker(t, map[string]string{"actuals/2026-08.json": withOnly}).ComputeMonth(ctx, 2026, time.August)
+
+	if with.UntrackedCents != 13000 || with.UntrackedCount != 2 {
+		t.Fatalf("the untracked figures did not reach Figures (%d/%d) — the rest of this test would prove nothing",
+			with.UntrackedCents, with.UntrackedCount)
+	}
+	for _, f := range []struct {
+		name          string
+		with, without int
+	}{
+		{"PrivateActualCents", with.PrivateActualCents, without.PrivateActualCents},
+		{"CompanyActualCents", with.CompanyActualCents, without.CompanyActualCents},
+		{"PrivateUnmatchedCents", with.PrivateUnmatchedCents, without.PrivateUnmatchedCents},
+		{"CompanyUnmatchedCents", with.CompanyUnmatchedCents, without.CompanyUnmatchedCents},
+		{"BalanceCents", with.BalanceCents, without.BalanceCents},
+		{"AvailableCents", with.AvailableCents, without.AvailableCents},
+		{"PrivateTotalPlannedCents", with.PrivateTotalPlannedCents, without.PrivateTotalPlannedCents},
+	} {
+		if f.with != f.without {
+			t.Errorf("%s = %d with untracked cash, %d without — it must reach no figure", f.name, f.with, f.without)
+		}
+	}
+
+	// The dashboard marks the month, but never prints the amount: the place to
+	// deal with it is the spending page.
+	with.SpendingDetailURL = "/2026/8/spending"
+	rec := httptest.NewRecorder()
+	RenderPage(rec, with)
+	body := rec.Body.String()
+	if !strings.Contains(body, "untracked") {
+		t.Error("the dashboard does not mark a month with untracked cash")
+	}
+	if strings.Contains(body, "130") {
+		t.Error("the dashboard printed the untracked amount; it belongs to no figure on that page")
+	}
+}

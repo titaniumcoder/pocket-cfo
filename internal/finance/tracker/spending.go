@@ -55,6 +55,7 @@ type SpendingCategory struct {
 }
 
 type SpendingTx struct {
+	ID          string
 	Date        string
 	Description string
 	Account     string
@@ -93,11 +94,10 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 		v.Err = err.Error()
 		return v
 	}
-	v.Note = av.Note
 
 	byCategory := map[string][]SpendingTx{}
 	for _, tx := range af.Transactions {
-		row := SpendingTx{Date: tx.Date, Description: tx.Description, Account: tx.Account, Cents: eurToCents(tx.Amount)}
+		row := SpendingTx{ID: tx.Id, Date: tx.Date, Description: tx.Description, Account: tx.Account, Cents: eurToCents(tx.Amount)}
 		if tx.Ignored != nil && *tx.Ignored != "" {
 			row.Reason = *tx.Ignored
 			v.Ignored = append(v.Ignored, row)
@@ -177,4 +177,14 @@ func spendingGroups(groups []CategoryGroupView, company bool, byCategory map[str
 		}
 	}
 	return out
+}
+
+// ChangeRequest is what the spending page's copy link puts on the clipboard —
+// enough for Hermes to identify the transaction, with the change itself left
+// for the user to type.
+func (t SpendingTx) ChangeRequest() string {
+	// The exact amount, not formatEuro's whole euros: this identifies one
+	// statement line, and 210 instead of 210.40 could match the wrong one.
+	return fmt.Sprintf("Change ID %s (%s / %s / %.2f) like this: ",
+		t.ID, t.Date, t.Description, float64(t.Cents)/100)
 }

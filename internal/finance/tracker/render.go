@@ -248,7 +248,7 @@ var templates = `
       <table class="data">
         <thead><tr><th class="col-secondary">Date</th><th>Description</th><th class="col-secondary">Account</th><th class="num">Amount</th><th class="copy-col no-print"></th></tr></thead>
         <tbody>
-          {{range .Transactions}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td class="col-secondary">{{.Account}}</td><td class="num">{{eur .Cents}}</td><td class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes">copy</a></td></tr>{{end}}
+          {{range .Transactions}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td class="col-secondary">{{.Account}}</td><td class="num">{{eur .Cents}}</td><td class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></td></tr>{{end}}
         </tbody>
         <tfoot>
           <tr><td class="col-secondary"></td><td></td><td class="budget-of">(Budget: {{eur .PlannedCents}})</td><td class="num{{if .Status}} flagged{{end}}">{{mark .Status}}{{eur .ActualCents}}</td><td class="copy-col no-print"></td></tr>
@@ -266,7 +266,7 @@ var templates = `
     <table class="data">
       <thead><tr><th class="col-secondary">Date</th><th>Description</th><th>Category</th><th class="num">Amount</th><th class="copy-col no-print"></th></tr></thead>
       <tbody>
-        {{range .Unmatched}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td>{{.Category}}</td><td class="num">{{eur .Cents}}</td><td class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes">copy</a></td></tr>{{end}}
+        {{range .Unmatched}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td>{{.Category}}</td><td class="num">{{eur .Cents}}</td><td class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></td></tr>{{end}}
       </tbody>
     </table>
     </div>
@@ -279,7 +279,7 @@ var templates = `
     <table class="data">
       <thead><tr><th class="col-secondary">Date</th><th>Description</th><th>Reason</th><th class="num">Amount</th><th class="copy-col no-print"></th></tr></thead>
       <tbody>
-        {{range .Ignored}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td>{{.Reason}}</td><td class="num">{{eur .Cents}}</td><td class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes">copy</a></td></tr>{{end}}
+        {{range .Ignored}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td>{{.Reason}}</td><td class="num">{{eur .Cents}}</td><td class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></td></tr>{{end}}
       </tbody>
     </table>
     </div>
@@ -293,18 +293,15 @@ var templates = `
     var a = e.target.closest('.copy-tx');
     if (!a) return;
     e.preventDefault();
-    var done = function () {
-      a.textContent = 'copied';
-      setTimeout(function () { a.textContent = 'copy'; }, 1500);
-    };
-    // navigator.clipboard needs a secure context. Over plain HTTP it is
-    // simply absent, and the link would do nothing at all with no hint why —
-    // so fall back to selecting the text, which leaves Ctrl-C working.
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(a.dataset.copy).then(done, fallback);
-    } else {
-      fallback();
+
+    function flash(state) {
+      a.classList.add(state);
+      setTimeout(function () { a.classList.remove(state); }, 1500);
     }
+
+    // navigator.clipboard needs a secure context. Over plain HTTP it is
+    // simply absent, so fall back to selecting the text in a throwaway
+    // textarea, which leaves the copy command working.
     function fallback() {
       var box = document.createElement('textarea');
       box.value = a.dataset.copy;
@@ -316,9 +313,15 @@ var templates = `
       var ok = false;
       try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
       document.body.removeChild(box);
-      a.textContent = ok ? 'copied' : 'copy failed';
-      setTimeout(function () { a.textContent = 'copy'; }, 1500);
+      flash(ok ? 'copied' : 'failed');
     }
+
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(a.dataset.copy).then(function () { flash('copied'); }, fallback);
+    } else {
+      fallback();
+    }
+  });
 </script>
 </body>
 </html>{{end}}
@@ -539,6 +542,13 @@ const githubMark = `<svg class="gh-mark" viewBox="0 0 24 24" width="18" height="
 const markUnder = `<svg class="mark" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>under budget</title><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5s1.3 1.8 3.5 1.8 3.5-1.8 3.5-1.8"/><line x1="9" y1="9.5" x2="9.01" y2="9.5"/><line x1="15" y1="9.5" x2="15.01" y2="9.5"/></svg>`
 
 const markOver = `<svg class="mark" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>over budget</title><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9.5" x2="12" y2="13.5"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`
+
+// copyIcon and copiedIcon are the two states of the per-transaction copy
+// control. Both live in the link; a class swaps which one shows, so the
+// feedback never rewrites the link's contents and cannot lose the icon.
+const copyIcon = `<svg class="i-copy" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`
+
+const copiedIcon = `<svg class="i-done" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>`
 
 const chevronLeft = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>`
 

@@ -17,6 +17,10 @@ import (
 // reads, so anything slow is a bug rather than a slow upstream.
 const apiRequestTimeout = 30 * time.Second
 
+// mcpServerVersion is what /mcp reports in initialize. Bumped by hand: it
+// describes the tool surface, not the release.
+const mcpServerVersion = "1"
+
 // registerAPI adds the Hermes routes, and only when a token is configured —
 // unconfigured, the paths do not exist at all rather than 401.
 func (s *server) registerAPI(mux *http.ServeMux) {
@@ -31,6 +35,18 @@ func (s *server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/reconciliation", s.apiReconciliation)
 	mux.HandleFunc("PUT /api/actuals/{month}", s.apiPutActuals)
 	mux.HandleFunc("POST /api/budget/move-planned-expense", s.apiMovePlannedExpense)
+
+	// The bearer gate wraps the MCP handler rather than living inside it, so
+	// initialize and tools/list are refused before a byte of JSON-RPC is
+	// parsed and an unauthenticated caller learns nothing about the surface.
+	// Per method, not a bare "/mcp": a method-less pattern matches more
+	// methods than GET /{year} while having a more specific path, and
+	// ServeMux calls that a conflict. GET and DELETE reach the handler only
+	// to be answered 405, which stateless streamable HTTP requires.
+	mcpHandler := s.requireBearer(s.apiService().MCPHandler(mcpServerVersion))
+	mux.Handle("POST /mcp", mcpHandler)
+	mux.Handle("GET /mcp", mcpHandler)
+	mux.Handle("DELETE /mcp", mcpHandler)
 	// So a typo'd path answers Hermes in JSON rather than with a finance page.
 	// Two exact shapes rather than an /api/ subtree: a subtree overlaps
 	// /{year}/{month} with neither more specific, which ServeMux rejects.
@@ -58,8 +74,21 @@ func (s *server) apiAuthorized(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// requireBearer wraps a handler in the same gate the JSON endpoints use.
+func (s *server) requireBearer(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.apiAuthorized(w, r) {
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
 func (s *server) apiService() *api.Service {
-	svc := &api.Service{Budget: s.tracker.Budget, Accounts: s.tracker.Accounts, Actuals: s.tracker.Actuals}
+	svc := &api.Service{}
+	if s.tracker != nil {
+		svc.Budget, svc.Accounts, svc.Actuals = s.tracker.Budget, s.tracker.Accounts, s.tracker.Actuals
+	}
 	if s.cfg.githubDataToken != "" {
 		svc.Store = &api.ContentsClient{
 			HTTP:    s.httpClient, // GitHub is fast-fail territory, unlike Toggl

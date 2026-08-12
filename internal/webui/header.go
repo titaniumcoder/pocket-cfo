@@ -123,8 +123,12 @@ func (p Period) InfoHref() string { return "/info" + p.Query() }
 
 // AvatarURL is the user's picture: Gravatar for an email login, GitHub's for a
 // GitHub one. These are the only external requests any page makes, and the
-// Gravatar URL necessarily discloses a hash of the address. Returning "" falls
-// back to Initials with no other change.
+// Gravatar URL necessarily discloses a hash of the address.
+//
+// Returning "" falls back to Initials — but so does a URL that fails to load,
+// which is the case that actually happens: the image sits over the initials,
+// and the template removes it on error rather than leaving the browser to
+// paint a broken-image glyph on top of them.
 func (h Header) AvatarURL() string {
 	login := strings.ToLower(strings.TrimSpace(h.Login))
 	if login == "" {
@@ -199,7 +203,7 @@ const HeaderTemplate = `
   <div class="hdr-right">
     <span class="avatar" title="{{.Login}}">
       <span class="avatar-initials">{{.Initials}}</span>
-      {{with .AvatarURL}}<img src="{{.}}" alt="" referrerpolicy="no-referrer" loading="lazy">{{end}}
+      {{with .AvatarURL}}<img src="{{.}}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">{{end}}
     </span>
     <form method="post" action="/auth/logout">
       <button class="icon-button" title="Log out" aria-label="Log out">` + logoutIcon + `</button>

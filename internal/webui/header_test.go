@@ -93,3 +93,35 @@ func TestHasNavCountsSpending(t *testing.T) {
 		t.Error("one reachable page is not navigation")
 	}
 }
+
+// TestAvatarFallsBackWhenTheImageFails: the initials sit behind the picture so
+// a missing one degrades to something readable — but that only worked when
+// there was no URL at all. A URL that fails to load left the browser painting
+// a broken-image glyph over the initials, which is what the header actually
+// showed.
+func TestAvatarFallsBackWhenTheImageFails(t *testing.T) {
+	tmpl := htmltemplate.Must(htmltemplate.New("t").Parse(HeaderTemplate + `{{template "sitehead" .}}`))
+	var b strings.Builder
+	if err := tmpl.Execute(&b, Header{Login: "octocat"}); err != nil {
+		t.Fatal(err)
+	}
+	body := b.String()
+
+	if !strings.Contains(body, "onerror=") {
+		t.Error("a failed avatar has nothing to fall back to; the broken-image icon stays")
+	}
+	// The initials must be in the markup regardless, since they are what is
+	// left once the image removes itself.
+	if !strings.Contains(body, `class="avatar-initials">Oc<`) {
+		t.Errorf("no initials behind the picture: %s", body)
+	}
+
+	// And with no URL at all there is no image to fail.
+	b.Reset()
+	if err := tmpl.Execute(&b, Header{}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(b.String(), "<img") {
+		t.Error("an image is rendered for a session with no avatar")
+	}
+}

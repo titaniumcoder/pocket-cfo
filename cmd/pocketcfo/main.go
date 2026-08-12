@@ -77,6 +77,7 @@ func buildTracker(cfg financeconfig.Config, httpClient *http.Client, budgetDir s
 			EmployeeRate:        cfg.EmployeeRate,
 			MaxInsurableMonthly: cfg.MaxInsurableMonthly,
 			IncomeTaxRate:       cfg.IncomeTaxRate,
+			MinimumWage:         cfg.MinimumWage,
 		},
 	}
 }

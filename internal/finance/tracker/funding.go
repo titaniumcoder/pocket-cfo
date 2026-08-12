@@ -120,7 +120,12 @@ func (t *Tracker) fundingIncome(ctx context.Context, start, end yearMonth, now t
 		expensesEUR[i] = perMonthExpenseEUR
 	}
 
-	pv := t.Personal.breakdownMonths(incomeEUR, expensesEUR)
+	// The floor is indexed by the month the salary is PAID, not the month the
+	// income arrived — start..end is shifted back by the payroll lag, so
+	// undoing that shift is what lands on the viewed month. Getting this wrong
+	// means the minimum wage takes effect two months after employment does,
+	// silently.
+	pv := t.Personal.breakdownMonths(incomeEUR, expensesEUR, start.addMonths(-fundingShiftMonths))
 	pv.CompanyGroups = companyGroups
 	pv.FundingLabel = label
 	pv.FundingURL = url

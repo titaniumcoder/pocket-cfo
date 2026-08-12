@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"reflect"
 	"testing"
 
 	financeconfig "github.com/titaniumcoder/pocket-cfo/internal/finance/config"
@@ -28,7 +29,7 @@ func TestApplyDevDefaults(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := tt.in
 			applyDevDefaults(&c)
-			if c != tt.want {
+			if !reflect.DeepEqual(c, tt.want) {
 				t.Errorf("applyDevDefaults(%+v) = %+v, want %+v", tt.in, c, tt.want)
 			}
 		})

@@ -226,8 +226,8 @@ var templates = `
 
     <h3>Coverage</h3>
     <div class="cov-grid">
-      <span class="cov-head">Account</span><span class="cov-head col-secondary">From</span><span class="cov-head col-secondary cov-to">To</span><span class="cov-head col-secondary">Imported</span>
-      {{range .Coverage}}<span>{{.Account}}</span><span class="col-secondary">{{.From}}</span><span class="col-secondary cov-to">{{.To}}</span><span class="col-secondary">{{.ImportedAt}}</span>{{end}}
+      <span class="cov-head">Account</span><span class="cov-head col-secondary">From</span><span class="cov-head col-secondary">To</span><span class="cov-head col-secondary cov-imported">Imported</span>
+      {{range .Coverage}}<span>{{.Account}}</span><span class="col-secondary">{{.From}}</span><span class="col-secondary">{{.To}}</span><span class="col-secondary cov-imported">{{.ImportedAt}}</span>{{end}}
     </div>
 
     <!-- One grid for every transaction on the page. Sections and headings span
@@ -235,7 +235,7 @@ var templates = `
          track shared by every row — the columns cannot drift between one
          category and the next, because there is only one set of them. -->
     <div class="spend-grid">
-      <span class="sg-head col-secondary">Date</span><span class="sg-head">Description</span><span class="sg-head col-secondary">Account</span><span class="sg-head num">Amount</span><span class="sg-head no-print"></span>
+      <div class="sg-row"><span class="sg-head col-secondary">Date</span><span class="sg-head sg-desc">Description</span><span class="sg-head col-secondary">Account</span><span class="sg-head num">Amount</span><span class="sg-head copy-col no-print"></span></div>
 
       {{range .Groups}}
       <h3 class="sg-span">{{.Name}}{{if .Company}} <small>(company)</small>{{end}}</h3>
@@ -249,14 +249,14 @@ var templates = `
       {{if .Unmatched}}
       <h3 class="sg-span">Not in this month&rsquo;s plan</h3>
       <p class="sg-span muted">These cite a budget category that has no row this month &mdash; renamed, removed, or a one-off whose month has passed.</p>
-      <span class="sg-head col-secondary">Date</span><span class="sg-head">Description</span><span class="sg-head col-secondary">Category</span><span class="sg-head num">Amount</span><span class="sg-head no-print"></span>
+      <div class="sg-row"><span class="sg-head col-secondary">Date</span><span class="sg-head sg-desc">Description</span><span class="sg-head col-secondary">Category</span><span class="sg-head num">Amount</span><span class="sg-head copy-col no-print"></span></div>
       {{range .Unmatched}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}</span><span class="col-secondary">{{.Category}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
       {{end}}
 
       <h3 class="sg-span">Not budget expenses</h3>
       <p class="sg-span muted">Every statement line deliberately left out of the figures, with the reason &mdash; so this page reconciles to the whole statement and a mis-ignored line is visible.</p>
       {{if .Ignored}}
-      <span class="sg-head col-secondary">Date</span><span class="sg-head">Description</span><span class="sg-head col-secondary">Reason</span><span class="sg-head num">Amount</span><span class="sg-head no-print"></span>
+      <div class="sg-row"><span class="sg-head col-secondary">Date</span><span class="sg-head sg-desc">Description</span><span class="sg-head col-secondary">Reason</span><span class="sg-head num">Amount</span><span class="sg-head copy-col no-print"></span></div>
       {{range .Ignored}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}</span><span class="col-secondary">{{.Reason}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
       {{else}}<p class="sg-span muted">None.</p>{{end}}
     </div>

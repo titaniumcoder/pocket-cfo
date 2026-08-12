@@ -116,16 +116,17 @@ func TestLoad_TogglFromEnv(t *testing.T) {
 	}
 }
 
-// TestLoadFileConfigRefusesAMalformedMinimumWage: every other setting here
-// degrades quietly to a default, and this one must not. A minimum wage is a
-// legal obligation, so a typo in its date silently disabling the floor is the
-// single failure the setting exists to prevent.
-func TestLoadFileConfigRefusesAMalformedMinimumWage(t *testing.T) {
+// TestLoadFileConfigRefusesMalformedLegislation: every other setting here
+// degrades quietly to a default, and this one must not. These are legal
+// obligations, so a typo in a date silently disabling one is the single
+// failure the setting exists to prevent.
+func TestLoadFileConfigRefusesMalformedLegislation(t *testing.T) {
 	bad := map[string]string{
-		"a date that is not one":  `{"minimumWage":[{"from":"July 2026","amount":1077}]}`,
-		"no date at all":          `{"minimumWage":[{"amount":1077}]}`,
-		"a negative amount":       `{"minimumWage":[{"from":"2026-07","amount":-5}]}`,
-		"two entries for a month": `{"minimumWage":[{"from":"2026-07","amount":1077},{"from":"2026-07-20","amount":1100}]}`,
+		"a date that is not one":    `{"legislation":[{"from":"July 2026","minimumWage":1077}]}`,
+		"no date at all":            `{"legislation":[{"minimumWage":1077}]}`,
+		"a negative amount":         `{"legislation":[{"from":"2026-07","minimumWage":-5}]}`,
+		"two entries for a month":   `{"legislation":[{"from":"2026-07","minimumWage":1077},{"from":"2026-07-20","minimumWage":1100}]}`,
+		"an entry changing nothing": `{"legislation":[{"from":"2026-07"}]}`,
 	}
 	for name, body := range bad {
 		t.Run(name, func(t *testing.T) {
@@ -140,11 +141,13 @@ func TestLoadFileConfigRefusesAMalformedMinimumWage(t *testing.T) {
 	}
 }
 
-// TestLoadResolvesTheMinimumWageSchedule closes the loop: a valid schedule
-// reaches Config sorted, so the tracker gets periods rather than strings.
-func TestLoadResolvesTheMinimumWageSchedule(t *testing.T) {
+// TestLoadResolvesLegislation closes the loop: a valid block reaches Config in
+// date order, so the tracker gets periods rather than strings.
+func TestLoadResolvesLegislation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	body := `{"minimumWage":[{"from":"2027-01","amount":1150},{"from":"2026-07","amount":1077}]}`
+	body := `{"legislation":[
+		{"from":"2027-01","minimumWage":1150,"socialEmployerRate":0.199},
+		{"from":"2026-07","minimumWage":1077}]}`
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -152,19 +155,27 @@ func TestLoadResolvesTheMinimumWageSchedule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := Load(fc).MinimumWage
+	got := Load(fc).Legislation
 	if len(got) != 2 {
 		t.Fatalf("resolved %d periods, want 2", len(got))
 	}
-	if got[0].AmountEUR != 1077 || got[1].AmountEUR != 1150 {
+	if got[0].MinimumWage == nil || *got[0].MinimumWage != 1077 {
 		t.Errorf("periods = %v, want the earlier month first", got)
+	}
+	// A figure an entry never mentions stays nil rather than becoming zero,
+	// which is what lets it carry forward instead of resetting.
+	if got[0].EmployerRate != nil {
+		t.Errorf("July's entry invented an employer rate: %v", *got[0].EmployerRate)
+	}
+	if got[1].EmployerRate == nil || *got[1].EmployerRate != 0.199 {
+		t.Errorf("January's rate did not survive: %+v", got[1])
 	}
 }
 
-// TestNoMinimumWageIsNoFloor: a company with no employees is the default, and
-// it must stay silent rather than enforcing zero as if it were a figure.
-func TestNoMinimumWageIsNoFloor(t *testing.T) {
-	if got := Load(FileConfig{}).MinimumWage; len(got) != 0 {
-		t.Errorf("MinimumWage = %v with nothing configured, want empty", got)
+// TestNoLegislationIsNoChange: the flat rates apply throughout and no minimum
+// wage is enforced, which is the right answer for a company with no employees.
+func TestNoLegislationIsNoChange(t *testing.T) {
+	if got := Load(FileConfig{}).Legislation; len(got) != 0 {
+		t.Errorf("Legislation = %v with nothing configured, want empty", got)
 	}
 }

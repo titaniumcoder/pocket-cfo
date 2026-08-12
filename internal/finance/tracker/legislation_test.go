@@ -1,0 +1,261 @@
+package tracker
+
+import (
+	"context"
+	"net/http/httptest"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+)
+
+func f64(v float64) *float64 { return &v }
+
+// bulgaria is a schedule shaped like the real thing: employment starts in July
+// 2026 with a minimum wage, and the following January's package moves three
+// figures at once and leaves the rest alone.
+func bulgaria() PersonalParams {
+	p := params()
+	p.Legislation = Legislation{
+		{From: yearMonth{2026, time.July}, MinimumWage: f64(1077)},
+		{From: yearMonth{2027, time.January}, MinimumWage: f64(1150), MaxInsurable: f64(2400), EmployerRate: f64(0.199)},
+	}
+	return p
+}
+
+// TestRulesCarryForward is the reason for nesting: an entry states what
+// changed, not what stayed. Repeating unchanged figures in every entry is how
+// one of them eventually gets repeated wrong.
+func TestRulesCarryForward(t *testing.T) {
+	p := bulgaria()
+
+	before := p.rulesFor(yearMonth{2026, time.June})
+	if before.MinimumEUR != 0 {
+		t.Errorf("June 2026 has a floor of %.2f — employment had not started", before.MinimumEUR)
+	}
+	if before.EmployerRate != p.EmployerRate || before.MaxInsurableEUR != p.MaxInsurableMonthly {
+		t.Errorf("before any period the baseline should apply, got %+v", before)
+	}
+
+	summer := p.rulesFor(yearMonth{2026, time.August})
+	if summer.MinimumEUR != 1077 {
+		t.Errorf("August 2026 minimum = %.2f, want 1077", summer.MinimumEUR)
+	}
+	// July's entry named only the minimum wage, so everything else is still
+	// the baseline.
+	if summer.EmployerRate != p.EmployerRate || summer.MaxInsurableEUR != p.MaxInsurableMonthly {
+		t.Errorf("July's entry changed figures it never mentioned: %+v", summer)
+	}
+
+	after := p.rulesFor(yearMonth{2027, time.March})
+	if after.MinimumEUR != 1150 || after.MaxInsurableEUR != 2400 || after.EmployerRate != 0.199 {
+		t.Errorf("March 2027 = %+v, want the January package", after)
+	}
+	// And the figures January did not mention are carried forward, not reset.
+	if after.EmployeeRate != p.EmployeeRate || after.IncomeTaxRate != p.IncomeTaxRate {
+		t.Errorf("January reset figures it never mentioned: %+v", after)
+	}
+}
+
+// TestARateChangeReachesTheArithmetic: the rates are not just labels. A period
+// that raises the employer contribution has to change the salary it can fund.
+func TestARateChangeReachesTheArithmetic(t *testing.T) {
+	p := bulgaria()
+	income := 5000.0
+
+	before := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2026, time.December}))
+	after := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2027, time.January}))
+
+	if before.GrossSalaryCents <= after.GrossSalaryCents {
+		t.Errorf("gross was %d before the rate rise and %d after — a higher employer rate must buy less salary",
+			before.GrossSalaryCents, after.GrossSalaryCents)
+	}
+	if before.EmployerPct == after.EmployerPct {
+		t.Errorf("the labelled rate stayed %s across a change that moved it", before.EmployerPct)
+	}
+}
+
+// TestInsurableCapIsDatedToo: the cap is legislation like everything else, and
+// raising it lifts the contribution base with it.
+func TestInsurableCapIsDatedToo(t *testing.T) {
+	p := bulgaria()
+	income := 20000.0 // comfortably past either cap
+
+	before := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2026, time.December}))
+	after := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2027, time.January}))
+
+	if after.EmployeeContribCents <= before.EmployeeContribCents {
+		t.Errorf("employee contribution %d before the cap rise, %d after — a higher ceiling means a bigger base",
+			before.EmployeeContribCents, after.EmployeeContribCents)
+	}
+}
+
+// TestNoLegislationIsTheOldBehaviour: every month of a config with no dated
+// entries must be bit-identical to a build without this feature, or every
+// historic figure moves.
+func TestNoLegislationIsTheOldBehaviour(t *testing.T) {
+	plain := params()
+	for _, ym := range []yearMonth{{2020, time.January}, {2026, time.August}, {2030, time.December}} {
+		if got := plain.rulesFor(ym); got != (Rules{
+			MaxInsurableEUR: plain.MaxInsurableMonthly, EmployerRate: plain.EmployerRate,
+			EmployeeRate: plain.EmployeeRate, IncomeTaxRate: plain.IncomeTaxRate,
+		}) {
+			t.Errorf("%s resolved to %+v, want the plain baseline", ym, got)
+		}
+	}
+}
+
+// TestMinimumWageIsEnforcedWhateverTheCompanyEarned is the requirement that
+// started this: an employed person is owed the statutory minimum, so it
+// appears whether or not the month produced it.
+func TestMinimumWageIsEnforcedWhateverTheCompanyEarned(t *testing.T) {
+	p := bulgaria()
+	lean := p.breakdown(0, 0, 1, p.rulesFor(yearMonth{2026, time.July}))
+
+	if lean.GrossSalaryCents != 107700 {
+		t.Errorf("gross = %d, want the 1077 minimum even on no income", lean.GrossSalaryCents)
+	}
+	if !lean.MinimumEnforced {
+		t.Error("the salary is the legal minimum and the view does not say so")
+	}
+	if lean.EmployerContribCents == 0 || lean.EmployeeContribCents == 0 || lean.IncomeTaxCents == 0 {
+		t.Errorf("a paid salary owes contributions and tax: %+v", lean)
+	}
+	if want := lean.GrossSalaryCents + lean.EmployerContribCents; lean.ShortfallCents != want {
+		t.Errorf("shortfall = %d, want %d — the salary and its employer cost", lean.ShortfallCents, want)
+	}
+}
+
+func TestMinimumWageDoesNotCapAGoodMonth(t *testing.T) {
+	p := bulgaria()
+	rich := p.breakdown(10000, 0, 1, p.rulesFor(yearMonth{2026, time.July}))
+	unfloored := params().breakdown(10000, 0, 1, params().rulesFor(testMonth))
+
+	if rich.GrossSalaryCents != unfloored.GrossSalaryCents {
+		t.Errorf("gross = %d with a floor, %d without — a floor must not change an affordable salary",
+			rich.GrossSalaryCents, unfloored.GrossSalaryCents)
+	}
+	if rich.MinimumEnforced || rich.ShortfallCents != 0 {
+		t.Errorf("a month that cleared the floor reports it as binding: %+v", rich)
+	}
+}
+
+func TestMinimumWageBeforeEmploymentChangesNothing(t *testing.T) {
+	before := yearMonth{2026, time.May}
+	with := bulgaria().breakdown(500, 0, 1, bulgaria().rulesFor(before))
+	without := params().breakdown(500, 0, 1, params().rulesFor(testMonth))
+
+	if !reflect.DeepEqual(with, without) {
+		t.Errorf("May 2026 differs with legislation configured:\n with = %+v\n want = %+v", with, without)
+	}
+}
+
+// TestLegislationAppliesPerMonthAcrossAYear: a year spanning a January package
+// is summed against both sets of figures, not one of them twice.
+func TestLegislationAppliesPerMonthAcrossAYear(t *testing.T) {
+	p := bulgaria()
+
+	year := p.breakdownMonths(make([]float64, 12), nil, yearMonth{2026, time.January})
+	if want := 6 * 107700; year.GrossSalaryCents != want {
+		t.Errorf("2026 gross = %d, want %d — six months of floor and six of nothing", year.GrossSalaryCents, want)
+	}
+	next := p.breakdownMonths(make([]float64, 12), nil, yearMonth{2027, time.January})
+	if want := 12 * 115000; next.GrossSalaryCents != want {
+		t.Errorf("2027 gross = %d, want %d", next.GrossSalaryCents, want)
+	}
+	// The labelled rate is the one in force at the end of the range.
+	if next.EmployerPct != "19.9" {
+		t.Errorf("2027 employer rate labelled %s, want the rate in force", next.EmployerPct)
+	}
+}
+
+// TestFloorFollowsThePayrollMonthNotTheIncomeMonth: the Expenses panel's
+// cascade is funded by income from two months earlier, but the salary is paid —
+// and owed — in the month being viewed. Indexing by the funding month would
+// make the minimum wage take effect two months after employment did, and
+// nothing on the page would say why.
+func TestFloorFollowsThePayrollMonthNotTheIncomeMonth(t *testing.T) {
+	trk := accountsTracker(t, testAccountsJSON)
+	trk.Personal.Legislation = Legislation{{From: yearMonth{2026, time.July}, MinimumWage: f64(1077)}}
+
+	july := trk.ComputeMonth(context.Background(), 2026, time.July)
+	if july.FundingPersonal.GrossSalaryCents < 107700 {
+		t.Errorf("July gross = %d, want at least the 1077 floor — the salary is paid in July, whatever funded it",
+			july.FundingPersonal.GrossSalaryCents)
+	}
+	if !july.FundingPersonal.MinimumEnforced {
+		t.Error("July does not report the floor as binding")
+	}
+	if june := trk.ComputeMonth(context.Background(), 2026, time.June); june.FundingPersonal.MinimumEnforced {
+		t.Error("June is before employment and has a floor applied")
+	}
+}
+
+func TestShortfallOnlyReportedWhenTheFloorCausedIt(t *testing.T) {
+	p := params()
+	underwater := p.breakdown(500, 2000, 1, p.rulesFor(testMonth))
+	if underwater.GrossSalaryCents != 0 {
+		t.Fatalf("gross = %d, want 0 on a month that cannot pay", underwater.GrossSalaryCents)
+	}
+	if underwater.ShortfallCents != 0 {
+		t.Errorf("shortfall = %d with no floor configured — that note is about the floor", underwater.ShortfallCents)
+	}
+
+	floored := p.rulesFor(testMonth)
+	floored.MinimumEUR = 1077
+	if p.breakdown(500, 2000, 1, floored).ShortfallCents <= 0 {
+		t.Error("shortfall = 0 with a floor the month cannot fund")
+	}
+}
+
+func TestParseLegislation(t *testing.T) {
+	ok, err := ParseLegislation([]LegislationEntry{
+		{From: "2027-01", MinimumWage: f64(1150)},
+		{From: "2026-07-01", MinimumWage: f64(1077)}, // a full date, and out of order
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ok) != 2 || ok[0].From != (yearMonth{2026, time.July}) {
+		t.Errorf("parsed = %+v, want July 2026 first", ok)
+	}
+
+	bad := map[string][]LegislationEntry{
+		"not a month":      {{From: "July 2026", MinimumWage: f64(1077)}},
+		"no date at all":   {{MinimumWage: f64(1077)}},
+		"a negative rate":  {{From: "2026-07", SocialEmployerRate: f64(-0.1)}},
+		"two for a month":  {{From: "2026-07", MinimumWage: f64(1077)}, {From: "2026-07-15", MinimumWage: f64(1100)}},
+		"changing nothing": {{From: "2026-07"}},
+	}
+	for name, entries := range bad {
+		if _, err := ParseLegislation(entries); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+}
+
+func TestEnforcedMinimumIsVisible(t *testing.T) {
+	f := Figures{
+		Currency: "€",
+		FundingPersonal: PersonalView{
+			GrossSalaryCents: 107700, MinimumWageCents: 107700, MinimumEnforced: true, ShortfallCents: 128077,
+			EmployerPct: "18.92", EmployeePct: "13.78", IncomeTaxPct: "10",
+		},
+	}
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	body := rec.Body.String()
+
+	for _, want := range []string{"statutory minimum", "1,077/month", "more than this period earned"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page never says %q", want)
+		}
+	}
+
+	quiet := Figures{Currency: "€", FundingPersonal: PersonalView{GrossSalaryCents: 500000, EmployerPct: "18.92", EmployeePct: "13.78", IncomeTaxPct: "10"}}
+	rec = httptest.NewRecorder()
+	RenderPage(rec, quiet)
+	if strings.Contains(rec.Body.String(), "statutory minimum") {
+		t.Error("a comfortable month mentions the minimum wage")
+	}
+}

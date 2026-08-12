@@ -37,16 +37,20 @@ type FileConfig struct {
 	IncomeTaxRate             *float64 `json:"incomeTaxRate"`
 	AnnualVacationDays        *int     `json:"annualVacationDays"`
 
-	// MinimumWage is the statutory floor on gross salary, by period. A list
-	// rather than one figure because a minimum wage is legislation and
-	// legislation changes; the earliest entry's date is also when employment
-	// began, since before that there is nothing to enforce.
+	// Legislation is every dated change to the payroll figures above, plus
+	// the minimum wage, which has no undated form:
 	//
-	//   "minimumWage": [{ "from": "2026-07", "amount": 1077 }]
+	//   "legislation": [
+	//     { "from": "2026-07", "minimumWage": 1077 },
+	//     { "from": "2027-01", "minimumWage": 1150,
+	//       "socialMaxInsurableMonthly": 2400, "socialEmployerRate": 0.199 }
+	//   ]
 	//
-	// Absent or empty means no floor, and the salary is whatever the company
-	// can afford — which is the right answer for a company with no employees.
-	MinimumWage []tracker.MinimumWageEntry `json:"minimumWage"`
+	// The flat keys above are the baseline, in force until a period says
+	// otherwise. An entry states what changed, not what stayed. The earliest
+	// minimumWage is also when employment began: before it there is no floor,
+	// because there was no job.
+	Legislation []tracker.LegislationEntry `json:"legislation"`
 }
 
 // LoadFileConfig reads config.json from path. A missing file is fine and
@@ -65,10 +69,10 @@ func LoadFileConfig(path string) (FileConfig, error) {
 		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	// Validated here, where the error can be returned, rather than in Load,
-	// which cannot fail. A minimum wage is a legal obligation: a typo in its
-	// date silently disabling it is the one failure this setting exists to
-	// prevent, so it is the one setting that does not degrade quietly.
-	if _, err := tracker.ParseMinimumWage(fc.MinimumWage); err != nil {
+	// which cannot fail. These are legal obligations: a typo in a date
+	// silently disabling one is the failure the setting exists to prevent, so
+	// it is the one part of this file that does not degrade quietly.
+	if _, err := tracker.ParseLegislation(fc.Legislation); err != nil {
 		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	return fc, nil
@@ -98,7 +102,7 @@ type Config struct {
 	MaxInsurableMonthly float64
 	IncomeTaxRate       float64
 	AnnualVacationDays  int
-	MinimumWage         []tracker.MinimumWagePeriod
+	Legislation         tracker.Legislation
 }
 
 // Load merges fc (already loaded via LoadFileConfig) with the
@@ -125,12 +129,12 @@ func Load(fc FileConfig) Config {
 		AnnualVacationDays:  intOr(fc.AnnualVacationDays, 25),
 		// Already validated by LoadFileConfig, which is the only way to get a
 		// FileConfig with entries in it.
-		MinimumWage: mustParseMinimumWage(fc.MinimumWage),
+		Legislation: mustParseLegislation(fc.Legislation),
 	}
 }
 
-func mustParseMinimumWage(entries []tracker.MinimumWageEntry) []tracker.MinimumWagePeriod {
-	periods, err := tracker.ParseMinimumWage(entries)
+func mustParseLegislation(entries []tracker.LegislationEntry) tracker.Legislation {
+	periods, err := tracker.ParseLegislation(entries)
 	if err != nil {
 		return nil
 	}

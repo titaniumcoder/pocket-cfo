@@ -547,7 +547,7 @@ func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months 
 		)
 	} else {
 		f.Personal = t.Personal.breakdown(float64(f.TotalCents)/100, float64(bv.CompanyTotalPlannedCents)/100, 1,
-			t.Personal.minimumFor(viewed))
+			t.Personal.rulesFor(viewed))
 	}
 	f.Personal.CompanyGroups = bv.CompanyGroups
 }

@@ -205,7 +205,7 @@ func TestComputeYearPersonalIncomeUsesMonthlyBreakdowns(t *testing.T) {
 
 	f := trk.ComputeYear(context.Background(), 2025)
 	want := p.breakdownMonthsNoFloor([]float64{0, 0, 0, 0, 0, 1000, 3000, 10000, 0, 0, 0, 0}, nil)
-	smoothed := p.breakdown(14000, 0, 12, 0)
+	smoothed := p.breakdown(14000, 0, 12, p.rulesFor(testMonth))
 
 	if f.Personal.Err != "" {
 		t.Fatalf("Personal.Err = %q", f.Personal.Err)

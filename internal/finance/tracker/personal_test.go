@@ -18,7 +18,7 @@ func TestBreakdownCappedSalary(t *testing.T) {
 	p := params()
 
 	// €10,000/month company income, no company expenses, one month.
-	v := p.breakdown(10000, 0, 1, 0)
+	v := p.breakdown(10000, 0, 1, p.rulesFor(testMonth))
 
 	// salary above cap so employer contrib is flat.
 	// gross = 10000 - 0.1892*2112 = 9600.41
@@ -59,8 +59,8 @@ func TestBreakdownCappedSalary(t *testing.T) {
 func TestBreakdownYearScalesByTwelve(t *testing.T) {
 	p := params()
 
-	month := p.breakdown(10000, 0, 1, 0)
-	year := p.breakdown(120000, 0, 12, 0) // same €10,000/month smoothed over a year
+	month := p.breakdown(10000, 0, 1, p.rulesFor(testMonth))
+	year := p.breakdown(120000, 0, 12, p.rulesFor(testMonth)) // same €10,000/month smoothed over a year
 
 	// Year figures are the per-month figures times twelve, give or take a couple
 	// of cents of rounding (the annual total is rounded once, not summed).
@@ -77,7 +77,7 @@ func TestBreakdownBelowCap(t *testing.T) {
 	p := params()
 
 	// Salary stays under the cap, so employer contrib is a real percentage of gross.
-	v := p.breakdown(1000, 0, 1, 0)
+	v := p.breakdown(1000, 0, 1, p.rulesFor(testMonth))
 	// gross = 1000 / 1.1892 = 840.90; under cap.
 	if v.GrossSalaryCents != 84090 {
 		t.Errorf("gross = %d, want 84090", v.GrossSalaryCents)
@@ -90,7 +90,7 @@ func TestBreakdownBelowCap(t *testing.T) {
 func TestBreakdownZeroIncome(t *testing.T) {
 	p := params()
 
-	v := p.breakdown(0, 0, 1, 0)
+	v := p.breakdown(0, 0, 1, p.rulesFor(testMonth))
 	if v.GrossSalaryCents != 0 || v.EmployerContribCents != 0 || v.NetIncomeCents != 0 {
 		t.Errorf("salary should be zero for zero company income: %+v", v)
 	}
@@ -106,8 +106,8 @@ func TestBreakdownCompanyExpensesDeductedFirst(t *testing.T) {
 
 	// €1,000 company income, €200 company expenses -> same cascade as €800
 	// company income with no expenses.
-	withExpenses := p.breakdown(1000, 200, 1, 0)
-	equivalent := p.breakdown(800, 0, 1, 0)
+	withExpenses := p.breakdown(1000, 200, 1, p.rulesFor(testMonth))
+	equivalent := p.breakdown(800, 0, 1, p.rulesFor(testMonth))
 
 	if withExpenses.GrossSalaryCents != equivalent.GrossSalaryCents {
 		t.Errorf("GrossSalaryCents = %d, want %d (same as €800 income, no expenses)", withExpenses.GrossSalaryCents, equivalent.GrossSalaryCents)
@@ -128,7 +128,7 @@ func TestBreakdownCompanyExpensesDeductedFirst(t *testing.T) {
 // expenses larger than company income don't produce a negative salary.
 func TestBreakdownCompanyExpensesExceedingIncomeFloorsAtZero(t *testing.T) {
 	p := params()
-	v := p.breakdown(500, 2000, 1, 0)
+	v := p.breakdown(500, 2000, 1, p.rulesFor(testMonth))
 	if v.GrossSalaryCents != 0 || v.EmployerContribCents != 0 || v.NetIncomeCents != 0 {
 		t.Errorf("expected a zero salary when company expenses exceed company income: %+v", v)
 	}
@@ -144,10 +144,10 @@ func TestBreakdownMonthsHandlesMixedYear(t *testing.T) {
 		10000, // above social max insurable: capped contributions
 	}, nil)
 
-	empty := p.breakdown(0, 0, 1, 0)
-	low := p.breakdown(1000, 0, 1, 0)
-	belowCap := p.breakdown(3000, 0, 1, 0)
-	aboveCap := p.breakdown(10000, 0, 1, 0)
+	empty := p.breakdown(0, 0, 1, p.rulesFor(testMonth))
+	low := p.breakdown(1000, 0, 1, p.rulesFor(testMonth))
+	belowCap := p.breakdown(3000, 0, 1, p.rulesFor(testMonth))
+	aboveCap := p.breakdown(10000, 0, 1, p.rulesFor(testMonth))
 
 	wantGross := empty.GrossSalaryCents + low.GrossSalaryCents + belowCap.GrossSalaryCents + aboveCap.GrossSalaryCents
 	wantNet := empty.NetIncomeCents + low.NetIncomeCents + belowCap.NetIncomeCents + aboveCap.NetIncomeCents
@@ -175,9 +175,9 @@ func TestBreakdownMonthsAppliesPerMonthCompanyExpenses(t *testing.T) {
 		[]float64{200, 0}, // third month gets zero (slice too short)
 	)
 
-	m1 := p.breakdown(1000, 200, 1, 0)
-	m2 := p.breakdown(1000, 0, 1, 0)
-	m3 := p.breakdown(1000, 0, 1, 0)
+	m1 := p.breakdown(1000, 200, 1, p.rulesFor(testMonth))
+	m2 := p.breakdown(1000, 0, 1, p.rulesFor(testMonth))
+	m3 := p.breakdown(1000, 0, 1, p.rulesFor(testMonth))
 
 	wantNet := m1.NetIncomeCents + m2.NetIncomeCents + m3.NetIncomeCents
 	if year.NetIncomeCents != wantNet {
@@ -196,3 +196,8 @@ func TestBreakdownMonthsAppliesPerMonthCompanyExpenses(t *testing.T) {
 func (p PersonalParams) breakdownMonthsNoFloor(monthlyIncomeEUR, monthlyCompanyExpensesEUR []float64) PersonalView {
 	return p.breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpensesEUR, yearMonth{2026, time.January})
 }
+
+// testMonth is a month no fixture legislates for, so rulesFor returns the
+// plain baseline rates — which is what every test written before dated
+// legislation assumed, and still means.
+var testMonth = yearMonth{2026, time.January}

@@ -63,8 +63,13 @@ type SpendingCategory struct {
 }
 
 type SpendingTx struct {
-	ID          string
+	ID string
+	// Date is day-first for reading; ISODate is what the file says. The copy
+	// text uses the ISO one on purpose — "01.08.2026" pasted to Hermes could
+	// be read as the 8th of January, and the one job that text has is to
+	// identify a line unambiguously.
 	Date        string
+	ISODate     string
 	Description string
 	Account     string
 	Cents       int
@@ -105,7 +110,7 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 	v.Present = true
 
 	for _, c := range af.Coverage {
-		v.Coverage = append(v.Coverage, CoverageRow{Account: c.Account, From: c.From, To: c.To, ImportedAt: c.ImportedAt})
+		v.Coverage = append(v.Coverage, CoverageRow{Account: c.Account, From: formatDay(c.From), To: formatDay(c.To), ImportedAt: formatDay(c.ImportedAt)})
 	}
 	av, err := t.Actuals.ForMonth(ctx, year, month)
 	if err != nil {
@@ -119,8 +124,9 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 		split := len(tx.Splits) > 0
 		for _, part := range parts {
 			row := SpendingTx{
-				ID: tx.Id, Date: tx.Date, Description: tx.Description,
-				Account: tx.Account, Cents: eurToCents(part.Amount),
+				ID: tx.Id, Date: formatDay(tx.Date), ISODate: tx.Date,
+				Description: tx.Description,
+				Account:     tx.Account, Cents: eurToCents(part.Amount),
 			}
 			// A part says what it is a part of, since on its own "50" under
 			// Restaurant next to a statement showing 100 reads as an error.
@@ -221,8 +227,8 @@ func (t SpendingTx) ChangeRequest() string {
 		// statement line and the amount here is only part of it — asking
 		// Hermes to change "ID x to 60" when the line is 100 is ambiguous.
 		return fmt.Sprintf("Change ID %s (%s / %s / %.2f of %s) like this: ",
-			t.ID, t.Date, t.Description, float64(t.Cents)/100, t.PartOf)
+			t.ID, t.ISODate, t.Description, float64(t.Cents)/100, t.PartOf)
 	}
 	return fmt.Sprintf("Change ID %s (%s / %s / %.2f) like this: ",
-		t.ID, t.Date, t.Description, float64(t.Cents)/100)
+		t.ID, t.ISODate, t.Description, float64(t.Cents)/100)
 }

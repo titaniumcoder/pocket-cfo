@@ -12,7 +12,7 @@ import (
 )
 
 func TestChangeRequestCarriesTheExactAmount(t *testing.T) {
-	tx := SpendingTx{ID: "b0442e17", Date: "2026-08-03", Description: "LIDL SOFIA 4412", Cents: 21040}
+	tx := SpendingTx{ID: "b0442e17", Date: "03.08.2026", ISODate: "2026-08-03", Description: "LIDL SOFIA 4412", Cents: 21040}
 	want := "Change ID b0442e17 (2026-08-03 / LIDL SOFIA 4412 / 210.40) like this: "
 	if got := tx.ChangeRequest(); got != want {
 		t.Errorf("ChangeRequest() = %q, want %q", got, want)
@@ -20,6 +20,11 @@ func TestChangeRequestCarriesTheExactAmount(t *testing.T) {
 	// Rounding to whole euros would match the wrong statement line.
 	if strings.Contains(tx.ChangeRequest(), "/ 210)") {
 		t.Error("the amount was rounded")
+	}
+	// The screen reads 03.08.2026 and this deliberately does not: pasted to
+	// Hermes, a day-first date could be read as the 8th of January.
+	if strings.Contains(tx.ChangeRequest(), "03.08.2026") {
+		t.Error("the copy text uses the display format, which is ambiguous to a reader that does not know the convention")
 	}
 }
 
@@ -496,5 +501,46 @@ func TestGridTracksAreDeclaredNotComputed(t *testing.T) {
 	}
 	if !strings.Contains(string(css), ".spend-grid > .sg-row { display: contents; }") {
 		t.Error("rows are not display:contents, so each one makes its own columns")
+	}
+}
+
+// TestDatesReadDayFirst: the files store ISO because that is what sorts and
+// validates, but nothing on screen should — the invoices have always been
+// day-first and the spending page was the odd one out.
+func TestDatesReadDayFirst(t *testing.T) {
+	trk := actualsTracker(t, map[string]string{
+		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-09","imported_at":"2026-08-10"}],
+			"transactions":[{"id":"t1","date":"2026-08-03","description":"LIDL","amount":210.4,"account":"A","category":"00000000-0000-4000-8000-000000000001"}]}`,
+	})
+	v := trk.ComputeSpending(context.Background(), 2026, time.August)
+	rec := httptest.NewRecorder()
+	RenderSpending(rec, v)
+	body := rec.Body.String()
+
+	for _, want := range []string{">03.08.2026<", ">01.08.2026<", ">09.08.2026<", ">10.08.2026<"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %s — a transaction or coverage date is still ISO", want)
+		}
+	}
+	// The copy text is the one place ISO survives, so finding it in an
+	// attribute is expected; finding it in the page's text is not.
+	visible := regexp.MustCompile(`data-copy="[^"]*"`).ReplaceAllString(body, "")
+	if strings.Contains(visible, "2026-08-03") {
+		t.Error("an ISO date is still rendered on the page")
+	}
+}
+
+// TestAccountAsOfReadsDayFirst: the same date, in the same house format, on
+// the dashboard.
+func TestAccountAsOfReadsDayFirst(t *testing.T) {
+	trk := accountsTracker(t, testAccountsJSON)
+	f := trk.ComputeMonth(context.Background(), 2026, time.August)
+	if len(f.PrivateAccounts) == 0 {
+		t.Skip("the fixture has no accounts")
+	}
+	for _, a := range f.PrivateAccounts {
+		if strings.Contains(a.AsOf, "-") {
+			t.Errorf("account %q is as of %q, still ISO", a.Name, a.AsOf)
+		}
 	}
 }

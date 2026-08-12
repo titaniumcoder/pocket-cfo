@@ -179,12 +179,7 @@ var templates = `
   {{template "sitehead" .Header}}
 
   <nav class="periodnav no-print">
-    <div class="periodnav-left">
-      <div class="segmented">
-        <a href="{{.OverviewURL}}">Overview</a>
-        <a href="{{.SpendingURL}}" class="active">Spending</a>
-      </div>
-    </div>
+    <div class="periodnav-left"></div>
 
     <div class="periodnav-center">
       {{with .Nav}}
@@ -231,8 +226,8 @@ var templates = `
 
     <h3>Coverage</h3>
     <div class="cov-grid">
-      <span class="cov-head">Account</span><span class="cov-head col-secondary">From</span><span class="cov-head col-secondary">To</span><span class="cov-head col-secondary">Imported</span>
-      {{range .Coverage}}<span>{{.Account}}</span><span class="col-secondary">{{.From}}</span><span class="col-secondary">{{.To}}</span><span class="col-secondary">{{.ImportedAt}}</span>{{end}}
+      <span class="cov-head">Account</span><span class="cov-head col-secondary">From</span><span class="cov-head col-secondary cov-to">To</span><span class="cov-head col-secondary">Imported</span>
+      {{range .Coverage}}<span>{{.Account}}</span><span class="col-secondary">{{.From}}</span><span class="col-secondary cov-to">{{.To}}</span><span class="col-secondary">{{.ImportedAt}}</span>{{end}}
     </div>
 
     <!-- One grid for every transaction on the page. Sections and headings span
@@ -247,7 +242,7 @@ var templates = `
       {{range .Categories}}
       <h4 class="sg-span sg-cat" id="cat-{{.ID}}">{{.Name}}{{if .Mistimed}} <span class="mistimed-inline">{{mark "mistimed"}}{{.Note}}</span>{{end}}</h4>
       {{range .Transactions}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}</span><span class="col-secondary">{{.Account}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
-      <div class="sg-row sg-foot"><span class="col-secondary"></span><span></span><span class="budget-of col-secondary">(Budget: {{eur .PlannedCents}})</span><span class="num{{if .Status}} flagged{{end}}">{{mark .Status}}{{eur .ActualCents}}</span><span class="no-print"></span></div>
+      <div class="sg-row sg-foot"><span class="col-secondary"></span><span class="sg-desc"></span><span class="budget-of col-secondary">(Budget: {{eur .PlannedCents}})</span><span class="num{{if .Status}} flagged{{end}}">{{mark .Status}}{{eur .ActualCents}}</span><span class="copy-col no-print"></span></div>
       {{end}}
       {{end}}
 

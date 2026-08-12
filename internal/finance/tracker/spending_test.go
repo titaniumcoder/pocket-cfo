@@ -88,10 +88,15 @@ func TestSpendingSteppsThroughMonths(t *testing.T) {
 	rec := httptest.NewRecorder()
 	RenderSpending(rec, v)
 	body := rec.Body.String()
-	for _, want := range []string{`class="periodnav`, `href="/2026/7/spending"`, `href="/2026/8"`, ">Overview<", ">Reload<"} {
+	for _, want := range []string{`class="periodnav`, `href="/2026/7/spending"`, ">Today<", ">Reload<"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the page is missing %s — it should carry the same chrome as every other page", want)
 		}
+	}
+	// The Overview/Spending toggle is gone: the site menu carries both, and
+	// its Finance entry already holds the month you are reading.
+	if strings.Contains(body, ">Overview<") {
+		t.Error("the internal toggle is back, duplicating the menu")
 	}
 }
 
@@ -489,15 +494,17 @@ func TestGridTracksAreDeclaredNotComputed(t *testing.T) {
 
 	// The phone drops the two .col-secondary columns, so it must declare
 	// three tracks — five would leave two empty ones eating the width.
-	phone := regexp.MustCompile(`(?s)@media \(max-width: 600px\) \{.*?\.spend-grid \{ grid-template-columns: ([^;]+);`).FindStringSubmatch(string(css))
+	// On a phone the row becomes its own small grid — two lines instead of
+	// five columns — so the tracks to check are the row's, not the page's.
+	phone := regexp.MustCompile(`(?s)@media \(max-width: 600px\) \{.*?\.spend-grid > \.sg-row \{[^}]*grid-template-columns: ([^;]+);`).FindStringSubmatch(string(css))
 	if phone == nil {
-		t.Fatal("the phone layout does not re-declare the grid, so it keeps five tracks with two empty")
+		t.Fatal("the phone layout does not re-declare the row, so five columns stay side by side")
 	}
-	if n := countTracks(phone[1]); n != 3 {
-		t.Errorf("phone grid-template-columns = %q, want three tracks", phone[1])
+	if n := countTracks(phone[1]); n != 4 {
+		t.Errorf("phone row grid-template-columns = %q, want four tracks", phone[1])
 	}
-	if strings.Contains(phone[1], "max-content") || strings.Contains(phone[1], "auto") {
-		t.Errorf("phone grid-template-columns = %q, want declared widths", phone[1])
+	if !strings.Contains(string(css), ".spend-grid > .sg-row > .col-secondary { display: block;") {
+		t.Error("the date and account are hidden on the phone rather than moved to the second line")
 	}
 	if !strings.Contains(string(css), ".spend-grid > .sg-row { display: contents; }") {
 		t.Error("rows are not display:contents, so each one makes its own columns")

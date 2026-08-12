@@ -115,6 +115,16 @@ func RenderPage(w http.ResponseWriter, f Figures) {
 }
 
 var templates = `
+{{/* The rate a deduction was charged at, in the middle column on a wide
+     screen. One line per schedule: a year the law changed in has two, and
+     each carries the months it covered. */}}
+{{define "rateMid"}}{{range .}}<span class="rate-line">{{.Rate}}{{if .Span}} <span class="rate-span">{{.Span}}</span>{{end}}</span>{{end}}{{end}}
+
+{{/* The same rate for a narrow screen, where the middle column is hidden and
+     its content stacks under the amount instead — the .plan-m/.hrs-m idiom.
+     Rendered always and shown by CSS, so exactly one of the two is visible. */}}
+{{define "rateNarrow"}}{{range .}}<span class="rate-m">{{.Rate}}{{if .Span}} {{.Span}}{{end}}</span>{{end}}{{end}}
+
 {{define "login"}}<!doctype html>
 <html lang="en">
 <head>
@@ -463,10 +473,10 @@ var templates = `
       {{template "categoryGroups" $.CompanyLedger}}
       {{if $.ShowActuals}}{{if $.CompanyUnmatchedCents}}<div class="row"><span class="label">Not in this month&rsquo;s plan</span><span class="mid"></span><span class="amt unbudgeted">{{eur $.CompanyUnmatchedCents}}</span></div>{{end}}{{end}}
       {{if .NoLegislation}}<div class="row{{if .CompanyGroups}} gap-above{{end}}"><span class="stale-note">No legislation is in force for this period, so nothing is contributed or taxed and no minimum wage applies. The figures below are zero because config.json states none, not because none is owed.</span></div>{{end}}
-      <div class="row{{if and .CompanyGroups (not .NoLegislation)}} gap-above{{end}}"><span class="label">Employer social ({{.EmployerPct}}%)</span><span class="mid"></span><span class="amt neg">&minus;{{eur .EmployerContribCents}}</span></div>
+      <div class="row{{if and .CompanyGroups (not .NoLegislation)}} gap-above{{end}}"><span class="label">Employer social</span><span class="mid rate">{{template "rateMid" .EmployerRate}}</span><span class="amt neg">&minus;{{eur .EmployerContribCents}}{{template "rateNarrow" .EmployerRate}}</span></div>
       <div class="row sub"><span class="label">Gross salary{{if .MinimumEnforced}} <small>(statutory minimum{{if .MinimumWageCents}}, {{eur .MinimumWageCents}}/month{{end}})</small>{{end}}</span><span class="mid"></span><span class="amt total">{{eur .GrossSalaryCents}}</span></div>
-      <div class="row"><span class="label">Employee social ({{.EmployeePct}}%)</span><span class="mid"></span><span class="amt neg">&minus;{{eur .EmployeeContribCents}}</span></div>
-      <div class="row"><span class="label">Income tax ({{.IncomeTaxPct}}%)</span><span class="mid"></span><span class="amt neg">&minus;{{eur .IncomeTaxCents}}</span></div>
+      <div class="row"><span class="label">Employee social</span><span class="mid rate">{{template "rateMid" .EmployeeRate}}</span><span class="amt neg">&minus;{{eur .EmployeeContribCents}}{{template "rateNarrow" .EmployeeRate}}</span></div>
+      <div class="row"><span class="label">Income tax</span><span class="mid rate">{{template "rateMid" .IncomeTaxRate}}</span><span class="amt neg">&minus;{{eur .IncomeTaxCents}}{{template "rateNarrow" .IncomeTaxRate}}</span></div>
       <div class="row net neg"><span class="label">Total company expenses</span>{{if $.ShowActuals}}<span class="mid{{outClass .CompanyExpensesCents}}">{{out .CompanyExpensesCents}}</span><span class="amt{{outClass $.CompanyActualCents}}">{{out $.CompanyActualCents}}<span class="plan-m">of {{out .CompanyExpensesCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .CompanyExpensesCents}}</span>{{end}}</div>
       <div class="row net{{if lt .NetIncomeCents 0}} neg{{end}}"><span class="label">Net income</span><span class="mid"></span><span class="amt netamt">{{eur .NetIncomeCents}}</span></div>
       {{end}}

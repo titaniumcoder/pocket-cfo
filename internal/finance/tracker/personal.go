@@ -1,6 +1,9 @@
 package tracker
 
-import "math"
+import (
+	"math"
+	"reflect"
+)
 
 // PersonalParams turns company income into net personal income for a one-person
 // company paying the owner a salary. Rates are fractions (0.10 = 10%); money is
@@ -54,12 +57,20 @@ type PersonalView struct {
 	FundingLabel string // e.g. "November 2025"
 	FundingURL   string // jumps to that funding period
 
-	// The rate each line actually came out at, as a percentage (e.g. "18.92").
-	// A band schedule has no single rate, so these are effective rates — see
-	// effectivePct.
-	EmployerPct  string
-	EmployeePct  string
-	IncomeTaxPct string
+	// What each deduction was charged at — see Bands.applied. A list because a
+	// range that spans a change in the law has no single answer, and reporting
+	// the last month's rate for the whole year is how a change goes unnoticed.
+	// One entry with no Span for a single month.
+	EmployerRate  []RateLine
+	EmployeeRate  []RateLine
+	IncomeTaxRate []RateLine
+}
+
+// RateLine is one schedule and the months it applied to. Span is empty when
+// there is only one, which is every single month and most years.
+type RateLine struct {
+	Rate string
+	Span string // "Jan–Apr"
 }
 
 // toCent rounds to the nearest cent. Every line of the cascade goes through it
@@ -137,20 +148,14 @@ func (r PartyRules) grossAffordable(available float64) float64 {
 	return prevGross + (available-prevCost)/(1+r.Bands[len(r.Bands)-1].Rate)
 }
 
-// effectivePct is the rate a figure actually came out at: what was charged over
-// what it was charged on. A schedule with one rate below its ceiling gives back
-// exactly the rate in the file, so an ordinary month reads as it always did;
-// above a ceiling it reads the rate that was really charged rather than one
-// that was not. With nothing to charge on there is no effective rate, and the
-// opening band's is the honest answer.
-func effectivePct(charged, base float64, b Bands) string {
-	if base <= 0 {
-		if len(b) == 0 {
-			return formatNum(0)
-		}
-		return formatNum(b[0].Rate * 100)
+// oneRate is the single-month case: what this schedule charged on this base,
+// with no span to name because there is only one.
+func oneRate(base, minBase float64, b Bands) []RateLine {
+	rate := b.applied(base, minBase)
+	if rate == "" {
+		return nil
 	}
-	return formatNum(charged / base * 100)
+	return []RateLine{{Rate: rate}}
 }
 
 // breakdown computes the waterfall over `months` months. Salary is smoothed
@@ -207,9 +212,11 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 
 	m := float64(months)
 	cents := func(x float64) int { return round(x * 100 * m) }
-	result.EmployerPct = effectivePct(employerContrib, gross, r.Employer.Bands)
-	result.EmployeePct = effectivePct(employeeContrib, gross, r.Employee.Bands)
-	result.IncomeTaxPct = effectivePct(incomeTax, taxable, r.IncomeTax)
+	result.EmployerRate = oneRate(gross, r.Employer.MinBase, r.Employer.Bands)
+	result.EmployeeRate = oneRate(gross, r.Employee.MinBase, r.Employee.Bands)
+	// The tax base is what was taxed, and it is never raised to a minimum base
+	// — only contribution bases are.
+	result.IncomeTaxRate = oneRate(taxable, 0, r.IncomeTax)
 	result.MinimumWageCents = round(r.MinimumEUR * 100)
 	result.CompanyIncomeCents = cents(monthlyRawIncome)
 	result.CompanyExpensesCents = cents(monthlyCompanyExpenses)
@@ -226,6 +233,7 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 // monthlyCompanyExpensesEUR treats missing months as zero.
 func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpensesEUR []float64, start yearMonth) PersonalView {
 	var result PersonalView
+	var one PersonalView
 	for i, income := range monthlyIncomeEUR {
 		var companyExpenses float64
 		if i < len(monthlyCompanyExpensesEUR) {
@@ -235,6 +243,7 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 		// spanning a January increase is summed against both rather than
 		// against one of them twice.
 		m := p.breakdown(income, companyExpenses, 1, p.rulesFor(start.addMonths(i)))
+		one = m
 		if m.MinimumEnforced {
 			result.MinimumEnforced = true
 		}
@@ -252,14 +261,97 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 		result.IncomeTaxCents += m.IncomeTaxCents
 		result.NetIncomeCents += m.NetIncomeCents
 	}
-	// The labelled rates are effective over the whole range rather than any one
-	// month's. A range spanning a change has no single rate, and what a reader
-	// means by "the rate" is the one these totals came out at — which is also
-	// the only figure the column beside them supports.
-	last := p.rulesFor(start.addMonths(max(0, len(monthlyIncomeEUR)-1)))
-	gross := float64(result.GrossSalaryCents)
-	result.EmployerPct = effectivePct(float64(result.EmployerContribCents), gross, last.Employer.Bands)
-	result.EmployeePct = effectivePct(float64(result.EmployeeContribCents), gross, last.Employee.Bands)
-	result.IncomeTaxPct = effectivePct(float64(result.IncomeTaxCents), gross-float64(result.EmployeeContribCents), last.IncomeTax)
+	// A range gets one line per schedule that was in force during it, labelled
+	// with the months it covered. Reporting a single rate for a year the law
+	// changed in is how a change goes unnoticed by the person paying it.
+	//
+	// These lines describe the schedule, not the bands one salary reached: a
+	// range has a base per month, so "what was charged" has no single answer
+	// here the way it does for a month.
+	months := len(monthlyIncomeEUR)
+	if months == 1 {
+		// A range of one is still a month, and a month has a base — so it gets
+		// the sharper answer, what was actually charged on it. This is not a
+		// rare path: the dashboard's salary block runs through here for every
+		// single month, because the funding shift asks for one month at a time.
+		result.EmployerRate, result.EmployeeRate, result.IncomeTaxRate = one.EmployerRate, one.EmployeeRate, one.IncomeTaxRate
+		return result
+	}
+	result.EmployerRate = p.rateLines(start, months, func(r Rules) (Bands, float64) {
+		return r.Employer.Bands, r.Employer.MinBase
+	})
+	result.EmployeeRate = p.rateLines(start, months, func(r Rules) (Bands, float64) {
+		return r.Employee.Bands, r.Employee.MinBase
+	})
+	result.IncomeTaxRate = p.rateLines(start, months, func(r Rules) (Bands, float64) {
+		return r.IncomeTax, 0
+	})
 	return result
+}
+
+// rateLines walks the months and emits one line per run of consecutive months
+// sharing a schedule, so a year that changed in May reads "18.92% up to 2,112
+// Jan–Apr" and "20% up to 3,000 May–Dec" rather than one of the two.
+//
+// A run is described by its own schedule at the top of its band range, which
+// for a monthly threshold is the schedule itself — the point of the label is
+// which rules applied when, not what one month's salary happened to reach.
+func (p PersonalParams) rateLines(start yearMonth, months int, pick func(Rules) (Bands, float64)) []RateLine {
+	if months <= 0 {
+		return nil
+	}
+	var out []RateLine
+	runStart := 0
+	var runBands Bands
+	var runMin float64
+	flush := func(from, to int) {
+		text := describeSchedule(runBands, runMin)
+		if text == "" {
+			return
+		}
+		out = append(out, RateLine{Rate: text, Span: spanLabel(start, from, to)})
+	}
+	for i := 0; i < months; i++ {
+		bands, minBase := pick(p.rulesFor(start.addMonths(i)))
+		if i == 0 {
+			runBands, runMin = bands, minBase
+			continue
+		}
+		if reflect.DeepEqual(bands, runBands) && minBase == runMin {
+			continue
+		}
+		flush(runStart, i-1)
+		runStart, runBands, runMin = i, bands, minBase
+	}
+	flush(runStart, months-1)
+	if len(out) == 1 {
+		// One schedule all range: naming the span would only repeat the period
+		// the whole page is already about.
+		out[0].Span = ""
+	}
+	return out
+}
+
+// describeSchedule renders a schedule without reference to any one base — the
+// range case, where there is a base per month.
+//
+// It asks applied() about a base just past the last boundary, so every band is
+// passed clean through and every boundary gets named. A base exactly on the
+// last boundary would not do: applied() would read it as having come to rest
+// inside the band below, which is true of that base and false of the schedule.
+func describeSchedule(b Bands, minBase float64) string {
+	if len(b) == 0 {
+		return ""
+	}
+	return b.applied(b[len(b)-1].From+1, minBase)
+}
+
+// spanLabel names the months a run covered, as "Jan–Apr" or a bare "May" for a
+// single one.
+func spanLabel(start yearMonth, from, to int) string {
+	first := start.addMonths(from).Month.String()[:3]
+	if from == to {
+		return first
+	}
+	return first + "–" + start.addMonths(to).Month.String()[:3]
 }

@@ -78,8 +78,8 @@ func TestARateChangeReachesTheArithmetic(t *testing.T) {
 		t.Errorf("gross was %d before the rate rise and %d after — a higher employer rate must buy less salary",
 			before.GrossSalaryCents, after.GrossSalaryCents)
 	}
-	if before.EmployerPct == after.EmployerPct {
-		t.Errorf("the labelled rate stayed %s across a change that moved it", before.EmployerPct)
+	if rateOf(before.EmployerRate) == rateOf(after.EmployerRate) {
+		t.Errorf("the labelled rate stayed %s across a change that moved it", rateOf(before.EmployerRate))
 	}
 }
 
@@ -172,9 +172,9 @@ func TestLegislationAppliesPerMonthAcrossAYear(t *testing.T) {
 	if want := 12 * 115000; next.GrossSalaryCents != want {
 		t.Errorf("2027 gross = %d, want %d", next.GrossSalaryCents, want)
 	}
-	// The labelled rate is the one in force at the end of the range.
-	if next.EmployerPct != "19.9" {
-		t.Errorf("2027 employer rate labelled %s, want the rate in force", next.EmployerPct)
+	// One schedule all year, so one unlabelled line.
+	if got := rateOf(next.EmployerRate); got != "19.9% up to 2,400" {
+		t.Errorf("2027 employer rate labelled %q, want the schedule in force", got)
 	}
 }
 
@@ -255,7 +255,7 @@ func TestEnforcedMinimumIsVisible(t *testing.T) {
 		Currency: "€",
 		FundingPersonal: PersonalView{
 			GrossSalaryCents: 107700, MinimumWageCents: 107700, MinimumEnforced: true,
-			EmployerPct: "18.92", EmployeePct: "13.78", IncomeTaxPct: "10",
+			EmployerRate: []RateLine{{Rate: "18.92%"}},
 		},
 	}
 	rec := httptest.NewRecorder()
@@ -273,7 +273,7 @@ func TestEnforcedMinimumIsVisible(t *testing.T) {
 		t.Error("the shortfall note is back")
 	}
 
-	quiet := Figures{Currency: "€", FundingPersonal: PersonalView{GrossSalaryCents: 500000, EmployerPct: "18.92", EmployeePct: "13.78", IncomeTaxPct: "10"}}
+	quiet := Figures{Currency: "€", FundingPersonal: PersonalView{GrossSalaryCents: 500000, EmployerRate: []RateLine{{Rate: "18.92%"}}}}
 	rec = httptest.NewRecorder()
 	RenderPage(rec, quiet)
 	if strings.Contains(rec.Body.String(), "statutory minimum") {
@@ -286,7 +286,7 @@ func TestEnforcedMinimumIsVisible(t *testing.T) {
 // owed" from "nothing is configured" has to be on the page.
 func TestNoLegislationIsVisible(t *testing.T) {
 	bare := Figures{Currency: "€", FundingPersonal: PersonalView{
-		GrossSalaryCents: 500000, NoLegislation: true, EmployerPct: "0", EmployeePct: "0", IncomeTaxPct: "0",
+		GrossSalaryCents: 500000, NoLegislation: true, EmployerRate: []RateLine{{Rate: "18.92%"}},
 	}}
 	rec := httptest.NewRecorder()
 	RenderPage(rec, bare)
@@ -295,7 +295,7 @@ func TestNoLegislationIsVisible(t *testing.T) {
 	}
 
 	configured := Figures{Currency: "€", FundingPersonal: PersonalView{
-		GrossSalaryCents: 500000, EmployerPct: "18.92", EmployeePct: "13.78", IncomeTaxPct: "10",
+		GrossSalaryCents: 500000, EmployerRate: []RateLine{{Rate: "18.92%"}},
 	}}
 	rec = httptest.NewRecorder()
 	RenderPage(rec, configured)
@@ -336,5 +336,50 @@ func TestNothingAppliesBeforeTheEarliestEntry(t *testing.T) {
 	// January is unaffected: the entry applies from its own month onward.
 	if in := p.rulesFor(yearMonth{2026, time.January}); in.nothingInForce() {
 		t.Errorf("January 2026 = %+v, want the figures its own entry states", in)
+	}
+}
+
+// TestRateSurvivesTheMobileFold: at 600px and under the ledger is two columns
+// and .mid is hidden, so a rate that lived only there would vanish on a phone
+// — and a third filled cell would push the amount onto its own line. Both
+// halves of the swap have to be in the markup for the CSS to choose between
+// them, and neither is visible to a test that only reads the wide layout.
+func TestRateSurvivesTheMobileFold(t *testing.T) {
+	f := Figures{
+		Currency: "€",
+		FundingPersonal: PersonalView{
+			GrossSalaryCents: 500000,
+			EmployerRate:     []RateLine{{Rate: "18.92% up to 2,112", Span: "Jan–Apr"}, {Rate: "20% up to 3,000", Span: "May–Dec"}},
+			EmployeeRate:     []RateLine{{Rate: "13.78%"}},
+			IncomeTaxRate:    []RateLine{{Rate: "10%"}},
+		},
+	}
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	body := rec.Body.String()
+
+	// The wide column carries the marker class the narrow rule keys off.
+	if !strings.Contains(body, `<span class="mid rate">`) {
+		t.Error("the rate cell is not marked, so the mobile rule cannot hide it")
+	}
+	// And the same content exists again, stacked under the amount.
+	if strings.Count(body, `class="rate-m"`) != 4 {
+		t.Errorf("got %d narrow rate spans, want 4 — two employer lines plus employee and tax",
+			strings.Count(body, `class="rate-m"`))
+	}
+	// Each line keeps its span with it rather than leaving it to wrap away.
+	for _, want := range []string{
+		`<span class="rate-m">18.92% up to 2,112 Jan–Apr</span>`,
+		`<span class="rate-m">20% up to 3,000 May–Dec</span>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %s", want)
+		}
+	}
+	// The old blended percentage is gone from the labels.
+	for _, gone := range []string{"Employer social (", "Employee social (", "Income tax ("} {
+		if strings.Contains(body, gone) {
+			t.Errorf("%s...) is back in the label", gone)
+		}
 	}
 }

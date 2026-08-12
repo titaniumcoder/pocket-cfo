@@ -10,16 +10,10 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/webui"
 )
 
-// SpendingView is the admin-only drill-down. It is the only place a statement
-// description is rendered: Figures carries none, so a non-admin's HTML cannot
-// contain one however the template is later edited.
 type SpendingView struct {
 	Header webui.Header
-	Month  string // "August 2026"
+	Month  string
 
-	// Nav is the same stepper the dashboard has, pointed at this page, so a
-	// month is a month wherever you are reading it. OverviewURL and
-	// SpendingURL back the toggle between the two views of it.
 	Nav         MonthNav
 	OverviewURL string
 	SpendingURL string
@@ -29,17 +23,14 @@ type SpendingView struct {
 	Coverage []CoverageRow
 
 	Groups    []SpendingGroup
-	Ignored   []SpendingTx // not budget expenses; listed so the page reconciles to the statement
-	Unmatched []SpendingTx // cites a category that no longer resolves
+	Ignored   []SpendingTx
+	Unmatched []SpendingTx
 
-	// Untracked is money that left the account and has not been decided yet.
-	// Listed first and loudly, because it is the only section on this page that
-	// is a question rather than a record.
 	Untracked      []SpendingTx
 	UntrackedCents int
 	UntrackedCount int
 
-	TotalCents   int // every categorised line, matched or not
+	TotalCents   int
 	IgnoredCount int
 	Err          string
 }
@@ -63,35 +54,25 @@ type SpendingCategory struct {
 	PlannedCents int
 	ActualCents  int
 	VarianceCent int
-	Status       string // the dashboard's own grade, so the two screens agree
+	Status       string
 	Mistimed     bool
 	Note         string
 	Transactions []SpendingTx
 }
 
 type SpendingTx struct {
-	ID string
-	// Date is day-first for reading; ISODate is what the file says. The copy
-	// text uses the ISO one on purpose — "01.08.2026" pasted to Hermes could
-	// be read as the 8th of January, and the one job that text has is to
-	// identify a line unambiguously.
+	ID          string
 	Date        string
 	ISODate     string
 	Description string
 	Account     string
 	Cents       int
-	Reason      string // ignored lines only
-	Category    string // unmatched lines only
+	Reason      string
+	Category    string
 
-	// PartOf is the whole line's amount when this row is one part of a split,
-	// empty otherwise. Without it a 50 under Restaurant cannot be squared
-	// against a statement that says 100.
 	PartOf string
 }
 
-// ComputeSpending assembles the detail page for one month. An unreconciled
-// month returns Present=false rather than an error: it exists, it just has no
-// data.
 func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Month) SpendingView {
 	now := time.Now().In(t.Loc)
 	start := time.Date(year, month, 1, 0, 0, 0, 0, t.Loc)
@@ -138,8 +119,6 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 				Description: tx.Description,
 				Account:     tx.Account, Cents: eurToCents(part.Amount),
 			}
-			// A part says what it is a part of, since on its own "50" under
-			// Restaurant next to a statement showing 100 reads as an error.
 			if split {
 				row.PartOf = formatEuro(eurToCents(tx.Amount))
 			}
@@ -164,7 +143,6 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 		}
 	}
 
-	// Reusing the dashboard's view keeps the two pages from disagreeing.
 	var bv BudgetView
 	if t.Budget != nil {
 		if built, berr := t.Budget.ForMonth(ctx, year, month, time.Now().In(t.locOrUTC())); berr == nil {
@@ -180,7 +158,6 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 	v.Groups = append(v.Groups, spendingGroups(bv.Groups, false, byCategory, seen)...)
 	v.Groups = append(v.Groups, spendingGroups(bv.CompanyGroups, true, byCategory, seen)...)
 
-	// Anything left cites a category with no row this month.
 	var leftover []string
 	for id := range byCategory {
 		if !seen[id] {
@@ -211,7 +188,7 @@ func spendingGroups(groups []CategoryGroupView, company bool, byCategory map[str
 		for _, row := range g.Rows {
 			txs := byCategory[row.CategoryID]
 			if len(txs) == 0 && !row.HasActual && row.ActualStatus != ActualMistimed {
-				continue // nothing recorded and nothing to explain
+				continue
 			}
 			seen[row.CategoryID] = true
 			sg.Categories = append(sg.Categories, SpendingCategory{
@@ -233,16 +210,8 @@ func spendingGroups(groups []CategoryGroupView, company bool, byCategory map[str
 	return out
 }
 
-// ChangeRequest is what the spending page's copy link puts on the clipboard —
-// enough for Hermes to identify the transaction, with the change itself left
-// for the user to type.
 func (t SpendingTx) ChangeRequest() string {
-	// The exact amount, not formatEuro's whole euros: this identifies one
-	// statement line, and 210 instead of 210.40 could match the wrong one.
 	if t.PartOf != "" {
-		// Naming the whole line as well, because the id identifies the
-		// statement line and the amount here is only part of it — asking
-		// Hermes to change "ID x to 60" when the line is 100 is ambiguous.
 		return fmt.Sprintf("Change ID %s (%s / %s / %.2f of %s) like this: ",
 			t.ID, t.ISODate, t.Description, float64(t.Cents)/100, t.PartOf)
 	}

@@ -6,9 +6,6 @@ import (
 	"time"
 )
 
-// validateDate parses a YYYY-MM-DD date, returning a descriptive error if it
-// doesn't parse (the schema only checks the pattern shape, not calendar
-// validity, e.g. "2026-02-30").
 func validateDate(field, date string) error {
 	if _, err := time.Parse("2006-01-02", date); err != nil {
 		return fmt.Errorf("field %s: invalid date %q", field, date)
@@ -16,20 +13,6 @@ func validateDate(field, date string) error {
 	return nil
 }
 
-// ValidateBudget checks what the JSON Schema can't express: category ids are
-// unique across the whole file — a wider scope than name, because an id is
-// what a transaction points at, so a shared one would merge two categories'
-// spending; category names are unique within their own group (a repeat across
-// groups is unambiguous on the page, since each is shown under its own
-// header), every category has
-// a positive amount (a zero-euro line is almost certainly a mistake — note
-// this only applies to the base amount; an override may still be 0, to skip
-// a specific month), a dated category's date is a real calendar date, a
-// category's url (if any) is an http(s) link — not javascript: or another
-// scheme, since it's rendered directly as an <a href> — a category's
-// minimal_amount (if any) doesn't exceed its amount, a category's overrides
-// (if any) are real calendar dates with no duplicate months and non-negative
-// amounts, and loan names are unique.
 func ValidateBudget(f BudgetFile) error {
 	seenID := map[string]string{} // id -> the category that already claimed it
 	for _, g := range f.Groups {

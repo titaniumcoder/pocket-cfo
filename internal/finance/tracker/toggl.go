@@ -15,20 +15,10 @@ import (
 	"time"
 )
 
-// Toggl talks to the Toggl Track API: the Reports API v3 detailed report for
-// tracked time + Toggl-calculated billable amounts, and the v9 API for project
-// names. Tracked time uses Toggl's individual rounding to 15 minutes and only
-// counts billable entries.
-//
-// Responses are cached in memory indefinitely to stay under Toggl's rate limit,
-// and invalidated explicitly via EvictRange (the page's Reload button). Stale
-// means "refetch on next use", not "forget" — the detailed report times out
-// often enough that the last good value is worth keeping as a fallback. See
-// getCached.
 type Toggl struct {
 	Token       string
 	WorkspaceID string
-	ProjectIDs  string // optional comma-separated filter
+	ProjectIDs  string
 	HTTP        *http.Client
 
 	mu       sync.Mutex
@@ -37,9 +27,6 @@ type Toggl struct {
 	breaker  map[string]breakerState
 }
 
-// fetchCall is one in-progress fetch that later callers for the same key wait
-// on. val/err are written before done is closed and read only after; the close
-// is the happens-before edge.
 type fetchCall struct {
 	done chan struct{}
 	val  any
@@ -53,7 +40,6 @@ type breakerState struct {
 
 const togglBreakerThreshold = 3
 
-// Variables, not constants, only so tests need not wait them out.
 var (
 	togglFetchTimeout    = 2 * time.Minute
 	togglBreakerCooldown = time.Minute
@@ -61,22 +47,11 @@ var (
 
 type cacheEntry struct {
 	val        any
-	start, end time.Time // date range this entry covers (zero = not range-scoped)
-	fetchedAt  time.Time // when val was last fetched successfully
-	stale      bool      // refetch on next use, but keep val as a fallback
+	start, end time.Time
+	fetchedAt  time.Time
+	stale      bool
 }
 
-// getCached returns the cached value for key, or computes it via fn and stores it
-// forever, tagged with the date range it covers (zero start/end for entries that
-// aren't range-scoped, such as the project list). Cache hits, fetch starts, and
-// fetch outcomes (with timing) are logged to stdout for container log visibility.
-//
-// A failure is only an error when there is nothing cached to fall back on;
-// otherwise the previous value is returned and the entry left stale.
-//
-// ctx bounds how long this caller waits, not how long the fetch lives — fn runs
-// detached (see fill). A cache fill is shared, so it must not die because the
-// caller that happened to trigger it walked away.
 func (t *Toggl) getCached(ctx context.Context, key string, start, end time.Time, fn func(context.Context) (any, error)) (any, error) {
 	t.mu.Lock()
 	cached, hit := t.cache[key]
@@ -85,14 +60,11 @@ func (t *Toggl) getCached(ctx context.Context, key string, start, end time.Time,
 		log.Printf("toggl: %s — served from cache", key)
 		return cached.val, nil
 	}
-	// Upstream has been failing: don't add another slow request to the pile.
 	if until := t.breaker[key].openUntil; time.Now().Before(until) {
 		t.mu.Unlock()
 		log.Printf("toggl: %s — upstream failing, not retrying before %s", key, until.Format(time.RFC3339))
 		return staleOr(key, cached, hit, fmt.Errorf("toggl: %s: upstream unavailable, not retried", key))
 	}
-	// One fetch per key: concurrent readers of the same year would otherwise
-	// fire identical year-wide reports at the slowest endpoint this app calls.
 	call, running := t.inflight[key]
 	if !running {
 		call = &fetchCall{done: make(chan struct{})}
@@ -103,9 +75,6 @@ func (t *Toggl) getCached(ctx context.Context, key string, start, end time.Time,
 	}
 	t.mu.Unlock()
 
-	// On its own goroutine even for the caller that started it, so every caller
-	// waits on its own deadline. Inline, the request that arrived first would
-	// wait out the whole detached timeout while the ones behind it left early.
 	if !running {
 		go t.fill(ctx, key, start, end, fn, call)
 	} else {
@@ -124,8 +93,6 @@ func (t *Toggl) getCached(ctx context.Context, key string, start, end time.Time,
 	return call.val, nil
 }
 
-// fill performs the fetch and publishes it to everyone waiting on call,
-// outliving whichever caller triggered it.
 func (t *Toggl) fill(ctx context.Context, key string, start, end time.Time, fn func(context.Context) (any, error), call *fetchCall) {
 	log.Printf("toggl: %s — fetching…", key)
 	t0 := time.Now()
@@ -134,8 +101,6 @@ func (t *Toggl) fill(ctx context.Context, key string, start, end time.Time, fn f
 	val, err := fn(fetchCtx)
 	elapsed := time.Since(t0).Round(time.Millisecond)
 
-	// Waiters and the shared maps are published under one acquisition, so the
-	// key is never observable as neither in-flight nor resolved.
 	t.mu.Lock()
 	delete(t.inflight, key)
 	if err != nil {
@@ -158,7 +123,6 @@ func (t *Toggl) fill(ctx context.Context, key string, start, end time.Time, fn f
 	log.Printf("toggl: %s — fetched in %s", key, elapsed)
 }
 
-// staleOr returns the previous value for key when there is one, err otherwise.
 func staleOr(key string, cached cacheEntry, hit bool, err error) (any, error) {
 	if !hit {
 		return nil, err
@@ -167,10 +131,6 @@ func staleOr(key string, cached cacheEntry, hit bool, err error) (any, error) {
 	return cached.val, nil
 }
 
-// recordFailureLocked counts a failed fetch and opens the breaker at the
-// threshold. Failures are not reset on opening, so the first attempt after the
-// cooldown is a probe: if it fails the breaker reopens immediately rather than
-// granting another three tries. t.mu must be held.
 func (t *Toggl) recordFailureLocked(key string) {
 	if t.breaker == nil {
 		t.breaker = map[string]breakerState{}
@@ -184,16 +144,6 @@ func (t *Toggl) recordFailureLocked(key string) {
 	t.breaker[key] = b
 }
 
-// EvictRange marks cached responses whose date range intersects [start, end]
-// stale, so the next read refetches them. Entries that aren't range-scoped
-// (e.g. the project list) are left alone. A nil Toggl (the tracked-hours layer
-// disabled by config — see Tracker) is a no-op, same convention as the other
-// methods below.
-//
-// A mark rather than a delete: deleting would make a failed refetch
-// indistinguishable from "never fetched", exactly where the previous figures
-// are still the best answer. Entries are therefore never removed — fine, since
-// the key space is one entry per year plus one project list.
 func (t *Toggl) EvictRange(start, end time.Time) {
 	if t == nil {
 		return
@@ -209,15 +159,9 @@ func (t *Toggl) EvictRange(start, end time.Time) {
 			t.cache[k] = e
 		}
 	}
-	// Reload means "try again now", so it reopens every breaker too. Wholesale
-	// rather than per matching entry: the case that most needs it is a key
-	// whose first fetch failed, which has no cache entry for the loop above.
 	clear(t.breaker)
 }
 
-// markStale forces the next read of key to refetch, leaving the breaker alone —
-// the background refresher's invalidation. Only Reload (EvictRange) overrides a
-// decision to stop calling a failing API.
 func (t *Toggl) markStale(key string) {
 	if t == nil {
 		return
@@ -230,10 +174,6 @@ func (t *Toggl) markStale(key string) {
 	}
 }
 
-// YearPending reports that a fetch for the year is in flight with nothing
-// cached yet: no figures to show, but waiting will help. Answered structurally
-// rather than by inspecting the error, since a deadline arrives by several
-// routes.
 func (t *Toggl) YearPending(year int) bool {
 	if t == nil {
 		return false
@@ -246,9 +186,6 @@ func (t *Toggl) YearPending(year int) bool {
 	return fetching && !cached
 }
 
-// YearStatus reports when the year's report was last fetched successfully and
-// whether that value is stale. An uncached year, or a nil Toggl, reports the
-// zero time and false.
 func (t *Toggl) YearStatus(year int) (fetchedAt time.Time, stale bool) {
 	if t == nil {
 		return time.Time{}, false
@@ -265,28 +202,24 @@ func (t *Toggl) yearKey(year int) string {
 	return "detailed|" + t.ProjectIDs + "|" + strconv.Itoa(year)
 }
 
-// Aggregate is tracked work summed per project + rate.
 type Aggregate struct {
 	ProjectID   int
-	RateCents   int // hourly rate in cents
-	AmountCents int // Toggl-calculated billable amount in cents
-	Seconds     int // rounded tracked seconds
+	RateCents   int
+	AmountCents int
+	Seconds     int
 	Currency    string
 }
 
-// Project is a Toggl project. ClientID is 0 when the project has no client
-// assigned in Toggl.
 type Project struct {
 	Name     string
 	ClientID int
 }
 
 const (
-	roundingNearest = 0 // -1 down, 0 nearest, 1 up
+	roundingNearest = 0
 	roundingMinutes = 15
 )
 
-// detailedRow is one row of the Toggl detailed search response.
 type detailedRow struct {
 	ProjectID             *int   `json:"project_id"`
 	HourlyRateInCents     *int   `json:"hourly_rate_in_cents"`
@@ -298,23 +231,9 @@ type detailedRow struct {
 	} `json:"time_entries"`
 }
 
-// eachDetailedRow pages through the billable detailed report for [start, end]
-// (inclusive) and calls fn for every row.
-//
-// Only first_row_number is sent back on follow-up pages — deliberately not
-// first_id, even though Toggl also returns an X-Next-ID header alongside
-// X-Next-Row-Number (seemingly meant as a compound cursor). Sending both
-// together makes Toggl's API silently return zero rows (200 OK, empty body)
-// for the follow-up request despite the first page's header claiming more
-// data exists — confirmed by hand against the real API: a year-wide query
-// paginating past 50 rows came back empty on page 2 with first_id included,
-// and returned the correct remaining rows with first_id dropped. This is why
-// single-page queries (a single month, or any range under ~50 rows) always
-// looked correct while a year-wide query silently lost every row past the
-// first page — e.g. July showing 34 tracked hours instead of the real 63.
 func (t *Toggl) eachDetailedRow(ctx context.Context, start, end time.Time, fn func(detailedRow)) error {
 	firstRow := 0
-	for page := 0; page < 100; page++ { // safety cap
+	for page := 0; page < 100; page++ {
 		body := map[string]any{
 			"start_date":       start.Format("2006-01-02"),
 			"end_date":         end.Format("2006-01-02"),
@@ -366,21 +285,11 @@ func (t *Toggl) eachDetailedRow(ctx context.Context, start, end time.Time, fn fu
 	return nil
 }
 
-// YearData is a whole calendar year's billable work: tracked work aggregated per
-// project + rate within each month, plus the set of calendar days that have any
-// billable time. Fetched and cached as a single yearly detailed report so the
-// month and year views share one Toggl call.
 type YearData struct {
-	Months map[time.Month][]Aggregate // per month, aggregated per project + rate
-	Days   map[string]bool            // YYYY-MM-DD that have billable time
+	Months map[time.Month][]Aggregate
+	Days   map[string]bool
 }
 
-// Year returns the given calendar year's billable work, fetched as one detailed
-// report (with Toggl's individual 15-minute rounding) and cached. Callers must
-// treat the result as read-only — the same pointer is shared across calls. A
-// nil Toggl (the tracked-hours layer disabled by config — see Tracker) always
-// returns an empty, error-free YearData, so callers need no separate
-// "tracking disabled" branch of their own.
 func (t *Toggl) Year(ctx context.Context, year int) (*YearData, error) {
 	if t == nil {
 		return &YearData{Months: map[time.Month][]Aggregate{}, Days: map[string]bool{}}, nil
@@ -409,7 +318,7 @@ func (t *Toggl) fetchYear(ctx context.Context, start, end time.Time) (*YearData,
 		rate := derefInt(r.HourlyRateInCents)
 		amount := derefInt(r.BillableAmountInCents)
 		sec := 0
-		earliest := "" // earliest entry date in the row (YYYY-MM-DD)
+		earliest := ""
 		for _, te := range r.TimeEntries {
 			sec += te.Seconds
 			if te.Seconds <= 0 || len(te.Start) < 10 {
@@ -421,9 +330,6 @@ func (t *Toggl) fetchYear(ctx context.Context, start, end time.Time) (*YearData,
 				earliest = d
 			}
 		}
-		// Bucket the whole row into the month of its earliest entry. The billable
-		// amount is per row, so a row is attributed to a single month; in practice
-		// a row is one time entry on one day, so this is exact.
 		month := start.Month()
 		if tm, perr := time.Parse("2006-01-02", earliest); perr == nil {
 			month = tm.Month()
@@ -448,9 +354,6 @@ func (t *Toggl) fetchYear(ctx context.Context, start, end time.Time) (*YearData,
 	return yd, nil
 }
 
-// Projects returns all workspace projects (active and archived) keyed by id.
-// Not range-scoped, so it survives a Reload and is only refetched on restart.
-// A nil Toggl always returns an empty, error-free map.
 func (t *Toggl) Projects(ctx context.Context) (map[int]Project, error) {
 	if t == nil {
 		return map[int]Project{}, nil
@@ -492,15 +395,11 @@ func (t *Toggl) fetchProjects(ctx context.Context) (map[int]Project, error) {
 	return out, nil
 }
 
-// Workspace is a Toggl workspace (used by the admin /info diagnostics page to
-// help pick the right IDs for config.json/recipient tracking_client_id).
 type Workspace struct {
 	ID   int
 	Name string
 }
 
-// Workspaces returns every workspace the configured token can see. Not
-// range-scoped, so it's cached forever like Projects.
 func (t *Toggl) Workspaces(ctx context.Context) ([]Workspace, error) {
 	if t == nil {
 		return nil, nil
@@ -540,15 +439,11 @@ func (t *Toggl) fetchWorkspaces(ctx context.Context) ([]Workspace, error) {
 	return out, nil
 }
 
-// Client is a Toggl client (the entity tracking_client_id links a recipient
-// to) — used by the admin /info diagnostics page.
 type Client struct {
 	ID   int
 	Name string
 }
 
-// Clients returns every client in the given workspace. Not range-scoped, so
-// it's cached forever like Projects/Workspaces.
 func (t *Toggl) Clients(ctx context.Context, workspaceID int) ([]Client, error) {
 	if t == nil {
 		return nil, nil
@@ -591,19 +486,13 @@ func (t *Toggl) fetchClients(ctx context.Context, workspaceID int) ([]Client, er
 }
 
 const (
-	togglAttempts   = 3 // total tries, not retries
+	togglAttempts   = 3
 	togglBackoffMax = 8 * time.Second
 )
 
-// togglBackoffBase is a variable only so tests can shrink it (see TestMain).
 var togglBackoffBase = 500 * time.Millisecond
 
-// do performs one Toggl API call, retrying transport errors and 429/5xx with
-// exponential backoff. Any other 4xx is a real answer and is returned as-is.
-// Retries are bounded by ctx as well as by togglAttempts, so a tight deadline
-// degrades to a single attempt.
 func (t *Toggl) do(ctx context.Context, method, url string, body io.Reader) (*http.Response, error) {
-	// Buffered so each attempt gets a fresh reader.
 	var payload []byte
 	if body != nil {
 		var err error
@@ -666,8 +555,6 @@ func retryableStatus(code int) bool {
 	return code == http.StatusTooManyRequests || code >= 500
 }
 
-// retryAfter reads a Retry-After expressed in seconds, the form Toggl sends.
-// An HTTP-date or malformed value yields ok=false and the caller's own backoff.
 func retryAfter(resp *http.Response) (time.Duration, bool) {
 	v := strings.TrimSpace(resp.Header.Get("Retry-After"))
 	if v == "" {
@@ -680,8 +567,6 @@ func retryAfter(resp *http.Response) (time.Duration, bool) {
 	return time.Duration(secs) * time.Second, true
 }
 
-// sleepCtx waits for d, or returns ctx's error if the caller gives up first, so
-// a long Retry-After can't hold a request past its deadline.
 func sleepCtx(ctx context.Context, d time.Duration) error {
 	timer := time.NewTimer(d)
 	defer timer.Stop()

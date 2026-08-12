@@ -20,24 +20,14 @@ func monthKey(year int, month time.Month) string {
 	return fmt.Sprintf("%04d-%02d", year, int(month))
 }
 
-// Budget reads budget.json from FS and caches it until evicted, the same
-// pattern as Toggl. FS is a real directory at runtime (os.DirFS over DATA_DIR)
-// — hand-edited data is read fresh, never embedded the way schemas/*.json is.
-//
-// A flat monthly plan, not envelope budgeting and not actual tracking: no
-// logged spending, no rollover. Every category is a name and an amount that
-// recurs monthly; one with a date is a one-off counted only in that month.
 type Budget struct {
-	FS fs.FS // required, no embedded fallback; tests pass an fstest.MapFS
+	FS fs.FS
 
 	mu        sync.Mutex
 	cache     *budgetResult
 	minimalOn bool
 }
 
-// ToggleMinimal flips minimal-budget mode and reports the resulting state. A
-// single global in-memory flag: it stays on as you browse between months, is
-// never persisted, and resets on restart. Only ForMonth honors it.
 func (b *Budget) ToggleMinimal() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -45,7 +35,6 @@ func (b *Budget) ToggleMinimal() bool {
 	return b.minimalOn
 }
 
-// IsMinimal reports whether minimal-budget mode is currently on.
 func (b *Budget) IsMinimal() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -61,8 +50,6 @@ func (b *Budget) fsys() fs.FS {
 	return b.FS
 }
 
-// File returns the cached budget.json, fetching and validating it on first
-// use.
 func (b *Budget) File(ctx context.Context) (budgetdata.BudgetFile, error) {
 	b.mu.Lock()
 	if b.cache != nil {
@@ -106,34 +93,27 @@ func (b *Budget) fetch() (budgetdata.BudgetFile, error) {
 	return bf, nil
 }
 
-// Evict drops the cached budget.json — cheap to refetch, and it might have
-// changed — used by the existing Reload link.
 func (b *Budget) Evict() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.cache = nil
 }
 
-// CategoryRow is one category's figure for a period, in cents. Every figure
-// here is planned money from budget.json; ActualCents is filled separately by
-// ApplyActuals. Upcoming* are set only for a dated category whose month hasn't
-// arrived yet.
 type CategoryRow struct {
 	Name          string
-	CategoryID    string // what a recorded transaction points at
-	PlannedDate   string // a one-off's due month; empty when recurring
+	CategoryID    string
+	PlannedDate   string
 	PlannedCents  int
-	UpcomingCents int    // configured amount, shown ahead of time
-	UpcomingMonth string // e.g. "September 2026"
+	UpcomingCents int
+	UpcomingMonth string
 	Note          string
-	URL           string // when set, the note renders as a link
+	URL           string
 	Overridden    bool
 
-	// Filled by ApplyActuals.
 	ActualCents  int
 	HasActual    bool
-	ActualStatus string // "" | under | over | unbudgeted | mistimed
-	ActualNote   string // why a mistimed row is flagged
+	ActualStatus string
+	ActualNote   string
 }
 
 type LoanRow struct {
@@ -141,27 +121,18 @@ type LoanRow struct {
 	AmountCents int
 }
 
-// CategoryGroupView is one budget.json group's rows for a period.
 type CategoryGroupView struct {
 	Name         string
 	Rows         []CategoryRow
-	PlannedCents int // sum of Rows' PlannedCents
+	PlannedCents int
 
-	ActualCents int // sum of Rows' ActualCents
+	ActualCents int
 	HasActual   bool
 	HasMistimed bool
 
-	// Status is the grade of whichever row inside most wants attention, not
-	// a grade of the group's own total. A collapsed group has to be able to
-	// say that something in there needs a look; a group total that nets out
-	// to on-plan hides exactly that.
 	Status string
 }
 
-// BudgetView is what the dashboard renders, split by group kind. Private is
-// personal spending, deducted from Net income for the Balance row. Company is
-// business expense, deducted from Company income *before* the salary cascade
-// (see PersonalParams.breakdown) since it never becomes salary at all.
 type BudgetView struct {
 	Groups            []CategoryGroupView
 	TotalPlannedCents int
@@ -170,11 +141,6 @@ type BudgetView struct {
 	CompanyTotalPlannedCents int
 }
 
-// ForMonth builds the budget view for one calendar month. A dated category is
-// graded against the *viewed* month, not real now: browsing month-by-month
-// should show a one-off as upcoming until its due month, active in it, and gone
-// after, regardless of today's date. Company and private are identical here;
-// the split only changes month ranges in ForYear.
 func (b *Budget) ForMonth(ctx context.Context, year int, month time.Month, now time.Time) (BudgetView, error) {
 	bf, err := b.File(ctx)
 	if err != nil {
@@ -190,15 +156,6 @@ func (b *Budget) ForMonth(ctx context.Context, year int, month time.Month, now t
 	return buildBudgetView(bf, plannedFor, plannedFor, viewed, minimal), nil
 }
 
-// privateExpenseStartMonth is where ForYear's private-category range starts:
-// now's month for the current year, since months already gone by don't count;
-// January for any other year, unless budgeting began partway through it. Also
-// used by fundingRangeForYear, so the shifted funding-income range tracks the
-// same span ForYear uses for expenses — the two must never drift apart.
-//
-// floor is the first budgeted month, zero for none. A year that began in April
-// has no January to plan, and counting three months of nothing into its total
-// would report a year that underspent by a quarter.
 func privateExpenseStartMonth(year int, now time.Time, floor yearMonth) time.Month {
 	if year == now.Year() {
 		if floor.Year == year && floor.Month > now.Month() {
@@ -212,9 +169,6 @@ func privateExpenseStartMonth(year int, now time.Time, floor yearMonth) time.Mon
 	return time.January
 }
 
-// floorOf is a configured start month as the internal type; a zero time means
-// no floor. Exported methods take the time.Time so callers outside this
-// package can pass one.
 func floorOf(start time.Time) yearMonth {
 	if start.IsZero() {
 		return yearMonth{}
@@ -222,7 +176,6 @@ func floorOf(start time.Time) yearMonth {
 	return yearMonth{start.Year(), start.Month()}
 }
 
-// yearMonthRange is the months of a year budgeting actually covers.
 func yearMonthRange(year int, floor yearMonth) (first, last time.Month) {
 	first, last = time.January, time.December
 	if floor.Year == year {
@@ -231,19 +184,12 @@ func yearMonthRange(year int, floor yearMonth) (first, last time.Month) {
 	return first, last
 }
 
-// ForYear sums each category across the year, with the month range differing
-// by kind. Private counts only the year's remaining months (see
-// privateExpenseStartMonth). Company always counts all twelve, regardless of
-// now: it feeds the salary cascade, which projects a full year of company
-// income, so the cost side has to span the same full year to stay consistent.
-// now is real current time, not the viewed year.
 func (b *Budget) ForYear(ctx context.Context, year int, now, start time.Time) (BudgetView, error) {
 	bf, err := b.File(ctx)
 	if err != nil {
 		return BudgetView{}, err
 	}
 	privateStart := privateExpenseStartMonth(year, now, floorOf(start))
-	// Overridden is meaningful for a single month, not a yearly aggregate.
 	privatePlanned := func(c budgetdata.Category) (int, bool) {
 		sum := 0
 		for m := privateStart; m <= time.December; m++ {
@@ -251,9 +197,6 @@ func (b *Budget) ForYear(ctx context.Context, year int, now, start time.Time) (B
 		}
 		return sum, false
 	}
-	// Company still spans the whole year regardless of now — it feeds the
-	// salary cascade, which projects a full year of income — but not months
-	// before budgeting began, which have no plan to sum.
 	companyFirst, companyLast := yearMonthRange(year, floorOf(start))
 	companyPlanned := func(c budgetdata.Category) (int, bool) {
 		sum := 0
@@ -265,10 +208,6 @@ func (b *Budget) ForYear(ctx context.Context, year int, now, start time.Time) (B
 	return buildBudgetView(bf, privatePlanned, companyPlanned, now, false), nil
 }
 
-// CompanyExpensesByMonth returns each month's company-kind spend for the year,
-// all twelve unconditionally (see ForYear). Year view needs the per-month
-// breakdown because contribution bands are monthly thresholds (PersonalParams.
-// breakdownMonths); ForYear's aggregate isn't enough on its own.
 func (b *Budget) CompanyExpensesByMonth(ctx context.Context, year int, start time.Time) (map[time.Month]int, error) {
 	bf, err := b.File(ctx)
 	if err != nil {
@@ -288,9 +227,6 @@ func (b *Budget) CompanyExpensesByMonth(ctx context.Context, year int, start tim
 	return result, nil
 }
 
-// buildBudgetView computes each category's figure, using privatePlanned or
-// companyPlanned by group kind. ref and minimal are forwarded to categoryRowFor;
-// ForYear always passes minimal=false, since year view ignores the toggle.
 func buildBudgetView(bf budgetdata.BudgetFile, privatePlanned, companyPlanned func(budgetdata.Category) (int, bool), ref time.Time, minimal bool) BudgetView {
 	var view BudgetView
 	for _, g := range bf.Groups {
@@ -310,8 +246,6 @@ func buildBudgetView(bf budgetdata.BudgetFile, privatePlanned, companyPlanned fu
 			gv.PlannedCents += row.PlannedCents
 		}
 		if len(gv.Rows) == 0 {
-			// Deliberately not "PlannedCents == 0": a group of future-planned
-			// one-offs also sums to zero but still has rows to render.
 			continue
 		}
 		if isCompany {
@@ -325,15 +259,12 @@ func buildBudgetView(bf budgetdata.BudgetFile, privatePlanned, companyPlanned fu
 	return view
 }
 
-// categoryCents is a category's contribution to one month: its amount every
-// month when it has no date, or only in its date's month when it has one.
 func categoryCents(c budgetdata.Category, key string, minimal bool) int {
 	if c.Date == nil {
 		return eurToCents(categoryAmount(c, key, minimal))
 	}
 	d, err := time.Parse("2006-01-02", *c.Date)
 	if err != nil {
-		// Shouldn't happen — ValidateBudget already enforces the format.
 		return 0
 	}
 	if monthKey(d.Year(), d.Month()) == key {
@@ -342,12 +273,11 @@ func categoryCents(c budgetdata.Category, key string, minimal bool) int {
 	return 0
 }
 
-// overrideFor reports c's override amount for a "YYYY-MM" key, if any.
 func overrideFor(c budgetdata.Category, key string) (float64, bool) {
 	for _, ov := range c.Overrides {
 		d, err := time.Parse("2006-01-02", ov.Month)
 		if err != nil {
-			continue // shouldn't happen — ValidateBudget already enforces the format
+			continue
 		}
 		if monthKey(d.Year(), d.Month()) == key {
 			return ov.Amount, true
@@ -356,9 +286,6 @@ func overrideFor(c budgetdata.Category, key string) (float64, bool) {
 	return 0, false
 }
 
-// categoryAmount is c's euro amount for a "YYYY-MM" key. An override wins
-// unconditionally, including 0, even over minimal mode; then minimal_amount if
-// minimal mode is on and one is set; then the normal amount.
 func categoryAmount(c budgetdata.Category, key string, minimal bool) float64 {
 	if amt, ok := overrideFor(c, key); ok {
 		return amt
@@ -369,13 +296,8 @@ func categoryAmount(c budgetdata.Category, key string, minimal bool) float64 {
 	return c.Amount
 }
 
-// nextNonZeroMonthLookahead guarantees termination against a pathologically
-// long Overrides list.
 const nextNonZeroMonthLookahead = 24
 
-// nextNonZeroMonth scans forward from ref for the next month c's amount would
-// be non-zero, so a category zeroed out by an override can preview when it
-// resumes rather than showing a bare 0.
 func nextNonZeroMonth(c budgetdata.Category, ref time.Time, minimal bool) (time.Time, bool) {
 	for i := 1; i <= nextNonZeroMonthLookahead; i++ {
 		d := time.Date(ref.Year(), ref.Month(), 1, 0, 0, 0, 0, ref.Location()).AddDate(0, i, 0)
@@ -386,8 +308,6 @@ func nextNonZeroMonth(c budgetdata.Category, ref time.Time, minimal bool) (time.
 	return time.Time{}, false
 }
 
-// categoryRowFor decides whether and how a category renders, given its
-// already-computed plannedCents.
 func categoryRowFor(c budgetdata.Category, plannedCents int, overridden bool, ref time.Time, minimal bool) (CategoryRow, bool) {
 	row := baseCategoryRow(c)
 
@@ -402,7 +322,6 @@ func categoryRowFor(c budgetdata.Category, plannedCents int, overridden bool, re
 	return datedCategoryRow(c, row, plannedCents, overridden, ref, minimal)
 }
 
-// baseCategoryRow fills in the fields every branch below shares.
 func baseCategoryRow(c budgetdata.Category) CategoryRow {
 	row := CategoryRow{Name: c.Name, CategoryID: c.Id}
 	if c.Date != nil {
@@ -417,11 +336,6 @@ func baseCategoryRow(c budgetdata.Category) CategoryRow {
 	return row
 }
 
-// zeroedRecurringPreview handles a recurring category zeroed out for the viewed
-// month. Its normal amount is always > 0 (ValidateBudget enforces it), so a
-// zero can only come from an override; rather than a bare 0, preview when the
-// cost resumes. ok=false when nothing is non-zero within the lookahead, and the
-// caller falls through to the normal render.
 func zeroedRecurringPreview(c budgetdata.Category, row CategoryRow, ref time.Time, minimal bool) (CategoryRow, bool) {
 	next, ok := nextNonZeroMonth(c, ref, minimal)
 	if !ok {
@@ -434,25 +348,15 @@ func zeroedRecurringPreview(c budgetdata.Category, row CategoryRow, ref time.Tim
 	return row, true
 }
 
-// normalRow renders the common case: a recurring category, or a dated one due
-// inside the viewed period.
 func normalRow(row CategoryRow, plannedCents int, overridden bool) CategoryRow {
 	row.PlannedCents = plannedCents
 	row.Overridden = overridden
 	return row
 }
 
-// datedCategoryRow handles a dated category outside the viewed period: hidden
-// once its month is before ref, previewed grayed-out while it is after.
-//
-// ref differs by caller. ForMonth passes the viewed month, so browsing shows a
-// one-off as upcoming until its due month regardless of today's date; ForYear
-// passes real now, since its own remaining-months logic already depends on it.
 func datedCategoryRow(c budgetdata.Category, row CategoryRow, plannedCents int, overridden bool, ref time.Time, minimal bool) (CategoryRow, bool) {
 	d, err := time.Parse("2006-01-02", *c.Date)
 	if err != nil {
-		// ValidateBudget enforces the format, but don't hide a category over
-		// a parse error; show it plainly.
 		row.PlannedCents = plannedCents
 		row.Overridden = overridden
 		return row, true

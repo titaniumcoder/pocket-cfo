@@ -15,11 +15,7 @@ import (
 
 const accountsPath = "accounts.json"
 
-// Accounts reads real bank balances from accounts.json, same convention as
-// Budget. Unlike Budget, a missing file is not an error: this is an optional
-// layer, and without it the dashboard behaves as it did before it existed.
 type Accounts struct {
-	// A nil FS means not configured, as with Tracker.Toggl.
 	FS fs.FS
 
 	mu    sync.Mutex
@@ -31,33 +27,20 @@ type accountsResult struct {
 	err  error
 }
 
-// AccountSnapshot is the combined balance and the month it OPENS. Accounts are
-// summed and anchored at the latest as_of among them, since they're read at one
-// sitting and the roll-forward needs a single effective date.
-//
-// OpensMonth is deliberately the month AFTER as_of: a balance read on 31 July
-// is July's closing figure, so it is August's opening one.
 type AccountSnapshot struct {
 	OpensMonth yearMonth
 	Cents      int
 	AccountRow []AccountRow
-	// A full date, not just its month, so StaleDays can count real days.
 	LatestAsOf time.Time
 }
 
-// staleAfterDays is how long a balance may go unread before the dashboard says
-// so. Everything from the snapshot month on is extrapolated from that one
-// figure, and the drift is silent, which is the kind worth nagging about.
 const staleAfterDays = 40
 
-// StaleDays counts against real current time, not the viewed month: browsing to
-// March doesn't make March's data fresh.
 func (s AccountSnapshot) StaleDays(now time.Time) (int, bool) {
 	days := int(now.Sub(s.LatestAsOf).Hours() / 24)
 	return days, days > staleAfterDays
 }
 
-// AccountRow is one account as displayed.
 type AccountRow struct {
 	Name  string
 	Cents int
@@ -65,8 +48,6 @@ type AccountRow struct {
 	AsOf  string
 }
 
-// File returns the cached accounts.json, reading it on first use. A missing
-// file yields a zero AccountsFile and no error (see Accounts).
 func (a *Accounts) File(ctx context.Context) (accountsdata.AccountsFile, error) {
 	if a == nil || a.FS == nil {
 		return accountsdata.AccountsFile{}, nil
@@ -97,7 +78,6 @@ func (a *Accounts) fetch() (accountsdata.AccountsFile, error) {
 	content, err := fs.ReadFile(a.FS, accountsPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			// Optional layer: absence is "not configured", not a failure.
 			return accountsdata.AccountsFile{}, nil
 		}
 		return accountsdata.AccountsFile{}, fmt.Errorf("accounts: reading %s: %w", accountsPath, err)
@@ -109,7 +89,6 @@ func (a *Accounts) fetch() (accountsdata.AccountsFile, error) {
 	return af, nil
 }
 
-// Evict lets the Reload link pick up a hand-edited balance without a restart.
 func (a *Accounts) Evict() {
 	if a == nil {
 		return
@@ -119,18 +98,14 @@ func (a *Accounts) Evict() {
 	a.cache = nil
 }
 
-// snapshotFor combines every account into one balance anchored at the latest
-// as_of, shifted forward a month (see AccountSnapshot.OpensMonth). ok is false
-// when no account has a parseable date, meaning no balance layer at all.
 func snapshotFor(af accountsdata.AccountsFile) (AccountSnapshot, bool) {
 	var snap AccountSnapshot
 	found := false
 	for _, acc := range af.Accounts {
 		d, err := time.Parse("2006-01-02", acc.AsOf)
 		if err != nil {
-			continue // a malformed date drops that account, not the page
+			continue
 		}
-		// The read month closes; the next one opens with this money.
 		opens := yearMonth{d.Year(), d.Month()}.addMonths(1)
 		cents := round(acc.Balance * 100)
 		snap.Cents += cents
@@ -151,8 +126,6 @@ func snapshotFor(af accountsdata.AccountsFile) (AccountSnapshot, bool) {
 	return snap, found
 }
 
-// Snapshot is the combined personal balance, or ok=false when none is
-// configured.
 func (a *Accounts) Snapshot(ctx context.Context) (AccountSnapshot, bool) {
 	af, err := a.File(ctx)
 	if err != nil {
@@ -161,19 +134,8 @@ func (a *Accounts) Snapshot(ctx context.Context) (AccountSnapshot, bool) {
 	return snapshotFor(af)
 }
 
-// maxRollForwardMonths guards against a mistyped year, and is NOT a staleness
-// policy — however long you've gone without reading your bank, the balance is
-// still carried and shown; staleAfterDays is what says you're overdue.
-//
-// A typo like "1999-07-31" is different: each calendar year the loop crosses
-// pulls that year's Toggl report and holiday list, so a century-wide span fans
-// out into hundreds of API calls.
 const maxRollForwardMonths = 120
 
-// privateOpeningCents is the balance carried forward to the START of viewed:
-// the snapshot itself in the month it opens, otherwise the previous month's
-// closing figure (opening + net income - private expenses), compounded one
-// month at a time. Callers guarantee viewed is at or after snap.OpensMonth.
 func (t *Tracker) privateOpeningCents(ctx context.Context, snap AccountSnapshot, viewed yearMonth, now time.Time, rateCents int) (int, error) {
 	elapsed := viewed.ordinal() - snap.OpensMonth.ordinal()
 	if elapsed > maxRollForwardMonths {
@@ -182,8 +144,6 @@ func (t *Tracker) privateOpeningCents(ctx context.Context, snap AccountSnapshot,
 	}
 
 	opening := snap.Cents
-	// The viewed month itself is not applied: this is its OPENING figure, and
-	// Figures.BalanceCents closes it.
 	for m := snap.OpensMonth; m.ordinal() < viewed.ordinal(); m = m.addMonths(1) {
 		delta, err := t.monthBalanceDelta(ctx, m, now, rateCents)
 		if err != nil {
@@ -194,9 +154,6 @@ func (t *Tracker) privateOpeningCents(ctx context.Context, snap AccountSnapshot,
 	return opening, nil
 }
 
-// monthBalanceDelta is m's net income minus its private expenses — the same two
-// figures the Expenses panel shows for m, so browsing there and reading its
-// Balance reproduces this arithmetic exactly.
 func (t *Tracker) monthBalanceDelta(ctx context.Context, m yearMonth, now time.Time, rateCents int) (int, error) {
 	bv, err := t.Budget.ForMonth(ctx, m.Year, m.Month, now)
 	if err != nil {
@@ -210,7 +167,6 @@ func (t *Tracker) monthBalanceDelta(ctx context.Context, m yearMonth, now time.T
 	return pv.NetIncomeCents - bv.TotalPlannedCents, nil
 }
 
-// derefStr renders an optional schema string, empty when absent.
 func derefStr(p *string) string {
 	if p == nil {
 		return ""

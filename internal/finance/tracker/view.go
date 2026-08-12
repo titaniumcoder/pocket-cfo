@@ -11,14 +11,6 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/webui"
 )
 
-// Tracker aggregates the Toggl and Holidays sources into the figures.
-//
-// Tracked amounts come from Toggl per project and ignore RateCents, which is
-// only the projection rate for Expected (not-yet-tracked) work.
-//
-// Toggl, Budget, Accounts and Invoiced are all optional layers, disabled by a
-// nil rather than a flag: every method degrades to an empty, error-free result
-// for a nil receiver, so compute needs no "not configured" branches.
 type Tracker struct {
 	Toggl        *Toggl
 	Holidays     *Holidays
@@ -28,22 +20,14 @@ type Tracker struct {
 	HoursPerDay  float64
 	Loc          *time.Location
 	Personal     PersonalParams
-	VacationDays int                    // annual paid-leave allowance, year view only
-	RateCents    int                    // configured hourly rate, projects Expected work
-	RateCurrency string                 // ISO code for RateCents; "" defaults to EUR (see CurrencySymbol)
-	Invoiced     map[int]InvoicedClient // Toggl client ID (or UnscopedClientID) -> invoicing state, see invoiced.go
+	VacationDays int
+	RateCents    int
+	RateCurrency string
+	Invoiced     map[int]InvoicedClient
 
-	// Start is the first month budgeting covers, zero for no floor at all.
-	// Before it there is no plan, no statement and no balance, so the app does
-	// not offer those months rather than showing pages of structural zeroes
-	// and counting them into a year.
-	//
-	// A time.Time rather than the internal yearMonth so cmd/pocketcfo can set
-	// it; only the year and month are read.
 	Start time.Time
 }
 
-// startMonth is Start as the internal month type, zero when unbounded.
 func (t *Tracker) startMonth() yearMonth {
 	if t == nil || t.Start.IsZero() {
 		return yearMonth{}
@@ -58,11 +42,6 @@ type TrackedRow struct {
 	AmountCents int
 }
 
-// InvoicedRow is one issued invoice's real income that became usable in the
-// viewed period (see InvoicedClient.Usable). Number is deliberately the bare
-// invoice number, never the client name or title, so the row is safe to show
-// without invoicing rights; URL is filled in by cmd/pocketcfo only for a
-// session that has them, and the template falls back to plain text.
 type InvoicedRow struct {
 	Number      string
 	AmountCents int
@@ -72,36 +51,25 @@ type InvoicedRow struct {
 type HolidayView struct {
 	Date    string
 	Name    string
-	Current bool // falls in the viewed month; month view only
+	Current bool
 }
 
 type MonthOption struct {
 	Num  int
 	Name string
 
-	// Untracked marks a month that still has money nobody has placed. An
-	// <option> cannot carry markup, so it is a bullet appended to the name —
-	// enough to see from any month which others have unfinished business,
-	// without opening each one.
 	Untracked bool
 }
 
-// Figures holds everything the dashboard renders. A non-empty *Err field means
-// that section failed.
 type Figures struct {
 	Month    string
-	Currency string // symbol, e.g. "€"
+	Currency string
 
-	// Session-derived, and the only fields NOT set by compute() — cmd/pocketcfo
-	// fills them from the session just before RenderPage. ShowInfoLink mirrors
-	// s.authorized(sess), /info's own gate, so a readonly session never sees it.
 	Login             string
 	ReadOnly          bool
 	ShowInvoicingLink bool
 	ShowInfoLink      bool
 
-	// Navigation. Mode is "month" or "year"; the period selects and prev/next
-	// arrows adapt accordingly.
 	Mode         string
 	Year         int
 	MonthNum     int
@@ -111,38 +79,25 @@ type Figures struct {
 	NextDisabled bool
 	Years        []int
 	Months       []MonthOption
-	NavMonth     int    // the month the "Month" toggle lands on; a real month even in year view
-	MonthViewURL string // target of the "Month" toggle
-	YearViewURL  string // target of the "Year" toggle
-	TodayURL     string // jumps to the actual current month, regardless of Mode/viewed period
-	RefreshURL   string // current view + ?refresh=1 (clears the Toggl cache)
-	LastUpdated  string // when the Toggl data was last fetched
+	NavMonth     int
+	MonthViewURL string
+	YearViewURL  string
+	TodayURL     string
+	RefreshURL   string
+	LastUpdated  string
 
-	// MinimalMode/MinimalToggleURL back the minimal-budget toggle shown in
-	// the Expenses panel. Month view only; the flag itself is global rather
-	// than per-month (see Budget.IsMinimal).
 	MinimalMode      bool
-	MinimalToggleURL string // current month view + ?minimal=toggle
+	MinimalToggleURL string
 
-	// The three states the Toggl layer can be in, beyond "fine". TogglPending:
-	// nothing cached yet but a fetch is running, so the page renders a loading
-	// Income section and a meta refresh. TogglStaleNote: real figures, out of
-	// date because a refresh failed. TrackedErr (below): nothing is coming.
 	TogglPending   bool
 	TogglStaleNote string
 
-	// One row per project+rate, excluding any project+month an issued invoice
-	// has superseded (see Tracker.Invoiced/invoiceSuppresses).
 	Tracked    []TrackedRow
 	TrackedErr string
 
-	// Invoiced income that became usable this period (see InvoicedClient.Usable).
 	Invoiced      []InvoicedRow
 	InvoicedCents int
 
-	// Work still to come, at the most-used rate. ShowExpected drops the whole
-	// section once the period is past rather than render a row of zeroes; the
-	// figures are already 0 there, so it is presentation, not arithmetic.
 	ShowExpected     bool
 	ExpectedRange    string
 	ExpectedHours    string
@@ -152,8 +107,6 @@ type Figures struct {
 	ExpectedNetHours string
 	ExpectedNetCents int
 
-	// Remaining paid leave (year view only). Days taken are past workdays with
-	// no billable time; the remainder is deducted from expected.
 	ShowVacation          bool
 	VacationTotal         int
 	VacationTaken         int
@@ -162,37 +115,23 @@ type Figures struct {
 	VacationCentsDeducted int
 	VacationErr           string
 
-	// tracked + expected: the Income panel's bottom line.
 	TotalHours string
 	TotalRate  string
 	TotalCents int
 	TotalErr   string
 
-	// When this period's hours-based income becomes spendable: the viewed
-	// period shifted forward two months (see spendRangeForMonth/Year), rendered
-	// as "(for September 2026)". Empty for a period with no hours-based income
-	// — the label describes hours, not the Invoiced rows, which carry their own
-	// identity.
 	SpendableLabel string
 	SpendableURL   string
 
-	// The whole viewed year, not filtered to the month; see HolidayView.Current.
 	Holidays    []HolidayView
 	HolidaysErr string
 
-	// The Bulgaria company-income to net-income cascade for the viewed period.
-	// Not rendered — FundingPersonal below is what the Expenses panel shows.
 	Personal PersonalView
 
-	// private-kind categories from budget.json. Company-kind ones live in
-	// FundingPersonal.CompanyGroups instead: they come off Company income, not
-	// Net income.
 	PrivateGroups            []CategoryGroupView
 	PrivateTotalPlannedCents int
 	BudgetErr                string
 
-	// Recorded spending, shown beside the plan and folded into nothing. False
-	// ShowActuals renders byte-identically to a build without this layer.
 	ShowActuals           bool
 	PrivateActualCents    int
 	CompanyActualCents    int
@@ -201,35 +140,17 @@ type Figures struct {
 	Mistimed              []MistimedRow
 	ActualsErr            string
 
-	// UntrackedCents is money out of the account that belongs to no category
-	// yet. It marks the month in the title and nothing else: it is in none of
-	// the figures above, and this page shows no euro amount for it — the place
-	// to deal with it is the spending page, which lists the lines.
 	UntrackedCents    int
 	UntrackedCount    int
-	SpendingDetailURL string // filled by cmd/pocketcfo, admin sessions only
+	SpendingDetailURL string
 
-	// ShowSpendingLink is the menu entry, which exists in year view too —
-	// unlike SpendingDetailURL, which is deliberately empty there because no
-	// single month's transactions explain a year's figures.
 	ShowSpendingLink bool
 
-	// The same cascade for the period that funds the viewed one: shifted back
-	// two months, since money earned in M is paid end of M+1 and spendable from
-	// M+2. Never the same period as Personal above. See Tracker.fundingIncome.
 	FundingPersonal PersonalView
 
-	// FundingPersonal.NetIncomeCents minus private expenses. Company expenses
-	// are already inside NetIncomeCents, so they aren't subtracted twice.
 	ShowBalance  bool
 	BalanceCents int
 
-	// The real bank balance from accounts.json — month view only, and only from
-	// the month its snapshot opens (see computeAccountBalances). The panel reads
-	// opening + income - expenses = Balance. No company-side equivalent exists:
-	// business money is spent down rather than accumulated, so there is nothing
-	// to carry. AccountsStaleNote nags when the snapshot is old, since the
-	// roll-forward keeps producing confident figures off drifting data.
 	ShowOpeningBalance  bool
 	OpeningBalanceCents int
 	OpeningBalanceLabel string
@@ -240,8 +161,6 @@ type Figures struct {
 	AccountsErr string
 }
 
-// Header adapts the session-derived fields into internal/webui's own view. The
-// dashboard is always reachable from itself, hence ShowFinance: true.
 func (f Figures) Header() webui.Header {
 	return webui.Header{
 		Login:         f.Login,
@@ -254,54 +173,41 @@ func (f Figures) Header() webui.Header {
 	}
 }
 
-// ComputeMonth builds the figures for a single month (year + month).
 func (t *Tracker) ComputeMonth(ctx context.Context, year int, month time.Month) Figures {
 	now := time.Now().In(t.Loc)
 	start := time.Date(year, month, 1, 0, 0, 0, 0, t.Loc)
-	end := start.AddDate(0, 1, -1) // last day of the month
+	end := start.AddDate(0, 1, -1)
 	result := t.compute(ctx, year, start, end, start.Format("January 2006"), 1, 0)
 	result.fillMonthNav(now, start, t.startMonth())
 	return result
 }
 
-// ComputeYear builds the figures for a full calendar year.
 func (t *Tracker) ComputeYear(ctx context.Context, year int) Figures {
 	now := time.Now().In(t.Loc)
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, t.Loc)
-	end := start.AddDate(1, 0, -1) // 31 December
+	end := start.AddDate(1, 0, -1)
 	result := t.compute(ctx, year, start, end, start.Format("2006"), 12, t.VacationDays)
 	result.fillYearNav(now, start, t.startMonth())
 	return result
 }
 
-// compute builds the figures for the period [start, end] (inclusive) within the
-// given year, independent of whether the period is a month or the whole year.
-// All Toggl data comes from a single yearly fetch and is then filtered to the
-// period; the caller fills in the navigation fields afterwards.
 func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, label string, months, vacationDays int) Figures {
 	now := time.Now().In(t.Loc)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, t.Loc)
 
 	result := Figures{Month: label, Currency: "€"}
 
-	// today's tracked time only matters when today falls inside the period.
 	isCurrentPeriod := !today.Before(start) && !today.After(end)
 
-	// Toggl gets a short slice of the request's budget: Tracker.Warm keeps the
-	// data current, and a page's job is to use whatever is ready.
 	togglCtx, cancelToggl := waitBudget(ctx)
 	defer cancelToggl()
 
 	projects, perr := t.Toggl.Projects(togglCtx)
-	// One yearly fetch feeds tracked rows, the rate, today's status and the
-	// billable-day set; filter it to the period in question.
 	yd, terr := t.Toggl.Year(togglCtx, year)
 	result.TogglPending = terr != nil && t.Toggl.YearPending(year)
 	aggs := aggregatesInRange(yd, start, end)
-	todayErr := terr // today's status shares the yearly fetch's fate
+	todayErr := terr
 	todayTracked := isCurrentPeriod && terr == nil && yd.Days[today.Format("2006-01-02")]
-	// Whole year, so the sidebar can show it all. A superset of [start,end], so
-	// the workday/vacation calculations below are unaffected.
 	yearStart := time.Date(year, time.January, 1, 0, 0, 0, 0, t.Loc)
 	yearEnd := yearStart.AddDate(1, 0, -1)
 	holidays, herr := t.Holidays.Fetch(ctx, yearStart, yearEnd)
@@ -326,13 +232,10 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	for m, cents := range expectedNetCentsByMonth {
 		monthlyCompanyCents[m] += cents
 	}
-	// A period that has fully elapsed has no work still to come.
 	result.ShowExpected = !today.After(end)
 
 	result.computeTotal(trackedHours, trackedCents, expectedNetHours, expectedOK, rateCents)
 
-	// Holidays: the whole year, with the ones in the viewed month marked
-	// (month view only — year view has no single "current" month).
 	if herr != nil {
 		result.HolidaysErr = herr.Error()
 	} else {
@@ -367,9 +270,6 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	return result
 }
 
-// computeVacation fills in remaining paid leave (year view only): the annual
-// allowance minus past workdays with nothing billable. computeExpected later
-// deducts the remainder from expected work.
 func (f *Figures) computeVacation(vacationDays int, today, start time.Time, herr, terr error, holidaySet map[string]bool, yd *YearData) {
 	if vacationDays <= 0 {
 		return
@@ -383,8 +283,6 @@ func (f *Figures) computeVacation(vacationDays int, today, start time.Time, herr
 		f.VacationErr = terr.Error()
 		ok = false
 	} else if today.After(start) {
-		// freeWorkdays only inspects days before today; the yearly billable-day
-		// set covers them.
 		f.VacationTaken = freeWorkdays(start, today, holidaySet, yd.Days)
 	}
 	if ok {
@@ -394,8 +292,6 @@ func (f *Figures) computeVacation(vacationDays int, today, start time.Time, herr
 	}
 }
 
-// computeTrackedRows fills in the Tracked rows, most time first, and returns
-// the totals plus each month's company income for computeTotal/computePersonal.
 func (f *Figures) computeTrackedRows(t *Tracker, projects map[int]Project, aggs []Aggregate, yd *YearData, terr, perr error, year int, start, end time.Time) (trackedHours float64, trackedCents int, monthlyCompanyCents map[time.Month]int) {
 	monthlyCompanyCents = map[time.Month]int{}
 	if terr != nil {
@@ -430,10 +326,6 @@ func (f *Figures) computeTrackedRows(t *Tracker, projects map[int]Project, aggs 
 	return trackedHours, trackedCents, monthlyCompanyCents
 }
 
-// computeInvoicedRows fills in invoiced income that became usable this period
-// (see InvoicedClient.Usable), one row per invoice. Independent of the Toggl
-// fetch. URL is left for the HTTP layer, which sets it only for sessions with
-// invoicing rights.
 func (f *Figures) computeInvoicedRows(t *Tracker, year int, start, end time.Time) {
 	for m := start.Month(); m <= end.Month(); m++ {
 		for _, inv := range t.invoicedInvoicesForMonth(yearMonth{year, m}) {
@@ -444,9 +336,6 @@ func (f *Figures) computeInvoicedRows(t *Tracker, year int, start, end time.Time
 	sort.Slice(f.Invoiced, func(i, j int) bool { return f.Invoiced[i].Number < f.Invoiced[j].Number })
 }
 
-// computeExpected fills in not-yet-tracked work remaining in the period at the
-// projection rate, returning net hours and per-month cents with vacation
-// already deducted.
 func (f *Figures) computeExpected(t *Tracker, year int, start, end, today time.Time, todayTracked bool, herr, todayErr error, holidaySet map[string]bool, rateCents int) (expectedNetHours float64, expectedNetCentsByMonth map[time.Month]int, ok bool) {
 	expectedCentsByMonth := map[time.Month]int{}
 	expectedNetCentsByMonth = map[time.Month]int{}
@@ -462,8 +351,6 @@ func (f *Figures) computeExpected(t *Tracker, year int, start, end, today time.T
 		days++
 		expStart = today
 	}
-	// For future months today is before the month; the expected work starts
-	// at the month's first day rather than tomorrow.
 	if expStart.Before(start) {
 		expStart = start
 	}
@@ -516,9 +403,6 @@ func (f *Figures) computeExpected(t *Tracker, year int, start, end, today time.T
 	return expectedNetHours, expectedNetCentsByMonth, true
 }
 
-// computeTotal fills in tracked + expected. Invoiced money is deliberately
-// absent: it belongs to the Rolling budget panel, which answers a different
-// question, and counting it here would show the same euros twice on one page.
 func (f *Figures) computeTotal(trackedHours float64, trackedCents int, expectedNetHours float64, expectedOK bool, rateCents int) {
 	if f.TrackedErr == "" && expectedOK {
 		f.TotalHours = formatHM(trackedHours + expectedNetHours)
@@ -529,10 +413,6 @@ func (f *Figures) computeTotal(trackedHours float64, trackedCents int, expectedN
 	}
 }
 
-// computeBudget fetches Budget once, ahead of the Personal income calc, which
-// needs company expenses. A nil Budget or a fetch error leaves company expenses
-// at zero and the sections empty rather than erroring the page — the silent
-// zero is an accepted edge case, since a local file essentially never fails.
 func (f *Figures) computeBudget(t *Tracker, ctx context.Context, year int, start, now time.Time, months int) BudgetView {
 	var bv BudgetView
 	if t.Budget == nil {
@@ -551,9 +431,6 @@ func (f *Figures) computeBudget(t *Tracker, ctx context.Context, year int, start
 	return bv
 }
 
-// computePersonal fills in the Bulgaria salary cascade for the viewed period.
-// Company expenses come off first, before employer-social/gross/employee-social
-// /tax (see PersonalParams.breakdown), so they never look like salary spending.
 func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months int, viewed yearMonth, monthlyCompanyCents map[time.Month]int, bv BudgetView) {
 	if f.TotalErr != "" {
 		f.Personal = PersonalView{Err: "company income unavailable"}
@@ -568,8 +445,6 @@ func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months 
 				monthlyCompanyExpenseCents = m
 			}
 		}
-		// The slice and the month it starts from move together, or the
-		// per-month rules would be read against the wrong months.
 		first, _ := yearMonthRange(year, t.startMonth())
 		start := time.Date(year, first, 1, 0, 0, 0, 0, t.Loc)
 		end := time.Date(year, time.December, 31, 0, 0, 0, 0, t.Loc)
@@ -585,11 +460,6 @@ func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months 
 	f.Personal.CompanyGroups = bv.CompanyGroups
 }
 
-// computeSpendable fills in SpendableLabel/URL: the viewed period shifted
-// forward two months, mirroring the funding shift in computeFundingBalance.
-// Pure calendar arithmetic, so it can't fail once Total is available. Unset
-// when hasHours is false — a purely invoiced period has no hours story, and
-// the invoices carry their own identity.
 func (f *Figures) computeSpendable(months, year int, start time.Time, hasHours bool) {
 	if f.TotalErr != "" || !hasHours {
 		return
@@ -604,13 +474,6 @@ func (f *Figures) computeSpendable(months, year int, start time.Time, hasHours b
 	f.SpendableURL = linkForRange(spendStart, spendEnd, spendStart.Year)
 }
 
-// computeFundingBalance fills in FundingPersonal and the bottom line.
-//
-// Only labor income is shifted back fundingShiftMonths, since salary earned in
-// M is spendable from M+2. Company expenses are a real-time business fact, not
-// subject to the payroll lag, so they stay tied to the VIEWED period: a one-off
-// cost dated 2026-09-01 shows and hides with the month being browsed, never
-// postponed by the income shift.
 func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year int, start, now time.Time, months, rateCents int, bv BudgetView) {
 	var fundingStart, fundingEnd yearMonth
 	if months > 1 {
@@ -628,28 +491,16 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 		f.PrivateTotalPlannedCents = bv.TotalPlannedCents
 	}
 
-	// Before the bottom line below, which builds on the opening balance.
 	if months == 1 {
 		f.computeAccountBalances(t, ctx, yearMonth{year, start.Month()}, now, rateCents)
 	}
 
-	// Company expenses are already inside NetIncomeCents, not subtracted twice.
 	if f.BudgetErr == "" && f.FundingPersonal.Err == "" {
 		f.ShowBalance = true
 		f.BalanceCents = f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents - f.PrivateTotalPlannedCents
 	}
 }
 
-// computeAccountBalances layers the real bank balance onto the viewed month.
-//
-// A snapshot OPENS the month after it was read: a figure read on 31 July is
-// August's opening balance, not July's. From there it rolls forward a month at
-// a time, each month closing with opening + net income - private expenses, so a
-// loss-making month genuinely eats into it. Earlier months ignore it —
-// back-projecting a balance would be fiction.
-//
-// Month view only: a year's "opening balance" would have to pick an anchor
-// month and would quietly mean something different from the monthly figure.
 func (f *Figures) computeAccountBalances(t *Tracker, ctx context.Context, viewed yearMonth, now time.Time, rateCents int) {
 	if t.Accounts == nil || f.BudgetErr != "" || f.FundingPersonal.Err != "" {
 		return
@@ -667,9 +518,6 @@ func (f *Figures) computeAccountBalances(t *Tracker, ctx context.Context, viewed
 	f.OpeningBalanceCents = opening
 	f.AvailableCents = opening + f.FundingPersonal.NetIncomeCents
 	f.OpeningBalanceLabel = openingBalanceLabel(snap, viewed)
-	// Only in the snapshot's own month, where the opening figure IS those
-	// balances. Once carried it is derived, and listing the original 4 200
-	// under an opening balance of -70 reads as a contradiction.
 	if viewed == snap.OpensMonth {
 		f.PrivateAccounts = snap.AccountRow
 	}
@@ -680,8 +528,6 @@ func (f *Figures) computeAccountBalances(t *Tracker, ctx context.Context, viewed
 	}
 }
 
-// openingBalanceLabel says where the figure came from: the snapshot itself
-// in its own month, or how far it has been carried since.
 func openingBalanceLabel(snap AccountSnapshot, viewed yearMonth) string {
 	if viewed == snap.OpensMonth {
 		return "as read end of " + snap.OpensMonth.addMonths(-1).String()
@@ -689,9 +535,6 @@ func openingBalanceLabel(snap AccountSnapshot, viewed yearMonth) string {
 	return "carried from " + snap.OpensMonth.String()
 }
 
-// EvictMonth backs the Reload button in month view. It also evicts the funding
-// period, which can land in a different calendar year (fundingRangeForMonth)
-// and so isn't covered by the viewed month's own eviction.
 func (t *Tracker) EvictMonth(year int, month time.Month) {
 	start := time.Date(year, month, 1, 0, 0, 0, 0, t.Loc)
 	t.Toggl.EvictRange(start, start.AddDate(0, 1, -1))
@@ -704,8 +547,6 @@ func (t *Tracker) EvictMonth(year int, month time.Month) {
 	t.Actuals.Evict()
 }
 
-// EvictYear backs the Reload button in year view. It also evicts the funding
-// range, which reaches into the previous calendar year (fundingRangeForYear).
 func (t *Tracker) EvictYear(year int) {
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, t.Loc)
 	t.Toggl.EvictRange(start, start.AddDate(1, 0, -1))
@@ -718,9 +559,6 @@ func (t *Tracker) EvictYear(year int) {
 	t.Actuals.Evict()
 }
 
-// MonthNav is the month stepper — arrows, selects, bounds — shared by the
-// dashboard and the spending page. Both step through the same months against
-// the same limits; only the addresses they step to differ.
 type MonthNav struct {
 	Year         int
 	MonthNum     int
@@ -737,12 +575,6 @@ func monthURL(year int, month time.Month) string { return fmt.Sprintf("/%d/%d", 
 
 func spendingURL(year int, month time.Month) string { return monthURL(year, month) + "/spending" }
 
-// monthNav builds the stepper. floor is the first budgeted month, zero for
-// none.
-//
-// The arrows compare whole months rather than years once there is a floor:
-// gating on the year alone was why stepping back from January always worked,
-// which is right for a ±2-year window and wrong for a start month.
 func monthNav(now, start time.Time, floor yearMonth, url func(int, time.Month) string) MonthNav {
 	prev, next := start.AddDate(0, -1, 0), start.AddDate(0, 1, 0)
 	minYear, maxYear := navYearBounds(now, floor)
@@ -753,8 +585,6 @@ func monthNav(now, start time.Time, floor yearMonth, url func(int, time.Month) s
 		TodayURL: url(now.Year(), now.Month()),
 	}
 	for m := time.January; m <= time.December; m++ {
-		// In the first budgeted year the months before the start are not
-		// offered at all: they would render as pages of structural zeroes.
 		if floor != (yearMonth{}) && (yearMonth{start.Year(), m}).ordinal() < floor.ordinal() {
 			continue
 		}
@@ -773,10 +603,6 @@ func monthNav(now, start time.Time, floor yearMonth, url func(int, time.Month) s
 	return nav
 }
 
-// markUntrackedMonths flags the months that still have undecided money, for the
-// picker. Separate from monthNav because only the two pages that read actuals
-// can answer it, and monthNav is also built where there is no Actuals loader
-// at all.
 func markUntrackedMonths(months []MonthOption, untracked map[time.Month]int) {
 	for i := range months {
 		if untracked[time.Month(months[i].Num)] != 0 {
@@ -785,7 +611,6 @@ func markUntrackedMonths(months []MonthOption, untracked map[time.Month]int) {
 	}
 }
 
-// fillMonthNav populates navigation for month view.
 func (f *Figures) fillMonthNav(now, start time.Time, floor yearMonth) {
 	nav := monthNav(now, start, floor, monthURL)
 	f.Mode = "month"
@@ -800,8 +625,6 @@ func (f *Figures) fillMonthNav(now, start time.Time, floor yearMonth) {
 	f.MinimalToggleURL = f.MonthViewURL + "?minimal=toggle"
 }
 
-// fillYearNav populates navigation for year view. Switching to month view lands
-// on the current month in the current year, otherwise January.
 func (f *Figures) fillYearNav(now, start time.Time, floor yearMonth) {
 	minYear, maxYear := navYearBounds(now, floor)
 	f.Mode = "year"
@@ -818,9 +641,6 @@ func (f *Figures) fillYearNav(now, start time.Time, floor yearMonth) {
 	}
 	f.Years = navYears(now, floor)
 	f.YearViewURL = fmt.Sprintf("/%d", start.Year())
-	// The month the "Month" toggle lands on: this month in the current year,
-	// otherwise the first one the year actually budgets — January is not a
-	// month that exists in the year budgeting began.
 	month := time.January
 	if start.Year() == now.Year() {
 		month = now.Month()
@@ -833,7 +653,6 @@ func (f *Figures) fillYearNav(now, start time.Time, floor yearMonth) {
 	f.RefreshURL = f.YearViewURL + "?refresh=1"
 }
 
-// navYears returns the selectable years around the current year.
 func navYears(now time.Time, start yearMonth) []int {
 	minYear, maxYear := navYearBounds(now, start)
 	years := make([]int, 0, maxYear-minYear+1)
@@ -843,9 +662,6 @@ func navYears(now time.Time, start yearMonth) []int {
 	return years
 }
 
-// navYearBounds is the only place the viewable range is decided, for the
-// pickers and the router alike. Two constants that happened to agree is how
-// the URL check and the month picker come to disagree about the first month.
 func navYearBounds(now time.Time, start yearMonth) (int, int) {
 	const yearRange = 2
 	minYear := now.Year() - yearRange
@@ -855,8 +671,6 @@ func navYearBounds(now time.Time, start yearMonth) (int, int) {
 	return minYear, now.Year() + yearRange
 }
 
-// NavBounds is navYearBounds for callers outside this package — the router,
-// which must refuse exactly the months the pickers refuse to offer.
 func NavBounds(now, start time.Time) (minYear, maxYear int) {
 	var ym yearMonth
 	if !start.IsZero() {
@@ -865,9 +679,6 @@ func NavBounds(now, start time.Time) (minYear, maxYear int) {
 	return navYearBounds(now, ym)
 }
 
-// MonthIsOffered reports whether a month is inside the budgeting range. The
-// year bounds alone are not enough once there is a start month: the first year
-// is offered from that month on, not from January.
 func MonthIsOffered(year, month int, now, start time.Time) bool {
 	minYear, maxYear := NavBounds(now, start)
 	if year < minYear || year > maxYear || month < 1 || month > 12 {
@@ -880,8 +691,6 @@ func MonthIsOffered(year, month int, now, start time.Time) bool {
 	return yearMonth{year, time.Month(month)}.ordinal() >= first.ordinal()
 }
 
-// aggHours derives hours from the Toggl-calculated amount and rate so hours and
-// money stay consistent; falls back to seconds when no rate is set.
 func aggHours(a Aggregate) float64 {
 	if a.RateCents > 0 {
 		return float64(a.AmountCents) / float64(a.RateCents)
@@ -889,13 +698,6 @@ func aggHours(a Aggregate) float64 {
 	return float64(a.Seconds) / 3600
 }
 
-// aggregatesInRange merges yd's per-month aggregates over [start, end],
-// re-summing per project + rate. start and end lie in the same year; a nil yd
-// (failed fetch) returns nil.
-//
-// Invoices deliberately do NOT suppress anything here: the Income panel records
-// work done and still to come, and an invoice doesn't un-work those hours.
-// Superseding them is the Rolling budget panel's job — see monthLaborIncome.
 func aggregatesInRange(yd *YearData, start, end time.Time) []Aggregate {
 	if yd == nil {
 		return nil
@@ -949,8 +751,6 @@ func firstErr(errs ...error) string {
 	return ""
 }
 
-// workdayInfo counts workdays (Mon–Fri, not a holiday) strictly after today, and
-// reports whether today itself is a workday.
 func workdayInfo(start, end, today time.Time, holidays map[string]bool) (remaining int, todayIsWorkday bool) {
 	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
 		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
@@ -969,8 +769,6 @@ func workdayInfo(start, end, today time.Time, holidays map[string]bool) (remaini
 	return remaining, todayIsWorkday
 }
 
-// freeWorkdays counts workdays (Mon–Fri, not a public holiday) strictly before
-// today that have no billable time logged — i.e. paid-leave days already taken.
 func freeWorkdays(start, today time.Time, holidays, billable map[string]bool) int {
 	count := 0
 	for d := start; d.Before(today); d = d.AddDate(0, 0, 1) {
@@ -986,17 +784,11 @@ func freeWorkdays(start, today time.Time, holidays, billable map[string]bool) in
 	return count
 }
 
-// computeActuals decorates the built budget view with recorded spending. It
-// runs between computeBudget and computePersonal, and touches no figure any
-// downstream step reads.
 func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, start, now time.Time, months int, bv *BudgetView) {
 	if t.Actuals == nil || f.BudgetErr != "" {
 		return
 	}
 
-	// The picker is marked before any of the early returns below: which months
-	// still have undecided money is worth seeing even from a year view, or from
-	// a month that has not been reconciled at all.
 	if untracked, uerr := t.Actuals.UntrackedMonths(ctx, year, t.Start); uerr == nil {
 		markUntrackedMonths(f.Months, untracked)
 	}
@@ -1004,8 +796,6 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 	var av ActualsView
 	var err error
 	if months > 1 {
-		// For the current year ForYear projects private spend forward from
-		// this month, so actuals beside it would compare the wrong halves.
 		if year >= now.Year() {
 			return
 		}
@@ -1023,7 +813,6 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 		return
 	}
 
-	// The mistimed check spans the year, so month view only.
 	var charged map[string][]time.Month
 	if months == 1 {
 		if charged, err = t.Actuals.ChargedMonths(ctx, year, t.Start); err != nil {
@@ -1047,9 +836,6 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 	f.CompanyActualCents += f.CompanyUnmatchedCents
 }
 
-// companyCategoryIDs is the set of ids in company-kind groups, so unmatched
-// spending lands in the ledger it came from. A failure only means it shows as
-// private.
 func (t *Tracker) companyCategoryIDs(ctx context.Context) map[string]bool {
 	if t.Budget == nil {
 		return nil

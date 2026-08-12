@@ -69,6 +69,11 @@ type config struct {
 	// pocket-cfo-ctl reads the same env var independently for PDF rendering.
 	api2pdfKey string
 
+	// Optional: absent means the Hermes routes are never registered at all.
+	// Deliberately not in requireProdVars — same convention as api2pdfKey.
+	hermesAPIToken  string
+	githubDataToken string
+
 	// Not fail-fast like the rest of config: Toggl and the JSON API degrade to
 	// disabled rather than refusing to start, so the finance part stays usable
 	// with minimal setup.
@@ -94,6 +99,8 @@ func loadConfig() config {
 		sesFromEmail:     os.Getenv("SES_FROM_EMAIL"),
 		otpLinkSecret:    os.Getenv("OTP_LINK_SECRET"),
 		api2pdfKey:       os.Getenv("API2PDF_KEY"),
+		hermesAPIToken:   os.Getenv("HERMES_API_TOKEN"),
+		githubDataToken:  os.Getenv("GITHUB_DATA_TOKEN"),
 		finance:          financeconfig.Load(financeFileConfig),
 	}
 	applyDevDefaults(&c)

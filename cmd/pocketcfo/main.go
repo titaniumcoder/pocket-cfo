@@ -116,34 +116,7 @@ func main() {
 	defer stopWarming()
 	go s.tracker.Warm(warmCtx, togglRefreshInterval())
 
-	mux := http.NewServeMux()
-	// One segment, not a subtree: /static/ would overlap /{year}/{month} with
-	// neither more specific, whereas /static/{file} is strictly more specific
-	// and can't reach a three-segment path at all. Assets are flat.
-	mux.HandleFunc("GET /static/{file}", s.handleStatic)
-	mux.HandleFunc("GET /auth/login", s.handleLogin)
-	mux.HandleFunc("GET /auth/callback", s.handleCallback)
-	mux.HandleFunc("GET /auth/logout", s.handleLogout)
-	mux.HandleFunc("POST /auth/logout", s.handleLogout)
-	mux.HandleFunc("GET /auth/email", s.handleEmailLoginForm)
-	mux.HandleFunc("POST /auth/email", s.handleEmailLoginRequest)
-	mux.HandleFunc("GET /auth/email/callback", s.handleEmailLoginCallback)
-	mux.HandleFunc("GET /invoicing/invoices/{file}", s.handleInvoicePDF)
-	mux.HandleFunc("GET /invoicing/client/{token}", s.handleClientPortal)
-	mux.HandleFunc("GET /invoicing/client/{token}/invoices/{file}", s.handleClientInvoicePDF)
-	mux.HandleFunc("GET /robots.txt", s.handleRobots)
-	mux.HandleFunc("GET /invoicing", s.handleIndex)
-	mux.HandleFunc("GET /info", s.handleInfo)
-
-	// Finance tracker: the landing page.
-	mux.HandleFunc("GET /{$}", s.financeCurrentMonth)
-	mux.HandleFunc("GET /{year}", s.financeYear)
-	mux.HandleFunc("GET /{year}/{month}", s.financeMonth)
-	// {action} rather than a literal "spending": a literal third segment ties
-	// with /invoicing/invoices/{file} and /invoicing/client/{token}, which
-	// ServeMux rejects, whereas an all-wildcard pattern is strictly less
-	// specific than both and orders cleanly behind them.
-	mux.HandleFunc("GET /{year}/{month}/{action}", s.financeMonthSub)
+	mux := s.routes()
 
 	addr := ":" + cfg.port
 	log.Printf("pocketcfo listening on %s", addr)
@@ -362,4 +335,42 @@ func (s *server) handleStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.ServeFile(w, r, path)
+}
+
+// routes builds the mux. Split out of main so a test can register the whole
+// set: a conflicting pattern panics at registration, and nothing else would
+// catch it before the app fails to boot.
+func (s *server) routes() *http.ServeMux {
+	mux := http.NewServeMux()
+	// One segment, not a subtree: /static/ would overlap /{year}/{month} with
+	// neither more specific, whereas /static/{file} is strictly more specific
+	// and can't reach a three-segment path at all. Assets are flat.
+	mux.HandleFunc("GET /static/{file}", s.handleStatic)
+	mux.HandleFunc("GET /auth/login", s.handleLogin)
+	mux.HandleFunc("GET /auth/callback", s.handleCallback)
+	mux.HandleFunc("GET /auth/logout", s.handleLogout)
+	mux.HandleFunc("POST /auth/logout", s.handleLogout)
+	mux.HandleFunc("GET /auth/email", s.handleEmailLoginForm)
+	mux.HandleFunc("POST /auth/email", s.handleEmailLoginRequest)
+	mux.HandleFunc("GET /auth/email/callback", s.handleEmailLoginCallback)
+	mux.HandleFunc("GET /invoicing/invoices/{file}", s.handleInvoicePDF)
+	mux.HandleFunc("GET /invoicing/client/{token}", s.handleClientPortal)
+	mux.HandleFunc("GET /invoicing/client/{token}/invoices/{file}", s.handleClientInvoicePDF)
+	mux.HandleFunc("GET /robots.txt", s.handleRobots)
+	mux.HandleFunc("GET /invoicing", s.handleIndex)
+	mux.HandleFunc("GET /info", s.handleInfo)
+
+	// Finance tracker: the landing page.
+	mux.HandleFunc("GET /{$}", s.financeCurrentMonth)
+	mux.HandleFunc("GET /{year}", s.financeYear)
+	mux.HandleFunc("GET /{year}/{month}", s.financeMonth)
+	// {action} rather than a literal "spending": a literal third segment ties
+	// with /invoicing/invoices/{file} and /invoicing/client/{token}, which
+	// ServeMux rejects, whereas an all-wildcard pattern is strictly less
+	// specific than both and orders cleanly behind them.
+	mux.HandleFunc("GET /{year}/{month}/{action}", s.financeMonthSub)
+
+	s.registerAPI(mux)
+
+	return mux
 }

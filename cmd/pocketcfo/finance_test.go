@@ -582,23 +582,21 @@ func TestFinanceSpending_ReadOnlyIsForbidden(t *testing.T) {
 
 // TestRoutesRegisterWithoutConflict pins the mux shape. ServeMux panics at
 // registration when two patterns overlap with neither more specific, so this
-// is the only test that can catch a bad route addition.
+// is the only thing that catches a bad route addition before startup.
+//
+// It calls routes() rather than restating the patterns: an earlier version
+// duplicated the list and so happily passed while the real function panicked.
 func TestRoutesRegisterWithoutConflict(t *testing.T) {
-	s := newTestClientServer(t)
 	defer func() {
 		if r := recover(); r != nil {
 			t.Fatalf("route registration panicked: %v", r)
 		}
 	}()
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /static/{file}", s.handleStatic)
-	mux.HandleFunc("GET /invoicing/invoices/{file}", s.handleInvoicePDF)
-	mux.HandleFunc("GET /invoicing/client/{token}", s.handleClientPortal)
-	mux.HandleFunc("GET /invoicing/client/{token}/invoices/{file}", s.handleClientInvoicePDF)
-	mux.HandleFunc("GET /{$}", s.financeCurrentMonth)
-	mux.HandleFunc("GET /{year}", s.financeYear)
-	mux.HandleFunc("GET /{year}/{month}", s.financeMonth)
-	mux.HandleFunc("GET /{year}/{month}/{action}", s.financeMonthSub)
+	// Both with and without the API, since it registers conditionally.
+	newTestClientServer(t).routes()
+	withAPI := newTestClientServer(t)
+	withAPI.cfg.hermesAPIToken = "token"
+	withAPI.routes()
 }
 
 func TestFinanceMonthSubRejectsAnUnknownAction(t *testing.T) {

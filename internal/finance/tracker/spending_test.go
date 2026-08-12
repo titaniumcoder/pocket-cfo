@@ -124,9 +124,21 @@ func TestCopyLinkWorksWithoutASecureContext(t *testing.T) {
 	if !strings.Contains(body, "if (navigator.clipboard)") {
 		t.Error("the copy link assumes a secure context")
 	}
-	for _, want := range []string{"execCommand", "copy failed"} {
+	for _, want := range []string{"execCommand", "flash(ok ? 'copied' : 'failed')"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("no %s fallback; the link would fail silently over plain HTTP", want)
+		}
+	}
+
+	// The control is an icon, and both states ship inside the link so the
+	// confirmation swaps rather than rewrites — rewriting the contents is
+	// what would leave an empty control behind.
+	if strings.Contains(body, `title="Copy a change request for Hermes">copy</a>`) {
+		t.Error("the copy control is still a word")
+	}
+	for _, want := range []string{`class="i-copy"`, `class="i-done"`, "classList.add(state)"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the copy control is missing %s", want)
 		}
 	}
 }

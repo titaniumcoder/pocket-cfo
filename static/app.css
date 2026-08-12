@@ -459,5 +459,13 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
 .muted { opacity: .6; font-size: .88rem; }
 .budget-of { text-align: right; opacity: .55; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .copy-col { width: 1%; white-space: nowrap; text-align: right; }
-.copy-tx { font-size: .78rem; opacity: .45; text-decoration: none; border-bottom: 1px dotted currentColor; }
-.copy-tx:hover { opacity: .9; }
+.copy-tx { display: inline-flex; opacity: .4; text-decoration: none; padding: .15rem; border-radius: 5px; }
+.copy-tx:hover { opacity: 1; background: var(--hover-bg); }
+/* Both icons ship in the link and a class picks one, so the confirmation
+   cannot leave the control empty the way rewriting its text could. */
+.copy-tx .i-done { display: none; }
+.copy-tx.copied .i-copy, .copy-tx.failed .i-copy { display: none; }
+.copy-tx.copied { opacity: 1; color: var(--good); }
+.copy-tx.copied .i-done { display: inline; }
+.copy-tx.failed { opacity: 1; color: var(--danger); }
+.copy-tx.failed .i-done { display: inline; transform: rotate(45deg); }

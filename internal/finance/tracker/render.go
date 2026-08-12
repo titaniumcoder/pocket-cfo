@@ -218,7 +218,7 @@ var templates = `
       <div class="group">
         <div class="group-header" onclick="this.closest('.group').classList.toggle('open')">
           <span class="label">{{.Name}} <span class="chevron">&#9656;</span></span>
-          {{if $show}}{{if .HasActual}}<span class="amt act{{if .HasMistimed}} mistimed{{end}}">{{eur .ActualCents}}</span>{{end}}{{end}}<span class="amt neg">&minus;{{eur .PlannedCents}}</span>
+          {{if $show}}<span class="mid">{{eur .PlannedCents}}</span><span class="amt act{{if .HasMistimed}} mistimed{{end}}">{{if .HasActual}}{{eur .ActualCents}}{{end}}<span class="plan-m">{{if .HasActual}}of {{end}}{{eur .PlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .PlannedCents}}</span>{{end}}
         </div>
         <div class="group-rows">
           {{range .Rows}}
@@ -352,6 +352,7 @@ var templates = `
       <div class="row net{{if not $.Invoiced}} gap-below{{end}}"><span class="label">Company income{{if and .FundingLabel (not $.Invoiced)}} <small>(from {{if .FundingURL}}<a class="period-link" href="{{.FundingURL}}">{{.FundingLabel}}</a>{{else}}{{.FundingLabel}}{{end}})</small>{{end}}</span><span class="mid"></span><span class="amt goodamt">{{eur .CompanyIncomeCents}}</span></div>
       {{range $.Invoiced}}<div class="row acct"><span class="label">{{if .URL}}<a href="{{.URL}}">{{.Number}}</a>{{else}}{{.Number}}{{end}} <span class="note">invoiced, usable this month</span></span><span class="mid"></span><span class="amt">{{eur .AmountCents}}</span></div>{{end}}
       {{if $.Invoiced}}<div class="row gap-below"></div>{{end}}
+      {{if $.ShowActuals}}<div class="row colhead"><span class="label"></span><span class="mid">Planned</span><span class="amt">Actual</span></div>{{end}}
       {{template "categoryGroups" $.CompanyLedger}}
       {{if $.ShowActuals}}{{if $.CompanyUnmatchedCents}}<div class="row"><span class="label">Not in this month&rsquo;s plan</span><span class="mid"></span><span class="amt unbudgeted">{{eur $.CompanyUnmatchedCents}}</span></div>{{end}}{{end}}
       <div class="row{{if .CompanyGroups}} gap-above{{end}}"><span class="label">Employer social ({{.EmployerPct}}%)</span><span class="mid"></span><span class="amt neg">&minus;{{eur .EmployerContribCents}}</span></div>

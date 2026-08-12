@@ -113,17 +113,17 @@ func (s *server) configGroups() []configGroup {
 			{Name: "socialEmployeeRate", Value: strconv.FormatFloat(f.EmployeeRate, 'f', -1, 64)},
 			{Name: "socialMaxInsurableMonthly", Value: strconv.FormatFloat(f.MaxInsurableMonthly, 'f', -1, 64)},
 			{Name: "incomeTaxRate", Value: strconv.FormatFloat(f.IncomeTaxRate, 'f', -1, 64)},
-			{Name: "minimumWage", Value: minimumWageSummary(f.MinimumWage)},
+			{Name: "legislation", Value: legislationSummary(f.Legislation)},
 		}},
 	}
 }
 
-// minimumWageSummary renders the schedule as "from 2026-07: 1077.00", so the
-// figure being enforced and the month it started are both checkable from
-// /info. A floor you cannot see is one you cannot verify.
-func minimumWageSummary(periods []tracker.MinimumWagePeriod) string {
+// legislationSummary renders each dated change, so the figures in force and
+// the months they started are both checkable from /info against the file. A
+// legal obligation you cannot see is one you cannot verify.
+func legislationSummary(periods tracker.Legislation) string {
 	if len(periods) == 0 {
-		return "unset — no floor, salary is whatever the company can afford"
+		return "none — the flat rates above apply throughout, and no minimum wage is enforced"
 	}
 	parts := make([]string, 0, len(periods))
 	for _, p := range periods {

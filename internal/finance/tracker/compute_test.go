@@ -92,10 +92,7 @@ func fullTrackerWithBackend() (*Tracker, *fakeBackend) {
 		VacationDays: 25,
 		RateCents:    7500,
 		RateCurrency: "EUR",
-		Personal: PersonalParams{
-			EmployerRate: 0.1892, EmployeeRate: 0.1378,
-			MaxInsurableMonthly: 2112, IncomeTaxRate: 0.10,
-		},
+		Personal:     testLegislation(0.1892, 0.1378, 2112, 0.10),
 	}, b
 }
 
@@ -470,10 +467,7 @@ func TestInvoiceLeavesIncomePanelAloneAndLandsInTheBudget(t *testing.T) {
 		Loc:          time.UTC,
 		RateCents:    7500,
 		RateCurrency: "EUR",
-		Personal: PersonalParams{
-			EmployerRate: 0.1892, EmployeeRate: 0.1378,
-			MaxInsurableMonthly: 2112, IncomeTaxRate: 0.10,
-		},
+		Personal:     testLegislation(0.1892, 0.1378, 2112, 0.10),
 	}
 
 	beforeInvoice := trk.ComputeMonth(context.Background(), 2026, time.July)
@@ -539,10 +533,7 @@ func TestInvoiceSuppressesClientHoursInTheBudgetOnly(t *testing.T) {
 			Holidays:    &Holidays{HTTP: client},
 			HoursPerDay: 8,
 			Loc:         time.UTC,
-			Personal: PersonalParams{
-				EmployerRate: 0.1892, EmployeeRate: 0.1378,
-				MaxInsurableMonthly: 2112, IncomeTaxRate: 0.10,
-			},
+			Personal:    testLegislation(0.1892, 0.1378, 2112, 0.10),
 		}
 	}
 	invoiced := ComputeInvoiced([]InvoicedFact{
@@ -586,10 +577,7 @@ func TestUnscopedInvoiceAddsIncomeWithoutSuppressingTrackedHours(t *testing.T) {
 		Holidays:    &Holidays{HTTP: client},
 		HoursPerDay: 8,
 		Loc:         time.UTC,
-		Personal: PersonalParams{
-			EmployerRate: 0.1892, EmployeeRate: 0.1378,
-			MaxInsurableMonthly: 2112, IncomeTaxRate: 0.10,
-		},
+		Personal:    testLegislation(0.1892, 0.1378, 2112, 0.10),
 	}
 	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
 		{ClientID: UnscopedClientID, Number: "0002", IssueDate: date(2026, 8, 5), DueDate: date(2026, 8, 19), TotalCents: 200000},

@@ -72,13 +72,7 @@ func buildTracker(cfg financeconfig.Config, httpClient *http.Client, budgetDir s
 		VacationDays: cfg.AnnualVacationDays,
 		RateCents:    cfg.HourlyRateCents,
 		RateCurrency: cfg.Currency,
-		Personal: tracker.PersonalParams{
-			EmployerRate:        cfg.EmployerRate,
-			EmployeeRate:        cfg.EmployeeRate,
-			MaxInsurableMonthly: cfg.MaxInsurableMonthly,
-			IncomeTaxRate:       cfg.IncomeTaxRate,
-			Legislation:         cfg.Legislation,
-		},
+		Personal:     tracker.PersonalParams{Legislation: cfg.Legislation},
 	}
 }
 

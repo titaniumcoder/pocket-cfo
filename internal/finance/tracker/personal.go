@@ -9,14 +9,12 @@ package tracker
 // social contributions are capped at the monthly maximum insurable income.
 // Private spending is deducted from Net income elsewhere, not here.
 type PersonalParams struct {
-	EmployerRate        float64 // employer social + health contributions, e.g. 0.1892
-	EmployeeRate        float64 // employee social + health contributions, e.g. 0.1378
-	MaxInsurableMonthly float64 // monthly maximum insurable income (EUR); 0 = no cap
-	IncomeTaxRate       float64 // personal income tax, e.g. 0.10
-
-	// Legislation is the dated changes to every figure above, plus the
-	// statutory minimum wage, which has no undated baseline. The fields above
-	// are what applied before any of them; see rulesFor.
+	// Legislation is every government-set figure this cascade uses: both
+	// contribution rates, the income tax rate, the ceiling on the insurable
+	// base, and the statutory minimum wage. There is nothing beside it,
+	// because there is no such thing as an undated tax rate — every one of
+	// these was set on a date by someone, and keeping some of them undated is
+	// what made last year's figures unreproducible.
 	Legislation Legislation
 }
 

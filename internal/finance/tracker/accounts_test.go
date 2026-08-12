@@ -139,10 +139,7 @@ func accountsTracker(t *testing.T, accountsJSON string) *Tracker {
 			{"name":"Housing","kind":"private","categories":[{"id":"00000000-0000-4000-8000-000000000001","name":"Rent","amount":1000}]}
 		]}`}),
 		Accounts: newTestAccounts(t, accountsJSON),
-		Personal: PersonalParams{
-			EmployerRate: 0.1892, EmployeeRate: 0.1378,
-			MaxInsurableMonthly: 2112, IncomeTaxRate: 0.10,
-		},
+		Personal: testLegislation(0.1892, 0.1378, 2112, 0.10),
 	}
 }
 

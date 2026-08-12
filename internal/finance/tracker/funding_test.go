@@ -165,7 +165,7 @@ func TestFundingIncomeDegradesOnTogglError(t *testing.T) {
 	trk := &Tracker{
 		Toggl: tg, Holidays: &Holidays{HTTP: b.transport()}, Loc: time.UTC,
 		HoursPerDay: 8,
-		Personal:    PersonalParams{EmployerRate: 0.1892, EmployeeRate: 0.1378, MaxInsurableMonthly: 2112, IncomeTaxRate: 0.10},
+		Personal:    testParams(),
 	}
 	pv := trk.fundingIncome(context.Background(), yearMonth{2026, time.January}, yearMonth{2026, time.January}, mar(15), 7500, 0, nil)
 	if pv.Err == "" {
@@ -197,7 +197,7 @@ func TestBalanceUsesFundingPersonalNotViewedPeriodPersonal(t *testing.T) {
 	trk := &Tracker{
 		Toggl: &Toggl{WorkspaceID: "ws", HTTP: client}, Holidays: &Holidays{HTTP: client},
 		HoursPerDay: 8, Loc: time.UTC,
-		Personal: PersonalParams{EmployerRate: 0.1892, EmployeeRate: 0.1378, MaxInsurableMonthly: 2112, IncomeTaxRate: 0.10},
+		Personal: testParams(),
 	}
 	trk.Budget = newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
 
@@ -247,7 +247,7 @@ func TestFundingIncomeCrossesYearBoundary(t *testing.T) {
 	trk := &Tracker{
 		Toggl: &Toggl{WorkspaceID: "ws", HTTP: client}, Holidays: &Holidays{HTTP: client},
 		HoursPerDay: 8, Loc: time.UTC,
-		Personal: PersonalParams{EmployerRate: 0.1892, EmployeeRate: 0.1378, MaxInsurableMonthly: 2112, IncomeTaxRate: 0.10},
+		Personal: testParams(),
 	}
 	trk.Budget = newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
 
@@ -286,7 +286,7 @@ func TestFundingIncomeInvoicedUsesCorrectMonthNotDoubleShifted(t *testing.T) {
 		return &Tracker{
 			Toggl: &Toggl{WorkspaceID: "ws", HTTP: client}, Holidays: &Holidays{HTTP: client},
 			HoursPerDay: 8, Loc: time.UTC, RateCents: 7500, RateCurrency: "EUR",
-			Personal: PersonalParams{EmployerRate: 0.1892, EmployeeRate: 0.1378, MaxInsurableMonthly: 2112, IncomeTaxRate: 0.10},
+			Personal: testParams(),
 		}
 	}
 	invoiced := ComputeInvoiced([]InvoicedFact{

@@ -26,6 +26,11 @@ type LegislationPeriod struct {
 	IncomeTaxRate *float64
 }
 
+// FromTheStart dates a period that has no start: the built-in defaults, which
+// applied before anyone wrote anything down. Year one precedes every payroll
+// month there will ever be.
+var FromTheStart = yearMonth{1, time.January}
+
 // Legislation is the periods in date order.
 type Legislation []LegislationPeriod
 
@@ -108,7 +113,11 @@ func (p LegislationPeriod) String() string {
 			parts = append(parts, fmt.Sprintf("%s %g", f.name, *f.v))
 		}
 	}
-	return fmt.Sprintf("%04d-%02d: %s", p.From.Year, int(p.From.Month), join(parts, ", "))
+	when := fmt.Sprintf("%04d-%02d", p.From.Year, int(p.From.Month))
+	if p.From == FromTheStart {
+		when = "default"
+	}
+	return fmt.Sprintf("%s: %s", when, join(parts, ", "))
 }
 
 func join(parts []string, sep string) string {
@@ -131,19 +140,27 @@ func parseMonthOrDay(s string) (yearMonth, error) {
 	return yearMonth{}, fmt.Errorf("unparseable")
 }
 
-// rulesFor resolves the figures for a payroll month: the undated baseline from
-// config.json's flat keys, with every legislation period that has taken effect
-// applied over it in order.
+// rulesFor resolves the figures for a payroll month by applying every period
+// that has taken effect, in order.
 //
-// A minimum wage has no baseline — zero means no floor, which is both "not
-// configured" and "before employment began", and both mean the same thing to
-// the cascade.
+// Rates and the insurable ceiling also apply BACKWARDS from the earliest
+// period. There is no such thing as a month with no income tax rate, so a
+// month before anything was recorded uses the oldest figures on file — the
+// best answer available. Without that, viewing a month before the first entry
+// would show a salary with no deductions at all, which is not a subtle kind of
+// wrong.
+//
+// The minimum wage is the exception and only ever applies forwards: no entry
+// before July means there was no floor in June, because there was no job.
+// Employment has a start date and a tax rate does not.
 func (p PersonalParams) rulesFor(ym yearMonth) Rules {
-	r := Rules{
-		MaxInsurableEUR: p.MaxInsurableMonthly,
-		EmployerRate:    p.EmployerRate,
-		EmployeeRate:    p.EmployeeRate,
-		IncomeTaxRate:   p.IncomeTaxRate,
+	var r Rules
+	if len(p.Legislation) > 0 {
+		first := p.Legislation[0]
+		setIf(&r.MaxInsurableEUR, first.MaxInsurable)
+		setIf(&r.EmployerRate, first.EmployerRate)
+		setIf(&r.EmployeeRate, first.EmployeeRate)
+		setIf(&r.IncomeTaxRate, first.IncomeTaxRate)
 	}
 	for _, period := range p.Legislation {
 		if period.From.ordinal() > ym.ordinal() {

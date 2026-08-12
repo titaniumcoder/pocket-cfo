@@ -5,10 +5,16 @@
 
   "hourlyRateCents": 7500,
   "currency": "EUR",
+  "annualVacationDays": 25,
 
-  "socialEmployerRate": 0.1892,
-  "socialEmployeeRate": 0.1378,
-  "socialMaxInsurableMonthly": 2112,
-  "incomeTaxRate": 0.10,
-  "annualVacationDays": 25
+  "legislation": [
+    {
+      "from": "2026-01",
+      "socialEmployerRate": 0.1892,
+      "socialEmployeeRate": 0.1378,
+      "socialMaxInsurableMonthly": 2112,
+      "incomeTaxRate": 0.10
+    },
+    { "from": "2026-07", "minimumWage": 1077 }
+  ]
 }

@@ -64,22 +64,6 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.HourlyRateCents != 0 {
 		t.Errorf("HourlyRateCents = %v, want default 0 (unset)", cfg.HourlyRateCents)
 	}
-	// The schedules live in one default period rather than as loose fields, so a
-	// file that says nothing still has a complete, visible set of figures
-	// rather than empty ones.
-	if len(cfg.Legislation) != 1 {
-		t.Fatalf("Legislation = %v, want one default period", cfg.Legislation)
-	}
-	def := cfg.Legislation[0]
-	wantEmployer := tracker.Bands{{From: 0, Rate: 0.1892}, {From: 2112, Rate: 0}}
-	wantEmployee := tracker.Bands{{From: 0, Rate: 0.1378}, {From: 2112, Rate: 0}}
-	if def.Employer == nil || !reflect.DeepEqual(def.Employer.Bands, wantEmployer) ||
-		def.Employee == nil || !reflect.DeepEqual(def.Employee.Bands, wantEmployee) {
-		t.Errorf("default contribution bands = %+v, want 18.92%%/13.78%% up to a 2112 ceiling", def)
-	}
-	if def.MinimumWage != nil {
-		t.Errorf("a default minimum wage of %v was invented; nobody is employed until the file says so", *def.MinimumWage)
-	}
 	if cfg.AnnualVacationDays != 25 {
 		t.Errorf("AnnualVacationDays = %d, want default 25", cfg.AnnualVacationDays)
 	}
@@ -197,16 +181,31 @@ func TestLoadResolvesLegislation(t *testing.T) {
 	}
 }
 
-// TestNoLegislationFallsBackToTheDefaults: a file that says nothing still has
-// a complete set of figures, dated so /info shows where they came from. Zero
-// rates would mean a salary with no deductions at all, which is not a subtle
-// kind of wrong.
-func TestNoLegislationFallsBackToTheDefaults(t *testing.T) {
-	got := Load(FileConfig{}).Legislation
-	if len(got) != 1 || got[0].From != tracker.FromTheStart {
-		t.Fatalf("Legislation = %v, want one undated default period", got)
+// TestNoLegislationIsNoLegislation: a file that states none gets none. There
+// are no built-in figures to fall back on — a rate nobody wrote down reported
+// as if they had is worse than a zero, which at least reads as the omission it
+// is (the page says so; see tracker.PersonalView.NoLegislation).
+func TestNoLegislationIsNoLegislation(t *testing.T) {
+	if got := Load(FileConfig{}).Legislation; len(got) != 0 {
+		t.Fatalf("Legislation = %v, want none — nothing said, nothing charged", got)
 	}
-	if !reflect.DeepEqual(got[0].IncomeTax, tracker.Bands{{From: 0, Rate: 0.10}}) {
-		t.Errorf("default tax bands = %v, want a flat 10%%", got[0].IncomeTax)
+}
+
+// TestALegislationWithoutRatesStillLoads: an entry has to state something, but
+// nothing says it must state a rate. A file that only ever names a minimum wage
+// charges no contributions and no tax, and that is an answer rather than a
+// mistake to reject.
+func TestALegislationWithoutRatesStillLoads(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"legislation":[{"from":"2026-07","minimumWage":1077}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fc, err := LoadFileConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Load(fc).Legislation
+	if len(got) != 1 || got[0].Employer != nil || got[0].Employee != nil || got[0].IncomeTax != nil {
+		t.Errorf("Legislation = %+v, want the one minimum-wage entry and no invented rates", got)
 	}
 }

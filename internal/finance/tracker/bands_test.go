@@ -93,7 +93,7 @@ func TestVectorAboveTheFloorBelowTheCeiling(t *testing.T) {
 // minBase does and does not do.
 func TestVectorAtTheMinimumWage(t *testing.T) {
 	p := PersonalParams{Legislation: Legislation{{
-		From:      FromTheStart,
+		From:      fromTheStart,
 		Employer:  schedule(0, Band{From: 0, Rate: 0.1892}, Band{From: 2111.64, Rate: 0}),
 		Employee:  schedule(0, Band{From: 0, Rate: 0.1378}, Band{From: 2111.64, Rate: 0}),
 		IncomeTax: Bands{{From: 0, Rate: 0.10}},

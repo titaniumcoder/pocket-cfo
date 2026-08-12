@@ -119,7 +119,7 @@ func (s *server) configGroups() []configGroup {
 // legal obligation you cannot see is one you cannot verify.
 func legislationSummary(periods tracker.Legislation) string {
 	if len(periods) == 0 {
-		return "none — the flat rates above apply throughout, and no minimum wage is enforced"
+		return "none — nothing is contributed or taxed, and no minimum wage is enforced"
 	}
 	parts := make([]string, 0, len(periods))
 	for _, p := range periods {

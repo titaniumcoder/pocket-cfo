@@ -42,6 +42,13 @@ type PersonalView struct {
 	MinimumEnforced  bool
 	ShortfallCents   int
 
+	// NoLegislation says no figure was in force for this period at all — the
+	// months before the earliest entry, or a config.json that states none.
+	// Nothing was contributed or taxed, and since that renders as a payslip
+	// with no deductions rather than as an error, the page says so. Over a
+	// range it is set if any month in it had nothing in force.
+	NoLegislation bool
+
 	CompanyGroups []CategoryGroupView
 
 	// Which period's Company income this cascade came from. Set only on
@@ -157,6 +164,7 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 	if months <= 0 {
 		months = 1
 	}
+	result.NoLegislation = r.nothingInForce()
 
 	monthlyRawIncome := totalIncomeEUR / float64(months)
 	monthlyCompanyExpenses := companyExpensesEUR / float64(months)
@@ -246,6 +254,9 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 		m := p.breakdown(income, companyExpenses, 1, p.rulesFor(start.addMonths(i)))
 		if m.MinimumEnforced {
 			result.MinimumEnforced = true
+		}
+		if m.NoLegislation {
+			result.NoLegislation = true
 		}
 		if m.MinimumWageCents > result.MinimumWageCents {
 			result.MinimumWageCents = m.MinimumWageCents

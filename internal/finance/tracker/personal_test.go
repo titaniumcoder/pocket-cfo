@@ -5,20 +5,24 @@ import (
 	"time"
 )
 
-// params is the Bulgarian figures as one undated period — what every test
-// written before dated legislation assumed, and still means.
+// fromTheStart dates a period meant to be in force in every month a test looks
+// at. Year one precedes every payroll month there will ever be; it is an
+// ordinary date, writable in config.json as "0001-01", not a special value.
+var fromTheStart = yearMonth{1, time.January}
+
+// params is the Bulgarian figures as one always-in-force period — what every
+// test written before dated legislation assumed, and still means.
 func params() PersonalParams { return testLegislation(0.1892, 0.1378, 2112, 0.10) }
 
 func testParams() PersonalParams { return params() }
 
-// testLegislation wraps four rates as the single always-in-force period a
-// config with no dated entries resolves to. It keeps the pre-bands vocabulary
-// on purpose — a ceiling is now a band with a rate of zero, and translating it
-// here rather than in forty call sites is what lets every test written before
-// bands keep saying what it meant.
+// testLegislation wraps four rates as a single period in force from the start
+// of time. It keeps the pre-bands vocabulary on purpose — a ceiling is now a
+// band with a rate of zero, and translating it here rather than in forty call
+// sites is what lets every test written before bands keep saying what it meant.
 func testLegislation(employer, employee, maxInsurable, tax float64) PersonalParams {
 	return PersonalParams{Legislation: Legislation{{
-		From:      FromTheStart,
+		From:      fromTheStart,
 		Employer:  cappedAt(employer, maxInsurable),
 		Employee:  cappedAt(employee, maxInsurable),
 		IncomeTax: Bands{{From: 0, Rate: tax}},

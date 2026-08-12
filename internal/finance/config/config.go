@@ -57,17 +57,27 @@ type FileConfig struct {
 	// employer and employee thresholds genuinely differ.
 	//
 	// An entry states what changed, not what stayed: every figure is optional
-	// and carries forward, though a band list is one indivisible statement and
-	// replaces its predecessor whole. Schedules also apply backwards from the
-	// earliest entry, since a month has to have a tax rate; the minimum wage
-	// does not, because employment has a start date. Omitted entirely, the
-	// defaults in defaultLegislation apply.
+	// and stays in force until a later entry changes it, though a band list is
+	// one indivisible statement and replaces its predecessor whole.
+	//
+	// Nothing applies before the earliest entry, and there are no built-in
+	// figures to fall back on — a figure no entry has stated is zero. Invented
+	// defaults are how a page ends up reporting a rate that is nowhere in this
+	// file, which for a legal obligation is worse than reporting none: a zero
+	// is visible as an omission, a plausible wrong rate is not.
 	Legislation []tracker.LegislationEntry `json:"legislation"`
+
+	// legislation is Legislation parsed, kept from the one validating parse in
+	// LoadFileConfig so Load cannot parse it a second time and disagree.
+	// Unexported, so a hand-built FileConfig carries no legislation — which is
+	// now an ordinary state, not a trigger for anything.
+	legislation tracker.Legislation
 }
 
 // LoadFileConfig reads config.json from path. A missing file is fine and
-// returns a zero-value FileConfig (every setting falls back to its
-// default); a malformed file is a fail-fast error.
+// returns a zero-value FileConfig — every tunable falls back to its default and
+// no legislation is in force, so nothing is contributed or taxed; a malformed
+// file is a fail-fast error.
 func LoadFileConfig(path string) (FileConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -84,7 +94,7 @@ func LoadFileConfig(path string) (FileConfig, error) {
 	// which cannot fail. These are legal obligations: a typo in a date
 	// silently disabling one is the failure the setting exists to prevent, so
 	// it is the one part of this file that does not degrade quietly.
-	if _, err := tracker.ParseLegislation(fc.Legislation); err != nil {
+	if fc.legislation, err = tracker.ParseLegislation(fc.Legislation); err != nil {
 		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	return fc, nil
@@ -131,34 +141,11 @@ func Load(fc FileConfig) Config {
 		Currency:        strOr(fc.Currency, "EUR"),
 
 		AnnualVacationDays: intOr(fc.AnnualVacationDays, 25),
-		// Already validated by LoadFileConfig, which is the only way to get a
-		// FileConfig with entries in it.
-		Legislation: legislationOrDefault(fc.Legislation),
+		// Parsed and validated by LoadFileConfig, which is the only thing that
+		// reads the entries. Nothing is substituted when a file states no
+		// legislation: it then charges nothing, which is what it says.
+		Legislation: fc.legislation,
 	}
-}
-
-// defaultLegislation is what applies when config.json says nothing: Bulgaria's
-// figures as of 2026, dated so /info shows them like any other period rather
-// than leaving a reader to guess where the numbers came from. No minimum wage,
-// since nobody is employed until the file says they are.
-func defaultLegislation() tracker.Legislation {
-	capped := func(rate float64) *tracker.PartySchedule {
-		return &tracker.PartySchedule{Bands: tracker.Bands{{From: 0, Rate: rate}, {From: 2112, Rate: 0}}}
-	}
-	return tracker.Legislation{{
-		From:      tracker.FromTheStart,
-		Employer:  capped(0.1892),
-		Employee:  capped(0.1378),
-		IncomeTax: tracker.Bands{{From: 0, Rate: 0.10}},
-	}}
-}
-
-func legislationOrDefault(entries []tracker.LegislationEntry) tracker.Legislation {
-	periods, err := tracker.ParseLegislation(entries)
-	if err != nil || len(periods) == 0 {
-		return defaultLegislation()
-	}
-	return periods
 }
 
 func floatOr(p *float64, def float64) float64 {

@@ -36,8 +36,8 @@ func TestRulesCarryForward(t *testing.T) {
 	if before.MinimumEUR != 0 {
 		t.Errorf("June 2026 has a floor of %.2f — employment had not started", before.MinimumEUR)
 	}
-	// The schedules still apply, though: a month has to have a tax rate, so the
-	// oldest figures on file also describe everything before them.
+	// The schedules still apply, because this fixture's opening period is in
+	// force from the start of time — not because anything reaches backwards.
 	if !reflect.DeepEqual(before.Employer, base.Employer) {
 		t.Errorf("June 2026 lost its employer schedule: %+v", before.Employer)
 	}
@@ -99,10 +99,11 @@ func TestInsurableCapIsDatedToo(t *testing.T) {
 	}
 }
 
-// TestNoLegislationIsTheOldBehaviour: every month of a config with no dated
-// entries must be bit-identical to a build without this feature, or every
-// historic figure moves.
-func TestNoLegislationIsTheOldBehaviour(t *testing.T) {
+// TestOneAlwaysInForcePeriodAppliesToEveryMonth: a single period dated from the
+// start of time resolves identically in every month, however far apart. This is
+// how a file that never changes its figures is written, and how every test
+// predating dated legislation still means what it meant.
+func TestOneAlwaysInForcePeriodAppliesToEveryMonth(t *testing.T) {
 	plain := params()
 	want := Rules{
 		Employer:  PartyRules{Bands: Bands{{From: 0, Rate: 0.1892}, {From: 2112, Rate: 0}}},
@@ -271,14 +272,34 @@ func TestEnforcedMinimumIsVisible(t *testing.T) {
 	}
 }
 
-// TestRatesApplyBackwardsFromTheEarliestEntry: a month has to have a tax rate.
-// If the earliest entry is 2026-01 and you look at 2025, the honest answer is
-// the oldest figures on file — not zero, which would render a salary with no
-// deductions at all and look like a working page.
-//
-// The minimum wage is the exception and only ever applies forwards: no entry
-// before July means there was no floor in June, because there was no job.
-func TestRatesApplyBackwardsFromTheEarliestEntry(t *testing.T) {
+// TestNoLegislationIsVisible: zero contributions and zero tax render as a
+// perfectly ordinary payslip, so the one thing that distinguishes "nothing is
+// owed" from "nothing is configured" has to be on the page.
+func TestNoLegislationIsVisible(t *testing.T) {
+	bare := Figures{Currency: "€", FundingPersonal: PersonalView{
+		GrossSalaryCents: 500000, NoLegislation: true, EmployerPct: "0", EmployeePct: "0", IncomeTaxPct: "0",
+	}}
+	rec := httptest.NewRecorder()
+	RenderPage(rec, bare)
+	if body := rec.Body.String(); !strings.Contains(body, "No legislation is in force") {
+		t.Error("a month with nothing configured reads as an ordinary payslip owing nothing")
+	}
+
+	configured := Figures{Currency: "€", FundingPersonal: PersonalView{
+		GrossSalaryCents: 500000, EmployerPct: "18.92", EmployeePct: "13.78", IncomeTaxPct: "10",
+	}}
+	rec = httptest.NewRecorder()
+	RenderPage(rec, configured)
+	if strings.Contains(rec.Body.String(), "No legislation is in force") {
+		t.Error("a month with figures in force claims there are none")
+	}
+}
+
+// TestNothingAppliesBeforeTheEarliestEntry: legislation only ever reaches
+// forwards. If the earliest entry is 2026-01, nothing was in force in 2024 —
+// not the oldest figures on file, and certainly not a built-in schedule. A rate
+// that is nowhere in config.json must never appear in the arithmetic.
+func TestNothingAppliesBeforeTheEarliestEntry(t *testing.T) {
 	p := PersonalParams{Legislation: Legislation{
 		{From: yearMonth{2026, time.January}, Employer: cappedAt(0.1892, 2112),
 			Employee: cappedAt(0.1378, 2112), IncomeTax: Bands{{From: 0, Rate: 0.10}}},
@@ -286,19 +307,25 @@ func TestRatesApplyBackwardsFromTheEarliestEntry(t *testing.T) {
 	}}
 
 	past := p.rulesFor(yearMonth{2024, time.March})
-	if !reflect.DeepEqual(past.Employer.Bands, Bands{{From: 0, Rate: 0.1892}, {From: 2112, Rate: 0}}) ||
-		!reflect.DeepEqual(past.Employee.Bands, Bands{{From: 0, Rate: 0.1378}, {From: 2112, Rate: 0}}) ||
-		!reflect.DeepEqual(past.IncomeTax, Bands{{From: 0, Rate: 0.10}}) {
-		t.Errorf("March 2024 = %+v, want the oldest figures on file rather than zeroes", past)
+	if !reflect.DeepEqual(past, Rules{}) {
+		t.Errorf("March 2024 = %+v, want nothing in force — it is before every entry", past)
 	}
-	if past.MinimumEUR != 0 {
-		t.Errorf("March 2024 has a floor of %.2f — the minimum wage must not reach backwards", past.MinimumEUR)
+	if !past.nothingInForce() {
+		t.Error("a month before every entry does not report itself as having nothing in force")
 	}
 
-	// And a salary computed there still has deductions, which is the failure
-	// zeroed rates would actually produce.
+	// A salary computed there is charged nothing, and says so rather than
+	// looking like an ordinary payslip that happens to owe zero.
 	v := p.breakdown(5000, 0, 1, past)
-	if v.EmployeeContribCents == 0 || v.IncomeTaxCents == 0 {
-		t.Errorf("a month before the earliest entry paid no contributions or tax: %+v", v)
+	if v.EmployerContribCents != 0 || v.EmployeeContribCents != 0 || v.IncomeTaxCents != 0 {
+		t.Errorf("a month before the earliest entry was charged something: %+v", v)
+	}
+	if !v.NoLegislation {
+		t.Error("the view does not flag a month with no legislation in force")
+	}
+
+	// January is unaffected: the entry applies from its own month onward.
+	if in := p.rulesFor(yearMonth{2026, time.January}); in.nothingInForce() {
+		t.Errorf("January 2026 = %+v, want the figures its own entry states", in)
 	}
 }

@@ -110,11 +110,6 @@ type LegislationPeriod struct {
 	IncomeTax   Bands
 }
 
-// FromTheStart dates a period that has no start: the built-in defaults, which
-// applied before anyone wrote anything down. Year one precedes every payroll
-// month there will ever be.
-var FromTheStart = yearMonth{1, time.January}
-
 // Legislation is the periods in date order.
 type Legislation []LegislationPeriod
 
@@ -131,6 +126,16 @@ type Rules struct {
 	Employer   PartyRules
 	Employee   PartyRules
 	IncomeTax  Bands
+}
+
+// nothingInForce says no entry has stated any figure for this month — before
+// the earliest entry, or with no legislation configured at all. The month is
+// then charged nothing, which is worth saying out loud on the page: a salary
+// with no deductions is indistinguishable from a working one at a glance.
+func (r Rules) nothingInForce() bool {
+	return r.MinimumEUR == 0 && len(r.IncomeTax) == 0 &&
+		r.Employer.MinBase == 0 && len(r.Employer.Bands) == 0 &&
+		r.Employee.MinBase == 0 && len(r.Employee.Bands) == 0
 }
 
 // BandEntry is one band as config.json writes it.
@@ -340,9 +345,6 @@ func (p LegislationPeriod) String() string {
 		parts = append(parts, "tax "+p.IncomeTax.String())
 	}
 	when := fmt.Sprintf("%04d-%02d", p.From.Year, int(p.From.Month))
-	if p.From == FromTheStart {
-		when = "default"
-	}
 	return fmt.Sprintf("%s: %s", when, strings.Join(parts, ", "))
 }
 
@@ -358,25 +360,18 @@ func parseMonthOrDay(s string) (yearMonth, error) {
 // rulesFor resolves the figures for a payroll month by applying every period
 // that has taken effect, in order.
 //
-// Contribution schedules and tax bands also apply BACKWARDS from the earliest
-// period. There is no such thing as a month with no income tax, so a month
-// before anything was recorded uses the oldest figures on file — the best
-// answer available. Without that, viewing a month before the first entry would
-// show a salary with no deductions at all, which is not a subtle kind of wrong.
+// Forwards only, and nothing else: a figure applies from the month its entry
+// names, stays in force until a later entry changes it, and does not exist
+// before that. A month earlier than every entry has nothing in force and is
+// charged nothing — there is no fallback to the oldest figures on file and no
+// built-in schedule underneath, because either would report a rate that is
+// nowhere in config.json for a month nobody legislated.
 //
-// The minimum wage is the exception and only ever applies forwards: no entry
-// before July means there was no floor in June, because there was no job.
-// Employment has a start date and a tax rate does not.
+// A month resolving to zero is a real answer and the honest one, but it does
+// look like a working payslip, so breakdown flags it — see
+// PersonalView.NoLegislation.
 func (p PersonalParams) rulesFor(ym yearMonth) Rules {
 	var r Rules
-	if len(p.Legislation) > 0 {
-		first := p.Legislation[0]
-		applyParty(&r.Employer, first.Employer)
-		applyParty(&r.Employee, first.Employee)
-		if first.IncomeTax != nil {
-			r.IncomeTax = first.IncomeTax
-		}
-	}
 	for _, period := range p.Legislation {
 		if period.From.ordinal() > ym.ordinal() {
 			break

@@ -34,6 +34,13 @@ func ValidateActuals(af ActualsFile, monthKey string, knownIDs map[string]bool) 
 	}
 	end := start.AddDate(0, 1, -1)
 
+	// "Nothing imported yet" is the absent file, not an empty one: a month
+	// with transactions and no coverage claims to have read no days, which
+	// makes the completeness check meaningless in the direction that matters.
+	if len(af.Coverage) == 0 {
+		problems = append(problems, fmt.Errorf("%s has no coverage — a month must say which days were read", af.Month))
+	}
+
 	for i, c := range af.Coverage {
 		from, ferr := parseDay(c.From)
 		to, terr := parseDay(c.To)

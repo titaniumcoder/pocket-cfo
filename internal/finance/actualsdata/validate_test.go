@@ -88,9 +88,13 @@ func TestValidateActuals(t *testing.T) {
 			wantErr: "precedes",
 		},
 		{
-			name:    "coverage empty",
-			mutate:  func(f *ActualsFile) { f.Coverage = nil },
-			wantErr: "", // structural: the schema's minItems catches this, not us
+			name:   "coverage empty",
+			mutate: func(f *ActualsFile) { f.Coverage = nil },
+			// The schema's minItems catches this on the way in, but the write
+			// path builds a document in Go and marshals it without ever
+			// unmarshalling, so nothing would have stopped it committing
+			// "coverage": null and breaking the file for the next reader.
+			wantErr: "no coverage",
 		},
 		{
 			name:    "month is not a real month",

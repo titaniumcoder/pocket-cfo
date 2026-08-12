@@ -121,9 +121,10 @@ var templates = `
 {{define "rateMid"}}{{range .}}<span class="rate-line">{{.Rate}}{{if .Span}} <span class="rate-span">{{.Span}}</span>{{end}}</span>{{end}}{{end}}
 
 {{/* The same rate for a narrow screen, where the middle column is hidden and
-     its content stacks under the amount instead — the .plan-m/.hrs-m idiom.
-     Rendered always and shown by CSS, so exactly one of the two is visible. */}}
-{{define "rateNarrow"}}{{range .}}<span class="rate-m">{{.Rate}}{{if .Span}} {{.Span}}{{end}}</span>{{end}}{{end}}
+     its content stacks under the amount instead — the .stack-m idiom every
+     folded second figure uses. Rendered always and shown by CSS, so exactly
+     one of the two is ever visible. */}}
+{{define "rateNarrow"}}{{range .}}<span class="stack-m">{{.Rate}}{{if .Span}} {{.Span}}{{end}}</span>{{end}}{{end}}
 
 {{define "login"}}<!doctype html>
 <html lang="en">
@@ -334,14 +335,14 @@ var templates = `
       <div class="group">
         <div class="group-header" onclick="this.closest('.group').classList.toggle('open')">
           <span class="label">{{.Name}} <span class="chevron">&#9656;</span></span>
-          {{if $show}}<span class="mid{{outClass .PlannedCents}}">{{out .PlannedCents}}</span><span class="amt act{{if .HasActual}}{{outClass .ActualCents}}{{end}}{{if .Status}} flagged{{end}}">{{mark .Status}}{{if .HasActual}}{{out .ActualCents}}{{end}}<span class="plan-m">{{if .HasActual}}of {{end}}{{out .PlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt{{outClass .PlannedCents}}">{{out .PlannedCents}}</span>{{end}}
+          {{if $show}}<span class="mid{{outClass .PlannedCents}}">{{out .PlannedCents}}</span><span class="amt act{{if .HasActual}}{{outClass .ActualCents}}{{end}}{{if .Status}} flagged{{end}}">{{mark .Status}}{{if .HasActual}}{{out .ActualCents}}{{end}}<span class="stack-m">{{if .HasActual}}of {{end}}{{out .PlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt{{outClass .PlannedCents}}">{{out .PlannedCents}}</span>{{end}}
         </div>
         <div class="group-rows">
           {{range .Rows}}
           <div class="row{{if .UpcomingMonth}} planned{{end}}{{if .Overridden}} override{{end}}">
             <span class="label">{{.Name}}{{if .Note}} <span class="note">{{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Note}} <svg class="link-icon" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>{{else}}{{.Note}}{{end}}</span>{{end}}</span>
-            <span class="mid{{if .PlannedCents}}{{outClass .PlannedCents}}{{end}}">{{if .PlannedCents}}{{out .PlannedCents}}{{else if .UpcomingMonth}}{{out .UpcomingCents}} ({{.UpcomingMonth}}){{end}}</span>
-            <span class="amt{{if $show}}{{if .HasActual}}{{outClass .ActualCents}}{{end}}{{if .ActualStatus}} flagged{{end}}{{end}}">{{if $show}}{{mark .ActualStatus}}{{if .HasActual}}{{if $detail}}<a class="act-link" href="{{$detail}}#cat-{{.CategoryID}}">{{out .ActualCents}}</a>{{else}}{{out .ActualCents}}{{end}}{{end}}{{if .ActualNote}}<span class="act-note">{{.ActualNote}}</span>{{end}}{{if .PlannedCents}}<span class="plan-m">{{if .HasActual}}of {{end}}{{out .PlannedCents}}</span>{{end}}{{end}}</span>
+{{if $show}}<span class="mid{{if .PlannedCents}}{{outClass .PlannedCents}}{{end}}">{{if .PlannedCents}}{{out .PlannedCents}}{{else if .UpcomingMonth}}{{out .UpcomingCents}} ({{.UpcomingMonth}}){{end}}</span><span class="amt{{if .HasActual}}{{outClass .ActualCents}}{{end}}{{if .ActualStatus}} flagged{{end}}">{{mark .ActualStatus}}{{if .HasActual}}{{if $detail}}<a class="act-link" href="{{$detail}}#cat-{{.CategoryID}}">{{out .ActualCents}}</a>{{else}}{{out .ActualCents}}{{end}}{{end}}{{if .ActualNote}}<span class="act-note">{{.ActualNote}}</span>{{end}}{{if .PlannedCents}}<span class="stack-m">{{if .HasActual}}of {{end}}{{out .PlannedCents}}</span>{{end}}</span>
+            {{else}}<span class="mid">{{if and (not .PlannedCents) .UpcomingMonth}}({{.UpcomingMonth}}){{end}}</span><span class="amt{{if .PlannedCents}}{{outClass .PlannedCents}}{{else if .UpcomingMonth}}{{outClass .UpcomingCents}}{{end}}">{{if .PlannedCents}}{{out .PlannedCents}}{{else if .UpcomingMonth}}{{out .UpcomingCents}}{{end}}</span>{{end}}
           </div>
           {{end}}
         </div>
@@ -426,17 +427,17 @@ var templates = `
       {{if or .TrackedErr .Tracked}}
       <h2>Tracked</h2>
       {{if .TrackedErr}}<div class="row"><span class="error">{{.TrackedErr}}</span></div>
-      {{else}}{{range .Tracked}}<div class="row"><span class="label">{{.Project}}</span><span class="mid">{{.Hours}} h &times; {{.Rate}}</span><span class="amt">{{eur .AmountCents}}<span class="hrs-m">({{.Hours}}h)</span></span></div>{{end}}{{end}}
+      {{else}}{{range .Tracked}}<div class="row"><span class="label">{{.Project}}</span><span class="mid">{{.Hours}} h &times; {{.Rate}}</span><span class="amt">{{eur .AmountCents}}<span class="stack-m">({{.Hours}}h)</span></span></div>{{end}}{{end}}
       {{end}}
 
       {{if or .ShowExpected .ExpectedErr}}
       <h2>Expected</h2>
       {{if .ExpectedErr}}<div class="row"><span class="error">{{.ExpectedErr}}</span></div>
       {{else}}
-      <div class="row"><span class="label">{{.ExpectedRange}}</span><span class="mid">{{.ExpectedHours}} &times; {{.ExpectedRate}}</span><span class="amt">{{eur .ExpectedCents}}<span class="hrs-m">({{.ExpectedHours}}h)</span></span></div>
+      <div class="row"><span class="label">{{.ExpectedRange}}</span><span class="mid">{{.ExpectedHours}} &times; {{.ExpectedRate}}</span><span class="amt">{{eur .ExpectedCents}}<span class="stack-m">({{.ExpectedHours}}h)</span></span></div>
       {{if .ShowVacation}}
-      <div class="row"><span class="label">Vacation</span><span class="mid">{{.VacationHoursDeducted}} &times; {{.ExpectedRate}}</span><span class="amt neg">&minus;{{eur .VacationCentsDeducted}}<span class="hrs-m">({{.VacationHoursDeducted}}h)</span></span></div>
-      <div class="row sub"><span class="label">Expected total</span><span class="mid">{{.ExpectedNetHours}} &times; {{.ExpectedRate}}</span><span class="amt goodamt">{{eur .ExpectedNetCents}}<span class="hrs-m">({{.ExpectedNetHours}}h)</span></span></div>
+      <div class="row"><span class="label">Vacation</span><span class="mid">{{.VacationHoursDeducted}} &times; {{.ExpectedRate}}</span><span class="amt neg">&minus;{{eur .VacationCentsDeducted}}<span class="stack-m">({{.VacationHoursDeducted}}h)</span></span></div>
+      <div class="row sub"><span class="label">Expected total</span><span class="mid">{{.ExpectedNetHours}} &times; {{.ExpectedRate}}</span><span class="amt goodamt">{{eur .ExpectedNetCents}}<span class="stack-m">({{.ExpectedNetHours}}h)</span></span></div>
       {{end}}
       {{end}}
       {{end}}
@@ -444,7 +445,7 @@ var templates = `
       {{if .TotalErr}}
       <div class="row"><span class="error">{{.TotalErr}}</span></div>
       {{else}}
-      <div class="row net"><span class="label">Income{{if .SpendableLabel}} <small>(for {{if .SpendableURL}}<a class="period-link" href="{{.SpendableURL}}">{{.SpendableLabel}}</a>{{else}}{{.SpendableLabel}}{{end}})</small>{{end}}</span><span class="mid">{{.TotalHours}} h &times; {{.TotalRate}}</span><span class="amt netamt">{{eur .TotalCents}}<span class="hrs-m">({{.TotalHours}}h)</span></span></div>
+      <div class="row net"><span class="label">Income{{if .SpendableLabel}} <small>(for {{if .SpendableURL}}<a class="period-link" href="{{.SpendableURL}}">{{.SpendableLabel}}</a>{{else}}{{.SpendableLabel}}{{end}})</small>{{end}}</span><span class="mid">{{.TotalHours}} h &times; {{.TotalRate}}</span><span class="amt netamt">{{eur .TotalCents}}<span class="stack-m">({{.TotalHours}}h)</span></span></div>
       {{end}}
       {{end}}
     </div>
@@ -479,7 +480,7 @@ var templates = `
       <div class="row sub"><span class="label">Gross salary{{if eq .Mode "minimum"}} <small>(minimum by choice{{if .MinimumWageCents}}, {{eur .MinimumWageCents}}/month{{end}})</small>{{else if eq .Mode "none"}} <small>(no salary drawn)</small>{{else if .MinimumEnforced}} <small>(statutory minimum{{if .MinimumWageCents}}, {{eur .MinimumWageCents}}/month{{end}})</small>{{end}}</span><span class="mid"></span><span class="amt total">{{eur .GrossSalaryCents}}</span></div>
       <div class="row"><span class="label">Employee social</span><span class="mid rate">{{template "rateMid" .EmployeeRate}}</span><span class="amt neg">{{if .EmployeeContribCents}}&minus;{{end}}{{eur .EmployeeContribCents}}{{template "rateNarrow" .EmployeeRate}}</span></div>
       <div class="row"><span class="label">Income tax</span><span class="mid rate">{{template "rateMid" .IncomeTaxRate}}</span><span class="amt neg">{{if .IncomeTaxCents}}&minus;{{end}}{{eur .IncomeTaxCents}}{{template "rateNarrow" .IncomeTaxRate}}</span></div>
-      <div class="row net neg"><span class="label">Total company expenses</span>{{if $.ShowActuals}}<span class="mid{{outClass .CompanyExpensesCents}}">{{out .CompanyExpensesCents}}</span><span class="amt{{outClass $.CompanyActualCents}}">{{out $.CompanyActualCents}}<span class="plan-m">of {{out .CompanyExpensesCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .CompanyExpensesCents}}</span>{{end}}</div>
+      <div class="row net neg"><span class="label">Total company expenses</span>{{if $.ShowActuals}}<span class="mid{{outClass .CompanyExpensesCents}}">{{out .CompanyExpensesCents}}</span><span class="amt{{outClass $.CompanyActualCents}}">{{out $.CompanyActualCents}}<span class="stack-m">of {{out .CompanyExpensesCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .CompanyExpensesCents}}</span>{{end}}</div>
       <div class="row net{{if lt .NetIncomeCents 0}} neg{{end}}"><span class="label">Net income</span><span class="mid"></span><span class="amt netamt">{{eur .NetIncomeCents}}</span></div>
       {{end}}
       {{end}}
@@ -512,7 +513,7 @@ var templates = `
 
     {{if .ShowBalance}}
     <div class="ledger">
-      <div class="row net neg"><span class="label">Total private expenses</span>{{if .ShowActuals}}<span class="mid{{outClass .PrivateTotalPlannedCents}}">{{out .PrivateTotalPlannedCents}}</span><span class="amt{{outClass .PrivateActualCents}}">{{out .PrivateActualCents}}<span class="plan-m">of {{out .PrivateTotalPlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .PrivateTotalPlannedCents}}</span>{{end}}</div>
+      <div class="row net neg"><span class="label">Total private expenses</span>{{if .ShowActuals}}<span class="mid{{outClass .PrivateTotalPlannedCents}}">{{out .PrivateTotalPlannedCents}}</span><span class="amt{{outClass .PrivateActualCents}}">{{out .PrivateActualCents}}<span class="stack-m">of {{out .PrivateTotalPlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .PrivateTotalPlannedCents}}</span>{{end}}</div>
       <div class="row net balance{{if lt .BalanceCents 0}} neg{{end}}"><span class="label">Balance</span><span class="mid"></span><span class="amt netamt">{{eur .BalanceCents}}</span></div>
     </div>
     {{end}}

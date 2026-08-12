@@ -282,7 +282,7 @@ func TestExpenseLedgerReadsAsExpenses(t *testing.T) {
 		}
 		// The "of planned" is what the phone layout shows in place of .mid,
 		// so a total without it loses its budget on a narrow screen.
-		if !strings.Contains(row[1], `class="plan-m"`) {
+		if !strings.Contains(row[1], `class="stack-m"`) {
 			t.Errorf("%s carries no of-planned for the phone layout", label)
 		}
 	}
@@ -714,5 +714,46 @@ func TestUntrackedCashReachesNoFinanceFigure(t *testing.T) {
 	}
 	if strings.Contains(body, "130") {
 		t.Error("the dashboard printed the untracked amount; it belongs to no figure on that page")
+	}
+}
+
+// TestALedgerWithoutActualsPutsItsFigureInTheAmountColumn: the year view has no
+// actuals, and its category rows used to leave the planned figure in .mid — the
+// secondary column, at .6 opacity — while the group total it rolls into sat in
+// .amt. The figures did not line up with their own subtotal and every one of
+// them read as a footnote. On a phone, where .mid is the only column left, it
+// was the whole page.
+func TestALedgerWithoutActualsPutsItsFigureInTheAmountColumn(t *testing.T) {
+	f := Figures{
+		Currency: "€",
+		PrivateGroups: []CategoryGroupView{{
+			Name:         "Housing",
+			PlannedCents: 90000,
+			Rows:         []CategoryRow{{Name: "Rent", CategoryID: "rent", PlannedCents: 90000}},
+		}},
+	}
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	body := rec.Body.String()
+
+	row := regexp.MustCompile(`(?s)<div class="row[^"]*">\s*<span class="label">Rent.*?</div>`).FindString(body)
+	if row == "" {
+		t.Fatal("no Rent row rendered")
+	}
+	mid := regexp.MustCompile(`(?s)<span class="mid[^"]*">(.*?)</span>`).FindStringSubmatch(row)
+	amt := regexp.MustCompile(`(?s)<span class="amt[^"]*">(.*?)</span>`).FindStringSubmatch(row)
+	if mid == nil || amt == nil {
+		t.Fatalf("row has no mid/amt pair:\n%s", row)
+	}
+	if strings.TrimSpace(mid[1]) != "" {
+		t.Errorf("the middle column carries %q with no actuals to compare against", mid[1])
+	}
+	if !strings.Contains(amt[1], "900") {
+		t.Errorf("the amount column is %q, want the planned figure", amt[1])
+	}
+	// Which is where the group total already was, so the two now line up.
+	header := regexp.MustCompile(`(?s)<div class="group-header".*?</div>`).FindString(body)
+	if !strings.Contains(header, `<span class="mid"></span>`) {
+		t.Errorf("the group header stopped agreeing with its rows:\n%s", header)
 	}
 }

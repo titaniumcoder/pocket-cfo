@@ -148,8 +148,6 @@ var templates = `
     <p class="muted">No bank statement has been reconciled for {{.Month}} yet.</p>
     {{else}}
 
-    {{if .Note}}<div class="row"><span class="stale-note">{{.Note}}</span></div>{{end}}
-
     <h3>Coverage</h3>
     <div class="table-wrap">
     <table class="data">
@@ -167,14 +165,12 @@ var templates = `
       <h4>{{.Name}}{{if .Mistimed}} <span class="mistimed-inline">&mdash; {{.Note}}</span>{{end}}</h4>
       <div class="table-wrap">
       <table class="data">
-        <thead><tr><th class="col-secondary">Date</th><th>Description</th><th class="col-secondary">Account</th><th class="num">Amount</th></tr></thead>
+        <thead><tr><th class="col-secondary">Date</th><th>Description</th><th class="col-secondary">Account</th><th class="num">Amount</th><th class="copy-col no-print"></th></tr></thead>
         <tbody>
-          {{range .Transactions}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td class="col-secondary">{{.Account}}</td><td class="num">{{eur .Cents}}</td></tr>{{end}}
+          {{range .Transactions}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td class="col-secondary">{{.Account}}</td><td class="num">{{eur .Cents}}</td><td class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes">copy</a></td></tr>{{end}}
         </tbody>
         <tfoot>
-          <tr><td class="col-secondary"></td><td>Actual</td><td class="col-secondary"></td><td class="num">{{eur .ActualCents}}</td></tr>
-          <tr><td class="col-secondary"></td><td>Planned</td><td class="col-secondary"></td><td class="num">{{eur .PlannedCents}}</td></tr>
-          <tr><td class="col-secondary"></td><td>Variance</td><td class="col-secondary"></td><td class="num{{if gt .VarianceCent 0}} neg{{end}}">{{eur .VarianceCent}}</td></tr>
+          <tr><td class="col-secondary"></td><td></td><td class="budget-of">(Budget: {{eur .PlannedCents}})</td><td class="num{{if gt .VarianceCent 0}} neg{{end}}">{{eur .ActualCents}}</td><td class="copy-col no-print"></td></tr>
         </tfoot>
       </table>
       </div>
@@ -187,9 +183,9 @@ var templates = `
     <p class="muted">These cite a budget category that has no row this month &mdash; renamed, removed, or a one-off whose month has passed.</p>
     <div class="table-wrap">
     <table class="data">
-      <thead><tr><th class="col-secondary">Date</th><th>Description</th><th>Category</th><th class="num">Amount</th></tr></thead>
+      <thead><tr><th class="col-secondary">Date</th><th>Description</th><th>Category</th><th class="num">Amount</th><th class="copy-col no-print"></th></tr></thead>
       <tbody>
-        {{range .Unmatched}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td>{{.Category}}</td><td class="num">{{eur .Cents}}</td></tr>{{end}}
+        {{range .Unmatched}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td>{{.Category}}</td><td class="num">{{eur .Cents}}</td><td class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes">copy</a></td></tr>{{end}}
       </tbody>
     </table>
     </div>
@@ -200,9 +196,9 @@ var templates = `
     {{if .Ignored}}
     <div class="table-wrap">
     <table class="data">
-      <thead><tr><th class="col-secondary">Date</th><th>Description</th><th>Reason</th><th class="num">Amount</th></tr></thead>
+      <thead><tr><th class="col-secondary">Date</th><th>Description</th><th>Reason</th><th class="num">Amount</th><th class="copy-col no-print"></th></tr></thead>
       <tbody>
-        {{range .Ignored}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td>{{.Reason}}</td><td class="num">{{eur .Cents}}</td></tr>{{end}}
+        {{range .Ignored}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td>{{.Reason}}</td><td class="num">{{eur .Cents}}</td><td class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes">copy</a></td></tr>{{end}}
       </tbody>
     </table>
     </div>
@@ -211,6 +207,17 @@ var templates = `
     {{end}}
   </section>
 </main>
+<script>
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest('.copy-tx');
+    if (!a) return;
+    e.preventDefault();
+    navigator.clipboard.writeText(a.dataset.copy).then(function () {
+      a.textContent = 'copied';
+      setTimeout(function () { a.textContent = 'copy'; }, 1500);
+    });
+  });
+</script>
 </body>
 </html>{{end}}
 
@@ -382,8 +389,7 @@ var templates = `
       {{if .BudgetErr}}<div class="row"><span class="error">{{.BudgetErr}}</span></div>
       {{else}}
       {{if .ActualsErr}}<div class="row"><span class="error">{{.ActualsErr}}</span></div>{{end}}
-      {{if .ShowActuals}}{{if .ActualsNote}}<div class="row"><span class="stale-note">{{.ActualsNote}}</span></div>{{end}}
-      <div class="row colhead"><span class="label"></span><span class="mid">Planned</span><span class="amt">Actual</span></div>
+      {{if .ShowActuals}}<div class="row colhead"><span class="label"></span><span class="mid">Planned</span><span class="amt">Actual</span></div>
       {{end}}
       {{template "categoryGroups" .PrivateLedger}}
       {{if .ShowActuals}}{{if .PrivateUnmatchedCents}}

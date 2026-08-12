@@ -447,3 +447,7 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
 .cat-block h4 { margin: 0 0 .4rem; font-size: 1rem; }
 .mistimed-inline { color: var(--danger); font-weight: 600; font-size: .9rem; }
 .muted { opacity: .6; font-size: .88rem; }
+.budget-of { text-align: right; opacity: .55; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.copy-col { width: 1%; white-space: nowrap; text-align: right; }
+.copy-tx { font-size: .78rem; opacity: .45; text-decoration: none; border-bottom: 1px dotted currentColor; }
+.copy-tx:hover { opacity: .9; }

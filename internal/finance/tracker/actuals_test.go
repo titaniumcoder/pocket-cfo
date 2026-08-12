@@ -2,7 +2,6 @@ package tracker
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -139,36 +138,7 @@ func TestActualsCoverage(t *testing.T) {
 			if got.Complete != tt.complete {
 				t.Errorf("Complete = %v, want %v", got.Complete, tt.complete)
 			}
-			if tt.complete && got.Note != "" {
-				t.Errorf("a fully reconciled month must carry no note, got %q", got.Note)
-			}
-			if !tt.complete && got.Note == "" {
-				t.Error("a partly reconciled month must explain itself")
-			}
 		})
-	}
-}
-
-func TestActualsNoteNamesEarliestEndAndAccounts(t *testing.T) {
-	a := newTestActuals(t, map[string]string{"actuals/2026-08.json": `{
-		"month": "2026-08",
-		"coverage": [
-			{ "account": "Company Checking", "from": "2026-08-01", "to": "2026-08-20", "imported_at": "2026-08-21" },
-			{ "account": "Private Checking", "from": "2026-08-01", "to": "2026-08-09", "imported_at": "2026-08-10" }
-		],
-		"transactions": []
-	}`})
-	got, err := a.ForMonth(context.Background(), 2026, time.August)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(got.Note, "9 August 2026") {
-		t.Errorf("note = %q, want the earliest coverage end across accounts", got.Note)
-	}
-	for _, acct := range []string{"Company Checking", "Private Checking"} {
-		if !strings.Contains(got.Note, acct) {
-			t.Errorf("note = %q, want it to name %s", got.Note, acct)
-		}
 	}
 }
 
@@ -190,9 +160,6 @@ func TestActualsForYear(t *testing.T) {
 	}
 	if got.Complete {
 		t.Error("Complete = true with 2 of 12 months present, want false")
-	}
-	if !strings.Contains(got.Note, "of 12") {
-		t.Errorf("note = %q, want it to say how many months are reconciled", got.Note)
 	}
 }
 

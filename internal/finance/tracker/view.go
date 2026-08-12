@@ -170,7 +170,6 @@ type Figures struct {
 	// Recorded spending, shown beside the plan and folded into nothing. False
 	// ShowActuals renders byte-identically to a build without this layer.
 	ShowActuals           bool
-	ActualsNote           string
 	PrivateActualCents    int
 	CompanyActualCents    int
 	PrivateUnmatchedCents int
@@ -893,7 +892,6 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 	ApplyActuals(bv, av, start.Month(), charged)
 
 	f.ShowActuals = true
-	f.ActualsNote = av.Note
 	f.Mistimed = MistimedRowsOf(*bv)
 	for _, g := range bv.Groups {
 		f.PrivateActualCents += g.ActualCents

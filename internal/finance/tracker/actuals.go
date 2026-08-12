@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"log"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -42,7 +41,6 @@ type ActualsView struct {
 	Complete   bool           // coverage reaches month end for every account it names
 	ByCategory map[string]int // category id -> cents; ignored lines excluded
 	TotalCents int
-	Note       string // coverage caveat; empty when Complete
 }
 
 // ForMonth returns the recorded spending for one month.
@@ -86,9 +84,6 @@ func (a *Actuals) ForYear(ctx context.Context, year int) (ActualsView, error) {
 	}
 	out.Present = true
 	out.Complete = months == 12 && complete == 12
-	if !out.Complete {
-		out.Note = fmt.Sprintf("Reconciled for %d of 12 months. Anything outside those months isn't in these figures.", complete)
-	}
 	return out, nil
 }
 
@@ -197,9 +192,6 @@ func viewOf(af actualsdata.ActualsFile, year int, month time.Month) ActualsView 
 		v.TotalCents += cents
 	}
 	v.Complete = coverageComplete(af, year, month)
-	if !v.Complete {
-		v.Note = coverageNote(af)
-	}
 	return v
 }
 
@@ -249,35 +241,4 @@ func spansMonth(ranges []actualsdata.Coverage, first, last time.Time) bool {
 		}
 	}
 	return !reached.Before(last)
-}
-
-// coverageNote is shown only when a month is partly read.
-func coverageNote(af actualsdata.ActualsFile) string {
-	earliest := ""
-	var accounts []string
-	for _, c := range af.Coverage {
-		accounts = append(accounts, c.Account)
-		if earliest == "" || c.To < earliest {
-			earliest = c.To
-		}
-	}
-	sort.Strings(accounts)
-	accounts = dedupe(accounts)
-
-	through := earliest
-	if d, err := time.Parse("2006-01-02", earliest); err == nil {
-		through = d.Format("2 January 2006")
-	}
-	return fmt.Sprintf("Reconciled through %s · %s. Anything spent since isn't in these figures.",
-		through, strings.Join(accounts, ", "))
-}
-
-func dedupe(in []string) []string {
-	var out []string
-	for i, s := range in {
-		if i == 0 || s != in[i-1] {
-			out = append(out, s)
-		}
-	}
-	return out
 }

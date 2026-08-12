@@ -9,6 +9,7 @@ export HERMES_API_TOKEN=
 # Fine-grained PAT with contents:write on the data repo ONLY. Unset means the
 # read endpoints work and writes return 503.
 export GITHUB_DATA_TOKEN=
+# Both the /api/ endpoints and the /mcp server are gated on HERMES_API_TOKEN.
 # Optional, defaults to https://api.github.com — point the Contents client at
 # a scratch instance or a stub while verifying the write path.
 export GITHUB_API_URL=

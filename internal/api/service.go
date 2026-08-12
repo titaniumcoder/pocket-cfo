@@ -25,6 +25,9 @@ type Service struct {
 	Store         Store
 	ActualsPrefix string
 	BudgetPath    string
+
+	// Now is injected by tests; nil means time.Now.
+	Now func() time.Time
 }
 
 var monthRE = regexp.MustCompile(`^\d{4}-(0[1-9]|1[0-2])$`)
@@ -429,4 +432,11 @@ func eurToCents(euros float64) int {
 		return -int(-euros*100 + 0.5)
 	}
 	return int(euros*100 + 0.5)
+}
+
+func (s *Service) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
 }

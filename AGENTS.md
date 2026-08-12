@@ -10,7 +10,15 @@ conventions established during scaffolding that aren't obvious from the code its
   `net/http` + `html/template`, not a router library. The one named exception:
   `go-jsonschema`, used as a dev-time `tool` dependency (Go 1.24+ `tool` directive) to
   generate Go structs from `schemas/*.json` — never imported by runtime code. Digital
-  signing (`internal/sign`, later) is expected to be a second such exception.
+  signing (`internal/sign`, later) is expected to be a second such exception. The third,
+  and the only one linked into a binary, is `github.com/modelcontextprotocol/go-sdk` for
+  the MCP server at `/mcp`: a moving external wire protocol with strict framing, where
+  being subtly wrong presents as *silence* — the agent sees no tools at the moment you
+  need it — rather than as an error. It is kept reversible by three rules, enforced by
+  tests: it is imported by exactly one file (`internal/api/mcp.go`), no SDK type crosses
+  into the service layer, and the `/mcp` conformance tests drive raw HTTP with
+  hand-written JSON-RPC rather than the SDK's own client, so they would equally validate
+  a hand-rolled replacement.
 - **Schema documents are `go:embed`ed**, never read from disk at runtime — every file
   under `schemas/` (`issuer.json`, `recipient.json`, `invoice.json`, `notes.json`,
   `users.json`) plus `internal/finance/data/budget.schema.json`. This does not apply to

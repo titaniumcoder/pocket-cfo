@@ -11,12 +11,6 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/invoice"
 )
 
-// runDelete implements `pocket-cfo-ctl delete NUMBER [--dry-run]`: removes a
-// draft invoice's JSON, its build/{NUMBER}-DRAFT.pdf if any, and its
-// render-manifest.json entry, so nothing is left orphaned. Refuses anything
-// not in draft status — an issued invoice is kept, never deleted: the number
-// stays consumed, and deleting one would break the gapless-sequence check.
-// Retracting one is annulment, which isn't built yet (ARCHITECTURE.md §3.7).
 func runDelete(args []string) int {
 	fs := flag.NewFlagSet("delete", flag.ContinueOnError)
 	dryRun := fs.Bool("dry-run", false, "print what would be removed, without removing it")

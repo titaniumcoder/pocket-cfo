@@ -16,7 +16,6 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/budgetdata"
 )
 
-// runActuals dispatches `pocket-cfo-ctl actuals <subcommand>`.
 func runActuals(args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "pocket-cfo-ctl actuals: a subcommand is required (validate, status, categories)")
@@ -35,18 +34,11 @@ func runActuals(args []string) int {
 	}
 }
 
-// runActualsValidate checks every data/actuals/*.json, and with --base-ref
-// also that nothing recorded at that revision would disappear — a month
-// rebuilt from a partial statement leaves every figure adding up while the
-// missing weeks cease to exist.
 func runActualsValidate(args []string) int {
 	fs := flag.NewFlagSet("actuals validate", flag.ContinueOnError)
 	baseRef := fs.String("base-ref", "", "git revision to compare against (e.g. HEAD, origin/main)")
 	allowRemovals := fs.String("allow-removals", "", "reason for accepting removals; never optional and never a bare flag, so git log records why")
 
-	// Stdlib ordering (flags first) rather than splitFlags, which is for the
-	// boolean flags on render/delete and would separate --base-ref from its
-	// value.
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -94,8 +86,6 @@ func runActualsValidate(args []string) int {
 	return 0
 }
 
-// diffAgainstRef compares one month against its committed self. Absent at the
-// ref means a new month, not a breach.
 func diffAgainstRef(dir string, m monthFile, af actualsdata.ActualsFile, ref, allowRemovals string) int {
 	rel := filepath.ToSlash(filepath.Join("actuals", filepath.Base(m.path)))
 	old, ok, err := gitShow(dir, ref, rel)
@@ -104,7 +94,7 @@ func diffAgainstRef(dir string, m monthFile, af actualsdata.ActualsFile, ref, al
 		return 1
 	}
 	if !ok {
-		return 0 // new month
+		return 0
 	}
 	var before actualsdata.ActualsFile
 	if err := json.Unmarshal(old, &before); err != nil {
@@ -131,8 +121,6 @@ func diffAgainstRef(dir string, m monthFile, af actualsdata.ActualsFile, ref, al
 	return 1
 }
 
-// removalReason returns the override in force, from the flag or an
-// Allow-Removals trailer. Never a bare boolean: the reason lands in git log.
 func removalReason(dir, ref, flagReason string) string {
 	if flagReason != "" {
 		return flagReason
@@ -154,8 +142,6 @@ func removalReason(dir, ref, flagReason string) string {
 func gitShow(dir, ref, rel string) ([]byte, bool, error) {
 	out, err := exec.Command("git", "-C", dir, "show", ref+":"+rel).Output()
 	if err != nil {
-		// Non-zero means the path doesn't exist at that ref (a new month);
-		// anything else is a real error.
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
 			return nil, false, nil
@@ -165,7 +151,6 @@ func gitShow(dir, ref, rel string) ([]byte, bool, error) {
 	return out, true, nil
 }
 
-// runActualsStatus prints where reconciliation stands, month by month.
 func runActualsStatus(args []string) int {
 	dir := "data"
 	if len(args) > 0 {
@@ -187,9 +172,6 @@ func runActualsStatus(args []string) int {
 			fmt.Printf("%-9s %s\n", m.key, err)
 			continue
 		}
-		// Through PartsOf, like the service: reading tx.Ignored directly used
-		// to count a split whose parts were all ignored as spend here while
-		// the app excluded it, so the two disagreed about the same file.
 		cents, ignored, untracked := 0, 0, 0
 		for _, tx := range af.Transactions {
 			parts := actualsdata.PartsOf(tx)
@@ -221,7 +203,6 @@ func runActualsStatus(args []string) int {
 	return 0
 }
 
-// runActualsCategories prints the category ids a transaction may cite.
 func runActualsCategories(args []string) int {
 	dir := "data"
 	if len(args) > 0 {
@@ -247,7 +228,7 @@ func runActualsCategories(args []string) int {
 }
 
 type monthFile struct {
-	key  string // "2026-08"
+	key  string
 	path string
 }
 
@@ -282,9 +263,6 @@ func readActuals(path string) (actualsdata.ActualsFile, error) {
 	return af, nil
 }
 
-// budgetCategoryIDs returns the legal category values, or nil when
-// budget.json can't be read — validate reports that separately, and skipping
-// the cross-check beats flagging every transaction.
 func budgetCategoryIDs(dir string) map[string]bool {
 	b, err := os.ReadFile(filepath.Join(dir, "budget.json"))
 	if err != nil {

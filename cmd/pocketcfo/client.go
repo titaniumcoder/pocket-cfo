@@ -16,21 +16,12 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/stats"
 )
 
-// computeToken derives a recipient's client-portal token from their number,
-// their own passkey, and the app-wide secret — fully stateless, nothing is
-// stored. A recipient with no passkey set has no token to compute at all,
-// which is the activation mechanism: setting access_passkey by hand in
-// their JSON file is what turns the portal on for them.
 func computeToken(recipientNumber int, passkey, secret string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	fmt.Fprintf(mac, "%d:%s", recipientNumber, passkey)
 	return base64.URLEncoding.EncodeToString(mac.Sum(nil))
 }
 
-// findRecipientByToken is the only way to resolve a token back to a
-// recipient — there's no way to invert an HMAC, so every recipient that has
-// a passkey set gets its expected token recomputed and compared in constant
-// time. Fine at this recipient volume (ARCHITECTURE.md: ~30 invoices/year).
 func findRecipientByToken(token string, recipients []recipient.RecipientJson, secret string) (recipient.RecipientJson, bool) {
 	for _, r := range recipients {
 		if r.AccessPasskey == nil || *r.AccessPasskey == "" {
@@ -44,9 +35,6 @@ func findRecipientByToken(token string, recipients []recipient.RecipientJson, se
 	return recipient.RecipientJson{}, false
 }
 
-// portalLinks builds the dashboard's copyable portal URL for every
-// recipient that has a passkey set — nothing to show for recipients
-// without one, since they have no working endpoint at all.
 func (s *server) portalLinks(recipients []recipient.RecipientJson) map[int]string {
 	links := map[int]string{}
 	if s.cfg.clientLinkSecret == "" {
@@ -62,8 +50,6 @@ func (s *server) portalLinks(recipients []recipient.RecipientJson) map[int]strin
 	return links
 }
 
-// clientInvoiceRow is one row of a client's own invoice list — only issued
-// invoices are ever built into this, never drafts.
 type clientInvoiceRow struct {
 	Number     string
 	Title      string
@@ -74,10 +60,6 @@ type clientInvoiceRow struct {
 	PDFPath    string
 }
 
-// handleClientPortal serves a recipient's own read-only invoice list, no
-// login required — the token itself is the credential. 404 on any failure
-// (no matching recipient) rather than a permission error, so a guess
-// doesn't confirm anything about which part was wrong.
 func (s *server) handleClientPortal(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 
@@ -145,9 +127,6 @@ func (s *server) handleClientPortal(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleClientInvoicePDF serves build/{file} only if the token resolves to
-// a recipient, the requested invoice actually belongs to that recipient,
-// and it's issued — never a draft, regardless of what the URL asks for.
 func (s *server) handleClientInvoicePDF(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 	file := r.PathValue("file")

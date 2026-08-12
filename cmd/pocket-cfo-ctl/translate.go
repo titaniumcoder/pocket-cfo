@@ -14,12 +14,6 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/translate"
 )
 
-// runTranslate implements `pocket-cfo-ctl translate`: fills missing Bulgarian
-// text on draft invoices' line descriptions and discount labels via DeepL,
-// so day-to-day authoring only has to happen in one language. Never touches
-// an issued invoice (immutable once sent, per ARCHITECTURE.md §3.7) or the
-// tax note (catalog-sourced and human-authored — see catalog/notes.json —
-// never machine-translated).
 func runTranslate(_ []string) int {
 	apiKey := os.Getenv("DEEPL_API_KEY")
 	if apiKey == "" {
@@ -57,9 +51,6 @@ func runTranslate(_ []string) int {
 	return 0
 }
 
-// translateOne fills missing bg text in-place and rewrites path if anything
-// changed. Reports (false, nil) for a no-op (not a draft, or nothing
-// missing) so the caller can distinguish "nothing to do" from an error.
 func translateOne(ctx context.Context, client *translate.Client, path string) (bool, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -88,7 +79,6 @@ func translateOne(ctx context.Context, client *translate.Client, path string) (b
 		}
 		changed = changed || c
 	}
-	// inv.Tax.Note is deliberately never touched here.
 
 	if !changed {
 		return false, nil
@@ -104,15 +94,12 @@ func translateOne(ctx context.Context, client *translate.Client, path string) (b
 	return true, nil
 }
 
-// fillBg translates ls's own-language text into Bulgarian and stores the
-// result, only if bg is currently missing and there's something to
-// translate from. Reports whether it changed anything.
 func fillBg(ctx context.Context, client *translate.Client, ls *invoice.LocalizedString, lang invoice.InvoiceJsonLanguage) (bool, error) {
 	if ls.Bg != nil && *ls.Bg != "" {
 		return false, nil
 	}
 	if lang == invoice.InvoiceJsonLanguageBg {
-		return false, nil // nothing to translate FROM
+		return false, nil
 	}
 	primary, ok := ls.Get(lang)
 	if !ok || primary == "" {

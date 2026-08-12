@@ -8,46 +8,31 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
 
-// configRow is one setting as shown on /info. Value is already
-// display-ready — secrets arrive here masked (see maskSecret), never raw,
-// so nothing downstream can leak one by accident.
 type configRow struct {
 	Name   string
 	Value  string
 	Secret bool
 }
 
-// configGroup is a titled block of settings on the /info config panel.
 type configGroup struct {
 	Name string
 	Rows []configRow
 }
 
-// unsetLabel marks a setting with no value, so an empty cell can't be
-// mistaken for "set to something blank".
 const unsetLabel = "(unset)"
 
-// maskSecret renders a credential as its first 3 and last 2 characters with
-// the middle starred out — enough to tell *which* key is configured (and to
-// spot a truncated paste) without putting the secret itself on screen.
-//
-// Short values are starred out entirely rather than partially revealed: at
-// 8 characters the 3+2 rule would already expose more than half, and at 5 or
-// fewer it would expose the whole thing. Counting is in runes, so a
-// multi-byte character can't be sliced in half into mojibake.
 func maskSecret(v string) string {
 	if v == "" {
 		return unsetLabel
 	}
 	r := []rune(v)
-	const shown = 5 // 3 leading + 2 trailing
+	const shown = 5
 	if len(r) <= shown*2 {
 		return strings.Repeat("*", len(r))
 	}
 	return string(r[:3]) + strings.Repeat("*", len(r)-shown) + string(r[len(r)-2:])
 }
 
-// orUnset renders a plain (non-secret) value, marking the empty case.
 func orUnset(v string) string {
 	if v == "" {
 		return unsetLabel
@@ -55,13 +40,6 @@ func orUnset(v string) string {
 	return v
 }
 
-// configGroups is the current, fully-resolved configuration as rendered at
-// the top of /info — env vars merged with config.json, exactly as this
-// running process resolved them (see loadConfig and
-// internal/finance/config.Load), rather than what any file currently says
-// on disk. Every credential goes through maskSecret; the page is
-// admin-only regardless (see handleInfo), but masking means a screenshot
-// or a shoulder-surfer still can't walk away with a key.
 func (s *server) configGroups() []configGroup {
 	c := s.cfg
 	f := c.finance
@@ -117,9 +95,6 @@ func (s *server) configGroups() []configGroup {
 	}
 }
 
-// legislationSummary renders each dated change, so the figures in force and
-// the months they started are both checkable from /info against the file. A
-// legal obligation you cannot see is one you cannot verify.
 func legislationSummary(periods tracker.Legislation) string {
 	if len(periods) == 0 {
 		return "none — nothing is contributed or taxed, and no minimum wage is enforced"
@@ -131,10 +106,6 @@ func legislationSummary(periods tracker.Legislation) string {
 	return strings.Join(parts, " · ")
 }
 
-// salarySummary renders the months that do something other than pay a full
-// salary. Whether a salary was drawn is as checkable from /info as what it
-// cost, and "every month is full" is worth stating rather than leaving as a
-// blank row.
 func salarySummary(plan tracker.SalaryPlan) string {
 	if len(plan) == 0 {
 		return "every month pays a full salary"
@@ -146,8 +117,6 @@ func salarySummary(plan tracker.SalaryPlan) string {
 	return strings.Join(parts, " · ")
 }
 
-// startMonthSummary says where budgeting begins, or that it does not begin
-// anywhere — which is a real setting, not a missing one.
 func startMonthSummary(t time.Time) string {
 	if t.IsZero() {
 		return "unset — every month in the ±2 year window is offered"
@@ -155,7 +124,6 @@ func startMonthSummary(t time.Time) string {
 	return t.Format("2006-01")
 }
 
-// enabledIf renders a derived, non-secret on/off row.
 func enabledIf(on bool) string {
 	if on {
 		return "enabled"

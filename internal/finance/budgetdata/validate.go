@@ -14,17 +14,17 @@ func validateDate(field, date string) error {
 }
 
 func ValidateBudget(f BudgetFile) error {
-	seenID := map[string]string{} // id -> the category that already claimed it
+	categoryClaimingID := map[string]string{}
 	for _, g := range f.Groups {
 		seen := map[string]bool{}
 		for _, c := range g.Categories {
 			if c.Id == "" {
 				return fmt.Errorf("category %q in group %q has no id", c.Name, g.Name)
 			}
-			if owner, ok := seenID[c.Id]; ok {
+			if owner, ok := categoryClaimingID[c.Id]; ok {
 				return fmt.Errorf("category id %q is used by both %q and %q — an id must be unique across the whole file", c.Id, owner, c.Name)
 			}
-			seenID[c.Id] = c.Name
+			categoryClaimingID[c.Id] = c.Name
 			if seen[c.Name] {
 				return fmt.Errorf("category name %q is used more than once in group %q", c.Name, g.Name)
 			}

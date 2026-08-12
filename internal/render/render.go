@@ -1,5 +1,3 @@
-// Package render turns an invoice into HTML (this file) and a PDF (see
-// api2pdf.go). See ARCHITECTURE.md §6.
 package render
 
 import (
@@ -16,9 +14,6 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/invoice"
 )
 
-// templatePath defaults to this repo's own invoice template, overridable via
-// TEMPLATES_DIR (shared with cmd/pocketcfo, which reads its own web templates
-// from the same directory) — e.g. for a deployment with its own branding.
 var templatePath = getenv("TEMPLATES_DIR", "templates") + "/invoice.html.tmpl"
 
 func getenv(key, fallback string) string {
@@ -28,7 +23,6 @@ func getenv(key, fallback string) string {
 	return fallback
 }
 
-// View is everything the invoice template needs.
 type View struct {
 	Invoice   *invoice.InvoiceJson
 	Totals    money.Totals
@@ -41,15 +35,6 @@ type View struct {
 	LogoSVG   template.HTML
 }
 
-// HTML renders inv to a self-contained HTML document. templatePath is read
-// from disk relative to the repo root, like templates/ elsewhere — see
-// AGENTS.md.
-//
-// paidOn is the payment date to stamp, or nil to render the original.
-// Payment lives in data/paid-invoices.json rather than in the invoice
-// document, so it arrives as an argument: per ARCHITECTURE.md §6 the
-// original PDF is written once and never touched, so it always renders as if
-// unpaid, and only the separate -paid.pdf artifact is given a date.
 func HTML(inv *invoice.InvoiceJson, totals money.Totals, paidOn *types.SerializableDate) ([]byte, error) {
 	if err := validateLocalization(inv); err != nil {
 		return nil, fmt.Errorf("localization: %w", err)
@@ -112,21 +97,12 @@ var funcMap = template.FuncMap{
 	"bilingual": bilingual,
 }
 
-// thousandsSeparator is a non-breaking space, matching Bulgarian/European
-// grouping convention ("1 000,25") — a regular space would let a number
-// wrap mid-figure across a line.
 const thousandsSeparator = ' '
 
-// FormatMoney renders minor units as "1 234,56 €" — nbsp-grouped thousands,
-// decimal-comma, euro suffix. Picked and frozen per ARCHITECTURE.md §6/§11.
 func FormatMoney(minor int64) string {
 	return FormatAmount(minor) + " €"
 }
 
-// FormatAmount is FormatMoney without the euro suffix — "1 234,56" — for
-// figures that aren't in euros (the api2pdf account balance on the /info
-// page) but should still read in the same Bulgarian/European convention as
-// everything else in the app.
 func FormatAmount(minor int64) string {
 	neg := minor < 0
 	if neg {
@@ -151,12 +127,6 @@ func FormatAmount(minor int64) string {
 	return fmt.Sprintf("%s%s,%02d", sign, grouped.String(), cents)
 }
 
-// loadLogoSVG reads an SVG file from disk (relative to the repo root, like
-// templates/ elsewhere — see AGENTS.md) and strips the leading XML
-// declaration, which isn't valid as a literal token inside an HTML
-// document. The rest of the markup, including any Inkscape/sodipodi
-// metadata attributes, is left untouched — browsers ignore what they don't
-// recognize.
 func loadLogoSVG(path string) (template.HTML, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -171,10 +141,6 @@ func loadLogoSVG(path string) (template.HTML, error) {
 	return template.HTML(s), nil
 }
 
-// formatScaledHundredths renders a value stored scaled by 100 (quantity,
-// percent — see ARCHITECTURE.md §3.4/§3.5) as a trimmed decimal: 100 -> "1",
-// 13600 -> "136", 350 -> "3.5". A nil pointer is the "absent" case and
-// renders as "1".
 func formatScaledHundredths(scaled *int) string {
 	v := 100
 	if scaled != nil {
@@ -197,8 +163,6 @@ func formatPercentPtr(scaled *int) string {
 	return formatScaledHundredths(scaled)
 }
 
-// FormatDate renders a date as "02.01.2006" (day.month.year), the format
-// used throughout the invoice template and the web dashboard.
 func FormatDate(d types.SerializableDate) string {
 	return d.Format("02.01.2006")
 }

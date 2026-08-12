@@ -10,13 +10,6 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/render"
 )
 
-// runPrune implements `pocket-cfo-ctl prune [--dry-run]`: removes
-// build/*-DRAFT.pdf files whose invoice JSON no longer exists under
-// data/invoices — relics from a draft removed by hand (rm/git rm) before
-// `pocket-cfo-ctl delete` existed, or any other manual cleanup that skipped it.
-// Unlike pocket-cfo-ctl delete, prune never touches data/invoices; it only
-// reconciles build/ against what's actually there, so it's safe for CI to
-// call unconditionally after every render.
 func runPrune(args []string) int {
 	fs := flag.NewFlagSet("prune", flag.ContinueOnError)
 	dryRun := fs.Bool("dry-run", false, "print what would be removed, without removing it")
@@ -45,7 +38,7 @@ func runPrune(args []string) int {
 		number := strings.TrimSuffix(e.Name(), "-DRAFT.pdf")
 		jsonPath := filepath.Join(invoicesDir, number+".json")
 		if _, err := os.Stat(jsonPath); err == nil {
-			continue // still a live draft
+			continue
 		}
 
 		pdfPath := filepath.Join(buildDir, e.Name())

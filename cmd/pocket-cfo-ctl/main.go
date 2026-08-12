@@ -1,9 +1,3 @@
-// Command pocket-cfo-ctl drives the invoicing pipeline (creating, validating,
-// rendering, and indexing invoices — see ARCHITECTURE.md for the full
-// design) plus validate, which checks every data file PocketCFO reads at
-// runtime (invoicing and finance alike — see validate.go), since this is
-// the only CLI binary in the repo and a real data checkout (the private
-// pocket-cfo-data repo) needs one place to validate all of it in CI.
 package main
 
 import (
@@ -11,9 +5,6 @@ import (
 	"os"
 )
 
-// plannedCommands documents commands ARCHITECTURE.md describes but that are
-// not implemented yet. They are listed here so `help` stays accurate as the
-// CLI grows.
 var plannedCommands = []struct {
 	name string
 	desc string

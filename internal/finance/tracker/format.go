@@ -44,9 +44,10 @@ func formatEuro(cents int) string {
 	if cents < 0 {
 		sign, cents = "-", -cents
 	}
-	euros := (cents + 50) / 100 // round to the nearest euro
-	return sign + groupThousands(euros)
+	return sign + groupThousands(roundedToWholeEuros(cents))
 }
+
+func roundedToWholeEuros(cents int) int { return (cents + 50) / 100 }
 
 func groupThousands(n int) string {
 	s := strconv.Itoa(n)

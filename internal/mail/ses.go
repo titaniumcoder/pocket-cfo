@@ -1,5 +1,3 @@
-// Package mail sends the email-login link via Amazon SES's SendEmail API
-// (AWS SDK for Go v2) — plain text, no templates. See ARCHITECTURE.md §8.
 package mail
 
 import (
@@ -14,23 +12,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ses/types"
 )
 
-// Config holds SES sending config. Empty From means "not configured" —
-// SendLoginLink then logs the link instead of calling SES, so the
-// email-login flow is testable locally without real AWS credentials
-// (mirrors the ENV=prod-only enforcement of these vars in cmd/pocketcfo's
-// loadConfig). Credentials themselves come from the AWS SDK's standard
-// default chain (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY env vars on
-// Fly.io, or an attached IAM role elsewhere) — not app-specific config, so
-// they aren't part of this struct.
 type Config struct {
 	Region string
 	From   string
 }
 
-// SendLoginLink emails toEmail their signed login link via SES. With no
-// From address configured, it logs the link instead of sending — see
-// Config. httpClient is reused for the SES client's outbound calls rather
-// than letting the SDK build its own.
 func SendLoginLink(ctx context.Context, httpClient *http.Client, cfg Config, toEmail, link string) error {
 	if cfg.From == "" {
 		log.Printf("mail: SES_FROM_EMAIL not set, logging login link instead of emailing %s: %s", toEmail, link)

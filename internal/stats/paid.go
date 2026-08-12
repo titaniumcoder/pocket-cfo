@@ -13,13 +13,6 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/paidinvoices"
 )
 
-// LoadPaid reads paid-invoices.json into invoice number -> payment date.
-// A missing file means nothing has been paid yet, not an error — same
-// optional-layer convention as accounts.json.
-//
-// A duplicated invoice number is resolved last-wins rather than rejected:
-// this is the request path, where one bad line must not blank the dashboard.
-// ValidatePaid is what refuses it, in CI and at the CLI.
 func LoadPaid(path string) (map[string]types.SerializableDate, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -41,12 +34,6 @@ func LoadPaid(path string) (map[string]types.SerializableDate, error) {
 	return paid, nil
 }
 
-// ValidatePaid checks the rules paid-invoices.json's JSON Schema can't
-// express: a payment names an invoice that exists, names it exactly once, and
-// never names a draft. invoices is the full set from data/invoices.
-//
-// Every breach is reported rather than just the first, so one validate run
-// shows the whole picture instead of one problem per fix-and-rerun cycle.
 func ValidatePaid(pf paidinvoices.PaidInvoicesJson, invoices []*invoice.InvoiceJson) error {
 	byNumber := make(map[string]*invoice.InvoiceJson, len(invoices))
 	for _, inv := range invoices {

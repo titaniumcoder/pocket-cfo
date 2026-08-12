@@ -229,6 +229,26 @@ type FoundTransaction struct {
 	Account     string  `json:"account"`
 	Category    string  `json:"category,omitempty"`
 	Ignored     string  `json:"ignored,omitempty"`
+
+	// Splits is set instead of Category/Ignored when the line paid for more
+	// than one thing. The parts add up to Amount.
+	Splits []FoundSplit `json:"splits,omitempty"`
+}
+
+// FoundSplit is one part of a split statement line.
+type FoundSplit struct {
+	Amount   float64 `json:"amount"`
+	Category string  `json:"category,omitempty"`
+	Ignored  string  `json:"ignored,omitempty"`
+}
+
+func anyPart(parts []actualsdata.Part, match func(actualsdata.Part) bool) bool {
+	for _, p := range parts {
+		if match(p) {
+			return true
+		}
+	}
+	return false
 }
 
 // SearchQuery narrows a transaction search. An empty Query matches everything.
@@ -286,14 +306,18 @@ func (s *Service) Search(ctx context.Context, q SearchQuery) (*SearchResult, err
 			continue
 		}
 		for _, tx := range af.Transactions {
-			ignored := deref(tx.Ignored)
-			if ignored != "" && !q.IncludeIgnored {
+			parts := actualsdata.PartsOf(tx)
+			// A split line is one result carrying its parts, not one result
+			// per part: Hermes searches to learn how a merchant was treated
+			// last time, and "50 cleaning, 50 restaurant out of 100" is the
+			// answer. Its filters therefore match if any part matches.
+			if !q.IncludeIgnored && !anyPart(parts, func(p actualsdata.Part) bool { return p.Ignored == "" }) {
 				continue
 			}
 			if needle != "" && !strings.Contains(strings.ToLower(tx.Description), needle) {
 				continue
 			}
-			if q.Category != "" && deref(tx.Category) != q.Category {
+			if q.Category != "" && !anyPart(parts, func(p actualsdata.Part) bool { return p.Category == q.Category }) {
 				continue
 			}
 			if q.Account != "" && tx.Account != q.Account {
@@ -303,10 +327,18 @@ func (s *Service) Search(ctx context.Context, q SearchQuery) (*SearchResult, err
 				out.Truncated = true
 				return out, nil
 			}
-			out.Transactions = append(out.Transactions, FoundTransaction{
+			found := FoundTransaction{
 				Month: af.Month, ID: tx.Id, Date: tx.Date, Description: tx.Description,
-				Amount: tx.Amount, Account: tx.Account, Category: deref(tx.Category), Ignored: ignored,
-			})
+				Amount: tx.Amount, Account: tx.Account,
+			}
+			if len(tx.Splits) > 0 {
+				for _, p := range parts {
+					found.Splits = append(found.Splits, FoundSplit{Amount: p.Amount, Category: p.Category, Ignored: p.Ignored})
+				}
+			} else {
+				found.Category, found.Ignored = parts[0].Category, parts[0].Ignored
+			}
+			out.Transactions = append(out.Transactions, found)
 		}
 	}
 	return out, nil
@@ -450,11 +482,20 @@ func (s *Service) Reconciliation(ctx context.Context, year int) ([]MonthStatus, 
 			st.Coverage = af.Coverage
 			st.TransactionCount = len(af.Transactions)
 			for _, tx := range af.Transactions {
-				if deref(tx.Ignored) != "" {
+				parts := actualsdata.PartsOf(tx)
+				spent := 0
+				for _, p := range parts {
+					if p.Ignored == "" {
+						spent += eurToCents(p.Amount)
+					}
+				}
+				// Ignored counts lines, not parts, and a part-ignored split
+				// is not an ignored line — its money is still in the total.
+				if !anyPart(parts, func(p actualsdata.Part) bool { return p.Ignored == "" }) {
 					st.IgnoredCount++
 					continue
 				}
-				st.ActualCents += eurToCents(tx.Amount)
+				st.ActualCents += spent
 			}
 			view, verr := s.Actuals.ForMonth(ctx, year, m)
 			if verr != nil {
@@ -485,30 +526,35 @@ func mistimedIn(af actualsdata.ActualsFile, year int, viewed time.Month, planned
 	chargedHere := map[string]bool{}
 
 	for _, tx := range af.Transactions {
-		id := deref(tx.Category)
-		if id == "" {
-			continue
+		for _, part := range actualsdata.PartsOf(tx) {
+			id := part.Category
+			if id == "" {
+				continue
+			}
+			chargedHere[id] = true
+			if seen[id] {
+				continue
+			}
+			cat, ok := idx[id]
+			if !ok || cat.Date == "" {
+				continue
+			}
+			due, err := dueMonth(cat.Date)
+			// Compared as year-and-month: a one-off dated next August is not
+			// the same plan as this August, and reading it as one hides a
+			// real charge.
+			if err != nil || due == here {
+				continue
+			}
+			seen[id] = true
+			out = append(out, MistimedCharge{
+				CategoryID: id, Name: cat.Name,
+				PlannedFor: due, ChargedIn: here,
+				// The part's own amount: a laptop bought inside a 2 000 card
+				// settlement is a 1 800 problem, not a 2 000 one.
+				AmountCents: eurToCents(part.Amount),
+			})
 		}
-		chargedHere[id] = true
-		if seen[id] {
-			continue
-		}
-		cat, ok := idx[id]
-		if !ok || cat.Date == "" {
-			continue
-		}
-		due, err := dueMonth(cat.Date)
-		// Compared as year-and-month: a one-off dated next August is not the
-		// same plan as this August, and reading it as one hides a real charge.
-		if err != nil || due == here {
-			continue
-		}
-		seen[id] = true
-		out = append(out, MistimedCharge{
-			CategoryID: id, Name: cat.Name,
-			PlannedFor: due, ChargedIn: here,
-			AmountCents: eurToCents(tx.Amount),
-		})
 	}
 
 	for _, c := range planned {

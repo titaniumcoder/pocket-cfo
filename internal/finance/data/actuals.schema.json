@@ -4,10 +4,16 @@
   "title": "Actuals",
   "description": "What was ACTUALLY spent in one month, reconciled from bank statements — one file per month, named for the month it covers (data/actuals/2026-08.json). Display only: nothing here feeds Balance, Available to spend, Total private expenses or the account roll-forward, all of which stay planned-based. Every transaction carries exactly one of category or ignored, so the file accounts for every row on the statement and 'deliberately skipped' is recorded rather than inferred from absence. coverage is what stops a mid-month import reading as a spectacular underspend.",
   "type": "object",
-  "required": ["month", "coverage", "transactions"],
+  "required": [
+    "month",
+    "coverage",
+    "transactions"
+  ],
   "additionalProperties": false,
   "properties": {
-    "$schema": { "type": "string" },
+    "$schema": {
+      "type": "string"
+    },
     "month": {
       "type": "string",
       "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
@@ -16,18 +22,27 @@
     "coverage": {
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/$defs/coverage" },
+      "items": {
+        "$ref": "#/$defs/coverage"
+      },
       "description": "Which account was read, and through which dates. Never empty: 'nothing imported yet' is the absent file, not an empty one. Until coverage spans the whole month the dashboard withholds any under-budget judgement, since on the 5th every category is trivially under."
     },
     "transactions": {
       "type": "array",
-      "items": { "$ref": "#/$defs/transaction" }
+      "items": {
+        "$ref": "#/$defs/transaction"
+      }
     }
   },
   "$defs": {
     "coverage": {
       "type": "object",
-      "required": ["account", "from", "to", "imported_at"],
+      "required": [
+        "account",
+        "from",
+        "to",
+        "imported_at"
+      ],
       "additionalProperties": false,
       "properties": {
         "account": {
@@ -35,14 +50,32 @@
           "minLength": 1,
           "description": "The account this range was read from, spelled as the transactions spell it."
         },
-        "from": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "First day read, inclusive. Must fall inside month." },
-        "to": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "Last day read, inclusive. Must fall inside month and not precede from." },
-        "imported_at": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "When the statement was read. Informational — only from/to affect any figure." }
+        "from": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "First day read, inclusive. Must fall inside month."
+        },
+        "to": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "Last day read, inclusive. Must fall inside month and not precede from."
+        },
+        "imported_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "When the statement was read. Informational — only from/to affect any figure."
+        }
       }
     },
     "transaction": {
       "type": "object",
-      "required": ["id", "date", "description", "amount", "account"],
+      "required": [
+        "id",
+        "date",
+        "description",
+        "amount",
+        "account"
+      ],
       "additionalProperties": false,
       "properties": {
         "id": {
@@ -50,7 +83,11 @@
           "minLength": 1,
           "description": "Stable within this file, so re-uploading the same statement is idempotent rather than duplicating every line. Derived deterministically from account+date+amount+description, with a -2 suffix on collision."
         },
-        "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "Must fall inside month: a statement spanning a month boundary splits into two files." },
+        "date": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "Must fall inside month: a statement spanning a month boundary splits into two files."
+        },
         "description": {
           "type": "string",
           "minLength": 1,
@@ -60,15 +97,50 @@
           "type": "number",
           "description": "Euros, decimals allowed. Positive = money out, matching budget.json's convention; a refund is a negative amount against the same category. Never 0 — a zero line is noise, and 'saw it, not an expense' is what ignored is for."
         },
-        "account": { "type": "string", "minLength": 1, "description": "Which account it was charged to. Free text: accounts.json models private accounts only, so a company card has nowhere to be declared." },
+        "account": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Which account it was charged to. Free text: accounts.json models private accounts only, so a company card has nowhere to be declared."
+        },
         "category": {
           "type": "string",
-          "description": "The budget category id this line belongs to. Exactly one of category or ignored must be set — that rule is enforced in Go, since expressing it here would generate poor code. A category that no longer resolves fails validation loudly rather than silently dropping the money."
+          "description": "The budget category id this line belongs to. Exactly one of category, ignored or splits must be set — that rule is enforced in Go, since expressing it here would generate poor code. A category that no longer resolves fails validation loudly rather than silently dropping the money."
         },
         "ignored": {
           "type": "string",
           "minLength": 1,
           "description": "Why this line is not a budget expense — 'salary', 'transfer to savings'. A non-empty reason, never a bare true: the file is meant to reconcile line-for-line against the statement, and the spending page lists these so a mis-ignored line is visible. Excluded from every figure."
+        },
+        "splits": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/split"
+          },
+          "description": "Set instead of category or ignored when one statement line paid for more than one thing. The line itself stays a single row so the file still reconciles line-for-line against the statement; the parts must add up to its amount. Two or more parts — one part is just a category."
+        }
+      }
+    },
+    "split": {
+      "type": "object",
+      "required": [
+        "amount"
+      ],
+      "additionalProperties": false,
+      "description": "One part of a statement line that paid for more than one thing — a 100 EUR cash withdrawal that was 50 of cleaning and 50 of restaurant. A part carries exactly one of category or ignored, the same rule a whole line follows.",
+      "properties": {
+        "amount": {
+          "type": "number",
+          "description": "Euros, same sign convention as the line it belongs to. Never 0, and the parts must add up to the line's own amount — a split that does not reconcile to the statement is worse than no split."
+        },
+        "category": {
+          "type": "string",
+          "description": "The budget category id this part belongs to. Exactly one of category or ignored, enforced in Go for the same reason as on the line itself."
+        },
+        "ignored": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Why this part is not a budget expense — 'moved to savings'. Lets a withdrawal that was partly spent and partly moved to your own account be recorded as what it was."
         }
       }
     }

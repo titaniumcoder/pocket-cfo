@@ -64,12 +64,17 @@ func ValidateActuals(af ActualsFile, monthKey string, knownIDs map[string]bool) 
 
 		hasCategory := tx.Category != nil && *tx.Category != ""
 		hasIgnored := tx.Ignored != nil && *tx.Ignored != ""
+		hasSplits := len(tx.Splits) > 0
 		switch {
+		case hasSplits && (hasCategory || hasIgnored):
+			problems = append(problems, fmt.Errorf("transaction %s has splits as well as a category or ignored reason — the parts decide, so the line itself must not", tx.Id))
 		case hasCategory && hasIgnored:
 			problems = append(problems, fmt.Errorf("transaction %s has both a category and an ignored reason — it must have exactly one", tx.Id))
-		case !hasCategory && !hasIgnored:
-			problems = append(problems, fmt.Errorf("transaction %s has neither a category nor an ignored reason — no line may be left undecided", tx.Id))
-		case hasCategory && knownIDs != nil && !knownIDs[*tx.Category]:
+		case !hasCategory && !hasIgnored && !hasSplits:
+			problems = append(problems, fmt.Errorf("transaction %s has neither a category, an ignored reason nor splits — no line may be left undecided", tx.Id))
+		}
+		problems = append(problems, splitProblems(tx, knownIDs)...)
+		if hasCategory && knownIDs != nil && !knownIDs[*tx.Category] {
 			problems = append(problems, fmt.Errorf("transaction %s cites category %q, which is not in budget.json", tx.Id, *tx.Category))
 		}
 
@@ -88,6 +93,46 @@ func ValidateActuals(af ActualsFile, monthKey string, knownIDs map[string]bool) 
 	}
 
 	return errors.Join(problems...)
+}
+
+// splitProblems checks the parts of a split line. The sum rule is the one
+// that matters: a split whose parts do not add up to the line silently moves
+// money into or out of the month's total, which no other check would notice.
+//
+// Compared in whole cents, since 33.33 + 33.33 + 33.34 is exactly 100 in the
+// units the app actually counts in and not in binary floating point.
+func splitProblems(tx Transaction, knownIDs map[string]bool) []error {
+	if len(tx.Splits) == 0 {
+		return nil
+	}
+	var problems []error
+	for i, s := range tx.Splits {
+		hasCategory := s.Category != nil && *s.Category != ""
+		hasIgnored := s.Ignored != nil && *s.Ignored != ""
+		switch {
+		case hasCategory && hasIgnored:
+			problems = append(problems, fmt.Errorf("transaction %s split %d has both a category and an ignored reason — it must have exactly one", tx.Id, i+1))
+		case !hasCategory && !hasIgnored:
+			problems = append(problems, fmt.Errorf("transaction %s split %d has neither a category nor an ignored reason", tx.Id, i+1))
+		case hasCategory && knownIDs != nil && !knownIDs[*s.Category]:
+			problems = append(problems, fmt.Errorf("transaction %s split %d cites category %q, which is not in budget.json", tx.Id, i+1, *s.Category))
+		}
+		if s.Amount == 0 {
+			problems = append(problems, fmt.Errorf("transaction %s split %d has an amount of 0 — leave it out instead", tx.Id, i+1))
+		}
+	}
+	if got, want := roundCents(SplitSum(tx)), roundCents(tx.Amount); got != want {
+		problems = append(problems, fmt.Errorf("transaction %s splits add up to %.2f, but the line is %.2f — a split that does not reconcile to the statement moves money nothing else would catch",
+			tx.Id, float64(got)/100, float64(want)/100))
+	}
+	return problems
+}
+
+func roundCents(euros float64) int {
+	if euros < 0 {
+		return -int(-euros*100 + 0.5)
+	}
+	return int(euros*100 + 0.5)
 }
 
 func parseDay(s string) (time.Time, error) {

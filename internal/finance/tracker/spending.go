@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/titaniumcoder/pocket-cfo/internal/finance/actualsdata"
 	"github.com/titaniumcoder/pocket-cfo/internal/webui"
 )
 
@@ -69,6 +70,11 @@ type SpendingTx struct {
 	Cents       int
 	Reason      string // ignored lines only
 	Category    string // unmatched lines only
+
+	// PartOf is the whole line's amount when this row is one part of a split,
+	// empty otherwise. Without it a 50 under Restaurant cannot be squared
+	// against a statement that says 100.
+	PartOf string
 }
 
 // ComputeSpending assembles the detail page for one month. An unreconciled
@@ -109,18 +115,30 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 
 	byCategory := map[string][]SpendingTx{}
 	for _, tx := range af.Transactions {
-		row := SpendingTx{ID: tx.Id, Date: tx.Date, Description: tx.Description, Account: tx.Account, Cents: eurToCents(tx.Amount)}
-		if tx.Ignored != nil && *tx.Ignored != "" {
-			row.Reason = *tx.Ignored
-			v.Ignored = append(v.Ignored, row)
-			v.IgnoredCount++
-			continue
+		parts := actualsdata.PartsOf(tx)
+		split := len(tx.Splits) > 0
+		for _, part := range parts {
+			row := SpendingTx{
+				ID: tx.Id, Date: tx.Date, Description: tx.Description,
+				Account: tx.Account, Cents: eurToCents(part.Amount),
+			}
+			// A part says what it is a part of, since on its own "50" under
+			// Restaurant next to a statement showing 100 reads as an error.
+			if split {
+				row.PartOf = formatEuro(eurToCents(tx.Amount))
+			}
+			if part.Ignored != "" {
+				row.Reason = part.Ignored
+				v.Ignored = append(v.Ignored, row)
+				v.IgnoredCount++
+				continue
+			}
+			if part.Category == "" {
+				continue
+			}
+			v.TotalCents += row.Cents
+			byCategory[part.Category] = append(byCategory[part.Category], row)
 		}
-		if tx.Category == nil {
-			continue
-		}
-		v.TotalCents += row.Cents
-		byCategory[*tx.Category] = append(byCategory[*tx.Category], row)
 	}
 
 	// Reusing the dashboard's view keeps the two pages from disagreeing.
@@ -198,6 +216,13 @@ func spendingGroups(groups []CategoryGroupView, company bool, byCategory map[str
 func (t SpendingTx) ChangeRequest() string {
 	// The exact amount, not formatEuro's whole euros: this identifies one
 	// statement line, and 210 instead of 210.40 could match the wrong one.
+	if t.PartOf != "" {
+		// Naming the whole line as well, because the id identifies the
+		// statement line and the amount here is only part of it — asking
+		// Hermes to change "ID x to 60" when the line is 100 is ambiguous.
+		return fmt.Sprintf("Change ID %s (%s / %s / %.2f of %s) like this: ",
+			t.ID, t.Date, t.Description, float64(t.Cents)/100, t.PartOf)
+	}
 	return fmt.Sprintf("Change ID %s (%s / %s / %.2f) like this: ",
 		t.ID, t.Date, t.Description, float64(t.Cents)/100)
 }

@@ -152,15 +152,10 @@ func ParseStartMonth(s string) (time.Time, error) {
 // ValidateSalaryAgainstLegislation refuses a month set to the minimum when no
 // minimum wage is in force for it.
 //
-// The two blocks are independent everywhere else, and that is the problem: on
-// its own each one is fine, and together they mean a salary of zero for a
-// month the file says should be paid. The page would show that as a zero and
-// never say why, so it is caught at load like every other legal-obligation
-// mistake in config.json.
-//
-// An open-ended period is checked only at its first month: a minimum wage
-// carries forward once set, so if it is missing there it is missing for the
-// whole stretch.
+// Each block is fine alone; together they mean a salary of zero for a month
+// the file says should be paid, which the page would show as a zero without
+// ever saying why. An open-ended period is checked only at its first month,
+// since a minimum wage carries forward once set.
 func ValidateSalaryAgainstLegislation(plan SalaryPlan, l Legislation) error {
 	for _, p := range plan {
 		if p.Mode != SalaryMinimum {

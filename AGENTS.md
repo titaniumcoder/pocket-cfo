@@ -1,7 +1,9 @@
 # AGENTS.md
 
-`ARCHITECTURE.md` is the canonical design doc — read it first. This file only records
-conventions established during scaffolding that aren't obvious from the code itself.
+`ARCHITECTURE.md` is the canonical design doc for the **invoicing** side — read it first
+when working there. The finance tracker's design lives inline in `internal/finance`, and
+the agent-facing write surface in `docs/HERMES.md`. This file only records conventions
+that aren't obvious from the code itself.
 
 ## Conventions
 
@@ -20,27 +22,37 @@ conventions established during scaffolding that aren't obvious from the code its
   hand-written JSON-RPC rather than the SDK's own client, so they would equally validate
   a hand-rolled replacement.
 - **Schema documents are `go:embed`ed**, never read from disk at runtime — every file
-  under `schemas/` (`issuer.json`, `recipient.json`, `invoice.json`, `notes.json`,
-  `users.json`) plus `internal/finance/data/budget.schema.json`. This does not apply to
-  `data/**` (recipients, invoices, `users.json`, `budget.json`), which is hand-edited and
-  read fresh from disk on every request/check (see `DATA_DIR`/`BUILD_DIR` in
-  README.md; reading it via the GitHub Contents API instead is a documented
-  future direction, not current behavior — see ARCHITECTURE.md §8), nor to
-  `templates`/`static`, which are read from disk
-  since `embed` can't cross outside a package's own directory tree anyway. Every schema
-  gets generated Go types via `go-jsonschema` (`internal/schema/<model>/`,
-  `internal/finance/budgetdata/`) — never a hand-written struct for a *data* shape, even
-  a small one; the one deliberate exception is `config.json` (pure deployment tunables,
-  not data — see `internal/finance/config`).
-- **Let the code speak; comment only what it can't.** Keep a comment when it
-  records something unreachable from reading the function — a decision and its
-  reason ("marks stale rather than deletes, because a delete makes a failed
-  refetch look like never-fetched"), a non-obvious constraint, a domain rule
-  like the two-month funding shift, or a bug the shape of the code is guarding
-  against. Drop restatement of what the next line does, narration of why the
-  reader should care, and the same rationale repeated at three call sites.
-  Prefer one tight paragraph to five; a doc comment that has to be scrolled is
-  usually explaining a design that should have been named better instead.
+  under `schemas/` plus all three under `internal/finance/data/` (`budget`, `accounts`,
+  `actuals`). This does not apply to `data/**`, which is hand-edited and read fresh from
+  disk on every request/check (see `DATA_DIR`/`BUILD_DIR` in README.md), nor to
+  `templates`/`static`, which are read from disk since `embed` can't cross outside a
+  package's own directory tree anyway. Every schema gets generated Go types via
+  `go-jsonschema` (`internal/schema/<model>/`, `internal/finance/{budget,accounts,actuals}data/`)
+  — never a hand-written struct for a *data* shape, even a small one; the one deliberate
+  exception is `config.json` (pure deployment tunables, not data — see
+  `internal/finance/config`).
+- **Writes go through git, never to disk.** `DATA_DIR` is an ephemeral mounted checkout:
+  a write landing there is lost on restart and diverges from the repo. Everything the
+  Hermes API accepts is committed through the GitHub Contents API instead, which is what
+  makes an agent-facing write surface tolerable — it isn't trusted, it's audited. See
+  `docs/HERMES.md`.
+- **The code explains itself; comments do not.** Go code here carries no comments.
+  When a block needs explaining, that is the signal to extract it into a function
+  whose name is the explanation — `refuseDestruction`, `privateExpenseStartMonth`,
+  `describeSchedule` — or to name the constant, or to split the function until each
+  piece states its own intent. A comment is the option of last resort, and there
+  isn't one.
+  - **Where the *why* goes instead.** A fact from outside the code — a tax rule, a
+    vendor's behaviour, a regulator's requirement, a domain rule like the two-month
+    funding shift — cannot be carried by an identifier, so it belongs in
+    `ARCHITECTURE.md` (§10 and §11 for the finance and agent halves) or in
+    `docs/`. Write it there, once, and let the code be the mechanism.
+  - **What survives in a `.go` file.** Compiler directives only: `//go:generate`,
+    `//go:embed`, `//go:build`. Those are syntax, not commentary.
+  - **Tests are the exception**, and are where an intent that resists naming should
+    land. A test name is a sentence, and a test that fails is a comment nobody can
+    let rot — prefer `TestUntrackedCashReachesNoFinanceFigure` over a paragraph
+    above the field it protects.
 - **Generated types are build output, not source, and are not checked in.**
   `go generate ./...` (or `make generate`) regenerates them from `schemas/*.json` and
   `internal/finance/data/*.schema.json` via `go-jsonschema`; every one is gitignored, so
@@ -83,8 +95,11 @@ release time.
   small subtasks, each one a complete, independently-verifiable unit of work — not a
   batch of unrelated changes.
 - **Per-subtask ritual.** Run the `ship-it` skill (`.agents/skills/ship-it/SKILL.md`) to
-  close out a subtask — it runs the full checklist (fmt/generate/vet/build/test/
-  manual-test/docker-build) and creates exactly one commit for it. Do not push yet.
+  close out a subtask — it runs the full checklist (fmt/generate/vet/build/test plus a
+  real manual exercise of the change) and creates exactly one commit for it. It
+  deliberately does *not* build the image: CI does that on every push, and duplicating
+  the one check most likely to be unavailable locally turns a green step into a paragraph
+  of hedging. Do not push yet.
 - **End of plan.** Once every subtask in the plan is done, push, then watch the GitHub
   Actions run for that push to confirm it's green before considering the plan finished.
 

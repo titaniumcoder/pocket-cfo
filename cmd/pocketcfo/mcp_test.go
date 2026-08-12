@@ -273,3 +273,76 @@ func TestMCPSDKIsImportedOnce(t *testing.T) {
 		t.Errorf("the SDK is imported by %v; it belongs only in internal/api/mcp.go, so deleting that file drops the dependency", importers)
 	}
 }
+
+// TestMCPAndRESTAgreeOnSearch is the test whose absence let the two adapters
+// drift: deriving the years a from/to range covers lived in the REST adapter
+// only, so the identical search through MCP scanned the current year and
+// returned nothing — no error, no warning, just an empty answer that reads as
+// "never seen this merchant". Comparing the two answers is the cheap way to
+// notice; comparing each against a hand-written expectation is not, because
+// whoever writes the second expectation writes it to match the code.
+func TestMCPAndRESTAgreeOnSearch(t *testing.T) {
+	s := apiServer(t, apiTestToken, "prod")
+
+	// A year that is NOT the current one: with 2026-08 the current-year
+	// fallback finds the match by accident and the test passes against the
+	// very bug it exists for. This month is only reachable by deriving the
+	// year from the range.
+	const from, to = "2025-11", "2025-11"
+
+	rest := apiGet(t, s, "/api/transactions?q=LIDL&from="+from+"&to="+to+"&include_ignored=true", apiTestToken)
+	if rest.Code != http.StatusOK {
+		t.Fatalf("REST status = %d, body %s", rest.Code, rest.Body)
+	}
+	var restBody struct {
+		Transactions []struct {
+			ID    string `json:"id"`
+			Month string `json:"month"`
+		} `json:"transactions"`
+	}
+	if err := json.Unmarshal(rest.Body.Bytes(), &restBody); err != nil {
+		t.Fatal(err)
+	}
+	if len(restBody.Transactions) == 0 {
+		t.Fatal("the fixture matched nothing over REST; the test proves nothing")
+	}
+
+	w := mcpCall(t, s, apiTestToken,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_transactions","arguments":{"query":"LIDL","from":"`+from+`","to":"`+to+`","include_ignored":true}}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("MCP status = %d, body %s", w.Code, w.Body)
+	}
+	mcpBody := w.Body.String()
+	for _, tx := range restBody.Transactions {
+		if !strings.Contains(mcpBody, `"`+tx.ID+`"`) {
+			t.Errorf("REST found %s in %s and MCP did not: %s", tx.ID, tx.Month, mcpBody)
+		}
+	}
+}
+
+// TestMCPRejectsAnImpossibleYear: the range check belongs to the service, so
+// it applies whoever is asking. It used to live in the REST handler, which
+// meant MCP accepted year 99 and answered with twelve empty months.
+func TestMCPRejectsAnImpossibleYear(t *testing.T) {
+	s := apiServer(t, apiTestToken, "prod")
+	w := mcpCall(t, s, apiTestToken,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_reconciliation_status","arguments":{"year":99}}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "invalid_request") {
+		t.Errorf("year 99 was accepted: %s", w.Body)
+	}
+}
+
+// TestMCPBodyIsCapped: put_actuals is the one tool that accepts a document, so
+// an uncapped body here is an uncapped body full stop.
+func TestMCPBodyIsCapped(t *testing.T) {
+	s := apiServer(t, apiTestToken, "prod")
+	huge := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_transactions","arguments":{"query":"` +
+		strings.Repeat("x", maxMCPBody+1) + `"}}}`
+	w := mcpCall(t, s, apiTestToken, huge)
+	if w.Code == http.StatusOK {
+		t.Errorf("a %d-byte body was accepted", len(huge))
+	}
+}

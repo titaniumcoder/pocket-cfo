@@ -279,3 +279,57 @@ func TestMovePlannedExpenseMapsAGitHubRace(t *testing.T) {
 		t.Fatalf("err = %v, want a conflict", err)
 	}
 }
+
+// TestMoveToAShorterMonthClampsTheDay: a one-off dated the 31st moved into
+// February is an ordinary request. Carrying the day across verbatim produced
+// 2026-02-31, which passed the shape check, survived the byte surgery, and
+// only died in ValidateBudget — surfacing as a 500 blaming the server for a
+// request that was fine.
+func TestMoveToAShorterMonthClampsTheDay(t *testing.T) {
+	const budget = `{
+  "groups": [
+    { "name": "Equipment", "kind": "company", "categories": [
+      { "id": "` + idLaptop + `", "name": "Laptop", "amount": 1800, "date": "2026-01-31" }
+    ]}
+  ]
+}
+`
+	gh := newFakeGitHub(map[string]string{budgetRepoPath: budget})
+	s := &Service{
+		Budget:  &tracker.Budget{FS: fstest.MapFS{"budget.json": &fstest.MapFile{Data: []byte(budget)}}},
+		Actuals: &tracker.Actuals{FS: fstest.MapFS{}},
+	}
+	srv := gh.server(t)
+	s.Store = &ContentsClient{HTTP: srv.Client(), Repo: "owner/data", Token: "test-token", BaseURL: srv.URL}
+
+	_, err := move(t, s, MoveRequest{
+		CategoryID: idLaptop, FromMonth: "2026-01", ToMonth: "2026-02",
+		Reason: "charged in February", BaseSHA: shaOf([]byte(budget)),
+	})
+	if err != nil {
+		t.Fatalf("MovePlannedExpense: %v", err)
+	}
+	if out := string(gh.lastBody); !strings.Contains(out, `"date": "2026-02-28"`) {
+		t.Errorf("the day was not clamped to the end of February:\n%s", out)
+	}
+}
+
+func TestMovedDate(t *testing.T) {
+	tests := []struct{ date, to, want string }{
+		{"2026-10-01", "2026-08", "2026-08-01"},
+		{"2026-01-31", "2026-02", "2026-02-28"}, // clamped
+		{"2024-01-31", "2024-02", "2024-02-29"}, // and a leap year is longer
+		{"2026-03-31", "2026-04", "2026-04-30"},
+		{"2026-01-15", "2026-02", "2026-02-15"}, // a day that fits is kept
+	}
+	for _, tt := range tests {
+		got, err := movedDate(tt.date, tt.to)
+		if err != nil {
+			t.Errorf("movedDate(%q, %q): %v", tt.date, tt.to, err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("movedDate(%q, %q) = %q, want %q", tt.date, tt.to, got, tt.want)
+		}
+	}
+}

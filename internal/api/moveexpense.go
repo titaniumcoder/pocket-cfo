@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/budgetdata"
 )
@@ -101,8 +102,14 @@ func (s *Service) MovePlannedExpense(ctx context.Context, req MoveRequest) (*Mov
 	}
 
 	// Keep the day, move the month: the day is informational, and preserving
-	// it keeps the diff to the part that matters.
-	newDate := req.ToMonth + (*cat.Date)[7:]
+	// it keeps the diff to the part that matters. Clamped to the target
+	// month's length, since the 31st of February is not a date — moving a
+	// one-off dated the 31st into a shorter month is an ordinary request, and
+	// it used to reach ValidateBudget and come back as a 500.
+	newDate, err := movedDate(*cat.Date, req.ToMonth)
+	if err != nil {
+		return nil, err
+	}
 	out, err := setCategoryDate(src, req.CategoryID, newDate)
 	if err != nil {
 		return nil, err
@@ -125,6 +132,26 @@ func (s *Service) MovePlannedExpense(ctx context.Context, req MoveRequest) (*Mov
 		From: req.FromMonth, To: req.ToMonth,
 		SHA: newSHA, DeployPending: true,
 	}, nil
+}
+
+// movedDate re-dates a one-off into another month, keeping the day where the
+// month is long enough to have it and clamping to the last day where it is
+// not: 2026-01-31 moved to February becomes 2026-02-28.
+func movedDate(date, toMonth string) (string, error) {
+	year, month, err := ParseMonth(toMonth)
+	if err != nil {
+		return "", err
+	}
+	d, perr := time.Parse("2006-01-02", date)
+	if perr != nil {
+		return "", errorf(CodeInvalidRequest, "the category's date %q is not a date", date)
+	}
+	last := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, -1).Day()
+	day := d.Day()
+	if day > last {
+		day = last
+	}
+	return fmt.Sprintf("%s-%02d", toMonth, day), nil
 }
 
 func (s *Service) budgetPath() string {

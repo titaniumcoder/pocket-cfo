@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"regexp"
 	"sort"
 	"strconv"
@@ -160,13 +162,26 @@ type ActualsMonth struct {
 	Month        string                    `json:"month"`
 	Coverage     []actualsdata.Coverage    `json:"coverage"`
 	Transactions []actualsdata.Transaction `json:"transactions"`
+
+	// SHA is what a later write passes back as base_sha. Empty when writes
+	// aren't configured, since there is then nothing to pass it to.
+	SHA string `json:"sha,omitempty"`
 }
 
 // ActualsFor returns the committed document for a month, or not_found.
+//
+// With writes configured it reads through the store rather than DATA_DIR, so
+// the document and the sha describe the same commit. The mounted checkout
+// lags by a deploy: serving its bytes with a fresh sha would let a merge be
+// built on a document that is no longer what the sha names, and the write
+// would then be accepted.
 func (s *Service) ActualsFor(ctx context.Context, month string) (*ActualsMonth, error) {
 	year, m, err := ParseMonth(month)
 	if err != nil {
 		return nil, err
+	}
+	if s.Store != nil {
+		return s.actualsFromStore(ctx, month)
 	}
 	af, present, ferr := s.Actuals.TransactionsForMonth(ctx, year, m)
 	if ferr != nil {
@@ -177,6 +192,32 @@ func (s *Service) ActualsFor(ctx context.Context, month string) (*ActualsMonth, 
 	}
 	return &ActualsMonth{Month: af.Month, Coverage: af.Coverage, Transactions: af.Transactions}, nil
 }
+
+func (s *Service) actualsFromStore(ctx context.Context, month string) (*ActualsMonth, error) {
+	path := s.actualsPath(month)
+	content, sha, err := s.Store.Get(ctx, path)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, errorf(CodeNotFound, "%s has not been reconciled", month)
+		}
+		if e, ok := err.(*Error); ok {
+			return nil, e
+		}
+		return nil, errorf(CodeUpstream, "reading %s: %v", path, err)
+	}
+	var af actualsdata.ActualsFile
+	if err := json.Unmarshal(content, &af); err != nil {
+		return nil, errorf(CodeUpstream, "%s does not parse: %v", path, err)
+	}
+	return &ActualsMonth{Month: af.Month, Coverage: af.Coverage, Transactions: af.Transactions, SHA: sha}, nil
+}
+
+// The year range every endpoint accepts. Wide enough never to be the reason
+// a real request fails, narrow enough that a typo is caught as one.
+const (
+	minYear = 1970
+	maxYear = 9999
+)
 
 // FoundTransaction is one committed transaction, with the month it came from.
 type FoundTransaction struct {
@@ -271,13 +312,54 @@ func (s *Service) Search(ctx context.Context, q SearchQuery) (*SearchResult, err
 	return out, nil
 }
 
+// scanYears works out which years a search covers: the explicit list, else
+// the span from/to describes, else the current year. This lives here rather
+// than in an adapter because both adapters need it and only one of them had
+// it — a search for "2025-03" through MCP scanned 2026 and found nothing,
+// silently, while the same search over REST worked.
+func scanYears(q SearchQuery, currentYear int) []int {
+	if len(q.Years) > 0 {
+		return q.Years
+	}
+	lo, hi := 0, 0
+	for _, bound := range []string{q.From, q.To} {
+		y, err := yearOf(bound)
+		if err != nil {
+			continue
+		}
+		if lo == 0 || y < lo {
+			lo = y
+		}
+		if y > hi {
+			hi = y
+		}
+	}
+	if lo == 0 {
+		return []int{currentYear}
+	}
+	// Filled in, so from=2024-01&to=2026-12 scans 2025 as well.
+	out := make([]int, 0, hi-lo+1)
+	for y := lo; y <= hi; y++ {
+		out = append(out, y)
+	}
+	return out
+}
+
+func yearOf(bound string) (int, error) {
+	if len(bound) < 4 {
+		return 0, errorf(CodeInvalidRequest, "%q is not a month", bound)
+	}
+	y, err := strconv.Atoi(bound[:4])
+	if err != nil || y < minYear || y > maxYear {
+		return 0, errorf(CodeInvalidRequest, "%q is not a month", bound)
+	}
+	return y, nil
+}
+
 // monthsToScan returns the month keys to search, newest first, honouring
 // from/to when given.
 func (s *Service) monthsToScan(ctx context.Context, q SearchQuery) ([]string, error) {
-	years := q.Years
-	if len(years) == 0 {
-		years = []int{time.Now().Year()}
-	}
+	years := scanYears(q, s.now().Year())
 	var keys []string
 	for _, y := range years {
 		for m := time.January; m <= time.December; m++ {
@@ -327,14 +409,17 @@ type MonthStatus struct {
 type MistimedCharge struct {
 	CategoryID  string `json:"category_id"`
 	Name        string `json:"name"`
-	PlannedFor  string `json:"planned_for"`
-	ChargedIn   string `json:"charged_in"`
+	PlannedFor  string `json:"planned_for"` // "2026-10"
+	ChargedIn   string `json:"charged_in"`  // "2026-08"
 	AmountCents int    `json:"amount_cents"`
 }
 
 // Reconciliation reports each month of a year: coverage, counts, planned vs
 // actual, and any mistimed charge.
 func (s *Service) Reconciliation(ctx context.Context, year int) ([]MonthStatus, error) {
+	if year < minYear || year > maxYear {
+		return nil, errorf(CodeInvalidRequest, "year must look like 2026")
+	}
 	byMonth, err := s.Budget.PlannedByMonth(ctx, year)
 	if err != nil {
 		return nil, errorf(CodeInternal, "reading budget.json: %v", err)
@@ -376,37 +461,96 @@ func (s *Service) Reconciliation(ctx context.Context, year int) ([]MonthStatus, 
 				return nil, errorf(CodeInternal, "reading %s: %v", key, verr)
 			}
 			st.Complete = view.Complete
-			st.Mistimed = mistimedIn(af, m, idx, charged)
+			st.Mistimed = mistimedIn(af, year, m, byMonth[key], idx, charged)
 		}
 		out = append(out, st)
 	}
 	return out, nil
 }
 
-func mistimedIn(af actualsdata.ActualsFile, viewed time.Month, idx map[string]tracker.PlannedCategory, charged map[string][]time.Month) []MistimedCharge {
+// mistimedIn reports both directions of a mistimed one-off, matching what
+// actualStatus renders on the dashboard: a charge that landed in a month the
+// plan didn't expect, and a month the plan expects a charge in that has
+// already been paid elsewhere. The second is invisible from this month's
+// transactions alone — there are none to look at — which is what charged is
+// for, and is the case that would otherwise look fine while the money is
+// already gone.
+//
+// Like the dashboard, this only runs for a month that has been reconciled: an
+// unread month says nothing either way rather than guessing.
+func mistimedIn(af actualsdata.ActualsFile, year int, viewed time.Month, planned []tracker.PlannedCategory, idx map[string]tracker.PlannedCategory, charged map[string][]time.Month) []MistimedCharge {
+	here := monthKey(year, viewed)
 	var out []MistimedCharge
 	seen := map[string]bool{}
+	chargedHere := map[string]bool{}
+
 	for _, tx := range af.Transactions {
 		id := deref(tx.Category)
-		if id == "" || seen[id] {
+		if id == "" {
+			continue
+		}
+		chargedHere[id] = true
+		if seen[id] {
 			continue
 		}
 		cat, ok := idx[id]
 		if !ok || cat.Date == "" {
 			continue
 		}
-		due, err := time.Parse("2006-01-02", cat.Date)
-		if err != nil || due.Month() == viewed {
+		due, err := dueMonth(cat.Date)
+		// Compared as year-and-month: a one-off dated next August is not the
+		// same plan as this August, and reading it as one hides a real charge.
+		if err != nil || due == here {
 			continue
 		}
 		seen[id] = true
 		out = append(out, MistimedCharge{
 			CategoryID: id, Name: cat.Name,
-			PlannedFor: due.Month().String(), ChargedIn: viewed.String(),
+			PlannedFor: due, ChargedIn: here,
 			AmountCents: eurToCents(tx.Amount),
 		})
 	}
+
+	for _, c := range planned {
+		if c.Date == "" || seen[c.ID] || chargedHere[c.ID] {
+			continue
+		}
+		due, err := dueMonth(c.Date)
+		if err != nil || due != here {
+			continue
+		}
+		elsewhere, found := firstOtherMonth(charged[c.ID], viewed)
+		if !found {
+			continue
+		}
+		seen[c.ID] = true
+		out = append(out, MistimedCharge{
+			CategoryID: c.ID, Name: c.Name,
+			PlannedFor: here, ChargedIn: monthKey(year, elsewhere),
+			// Nothing was charged here, so the plan's own figure is the
+			// amount at stake — the same fallback MistimedRowsOf makes.
+			AmountCents: c.PlannedCents,
+		})
+	}
 	return out
+}
+
+// dueMonth renders a category's date as the month key it belongs to.
+func dueMonth(date string) (string, error) {
+	d, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return "", err
+	}
+	return monthKey(d.Year(), d.Month()), nil
+}
+
+func firstOtherMonth(months []time.Month, viewed time.Month) (time.Month, bool) {
+	for _, m := range months {
+		if m != viewed {
+			return m, true
+		}
+	}
+	return 0, false
 }
 
 func monthKey(year int, month time.Month) string {

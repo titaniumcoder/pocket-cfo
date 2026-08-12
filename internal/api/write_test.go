@@ -475,3 +475,50 @@ func TestContentsClientGetNotFound(t *testing.T) {
 		t.Errorf("err = %v, want ErrNotFound — an unwritten month is normal", err)
 	}
 }
+
+// TestActualsForCarriesTheSHA closes the loop the documentation already
+// described: put_actuals' own tool description says base_sha comes from
+// get_actuals, and HERMES.md says to keep the sha from the read — while no
+// read returned one. The only way to discover it was to provoke a 409, which
+// is a conflict burned on every single write.
+func TestActualsForCarriesTheSHA(t *testing.T) {
+	const doc = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],"transactions":[]}`
+	gh := newFakeGitHub(map[string]string{"data/actuals/2026-08.json": doc})
+	srv := gh.server(t)
+	s := &Service{
+		Budget:  &tracker.Budget{FS: fstest.MapFS{}},
+		Actuals: &tracker.Actuals{FS: fstest.MapFS{}},
+		Store:   &ContentsClient{HTTP: srv.Client(), Repo: "owner/data", Token: "test-token", BaseURL: srv.URL},
+	}
+
+	got, err := s.ActualsFor(context.Background(), "2026-08")
+	if err != nil {
+		t.Fatalf("ActualsFor: %v", err)
+	}
+	if got.SHA == "" {
+		t.Fatal("no sha; a write can only get one by provoking a conflict")
+	}
+	if want := shaOf([]byte(doc)); got.SHA != want {
+		t.Errorf("sha = %q, want %q — the sha must name the document returned beside it", got.SHA, want)
+	}
+	if got.Month != "2026-08" {
+		t.Errorf("month = %q", got.Month)
+	}
+}
+
+// TestActualsForWithoutWritesHasNoSHA: with no store there is nothing to write
+// to, so an empty sha is the honest answer rather than a fabricated one.
+func TestActualsForWithoutWritesHasNoSHA(t *testing.T) {
+	const doc = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],"transactions":[]}`
+	s := &Service{
+		Budget:  &tracker.Budget{FS: fstest.MapFS{}},
+		Actuals: &tracker.Actuals{FS: fstest.MapFS{"actuals/2026-08.json": &fstest.MapFile{Data: []byte(doc)}}},
+	}
+	got, err := s.ActualsFor(context.Background(), "2026-08")
+	if err != nil {
+		t.Fatalf("ActualsFor: %v", err)
+	}
+	if got.SHA != "" {
+		t.Errorf("sha = %q, want empty when writes are not configured", got.SHA)
+	}
+}

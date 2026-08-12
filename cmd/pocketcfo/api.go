@@ -43,7 +43,10 @@ func (s *server) registerAPI(mux *http.ServeMux) {
 	// methods than GET /{year} while having a more specific path, and
 	// ServeMux calls that a conflict. GET and DELETE reach the handler only
 	// to be answered 405, which stateless streamable HTTP requires.
-	mcpHandler := s.requireBearer(s.apiService().MCPHandler(mcpServerVersion))
+	// Capped like the REST writes: put_actuals carries a whole month inside
+	// the JSON-RPC envelope, so the ceiling is higher, but an uncapped body
+	// on the one endpoint that accepts documents is not a ceiling at all.
+	mcpHandler := s.requireBearer(capBody(maxMCPBody, s.apiService().MCPHandler(mcpServerVersion)))
 	mux.Handle("POST /mcp", mcpHandler)
 	mux.Handle("GET /mcp", mcpHandler)
 	mux.Handle("DELETE /mcp", mcpHandler)
@@ -104,25 +107,49 @@ func (s *server) apiService() *api.Service {
 // anything larger is a mistake rather than a reconciliation.
 const maxPutBody = 1 << 20
 
+// maxMCPBody leaves room for the same document inside a JSON-RPC envelope.
+const maxMCPBody = 2 << 20
+
+func capBody(limit int64, h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
+		h.ServeHTTP(w, r)
+	})
+}
+
+// decodeAPIBody is the one front door for a write body: one size cap, one
+// Content-Type rule, one 413, and a refusal to read only the first of two
+// documents. Two handlers hand-rolling this is how the move endpoint came to
+// answer 400 for a body the PUT answered 413 for.
+func decodeAPIBody(w http.ResponseWriter, r *http.Request, into any) bool {
+	if ct := r.Header.Get("Content-Type"); ct != "" && !strings.HasPrefix(ct, "application/json") {
+		writeAPIError(w, &api.Error{Code: api.CodeInvalidRequest, Message: "Content-Type must be application/json"}, http.StatusUnsupportedMediaType)
+		return false
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPutBody))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(into); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeAPIError(w, &api.Error{Code: api.CodeInvalidRequest, Message: "body too large"}, http.StatusRequestEntityTooLarge)
+			return false
+		}
+		writeAPIError(w, &api.Error{Code: api.CodeInvalidRequest, Message: err.Error()}, http.StatusBadRequest)
+		return false
+	}
+	if dec.More() {
+		writeAPIError(w, &api.Error{Code: api.CodeInvalidRequest, Message: "the body must be one JSON object"}, http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
 func (s *server) apiPutActuals(w http.ResponseWriter, r *http.Request) {
 	if !s.apiAuthorized(w, r) {
 		return
 	}
-	if ct := r.Header.Get("Content-Type"); ct != "" && !strings.HasPrefix(ct, "application/json") {
-		writeAPIError(w, &api.Error{Code: api.CodeInvalidRequest, Message: "Content-Type must be application/json"}, http.StatusUnsupportedMediaType)
-		return
-	}
-
 	var req api.PutRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPutBody))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			writeAPIError(w, &api.Error{Code: api.CodeInvalidRequest, Message: "body too large"}, http.StatusRequestEntityTooLarge)
-			return
-		}
-		writeAPIError(w, &api.Error{Code: api.CodeInvalidRequest, Message: err.Error()}, http.StatusBadRequest)
+	if !decodeAPIBody(w, r, &req) {
 		return
 	}
 
@@ -169,7 +196,9 @@ func (s *server) apiActuals(w http.ResponseWriter, r *http.Request) {
 func (s *server) apiTransactions(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit, _ := strconv.Atoi(q.Get("limit"))
-	years, err := parseYears(q["year"], q.Get("from"), q.Get("to"))
+	// Decoding only: which years a from/to span covers is the service's
+	// answer to give, so MCP gets the same one.
+	years, err := decodeYears(q["year"])
 	if err != nil {
 		if !s.apiAuthorized(w, r) {
 			return
@@ -195,14 +224,13 @@ func (s *server) apiTransactions(w http.ResponseWriter, r *http.Request) {
 func (s *server) apiReconciliation(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("year")
 	s.serveAPI(w, r, func(ctx context.Context, svc *api.Service) (any, error) {
-		year := time.Now().Year()
-		if raw != "" {
-			y, err := strconv.Atoi(raw)
-			if err != nil || y < 1970 || y > 9999 {
-				return nil, &api.Error{Code: api.CodeInvalidRequest, Message: "year must look like 2026"}
-			}
-			year = y
+		year, err := strconv.Atoi(raw)
+		if raw == "" {
+			year = time.Now().Year()
+		} else if err != nil {
+			return nil, &api.Error{Code: api.CodeInvalidRequest, Message: "year must look like 2026"}
 		}
+		// The range check is the service's, so MCP enforces it too.
 		return svc.Reconciliation(ctx, year)
 	})
 }
@@ -231,44 +259,17 @@ func (s *server) serveAPI(w http.ResponseWriter, r *http.Request, fn func(contex
 	writeAPIJSON(w, http.StatusOK, out)
 }
 
-// parseYears works out which years a search should scan: the explicit ?year=
-// values, else the span from/to covers, else the current year.
-func parseYears(explicit []string, from, to string) ([]int, error) {
-	seen := map[int]bool{}
-	add := func(y int) {
-		if y >= 1970 && y <= 9999 {
-			seen[y] = true
-		}
-	}
+// decodeYears reads the explicit ?year= values and nothing else. Working out
+// which years a from/to span covers is api.Service's job — when that lived
+// here, the MCP adapter had no equivalent and searched the wrong year in
+// silence.
+func decodeYears(explicit []string) ([]int, error) {
+	var out []int
 	for _, raw := range explicit {
 		y, err := strconv.Atoi(raw)
 		if err != nil || y < 1970 || y > 9999 {
 			return nil, &api.Error{Code: api.CodeInvalidRequest, Message: "year must look like 2026"}
 		}
-		add(y)
-	}
-	for _, bound := range []string{from, to} {
-		if len(bound) >= 4 {
-			if y, err := strconv.Atoi(bound[:4]); err == nil {
-				add(y)
-			}
-		}
-	}
-	if len(seen) == 0 {
-		return nil, nil
-	}
-	// Fill the gap, so from=2024-01&to=2026-12 scans 2025 too.
-	lo, hi := 9999, 0
-	for y := range seen {
-		if y < lo {
-			lo = y
-		}
-		if y > hi {
-			hi = y
-		}
-	}
-	var out []int
-	for y := lo; y <= hi; y++ {
 		out = append(out, y)
 	}
 	return out, nil
@@ -326,10 +327,7 @@ func (s *server) apiMovePlannedExpense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req api.MoveRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPutBody))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		writeAPIError(w, &api.Error{Code: api.CodeInvalidRequest, Message: err.Error()}, http.StatusBadRequest)
+	if !decodeAPIBody(w, r, &req) {
 		return
 	}
 

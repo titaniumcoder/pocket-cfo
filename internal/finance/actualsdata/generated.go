@@ -11,10 +11,10 @@ import "unicode/utf8"
 // per month, named for the month it covers (data/actuals/2026-08.json). Display
 // only: nothing here feeds Balance, Available to spend, Total private expenses or
 // the account roll-forward, all of which stay planned-based. Every transaction
-// carries exactly one of category or ignored, so the file accounts for every row
-// on the statement and 'deliberately skipped' is recorded rather than inferred
-// from absence. coverage is what stops a mid-month import reading as a spectacular
-// underspend.
+// carries exactly one of category, ignored or untracked, so the file accounts for
+// every row on the statement and both 'deliberately skipped' and 'not decided yet'
+// are recorded rather than inferred from absence. coverage is what stops a
+// mid-month import reading as a spectacular underspend.
 type ActualsFile struct {
 	// Schema corresponds to the JSON schema field "$schema".
 	Schema *string `json:"$schema,omitempty,omitzero" yaml:"$schema,omitempty" mapstructure:"$schema,omitempty"`
@@ -118,21 +118,27 @@ func (j *Coverage) UnmarshalJSON(value []byte) error {
 
 // One part of a statement line that paid for more than one thing — a 100 EUR cash
 // withdrawal that was 50 of cleaning and 50 of restaurant. A part carries exactly
-// one of category or ignored, the same rule a whole line follows.
+// one of category, ignored or untracked, the same rule a whole line follows.
 type Split struct {
 	// Euros, same sign convention as the line it belongs to. Never 0, and the parts
 	// must add up to the line's own amount — a split that does not reconcile to the
 	// statement is worse than no split.
 	Amount float64 `json:"amount" yaml:"amount" mapstructure:"amount"`
 
-	// The budget category id this part belongs to. Exactly one of category or
-	// ignored, enforced in Go for the same reason as on the line itself.
+	// The budget category id this part belongs to. Exactly one of category, ignored
+	// or untracked, enforced in Go for the same reason as on the line itself.
 	Category *string `json:"category,omitempty,omitzero" yaml:"category,omitempty" mapstructure:"category,omitempty"`
 
 	// Why this part is not a budget expense — 'moved to savings'. Lets a withdrawal
 	// that was partly spent and partly moved to your own account be recorded as what
 	// it was.
 	Ignored *string `json:"ignored,omitempty,omitzero" yaml:"ignored,omitempty" mapstructure:"ignored,omitempty"`
+
+	// Why this part is not decided yet — 'the rest is still in my wallet'. The case a
+	// split exists for: 100 out of the machine, 60 of it recognisably groceries and
+	// 40 still unaccounted for, recorded as exactly that instead of guessing at the
+	// 40 or ignoring the whole line.
+	Untracked *string `json:"untracked,omitempty,omitzero" yaml:"untracked,omitempty" mapstructure:"untracked,omitempty"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -152,6 +158,9 @@ func (j *Split) UnmarshalJSON(value []byte) error {
 	if plain.Ignored != nil && utf8.RuneCountInString(string(*plain.Ignored)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "ignored", 1)
 	}
+	if plain.Untracked != nil && utf8.RuneCountInString(string(*plain.Untracked)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "untracked", 1)
+	}
 	*j = Split(plain)
 	return nil
 }
@@ -166,10 +175,10 @@ type Transaction struct {
 	// a zero line is noise, and 'saw it, not an expense' is what ignored is for.
 	Amount float64 `json:"amount" yaml:"amount" mapstructure:"amount"`
 
-	// The budget category id this line belongs to. Exactly one of category, ignored
-	// or splits must be set — that rule is enforced in Go, since expressing it here
-	// would generate poor code. A category that no longer resolves fails validation
-	// loudly rather than silently dropping the money.
+	// The budget category id this line belongs to. Exactly one of category, ignored,
+	// untracked or splits must be set — that rule is enforced in Go, since expressing
+	// it here would generate poor code. A category that no longer resolves fails
+	// validation loudly rather than silently dropping the money.
 	Category *string `json:"category,omitempty,omitzero" yaml:"category,omitempty" mapstructure:"category,omitempty"`
 
 	// Must fall inside month: a statement spanning a month boundary splits into two
@@ -191,11 +200,22 @@ type Transaction struct {
 	// mis-ignored line is visible. Excluded from every figure.
 	Ignored *string `json:"ignored,omitempty,omitzero" yaml:"ignored,omitempty" mapstructure:"ignored,omitempty"`
 
-	// Set instead of category or ignored when one statement line paid for more than
-	// one thing. The line itself stays a single row so the file still reconciles
-	// line-for-line against the statement; the parts must add up to its amount. Two
-	// or more parts — one part is just a category.
+	// Set instead of category, ignored or untracked when one statement line paid for
+	// more than one thing. The line itself stays a single row so the file still
+	// reconciles line-for-line against the statement; the parts must add up to its
+	// amount. Two or more parts — one part is just a category.
 	Splits []Split `json:"splits,omitempty,omitzero" yaml:"splits,omitempty" mapstructure:"splits,omitempty"`
+
+	// Why this line has not been decided yet — 'ATM withdrawal, cash not spent yet'.
+	// Money that left the account and belongs to no category so far, which is what
+	// cash mostly is until you remember what it went on. A note rather than a bare
+	// true, for the same reason ignored is: a line parked here for two months should
+	// say what it is waiting on. Different from ignored, which is a decision that
+	// this is not a budget expense; this one is the decision to decide later, and the
+	// spending page lists it prominently and marks the month so it does not sit here
+	// forever. Excluded from every figure while it does — untracked money is spent
+	// but unattributed, and counting it against a plan would misstate both.
+	Untracked *string `json:"untracked,omitempty,omitzero" yaml:"untracked,omitempty" mapstructure:"untracked,omitempty"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -241,6 +261,9 @@ func (j *Transaction) UnmarshalJSON(value []byte) error {
 	}
 	if plain.Splits != nil && len(plain.Splits) < 2 {
 		return fmt.Errorf("field %s length: must be >= %d", "splits", 2)
+	}
+	if plain.Untracked != nil && utf8.RuneCountInString(string(*plain.Untracked)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "untracked", 1)
 	}
 	*j = Transaction(plain)
 	return nil

@@ -83,6 +83,9 @@ func mutations(was, is actualsdata.Transaction) []string {
 	if deref(was.Ignored) != deref(is.Ignored) {
 		out = append(out, fmt.Sprintf("ignored %q became %q", deref(was.Ignored), deref(is.Ignored)))
 	}
+	if deref(was.Untracked) != deref(is.Untracked) {
+		out = append(out, fmt.Sprintf("untracked %q became %q", deref(was.Untracked), deref(is.Untracked)))
+	}
 	if a, b := splitLabel(was), splitLabel(is); a != b {
 		out = append(out, fmt.Sprintf("splits %s became %s", a, b))
 	}
@@ -99,7 +102,9 @@ func splitLabel(tx actualsdata.Transaction) string {
 	}
 	parts := make([]string, 0, len(tx.Splits))
 	for _, s := range tx.Splits {
-		parts = append(parts, fmt.Sprintf("%.2f→%s%s", s.Amount, deref(s.Category), deref(s.Ignored)))
+		// Exactly one of the three is set, so concatenating them names the
+		// part without needing to say which kind it was.
+		parts = append(parts, fmt.Sprintf("%.2f→%s%s%s", s.Amount, deref(s.Category), deref(s.Ignored), deref(s.Untracked)))
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
 }

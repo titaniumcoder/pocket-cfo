@@ -180,26 +180,43 @@ func runActualsStatus(args []string) int {
 		fmt.Println("no months reconciled yet")
 		return 0
 	}
-	fmt.Printf("%-9s %6s %9s %9s  %s\n", "MONTH", "TX", "ACTUAL", "IGNORED", "COVERAGE")
+	fmt.Printf("%-9s %6s %9s %9s %9s  %s\n", "MONTH", "TX", "ACTUAL", "IGNORED", "UNTRACKED", "COVERAGE")
 	for _, m := range months {
 		af, err := readActuals(m.path)
 		if err != nil {
 			fmt.Printf("%-9s %s\n", m.key, err)
 			continue
 		}
-		cents, ignored := 0, 0
+		// Through PartsOf, like the service: reading tx.Ignored directly used
+		// to count a split whose parts were all ignored as spend here while
+		// the app excluded it, so the two disagreed about the same file.
+		cents, ignored, untracked := 0, 0, 0
 		for _, tx := range af.Transactions {
-			if tx.Ignored != nil && *tx.Ignored != "" {
-				ignored++
-				continue
+			parts := actualsdata.PartsOf(tx)
+			decided := false
+			hasUntracked := false
+			for _, p := range parts {
+				switch {
+				case p.Category != "":
+					cents += int(p.Amount*100 + 0.5)
+					decided = true
+				case p.Untracked != "":
+					hasUntracked = true
+					decided = true
+				}
 			}
-			cents += int(tx.Amount*100 + 0.5)
+			if hasUntracked {
+				untracked++
+			}
+			if !decided {
+				ignored++
+			}
 		}
 		var ranges []string
 		for _, c := range af.Coverage {
 			ranges = append(ranges, fmt.Sprintf("%s %s..%s", c.Account, c.From, c.To))
 		}
-		fmt.Printf("%-9s %6d %9.2f %9d  %s\n", m.key, len(af.Transactions), float64(cents)/100, ignored, strings.Join(ranges, "; "))
+		fmt.Printf("%-9s %6d %9.2f %9d %9d  %s\n", m.key, len(af.Transactions), float64(cents)/100, ignored, untracked, strings.Join(ranges, "; "))
 	}
 	return 0
 }

@@ -229,17 +229,19 @@ type FoundTransaction struct {
 	Account     string  `json:"account"`
 	Category    string  `json:"category,omitempty"`
 	Ignored     string  `json:"ignored,omitempty"`
+	Untracked   string  `json:"untracked,omitempty"`
 
-	// Splits is set instead of Category/Ignored when the line paid for more
-	// than one thing. The parts add up to Amount.
+	// Splits is set instead of Category/Ignored/Untracked when the line paid
+	// for more than one thing. The parts add up to Amount.
 	Splits []FoundSplit `json:"splits,omitempty"`
 }
 
 // FoundSplit is one part of a split statement line.
 type FoundSplit struct {
-	Amount   float64 `json:"amount"`
-	Category string  `json:"category,omitempty"`
-	Ignored  string  `json:"ignored,omitempty"`
+	Amount    float64 `json:"amount"`
+	Category  string  `json:"category,omitempty"`
+	Ignored   string  `json:"ignored,omitempty"`
+	Untracked string  `json:"untracked,omitempty"`
 }
 
 func anyPart(parts []actualsdata.Part, match func(actualsdata.Part) bool) bool {
@@ -259,8 +261,13 @@ type SearchQuery struct {
 	Category       string
 	Account        string
 	IncludeIgnored bool
-	Limit          int
-	Years          []int // which years to scan; defaults to the current one
+	// OnlyUntracked narrows to lines still waiting on a decision, which is
+	// how Hermes finds the cash it parked last month without reading twelve
+	// files. Untracked lines are in the results by default either way —
+	// unlike ignored ones, the whole point of untracked is being found again.
+	OnlyUntracked bool
+	Limit         int
+	Years         []int // which years to scan; defaults to the current one
 }
 
 // SearchResult carries the matches plus whether the limit truncated them.
@@ -320,6 +327,9 @@ func (s *Service) Search(ctx context.Context, q SearchQuery) (*SearchResult, err
 			if q.Category != "" && !anyPart(parts, func(p actualsdata.Part) bool { return p.Category == q.Category }) {
 				continue
 			}
+			if q.OnlyUntracked && !anyPart(parts, func(p actualsdata.Part) bool { return p.Untracked != "" }) {
+				continue
+			}
 			if q.Account != "" && tx.Account != q.Account {
 				continue
 			}
@@ -333,10 +343,12 @@ func (s *Service) Search(ctx context.Context, q SearchQuery) (*SearchResult, err
 			}
 			if len(tx.Splits) > 0 {
 				for _, p := range parts {
-					found.Splits = append(found.Splits, FoundSplit{Amount: p.Amount, Category: p.Category, Ignored: p.Ignored})
+					found.Splits = append(found.Splits, FoundSplit{
+						Amount: p.Amount, Category: p.Category, Ignored: p.Ignored, Untracked: p.Untracked,
+					})
 				}
 			} else {
-				found.Category, found.Ignored = parts[0].Category, parts[0].Ignored
+				found.Category, found.Ignored, found.Untracked = parts[0].Category, parts[0].Ignored, parts[0].Untracked
 			}
 			out.Transactions = append(out.Transactions, found)
 		}
@@ -433,6 +445,14 @@ type MonthStatus struct {
 	ActualCents      int                    `json:"actual_cents"`
 	Complete         bool                   `json:"complete"`
 	Mistimed         []MistimedCharge       `json:"mistimed,omitempty"`
+
+	// UntrackedCount and UntrackedCents are money that has left the account
+	// and still belongs to no category. Reported here so Hermes can see which
+	// months have unfinished business without opening each one, and so a
+	// month never quietly counts as done while cash is still unattributed.
+	// Never part of ActualCents.
+	UntrackedCount int `json:"untracked_count"`
+	UntrackedCents int `json:"untracked_cents"`
 }
 
 // MistimedCharge is a one-off charged in a month other than the one it is
@@ -485,9 +505,20 @@ func (s *Service) Reconciliation(ctx context.Context, year int) ([]MonthStatus, 
 				parts := actualsdata.PartsOf(tx)
 				spent := 0
 				for _, p := range parts {
-					if p.Ignored == "" {
+					// Attributed money only. Testing for a category rather
+					// than for the absence of an ignored reason is what keeps
+					// untracked cash out of the total: it has been spent, but
+					// against no category, so comparing it to a plan would
+					// misstate the plan and the spending both.
+					if p.Category != "" {
 						spent += eurToCents(p.Amount)
 					}
+					if p.Untracked != "" {
+						st.UntrackedCents += eurToCents(p.Amount)
+					}
+				}
+				if anyPart(parts, func(p actualsdata.Part) bool { return p.Untracked != "" }) {
+					st.UntrackedCount++
 				}
 				// Ignored counts lines, not parts, and a part-ignored split
 				// is not an ignored line — its money is still in the total.

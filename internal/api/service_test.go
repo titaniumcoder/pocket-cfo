@@ -721,3 +721,85 @@ func TestSearchReportsSplitParts(t *testing.T) {
 		t.Errorf("the default search dropped a partly-ignored line: %d results", len(noIgnored.Transactions))
 	}
 }
+
+const untrackedActuals = `{
+  "month": "2026-08",
+  "coverage": [{ "account": "Private Checking", "from": "2026-08-01", "to": "2026-08-31", "imported_at": "2026-09-01" }],
+  "transactions": [
+    { "id": "u1", "date": "2026-08-03", "description": "LIDL SOFIA 4412", "amount": 40, "account": "Private Checking", "category": "` + idGroceries + `" },
+    { "id": "u2", "date": "2026-08-14", "description": "ATM WITHDRAWAL SOFIA", "amount": 100, "account": "Private Checking", "untracked": "cash, not spent yet" },
+    { "id": "u3", "date": "2026-08-20", "description": "ATM WITHDRAWAL VARNA", "amount": 50, "account": "Private Checking",
+      "splits": [
+        { "amount": 20, "category": "` + idGroceries + `" },
+        { "amount": 30, "untracked": "still in my wallet" }
+      ] }
+  ]
+}`
+
+func untrackedService(t *testing.T) *Service {
+	t.Helper()
+	return &Service{
+		Budget:   &tracker.Budget{FS: fstest.MapFS{"budget.json": &fstest.MapFile{Data: []byte(budgetJSON)}}},
+		Accounts: &tracker.Accounts{FS: fstest.MapFS{}},
+		Actuals:  &tracker.Actuals{FS: fstest.MapFS{"actuals/2026-08.json": &fstest.MapFile{Data: []byte(untrackedActuals)}}},
+	}
+}
+
+// TestReconciliationKeepsUntrackedOutOfTheTotal: untracked money has been
+// spent but attributed to nothing, so counting it against a plan would
+// overstate the spending and understate what is left to decide. It is
+// reported beside the total, never inside it.
+func TestReconciliationKeepsUntrackedOutOfTheTotal(t *testing.T) {
+	got, err := untrackedService(t).Reconciliation(context.Background(), 2026)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var aug MonthStatus
+	for _, m := range got {
+		if m.Month == "2026-08" {
+			aug = m
+		}
+	}
+	if aug.ActualCents != 6000 {
+		t.Errorf("ActualCents = %d, want 6000 — the 40 categorised plus the split's categorised 20, and neither untracked amount", aug.ActualCents)
+	}
+	if aug.UntrackedCents != 13000 {
+		t.Errorf("UntrackedCents = %d, want 13000 — the whole 100 line plus the split's 30 part", aug.UntrackedCents)
+	}
+	if aug.UntrackedCount != 2 {
+		t.Errorf("UntrackedCount = %d, want 2 — counted per line, like IgnoredCount", aug.UntrackedCount)
+	}
+	if aug.IgnoredCount != 0 {
+		t.Errorf("IgnoredCount = %d, want 0 — untracked is not ignored", aug.IgnoredCount)
+	}
+}
+
+// TestSearchFindsUntrackedLines: parking cash under untracked is only useful
+// if it can be found again, so it is in the results by default and
+// OnlyUntracked narrows to exactly the outstanding decisions.
+func TestSearchFindsUntrackedLines(t *testing.T) {
+	s := untrackedService(t)
+	ctx := context.Background()
+
+	all, err := s.Search(ctx, SearchQuery{Years: []int{2026}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all.Transactions) != 3 {
+		t.Fatalf("default search returned %d lines, want all 3 — untracked must not be hidden like ignored", len(all.Transactions))
+	}
+
+	only, err := s.Search(ctx, SearchQuery{OnlyUntracked: true, Years: []int{2026}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(only.Transactions) != 2 {
+		t.Fatalf("OnlyUntracked returned %d lines, want the 2 with something undecided", len(only.Transactions))
+	}
+	if only.Transactions[0].Untracked != "cash, not spent yet" {
+		t.Errorf("whole-line untracked note lost: %+v", only.Transactions[0])
+	}
+	if got := only.Transactions[1].Splits; len(got) != 2 || got[1].Untracked != "still in my wallet" {
+		t.Errorf("split untracked note lost: %+v", got)
+	}
+}

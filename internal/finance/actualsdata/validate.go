@@ -64,14 +64,18 @@ func ValidateActuals(af ActualsFile, monthKey string, knownIDs map[string]bool) 
 
 		hasCategory := tx.Category != nil && *tx.Category != ""
 		hasIgnored := tx.Ignored != nil && *tx.Ignored != ""
+		hasUntracked := tx.Untracked != nil && *tx.Untracked != ""
 		hasSplits := len(tx.Splits) > 0
+		dispositions := countTrue(hasCategory, hasIgnored, hasUntracked)
 		switch {
-		case hasSplits && (hasCategory || hasIgnored):
-			problems = append(problems, fmt.Errorf("transaction %s has splits as well as a category or ignored reason — the parts decide, so the line itself must not", tx.Id))
-		case hasCategory && hasIgnored:
-			problems = append(problems, fmt.Errorf("transaction %s has both a category and an ignored reason — it must have exactly one", tx.Id))
-		case !hasCategory && !hasIgnored && !hasSplits:
-			problems = append(problems, fmt.Errorf("transaction %s has neither a category, an ignored reason nor splits — no line may be left undecided", tx.Id))
+		case hasSplits && dispositions > 0:
+			problems = append(problems, fmt.Errorf("transaction %s has splits as well as a category, ignored or untracked reason — the parts decide, so the line itself must not", tx.Id))
+		case dispositions > 1:
+			problems = append(problems, fmt.Errorf("transaction %s has more than one of category, ignored and untracked — it must have exactly one", tx.Id))
+		case dispositions == 0 && !hasSplits:
+			// untracked counts as decided: it is the decision to decide later,
+			// which is a different thing from a line nobody has looked at.
+			problems = append(problems, fmt.Errorf("transaction %s has none of a category, an ignored reason, an untracked note or splits — no line may be left undecided", tx.Id))
 		}
 		problems = append(problems, splitProblems(tx, knownIDs)...)
 		if hasCategory && knownIDs != nil && !knownIDs[*tx.Category] {
@@ -109,11 +113,12 @@ func splitProblems(tx Transaction, knownIDs map[string]bool) []error {
 	for i, s := range tx.Splits {
 		hasCategory := s.Category != nil && *s.Category != ""
 		hasIgnored := s.Ignored != nil && *s.Ignored != ""
-		switch {
-		case hasCategory && hasIgnored:
-			problems = append(problems, fmt.Errorf("transaction %s split %d has both a category and an ignored reason — it must have exactly one", tx.Id, i+1))
-		case !hasCategory && !hasIgnored:
-			problems = append(problems, fmt.Errorf("transaction %s split %d has neither a category nor an ignored reason", tx.Id, i+1))
+		hasUntracked := s.Untracked != nil && *s.Untracked != ""
+		switch dispositions := countTrue(hasCategory, hasIgnored, hasUntracked); {
+		case dispositions > 1:
+			problems = append(problems, fmt.Errorf("transaction %s split %d has more than one of category, ignored and untracked — it must have exactly one", tx.Id, i+1))
+		case dispositions == 0:
+			problems = append(problems, fmt.Errorf("transaction %s split %d has none of a category, an ignored reason and an untracked note", tx.Id, i+1))
 		case hasCategory && knownIDs != nil && !knownIDs[*s.Category]:
 			problems = append(problems, fmt.Errorf("transaction %s split %d cites category %q, which is not in budget.json", tx.Id, i+1, *s.Category))
 		}
@@ -126,6 +131,19 @@ func splitProblems(tx Transaction, knownIDs map[string]bool) []error {
 			tx.Id, float64(got)/100, float64(want)/100))
 	}
 	return problems
+}
+
+// countTrue is how the exactly-one rule is checked in one place for lines and
+// parts alike, so a fourth disposition cannot be added to one and forgotten in
+// the other.
+func countTrue(flags ...bool) int {
+	n := 0
+	for _, f := range flags {
+		if f {
+			n++
+		}
+	}
+	return n
 }
 
 func roundCents(euros float64) int {

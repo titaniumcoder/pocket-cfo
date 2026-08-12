@@ -3,6 +3,7 @@ package tracker
 import (
 	"context"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -305,5 +306,44 @@ func TestDescriptionsNeverReachTheDashboard(t *testing.T) {
 	}
 	if !strings.Contains(recS.Body.String(), "refund of something") {
 		t.Error("an ignored line must appear with its reason, so the page reconciles to the statement")
+	}
+}
+
+// TestGroupHeaderColumnsMatchItsRows pins the alignment that shipped wrong:
+// the header used to be a flex row with actual on the left and planned on the
+// right — the reverse of both the Planned/Actual column header and the rows
+// beneath it, and lining up with neither.
+func TestGroupHeaderColumnsMatchItsRows(t *testing.T) {
+	trk := actualsTracker(t, map[string]string{
+		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+			"transactions":[{"id":"x1","date":"2026-08-03","description":"LIDL","amount":1200,"account":"A","category":"rent"}]}`,
+	})
+	f := trk.ComputeMonth(context.Background(), 2026, time.August)
+	if !f.ShowActuals {
+		t.Fatal("the actuals layer did not switch on")
+	}
+
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	body := rec.Body.String()
+
+	header := regexp.MustCompile(`(?s)<div class="group-header"[^>]*>(.*?)</div>`).FindStringSubmatch(body)
+	if header == nil {
+		t.Fatal("no group header rendered")
+	}
+	cells := regexp.MustCompile(`<span class="(mid|amt)[^"]*">`).FindAllStringSubmatch(header[1], -1)
+	if len(cells) != 2 || cells[0][1] != "mid" || cells[1][1] != "amt" {
+		t.Fatalf("group header cells = %v, want mid then amt so they align with the rows", cells)
+	}
+
+	// The header's planned figure must be in .mid, like every row's.
+	mid := regexp.MustCompile(`(?s)<span class="mid">(.*?)</span>`).FindStringSubmatch(header[1])
+	if mid == nil || strings.Contains(mid[1], "&minus;") {
+		t.Errorf("header .mid = %q, want the planned figure without a minus, matching the rows", mid)
+	}
+
+	// And the column header exists on both ledgers, so the two numbers are labelled.
+	if got := strings.Count(body, `class="row colhead"`); got != 2 {
+		t.Errorf("found %d column headers, want one per ledger", got)
 	}
 }

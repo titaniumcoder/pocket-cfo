@@ -58,15 +58,17 @@ main.login { max-width: 760px; }
 @media (min-width: 860px) {
   .layout { grid-template-columns: minmax(0, 1fr) 260px; }
 }
-.income-panel .hrs-m { display: none; }
-.plan-m { display: none; }
+/* .stack-m is the middle column's content folded under the amount, for the
+   widths where the ledger has no middle column. It was three classes doing
+   one job — .plan-m for a budget, .hrs-m for hours, and a third for the rate
+   — which meant three rules to keep in step and a row whose second line read
+   differently depending on which figure it carried. Hidden until the fold. */
+.stack-m { display: none; }
 /* The rate a deduction was charged at. One line per schedule in force, so a
    year the law changed in stacks two; the span stays on its rate's line
-   rather than wrapping away from it. .rate-m is the same content folded under
-   the amount for narrow screens, where .mid is hidden — see .plan-m. */
+   rather than wrapping away from it. */
 .rate-line { display: block; }
 .rate-span { opacity: .7; }
-.rate-m { display: none; }
 
 /* Tablet range: keep the desktop-shaped grids (3-column ledger, full
    tables) but tighten spacing — the mobile breakpoint below actively
@@ -364,12 +366,6 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
     flex-direction: column;
     align-items: flex-end;
   }
-  .income-panel .hrs-m {
-    display: block;
-    font-size: .8em;
-    font-weight: 400;
-    opacity: .6;
-  }
   .group-rows .row .label {
     padding-left: 1.5rem;
   }
@@ -380,15 +376,19 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
   /* The ledger is two columns at this width, so a third filled cell would push
      the amount onto its own line — which is why these rows historically kept
      .mid empty and .mid:empty collapsed it. The rate goes under the amount
-     instead, the same swap .plan-m and .hrs-m make. */
+     instead, the same swap every other second figure makes. */
   .mid.rate { display: none; }
-  .rate-m {
+  /* One rule for every stacked second line, so a row reads the same whether it
+     carries a budget, hours or a rate. */
+  .stack-m {
     display: block;
     font-size: .8em;
     font-weight: 400;
     opacity: .6;
-    white-space: nowrap;
   }
+  /* A rate must not break across lines: "18.92% up to 2,112 Jan–Apr" wrapping
+     mid-phrase separates a span from the rate it belongs to. */
+  .rate-line, .mid.rate + .amt .stack-m { white-space: nowrap; }
   .side-col.holidays .debts-section {
     margin-top: 2rem;
   }
@@ -455,12 +455,16 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
   .panel + .panel { margin-top: 1rem; }
 }
 
-/* Scoped to .ledger.with-actuals so a month with no imported file keeps its
-   planned figures in .mid. The row kinds listed are the ones that carry a
-   .plan-m to swap in — the totals included, since a total that loses its
-   budget on a narrow screen is the one figure you most want the budget next
-   to. Net income, Balance and the account rows have no .plan-m and are left
-   alone. */
+/* Scoped to .ledger.with-actuals because only that ledger has two figures per
+   row to reconcile. Without actuals the row's one figure is now in .amt where
+   it belongs — it used to sit in .mid at .6 opacity while the group total it
+   rolls into sat in .amt, so a year page dimmed every figure and lined none of
+   them up with its own subtotal.
+
+   The row kinds listed are the ones that carry a .stack-m to swap in — the
+   totals included, since a total that loses its budget on a narrow screen is
+   the one figure you most want the budget next to. Net income, Balance and the
+   account rows have none and are left alone. */
 @media (max-width: 600px) {
   .ledger.with-actuals .group-rows .row .mid,
   .ledger.with-actuals .row.net .mid,
@@ -471,12 +475,6 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-  }
-  .ledger.with-actuals .plan-m {
-    display: block;
-    font-size: .8em;
-    font-weight: 400;
-    opacity: .6;
   }
   .row.colhead { display: none; }
 }

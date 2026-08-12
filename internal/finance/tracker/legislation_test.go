@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http/httptest"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -362,15 +363,21 @@ func TestRateSurvivesTheMobileFold(t *testing.T) {
 	if !strings.Contains(body, `<span class="mid rate">`) {
 		t.Error("the rate cell is not marked, so the mobile rule cannot hide it")
 	}
-	// And the same content exists again, stacked under the amount.
-	if strings.Count(body, `class="rate-m"`) != 4 {
-		t.Errorf("got %d narrow rate spans, want 4 — two employer lines plus employee and tax",
-			strings.Count(body, `class="rate-m"`))
+	// And the same content exists again, stacked under the amount. Counted in
+	// the salary rows only: .stack-m is now the shared class for every folded
+	// second figure, so a global count would include budgets and hours too.
+	rows := regexp.MustCompile(`(?s)<span class="label">(?:Employer social|Employee social|Income tax)</span>.*?</div>`)
+	stacked := 0
+	for _, row := range rows.FindAllString(body, -1) {
+		stacked += strings.Count(row, `class="stack-m"`)
+	}
+	if stacked != 4 {
+		t.Errorf("got %d narrow rate spans, want 4 — two employer lines plus employee and tax", stacked)
 	}
 	// Each line keeps its span with it rather than leaving it to wrap away.
 	for _, want := range []string{
-		`<span class="rate-m">18.92% up to 2,112 Jan–Apr</span>`,
-		`<span class="rate-m">20% up to 3,000 May–Dec</span>`,
+		`<span class="stack-m">18.92% up to 2,112 Jan–Apr</span>`,
+		`<span class="stack-m">20% up to 3,000 May–Dec</span>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %s", want)

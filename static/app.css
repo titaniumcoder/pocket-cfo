@@ -60,6 +60,13 @@ main.login { max-width: 760px; }
 }
 .income-panel .hrs-m { display: none; }
 .plan-m { display: none; }
+/* The rate a deduction was charged at. One line per schedule in force, so a
+   year the law changed in stacks two; the span stays on its rate's line
+   rather than wrapping away from it. .rate-m is the same content folded under
+   the amount for narrow screens, where .mid is hidden — see .plan-m. */
+.rate-line { display: block; }
+.rate-span { opacity: .7; }
+.rate-m { display: none; }
 
 /* Tablet range: keep the desktop-shaped grids (3-column ledger, full
    tables) but tighten spacing — the mobile breakpoint below actively
@@ -369,6 +376,18 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
   .mid:empty,
   .amt:empty {
     display: none;
+  }
+  /* The ledger is two columns at this width, so a third filled cell would push
+     the amount onto its own line — which is why these rows historically kept
+     .mid empty and .mid:empty collapsed it. The rate goes under the amount
+     instead, the same swap .plan-m and .hrs-m make. */
+  .mid.rate { display: none; }
+  .rate-m {
+    display: block;
+    font-size: .8em;
+    font-weight: 400;
+    opacity: .6;
+    white-space: nowrap;
   }
   .side-col.holidays .debts-section {
     margin-top: 2rem;

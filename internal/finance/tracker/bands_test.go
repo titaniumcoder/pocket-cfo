@@ -314,22 +314,46 @@ func TestTheLedgerColumnSubtractsExactly(t *testing.T) {
 	}
 }
 
-// TestEffectiveRatesLabelWhatWasCharged: below a ceiling the label is still the
-// rate in the file, so an ordinary month reads exactly as it always did; above
-// one it reads the rate actually charged rather than one that was not.
-func TestEffectiveRatesLabelWhatWasCharged(t *testing.T) {
+// rateOf flattens a rate list for assertions.
+func rateOf(lines []RateLine) string {
+	parts := make([]string, 0, len(lines))
+	for _, l := range lines {
+		if l.Span != "" {
+			parts = append(parts, l.Rate+" ["+l.Span+"]")
+			continue
+		}
+		parts = append(parts, l.Rate)
+	}
+	return strings.Join(parts, " | ")
+}
+
+// TestRatesLabelWhatWasCharged: a salary under the ceiling was charged the rate
+// in the file and nothing bounded it, so the label is the bare rate. Above the
+// ceiling the same rate was charged only up to it, and the label says so —
+// where the old blended percentage reported a number that appears in no law.
+func TestRatesLabelWhatWasCharged(t *testing.T) {
 	p := bulgariaBands()
 	r := p.rulesFor(yearMonth{2026, time.July})
 
 	ordinary := atGross(p, r, 1000)
-	if ordinary.EmployerPct != "18.92" || ordinary.EmployeePct != "13.78" || ordinary.IncomeTaxPct != "10" {
-		t.Errorf("an ordinary month labelled %s/%s/%s, want 18.92/13.78/10",
-			ordinary.EmployerPct, ordinary.EmployeePct, ordinary.IncomeTaxPct)
+	if got := rateOf(ordinary.EmployerRate); got != "18.92%" {
+		t.Errorf("employer rate = %q, want a bare 18.92%% — nothing bounded it", got)
+	}
+	if got := rateOf(ordinary.EmployeeRate); got != "13.78%" {
+		t.Errorf("employee rate = %q", got)
+	}
+	if got := rateOf(ordinary.IncomeTaxRate); got != "10%" {
+		t.Errorf("income tax rate = %q", got)
 	}
 
 	rich := atGross(p, r, 10000)
-	if rich.EmployerPct == "18.92" {
-		t.Error("a salary far above the ceiling still claims 18.92% was charged on it")
+	if got := rateOf(rich.EmployerRate); got != "18.92% up to 2,112" {
+		t.Errorf("employer rate = %q, want the rate and the ceiling that bound it", got)
+	}
+	// The ceiling band charges nothing above itself, and "up to 2,112" has
+	// already said where it stopped.
+	if strings.Contains(rateOf(rich.EmployerRate), "0%") {
+		t.Errorf("the zero-rate ceiling band was printed: %q", rateOf(rich.EmployerRate))
 	}
 }
 
@@ -455,5 +479,94 @@ func TestScheduleReplacesRatherThanPatches(t *testing.T) {
 	after := p.rulesFor(yearMonth{2026, time.July}).Employer.Bands
 	if !reflect.DeepEqual(after, Bands{{From: 0, Rate: 0.15}}) {
 		t.Errorf("July's schedule = %v, want only its own single band — the old ceiling survived", after)
+	}
+}
+
+// TestAppliedNamesTheBoundaryThatBoundIt walks the shapes the label has to
+// survive, because it is the one number on the page that claims to describe
+// the law.
+func TestAppliedNamesTheBoundaryThatBoundIt(t *testing.T) {
+	capped := Bands{{From: 0, Rate: 0.1892}, {From: 2112, Rate: 0}}
+	uk := Bands{{From: 0, Rate: 0}, {From: 12570, Rate: 0.08}, {From: 50270, Rate: 0.02}}
+
+	for _, tt := range []struct {
+		name    string
+		bands   Bands
+		base    float64
+		minBase float64
+		want    string
+	}{
+		{"under the ceiling, nothing bound it", capped, 1000, 0, "18.92%"},
+		{"exactly at the ceiling", capped, 2112, 0, "18.92%"},
+		{"over the ceiling", capped, 10000, 0, "18.92% up to 2,112"},
+		// A real top rate is not a ceiling and still has to show.
+		{"a top rate that is not zero", uk, 60000, 0, "0% up to 12,570, 8% up to 50,270, then 2%"},
+		{"stopped in the middle band", uk, 20000, 0, "0% up to 12,570, then 8%"},
+		// The charge was levied on the raised base, not on what was paid.
+		{"raised to a minimum base", capped, 400, 933, "18.92% on a 933 minimum base"},
+		{"nothing paid, nothing charged", capped, 0, 933, ""},
+		{"no schedule at all", nil, 1000, 0, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.bands.applied(tt.base, tt.minBase); got != tt.want {
+				t.Errorf("applied(%v, %v) = %q, want %q", tt.base, tt.minBase, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestARangeShowsALinePerSchedule: a year the law changed in has no single
+// rate, and printing one is how the change goes unnoticed by the person
+// paying it.
+func TestARangeShowsALinePerSchedule(t *testing.T) {
+	p := params()
+	p.Legislation = Legislation{
+		{From: yearMonth{2026, time.January}, Employer: cappedAt(0.1892, 2000),
+			Employee: cappedAt(0.1378, 2000), IncomeTax: Bands{{From: 0, Rate: 0.10}}},
+		{From: yearMonth{2026, time.May}, Employer: cappedAt(0.20, 3000)},
+	}
+
+	year := p.breakdownMonths(make([]float64, 12), nil, yearMonth{2026, time.January})
+	if got := rateOf(year.EmployerRate); got != "18.92% up to 2,000 [Jan–Apr] | 20% up to 3,000 [May–Dec]" {
+		t.Errorf("employer rate = %q, want a line per schedule with its months", got)
+	}
+	// The employee schedule never changed, so it stays one line and says
+	// nothing about months — repeating "Jan–Dec" on the year page is noise.
+	if got := rateOf(year.EmployeeRate); got != "13.78% up to 2,000" {
+		t.Errorf("employee rate = %q, want one unlabelled line", got)
+	}
+
+	// A single month names no span either.
+	month := p.breakdown(1000, 0, 1, p.rulesFor(yearMonth{2026, time.June}))
+	if got := rateOf(month.EmployerRate); got != "20%" {
+		t.Errorf("June = %q, want the bare rate a 1000 salary was charged", got)
+	}
+}
+
+// TestASingleMonthRangeReportsWhatWasCharged: the dashboard's salary block runs
+// every single month through breakdownMonths, because the funding shift asks
+// for one month at a time. A range of one is still a month and has a base, so
+// it must report what was actually charged rather than describing the schedule
+// — otherwise every month page claims a ceiling its salary never reached.
+func TestASingleMonthRangeReportsWhatWasCharged(t *testing.T) {
+	p := params()
+	p.Legislation = Legislation{{
+		From: yearMonth{2026, time.January}, Employer: cappedAt(0.1892, 2000),
+		Employee: cappedAt(0.1378, 2000), IncomeTax: Bands{{From: 0, Rate: 0.10}},
+	}}
+
+	// 1,200 of income buys a salary nowhere near the 2,000 ceiling.
+	got := p.breakdownMonths([]float64{1200}, nil, yearMonth{2026, time.August})
+	if rate := rateOf(got.EmployerRate); rate != "18.92%" {
+		t.Errorf("employer rate = %q, want the bare rate — the ceiling was never reached", rate)
+	}
+	if got.GrossSalaryCents >= 200000 {
+		t.Fatalf("gross = %d, which does reach the ceiling — this test proves nothing", got.GrossSalaryCents)
+	}
+
+	// And a month that does clear it still names it.
+	rich := p.breakdownMonths([]float64{20000}, nil, yearMonth{2026, time.August})
+	if rate := rateOf(rich.EmployerRate); rate != "18.92% up to 2,000" {
+		t.Errorf("employer rate = %q, want the ceiling that bound it", rate)
 	}
 }

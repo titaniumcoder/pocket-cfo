@@ -66,6 +66,59 @@ func (b Bands) String() string {
 	return strings.Join(parts, ", ")
 }
 
+// applied describes what this schedule actually charged on a base of this
+// size — "18.92%" for a salary under the ceiling, "18.92% up to 2,112" for one
+// above it — for the row that reports the money it charged.
+//
+// This replaces a blended charged-over-base percentage, which above a ceiling
+// is a number that appears in no law and no config file: 18.92% up to 2,112 on
+// a salary of 10,000 came out at 4%, and 4% is not a rate anyone set. What a
+// reader wants from that column is the rate that was used and the boundary
+// that bound it.
+//
+// A band the base passed clean through names the boundary that stopped it. The
+// band the base came to rest inside names no boundary, because none applied.
+// A trailing zero-rate band is dropped: a ceiling charges nothing above itself
+// and "up to 2,112" has already said where it stopped — but a real top rate
+// (UK employee NI at 2% above the upper limit) is not zero and still shows.
+//
+// minBase is what the charge was actually levied on when the base fell below
+// it, which is the same misreporting in the other direction: the money was
+// charged on 933, not on the 400 that was paid, so the row says so.
+func (b Bands) applied(base, minBase float64) string {
+	if base <= 0 || len(b) == 0 {
+		return ""
+	}
+	charged := base
+	if minBase > charged {
+		charged = minBase
+	}
+
+	var parts []string
+	for i, band := range b {
+		if charged <= band.From {
+			break
+		}
+		pct := formatNum(band.Rate*100) + "%"
+		last := i+1 == len(b) || charged <= b[i+1].From
+		switch {
+		case last && band.Rate == 0:
+			// The ceiling itself. The band below already named the boundary.
+		case last && i == 0:
+			parts = append(parts, pct)
+		case last:
+			parts = append(parts, "then "+pct)
+		default:
+			parts = append(parts, pct+" up to "+groupThousands(round(b[i+1].From)))
+		}
+	}
+	out := strings.Join(parts, ", ")
+	if minBase > base && out != "" {
+		out += " on a " + groupThousands(round(minBase)) + " minimum base"
+	}
+	return out
+}
+
 // PartySchedule is one party's contribution rules as an entry states them.
 // Both fields carry forward independently: an entry that gives only new bands
 // keeps the minBase already in force.

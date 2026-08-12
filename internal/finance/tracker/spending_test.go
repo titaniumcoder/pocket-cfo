@@ -462,63 +462,98 @@ func countTracks(value string) int {
 	return tracks
 }
 
-// TestGridTracksAreDeclaredNotComputed: the columns are the same everywhere
-// because the stylesheet says so once, not because the contents happen to
-// agree. Only Description flexes; the rest are content-width, which is what
-// puts every amount on the same right edge down the whole page.
-func TestGridTracksAreDeclaredNotComputed(t *testing.T) {
-	css, err := os.ReadFile(filepath.Join("..", "..", "..", "static", "app.css"))
+// tableLikeGrids are the grids that behave like tables: rows of figures that
+// have to line up down a page. Every one of them declares its columns.
+var tableLikeGrids = []string{".ledger", ".spend-grid", ".cov-grid"}
+
+type gridRule struct {
+	tracks string
+	offset int
+	base   bool // the declaration that also turns the grid on
+}
+
+func gridRulesFor(css, selector string) []gridRule {
+	// Anchored on a line break or a brace so ".ledger" does not also match
+	// ".income-panel .ledger", which is a different, more specific rule.
+	re := regexp.MustCompile(`[\n{]\s*` + regexp.QuoteMeta(selector) + ` \{([^}]*)\}`)
+	var out []gridRule
+	for _, m := range re.FindAllStringSubmatchIndex(css, -1) {
+		body := css[m[2]:m[3]]
+		tracks := regexp.MustCompile(`grid-template-columns: ([^;]+);`).FindStringSubmatch(body)
+		if tracks == nil {
+			continue
+		}
+		out = append(out, gridRule{tracks: tracks[1], offset: m[0], base: strings.Contains(body, "display: grid")})
+	}
+	return out
+}
+
+func appCSS(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "static", "app.css"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Anchored on display:grid so this reads the desktop rule rather than the
-	// phone override, which sits earlier in the file and declares fewer tracks
-	// on purpose.
-	m := regexp.MustCompile(`\.spend-grid \{ display: grid; grid-template-columns: ([^;]+);`).FindStringSubmatch(string(css))
-	if m == nil {
-		t.Fatal("the spending grid declares no columns")
-	}
-	if n := countTracks(m[1]); n != 5 {
-		t.Errorf("grid-template-columns = %q, want five tracks", m[1])
-	}
-	if strings.Count(m[1], "1fr") != 1 {
-		t.Errorf("grid-template-columns = %q, want exactly one flexible track so the amounts share a right edge", m[1])
-	}
-	// The third column holds an account, a category id and an ignore reason in
-	// different sections of this one grid. Content sizing takes the longest of
-	// them and gives it to every row, so a 36-character id would squeeze
-	// Description down the whole page — identical columns, useless ones.
-	if strings.Contains(m[1], "max-content") || strings.Contains(m[1], "auto") || strings.Contains(m[1], "fit-content") {
-		t.Errorf("grid-template-columns = %q, want declared widths rather than content sizing", m[1])
-	}
+	return string(raw)
+}
 
-	// The phone drops the two .col-secondary columns, so it must declare
-	// three tracks — five would leave two empty ones eating the width.
-	// The phone narrows to four tracks: date, description, amount, and the
-	// copy control. The account goes — on a phone it is the column you can
-	// most afford to lose.
-	phoneRe := regexp.MustCompile(`(?s)@media \(max-width: 600px\) \{[^@]*?\.spend-grid \{ grid-template-columns: ([^;]+);`)
-	phone := phoneRe.FindStringSubmatchIndex(string(css))
-	if phone == nil {
-		t.Fatal("the phone layout does not re-declare the grid, so five wide tracks stay in force")
+// TestTableLikeGridsDeclareTheirColumns is the rule the whole app follows now:
+// a grid whose rows are figures declares its widths.
+//
+// auto and max-content re-measure whenever the content changes, and on these
+// pages the content changes on a click — opening a group adds rows with longer
+// labels than the collapsed header had, every track resizes, and each figure
+// slides sideways. Consistent columns and content sizing are not compatible;
+// the columns win.
+func TestTableLikeGridsDeclareTheirColumns(t *testing.T) {
+	css := appCSS(t)
+	for _, selector := range tableLikeGrids {
+		t.Run(selector, func(t *testing.T) {
+			rules := gridRulesFor(css, selector)
+			if len(rules) < 2 {
+				t.Fatalf("found %d declarations for %s, want a base and at least one narrower one", len(rules), selector)
+			}
+			var base *gridRule
+			for i := range rules {
+				for _, sized := range []string{"auto", "max-content", "min-content", "fit-content"} {
+					if regexp.MustCompile(`\b` + sized + `\b`).MatchString(rules[i].tracks) {
+						t.Errorf("%s is sized by %s: %q — the columns move when the content does", selector, sized, rules[i].tracks)
+					}
+				}
+				if rules[i].base {
+					base = &rules[i]
+				}
+			}
+			if base == nil {
+				t.Fatalf("%s never turns its grid on", selector)
+			}
+			// Media queries add no specificity, so a narrower rule written
+			// before the base simply loses. That shipped once: the phone rules
+			// for the spending page did nothing at all, and the description
+			// column rendered one character per line.
+			for _, r := range rules {
+				if !r.base && r.offset < base.offset {
+					t.Errorf("%s has an override at byte %d, before its base at %d — later wins at equal specificity, so it does nothing", selector, r.offset, base.offset)
+				}
+			}
+		})
 	}
-	tracks := string(css)[phone[2]:phone[3]]
-	if n := countTracks(tracks); n != 4 {
-		t.Errorf("phone grid-template-columns = %q, want four tracks", tracks)
-	}
+}
 
-	// Media queries add no specificity, so a phone rule written before the
-	// desktop rule it narrows simply loses. That is not a hypothetical: it
-	// shipped, and the description column collapsed to one character per line
-	// on a real phone while every test here passed.
-	desktop := regexp.MustCompile(`\.spend-grid \{ display: grid;`).FindStringIndex(string(css))
-	if desktop == nil {
-		t.Fatal("no desktop grid declaration")
+// TestSpendingGridTrackCounts pins the two shapes by name: five columns on a
+// desktop, four on a phone once the account is dropped.
+func TestSpendingGridTrackCounts(t *testing.T) {
+	css := appCSS(t)
+	for _, r := range gridRulesFor(css, ".spend-grid") {
+		want := 4
+		if r.base {
+			want = 5
+		}
+		if got := countTracks(r.tracks); got != want {
+			t.Errorf("grid-template-columns = %q has %d tracks, want %d", r.tracks, got, want)
+		}
 	}
-	if phone[0] < desktop[0] {
-		t.Errorf("the phone rules are at byte %d, before the desktop rules at %d — later wins at equal specificity, so they do nothing", phone[0], desktop[0])
-	}
-	if !strings.Contains(string(css), ".spend-grid > .sg-row { display: contents; }") {
+	if !strings.Contains(css, ".spend-grid > .sg-row { display: contents; }") {
 		t.Error("rows are not display:contents, so each one makes its own columns")
 	}
 }

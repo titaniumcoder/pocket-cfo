@@ -9,6 +9,9 @@ export HERMES_API_TOKEN=
 # Fine-grained PAT with contents:write on the data repo ONLY. Unset means the
 # read endpoints work and writes return 503.
 export GITHUB_DATA_TOKEN=
+# Optional, defaults to https://api.github.com — point the Contents client at
+# a scratch instance or a stub while verifying the write path.
+export GITHUB_API_URL=
 # Used by `pocket-cfo-ctl translate` to fill missing Bulgarian text on drafts.
 export DEEPL_API_KEY=
 # base64 PEM cert/key `pocket-cfo-ctl render` certifies each rendered PDF with

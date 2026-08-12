@@ -19,6 +19,11 @@ type Service struct {
 	Budget   *tracker.Budget
 	Accounts *tracker.Accounts
 	Actuals  *tracker.Actuals
+
+	// Store is the git side of a write; nil means writes are not configured.
+	// ActualsPrefix defaults to DefaultActualsPrefix.
+	Store         Store
+	ActualsPrefix string
 }
 
 var monthRE = regexp.MustCompile(`^\d{4}-(0[1-9]|1[0-2])$`)

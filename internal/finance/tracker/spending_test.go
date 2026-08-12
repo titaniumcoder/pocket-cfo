@@ -494,17 +494,29 @@ func TestGridTracksAreDeclaredNotComputed(t *testing.T) {
 
 	// The phone drops the two .col-secondary columns, so it must declare
 	// three tracks — five would leave two empty ones eating the width.
-	// On a phone the row becomes its own small grid — two lines instead of
-	// five columns — so the tracks to check are the row's, not the page's.
-	phone := regexp.MustCompile(`(?s)@media \(max-width: 600px\) \{.*?\.spend-grid > \.sg-row \{[^}]*grid-template-columns: ([^;]+);`).FindStringSubmatch(string(css))
+	// The phone narrows to four tracks: date, description, amount, and the
+	// copy control. The account goes — on a phone it is the column you can
+	// most afford to lose.
+	phoneRe := regexp.MustCompile(`(?s)@media \(max-width: 600px\) \{[^@]*?\.spend-grid \{ grid-template-columns: ([^;]+);`)
+	phone := phoneRe.FindStringSubmatchIndex(string(css))
 	if phone == nil {
-		t.Fatal("the phone layout does not re-declare the row, so five columns stay side by side")
+		t.Fatal("the phone layout does not re-declare the grid, so five wide tracks stay in force")
 	}
-	if n := countTracks(phone[1]); n != 4 {
-		t.Errorf("phone row grid-template-columns = %q, want four tracks", phone[1])
+	tracks := string(css)[phone[2]:phone[3]]
+	if n := countTracks(tracks); n != 4 {
+		t.Errorf("phone grid-template-columns = %q, want four tracks", tracks)
 	}
-	if !strings.Contains(string(css), ".spend-grid > .sg-row > .col-secondary { display: block;") {
-		t.Error("the date and account are hidden on the phone rather than moved to the second line")
+
+	// Media queries add no specificity, so a phone rule written before the
+	// desktop rule it narrows simply loses. That is not a hypothetical: it
+	// shipped, and the description column collapsed to one character per line
+	// on a real phone while every test here passed.
+	desktop := regexp.MustCompile(`\.spend-grid \{ display: grid;`).FindStringIndex(string(css))
+	if desktop == nil {
+		t.Fatal("no desktop grid declaration")
+	}
+	if phone[0] < desktop[0] {
+		t.Errorf("the phone rules are at byte %d, before the desktop rules at %d — later wins at equal specificity, so they do nothing", phone[0], desktop[0])
 	}
 	if !strings.Contains(string(css), ".spend-grid > .sg-row { display: contents; }") {
 		t.Error("rows are not display:contents, so each one makes its own columns")

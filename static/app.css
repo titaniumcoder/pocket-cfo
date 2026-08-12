@@ -451,43 +451,6 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
     opacity: .6;
   }
   .row.colhead { display: none; }
-  /* Five columns of statement line do not fit a phone, and dropping the two
-     that do not fit loses the date and the account — the two things that tell
-     you which line you are looking at. So each row stops being part of the
-     page-wide grid and becomes a small one of its own: the description and
-     the amount on the first line, the date and the account under it. The
-     tracks are still declared once, so every row is still identical.
-
-     Column headers go: they label columns that are no longer side by side. */
-  .spend-grid { display: block; }
-  .spend-grid > .sg-head, .spend-grid > .cov-head { display: none; }
-  .spend-grid > .sg-row {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) 5.5rem 1.5rem;
-    column-gap: .5rem;
-    row-gap: .1rem;
-    align-items: baseline;
-    padding: .55rem 0;
-    border-bottom: 1px solid var(--panel-border);
-  }
-  .spend-grid > .sg-row > * { padding: 0; border-bottom: 0; }
-  /* Beats the blanket .col-secondary rule above: these are not hidden here,
-     they move to the second line. */
-  .spend-grid > .sg-row > .col-secondary { display: block; font-size: .78rem; opacity: .6; }
-  .spend-grid > .sg-row > .sg-desc { grid-row: 1; grid-column: 1 / 3; }
-  .spend-grid > .sg-row > .col-secondary:first-child { grid-row: 2; grid-column: 1; }
-  .spend-grid > .sg-row > .col-secondary:nth-child(3) { grid-row: 2; grid-column: 2; }
-  .spend-grid > .sg-row > .num { grid-row: 1 / span 2; grid-column: 3; align-self: center; }
-  .spend-grid > .sg-row > .copy-col { grid-row: 1 / span 2; grid-column: 4; align-self: center; }
-  /* The category total keeps its budget, which the hidden middle column used
-     to take away exactly where the screen has least room for arithmetic. */
-  .spend-grid > .sg-foot > .budget-of { text-align: left; }
-
-  /* Coverage keeps the one date that answers the question — how far the
-     statement was read. */
-  .cov-grid { grid-template-columns: minmax(0, 1fr) auto; }
-  .cov-grid > .cov-head { display: none; }
-  .cov-grid > .cov-to { display: block; }
 }
 
 /* The spending page is one grid, not a table per category. Separate tables
@@ -525,6 +488,36 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
 .cov-grid { display: grid; grid-template-columns: minmax(0, 1fr) 7rem 7rem 7rem; column-gap: 1.5rem; align-items: baseline; }
 .cov-grid > * { padding: .5rem 0; border-bottom: 1px solid var(--panel-border); }
 .cov-head { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; opacity: .55; font-weight: 600; }
+
+/* The phone rules live here, immediately after the declarations they narrow,
+   and not in the media block further up: media queries add no specificity, so
+   a phone rule written earlier in the file loses to a desktop rule written
+   later. That is exactly what happened — five wide tracks stayed in force on
+   a 390px screen and the description column collapsed to one character per
+   line. Keeping the two next to each other is what stops it happening twice. */
+@media (max-width: 600px) {
+  .panel { padding: 1rem .75rem 1.1rem; }
+
+  /* Three things fit: date, description, amount — plus the copy control,
+     which is an action rather than information. The account goes; on a phone
+     it is the column you can most afford to lose, since the description
+     already tells you what the line is. */
+  .spend-grid { grid-template-columns: 4.6rem minmax(0, 1fr) 4rem 1.4rem; column-gap: .4rem; }
+  .spend-grid > * { padding: .5rem 0; }
+  .spend-grid > .sg-row > * { padding: .5rem 0; }
+  /* Beats the blanket .col-secondary rule: the date stays, the account does
+     not, and the totals row swaps its empty description for its budget so the
+     figure keeps the number it is measured against. */
+  .spend-grid > .sg-row > .col-secondary:first-child { display: block; font-size: .76rem; opacity: .7; }
+  .spend-grid > .sg-foot > .sg-desc { display: none; }
+  .spend-grid > .sg-foot > .budget-of { display: block; text-align: left; font-size: .76rem; }
+  .spend-grid .sg-head { font-size: .66rem; }
+  .sg-desc { font-size: .88rem; }
+
+  /* Coverage answers one question on a phone — when this was last imported. */
+  .cov-grid { grid-template-columns: minmax(0, 1fr) auto; column-gap: .4rem; }
+  .cov-grid > .cov-imported { display: block; }
+}
 
 .cat-block { margin: 1.2rem 0 1.8rem; }
 .cat-block h4 { margin: 0 0 .4rem; font-size: 1rem; }

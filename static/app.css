@@ -159,6 +159,10 @@ main h2.panel-title { font-size: 1.05rem; text-transform: none; letter-spacing: 
 .amt.total { font-size: 1.15rem; }
 .amt.neg { color: var(--danger); }
 .amt.goodamt { color: var(--good); }
+/* The planned column is money out too, so it carries the same sign and the
+   same colour — muted by .mid's own opacity rather than by a second rule. */
+.mid.neg { color: var(--danger); }
+.mid.goodamt { color: var(--good); }
 .label small { font-weight: 400; opacity: .55; font-size: .8em; }
 .row.sub { padding-top: 1rem; }
 .row.gap-below { margin-bottom: 1rem; }
@@ -424,12 +428,17 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
 }
 
 /* Scoped to .ledger.with-actuals so a month with no imported file keeps its
-   planned figures in .mid, and to .group-rows .row so Net income / Balance /
-   account rows are untouched. */
+   planned figures in .mid. The row kinds listed are the ones that carry a
+   .plan-m to swap in — the totals included, since a total that loses its
+   budget on a narrow screen is the one figure you most want the budget next
+   to. Net income, Balance and the account rows have no .plan-m and are left
+   alone. */
 @media (max-width: 600px) {
   .ledger.with-actuals .group-rows .row .mid,
+  .ledger.with-actuals .row.net .mid,
   .ledger.with-actuals .group-header .mid { display: none; }
   .ledger.with-actuals .group-rows .row .amt,
+  .ledger.with-actuals .row.net .amt,
   .ledger.with-actuals .group-header .amt {
     display: flex;
     flex-direction: column;

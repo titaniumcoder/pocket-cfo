@@ -11,7 +11,36 @@ var tmpl = template.Must(template.Must(template.New("").Funcs(template.FuncMap{
 	"eur":        formatEuro,
 	"truncHours": truncHours,
 	"mark":       statusMark,
+	"out":        outEuro,
+	"outClass":   outClass,
 }).Parse(webui.HeaderTemplate)).Parse(templates))
+
+// outEuro renders a figure from the expense ledger the way the rest of the
+// page renders money leaving: with a minus. Every row in there is an expense,
+// planned and actual alike, and printing them unsigned made a budget of 1 420
+// read like income sitting next to a Net income that looked the same.
+//
+// A category that nets out the other way — a refund larger than the spending
+// on it — is money coming back, and loses the sign.
+func outEuro(cents int) template.HTML {
+	if cents > 0 {
+		return template.HTML("&minus;" + formatEuro(cents))
+	}
+	return template.HTML(formatEuro(-cents))
+}
+
+// outClass is that figure's colour, and the only colour these rows carry:
+// how a figure compares with its budget is weight and a mark instead (see
+// statusMark), so red here always means money out and never means over.
+func outClass(cents int) string {
+	switch {
+	case cents > 0:
+		return " neg"
+	case cents < 0:
+		return " goodamt"
+	}
+	return ""
+}
 
 // statusMark is the icon for a budget grade, and empty for a figure that is
 // on plan — the common case, which should say nothing at all.
@@ -298,14 +327,14 @@ var templates = `
       <div class="group">
         <div class="group-header" onclick="this.closest('.group').classList.toggle('open')">
           <span class="label">{{.Name}} <span class="chevron">&#9656;</span></span>
-          {{if $show}}<span class="mid">{{eur .PlannedCents}}</span><span class="amt act{{if .Status}} flagged{{end}}">{{mark .Status}}{{if .HasActual}}{{eur .ActualCents}}{{end}}<span class="plan-m">{{if .HasActual}}of {{end}}{{eur .PlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .PlannedCents}}</span>{{end}}
+          {{if $show}}<span class="mid{{outClass .PlannedCents}}">{{out .PlannedCents}}</span><span class="amt act{{if .HasActual}}{{outClass .ActualCents}}{{end}}{{if .Status}} flagged{{end}}">{{mark .Status}}{{if .HasActual}}{{out .ActualCents}}{{end}}<span class="plan-m">{{if .HasActual}}of {{end}}{{out .PlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt{{outClass .PlannedCents}}">{{out .PlannedCents}}</span>{{end}}
         </div>
         <div class="group-rows">
           {{range .Rows}}
           <div class="row{{if .UpcomingMonth}} planned{{end}}{{if .Overridden}} override{{end}}">
             <span class="label">{{.Name}}{{if .Note}} <span class="note">{{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Note}} <svg class="link-icon" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>{{else}}{{.Note}}{{end}}</span>{{end}}</span>
-            <span class="mid">{{if .PlannedCents}}{{eur .PlannedCents}}{{else if .UpcomingMonth}}{{eur .UpcomingCents}} ({{.UpcomingMonth}}){{end}}</span>
-            <span class="amt{{if $show}}{{if .ActualStatus}} flagged{{end}}{{end}}">{{if $show}}{{mark .ActualStatus}}{{if .HasActual}}{{if $detail}}<a class="act-link" href="{{$detail}}#cat-{{.CategoryID}}">{{eur .ActualCents}}</a>{{else}}{{eur .ActualCents}}{{end}}{{end}}{{if .ActualNote}}<span class="act-note">{{.ActualNote}}</span>{{end}}{{if .PlannedCents}}<span class="plan-m">{{if .HasActual}}of {{end}}{{eur .PlannedCents}}</span>{{end}}{{end}}</span>
+            <span class="mid{{if .PlannedCents}}{{outClass .PlannedCents}}{{end}}">{{if .PlannedCents}}{{out .PlannedCents}}{{else if .UpcomingMonth}}{{out .UpcomingCents}} ({{.UpcomingMonth}}){{end}}</span>
+            <span class="amt{{if $show}}{{if .HasActual}}{{outClass .ActualCents}}{{end}}{{if .ActualStatus}} flagged{{end}}{{end}}">{{if $show}}{{mark .ActualStatus}}{{if .HasActual}}{{if $detail}}<a class="act-link" href="{{$detail}}#cat-{{.CategoryID}}">{{out .ActualCents}}</a>{{else}}{{out .ActualCents}}{{end}}{{end}}{{if .ActualNote}}<span class="act-note">{{.ActualNote}}</span>{{end}}{{if .PlannedCents}}<span class="plan-m">{{if .HasActual}}of {{end}}{{out .PlannedCents}}</span>{{end}}{{end}}</span>
           </div>
           {{end}}
         </div>
@@ -439,8 +468,7 @@ var templates = `
       <div class="row sub"><span class="label">Gross salary</span><span class="mid"></span><span class="amt total">{{eur .GrossSalaryCents}}</span></div>
       <div class="row"><span class="label">Employee social ({{.EmployeePct}}%)</span><span class="mid"></span><span class="amt neg">&minus;{{eur .EmployeeContribCents}}</span></div>
       <div class="row"><span class="label">Income tax ({{.IncomeTaxPct}}%)</span><span class="mid"></span><span class="amt neg">&minus;{{eur .IncomeTaxCents}}</span></div>
-      <div class="row net neg"><span class="label">Total company expenses</span><span class="mid"></span><span class="amt neg">&minus;{{eur .CompanyExpensesCents}}</span></div>
-      {{if $.ShowActuals}}<div class="row"><span class="label">Actually spent</span><span class="mid"></span><span class="amt act">{{eur $.CompanyActualCents}}</span></div>{{end}}
+      <div class="row net neg"><span class="label">Total company expenses</span>{{if $.ShowActuals}}<span class="mid{{outClass .CompanyExpensesCents}}">{{out .CompanyExpensesCents}}</span><span class="amt{{outClass $.CompanyActualCents}}">{{out $.CompanyActualCents}}<span class="plan-m">of {{out .CompanyExpensesCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .CompanyExpensesCents}}</span>{{end}}</div>
       <div class="row net{{if lt .NetIncomeCents 0}} neg{{end}}"><span class="label">Net income</span><span class="mid"></span><span class="amt netamt">{{eur .NetIncomeCents}}</span></div>
       {{end}}
       {{end}}
@@ -473,8 +501,7 @@ var templates = `
 
     {{if .ShowBalance}}
     <div class="ledger">
-      <div class="row net neg"><span class="label">Total private expenses</span><span class="mid"></span><span class="amt neg">&minus;{{eur .PrivateTotalPlannedCents}}</span></div>
-      {{if .ShowActuals}}<div class="row"><span class="label">Actually spent</span><span class="mid"></span><span class="amt act">{{eur .PrivateActualCents}}</span></div>{{end}}
+      <div class="row net neg"><span class="label">Total private expenses</span>{{if .ShowActuals}}<span class="mid{{outClass .PrivateTotalPlannedCents}}">{{out .PrivateTotalPlannedCents}}</span><span class="amt{{outClass .PrivateActualCents}}">{{out .PrivateActualCents}}<span class="plan-m">of {{out .PrivateTotalPlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .PrivateTotalPlannedCents}}</span>{{end}}</div>
       <div class="row net balance{{if lt .BalanceCents 0}} neg{{end}}"><span class="label">Balance</span><span class="mid"></span><span class="amt netamt">{{eur .BalanceCents}}</span></div>
     </div>
     {{end}}

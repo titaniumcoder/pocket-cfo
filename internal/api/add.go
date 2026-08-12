@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/actualsdata"
 )
@@ -71,6 +72,12 @@ func (s *Service) AddTransactions(ctx context.Context, req AddRequest) (*AddResu
 
 	knownIDs, err := s.knownCategoryIDs(ctx)
 	if err != nil {
+		return nil, err
+	}
+	// Checked here as well as in ValidateActuals, because a mistyped category
+	// is the most likely thing to be wrong about a batch and this is the last
+	// point before the first network call.
+	if err := checkCategories(req.Transactions, knownIDs); err != nil {
 		return nil, err
 	}
 
@@ -220,8 +227,12 @@ func groupTransactionsByMonth(txs []actualsdata.Transaction) (map[string][]actua
 	out := map[string][]actualsdata.Transaction{}
 	seen := map[string]bool{}
 	for i, tx := range txs {
-		if !dayRE.MatchString(tx.Date) {
-			return nil, errorf(CodeInvalidRequest, "transaction %d (%s): date %q must look like 2026-08-14", i+1, tx.Id, tx.Date)
+		// A real date, not just the right shape: 2026-13-01 matches the
+		// pattern, and left alone it would send us looking for a month that
+		// cannot exist — a round trip to GitHub to learn what the calendar
+		// already knew.
+		if err := checkDay(tx.Date); err != nil {
+			return nil, errorf(CodeInvalidRequest, "transaction %d (%s): date %q %s", i+1, tx.Id, tx.Date, err)
 		}
 		if strings.TrimSpace(tx.Id) == "" {
 			return nil, errorf(CodeInvalidRequest, "transaction %d has no id", i+1)
@@ -238,8 +249,11 @@ func groupTransactionsByMonth(txs []actualsdata.Transaction) (map[string][]actua
 func groupCoverageByMonth(cov []actualsdata.Coverage) (map[string][]actualsdata.Coverage, error) {
 	out := map[string][]actualsdata.Coverage{}
 	for i, c := range cov {
-		if !dayRE.MatchString(c.From) || !dayRE.MatchString(c.To) {
-			return nil, errorf(CodeInvalidRequest, "coverage %d (%s): from and to must look like 2026-08-01", i+1, c.Account)
+		if err := checkDay(c.From); err != nil {
+			return nil, errorf(CodeInvalidRequest, "coverage %d (%s): from %q %s", i+1, c.Account, c.From, err)
+		}
+		if err := checkDay(c.To); err != nil {
+			return nil, errorf(CodeInvalidRequest, "coverage %d (%s): to %q %s", i+1, c.Account, c.To, err)
 		}
 		if monthOf(c.From) != monthOf(c.To) {
 			return nil, errorf(CodeInvalidRequest,
@@ -289,6 +303,32 @@ func commitError(err error, month string, done []MonthWrite) error {
 		Message: fmt.Sprintf("writing %s: %v", month, err),
 		Details: details,
 	}
+}
+
+// checkDay insists on a date the calendar agrees with, not merely one shaped
+// like a date. The returned text completes "date %q ...".
+func checkDay(day string) error {
+	if !dayRE.MatchString(day) {
+		return fmt.Errorf("must look like 2026-08-14")
+	}
+	if _, err := time.Parse("2006-01-02", day); err != nil {
+		return fmt.Errorf("is not a real date")
+	}
+	return nil
+}
+
+// checkCategories rejects a category no budget knows about before anything is
+// read or written, so the common typo costs no round trip.
+func checkCategories(txs []actualsdata.Transaction, knownIDs map[string]bool) error {
+	for i, tx := range txs {
+		for _, p := range actualsdata.PartsOf(tx) {
+			if p.Category != "" && !knownIDs[p.Category] {
+				return errorf(CodeValidationFailed,
+					"transaction %d (%s) cites category %q, which is not in budget.json — list_budget_categories has the legal ids", i+1, tx.Id, p.Category)
+			}
+		}
+	}
+	return nil
 }
 
 func countLabel(n int, noun string) string {

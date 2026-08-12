@@ -19,7 +19,7 @@ const apiRequestTimeout = 30 * time.Second
 
 // mcpServerVersion is what /mcp reports in initialize. Bumped by hand: it
 // describes the tool surface, not the release.
-const mcpServerVersion = "1"
+const mcpServerVersion = "2"
 
 // registerAPI adds the Hermes routes, and only when a token is configured —
 // unconfigured, the paths do not exist at all rather than 401.
@@ -33,7 +33,10 @@ func (s *server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/actuals/{month}", s.apiActuals)
 	mux.HandleFunc("GET /api/transactions", s.apiTransactions)
 	mux.HandleFunc("GET /api/reconciliation", s.apiReconciliation)
-	mux.HandleFunc("PUT /api/actuals/{month}", s.apiPutActuals)
+	// Two verbs, no removal. Neither carries a month in the path: add works
+	// the month out from each line's date, and edit from the id.
+	mux.HandleFunc("POST /api/actuals/add", s.apiAddActuals)
+	mux.HandleFunc("POST /api/actuals/edit", s.apiEditActuals)
 	mux.HandleFunc("POST /api/budget/move-planned-expense", s.apiMovePlannedExpense)
 
 	// The bearer gate wraps the MCP handler rather than living inside it, so
@@ -43,9 +46,9 @@ func (s *server) registerAPI(mux *http.ServeMux) {
 	// methods than GET /{year} while having a more specific path, and
 	// ServeMux calls that a conflict. GET and DELETE reach the handler only
 	// to be answered 405, which stateless streamable HTTP requires.
-	// Capped like the REST writes: put_actuals carries a whole month inside
-	// the JSON-RPC envelope, so the ceiling is higher, but an uncapped body
-	// on the one endpoint that accepts documents is not a ceiling at all.
+	// Capped like the REST writes: add_transactions carries a whole statement
+	// import inside the JSON-RPC envelope, so the ceiling is higher, but an
+	// uncapped body on the endpoints that accept batches is not a ceiling.
 	mcpHandler := s.requireBearer(capBody(maxMCPBody, s.apiService().MCPHandler(mcpServerVersion)))
 	mux.Handle("POST /mcp", mcpHandler)
 	mux.Handle("GET /mcp", mcpHandler)
@@ -103,11 +106,11 @@ func (s *server) apiService() *api.Service {
 	return svc
 }
 
-// maxPutBody caps a month document. A year of statements is a few hundred KB;
+// maxPutBody caps a write body. A statement import is a few hundred KB;
 // anything larger is a mistake rather than a reconciliation.
 const maxPutBody = 1 << 20
 
-// maxMCPBody leaves room for the same document inside a JSON-RPC envelope.
+// maxMCPBody leaves room for the same batch inside a JSON-RPC envelope.
 const maxMCPBody = 2 << 20
 
 func capBody(limit int64, h http.Handler) http.Handler {
@@ -144,11 +147,11 @@ func decodeAPIBody(w http.ResponseWriter, r *http.Request, into any) bool {
 	return true
 }
 
-func (s *server) apiPutActuals(w http.ResponseWriter, r *http.Request) {
+func (s *server) apiAddActuals(w http.ResponseWriter, r *http.Request) {
 	if !s.apiAuthorized(w, r) {
 		return
 	}
-	var req api.PutRequest
+	var req api.AddRequest
 	if !decodeAPIBody(w, r, &req) {
 		return
 	}
@@ -156,7 +159,27 @@ func (s *server) apiPutActuals(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
 	defer cancel()
 
-	out, err := s.apiService().PutActuals(ctx, r.PathValue("month"), req)
+	out, err := s.apiService().AddTransactions(ctx, req)
+	if err != nil {
+		writeAPIError(w, err, apiStatus(err))
+		return
+	}
+	writeAPIJSON(w, http.StatusOK, out)
+}
+
+func (s *server) apiEditActuals(w http.ResponseWriter, r *http.Request) {
+	if !s.apiAuthorized(w, r) {
+		return
+	}
+	var req api.EditRequest
+	if !decodeAPIBody(w, r, &req) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
+	defer cancel()
+
+	out, err := s.apiService().EditTransactions(ctx, req)
 	if err != nil {
 		writeAPIError(w, err, apiStatus(err))
 		return
@@ -281,7 +304,7 @@ func apiStatus(err error) int {
 		return http.StatusInternalServerError
 	}
 	switch e.Code {
-	case api.CodeInvalidRequest, api.CodeValidationFailed, api.CodeWouldRemove:
+	case api.CodeInvalidRequest, api.CodeValidationFailed:
 		return http.StatusBadRequest
 	case api.CodeNotFound:
 		return http.StatusNotFound

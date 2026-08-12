@@ -99,6 +99,16 @@ func (s *Service) EditTransactions(ctx context.Context, req EditRequest) (*EditR
 	if err != nil {
 		return nil, err
 	}
+	// A mistyped category is the likeliest thing to be wrong about a batch, so
+	// it is caught before the first month is read rather than after.
+	for i, e := range req.Edits {
+		for _, id := range citedCategories(e) {
+			if !knownIDs[id] {
+				return nil, errorf(CodeValidationFailed,
+					"edit %d (%s) cites category %q, which is not in budget.json — list_budget_categories has the legal ids", i+1, e.ID, id)
+			}
+		}
+	}
 
 	months := make([]string, 0, len(byMonth))
 	for m := range byMonth {
@@ -239,6 +249,20 @@ func checkDisposition(i int, e Edit) error {
 		return errorf(CodeInvalidRequest, "edit %d (%s): one split is just a category — send two or more, or set category", i+1, e.ID)
 	}
 	return nil
+}
+
+// citedCategories is every budget id an edit names, on the line or in a part.
+func citedCategories(e Edit) []string {
+	var out []string
+	if e.Category != nil && *e.Category != "" {
+		out = append(out, *e.Category)
+	}
+	for _, s := range e.Splits {
+		if s.Category != nil && *s.Category != "" {
+			out = append(out, *s.Category)
+		}
+	}
+	return out
 }
 
 func countSet(flags ...bool) int {

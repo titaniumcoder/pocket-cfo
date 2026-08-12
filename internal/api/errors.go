@@ -8,9 +8,10 @@ import "fmt"
 // Error codes. Both adapters map from these, which is what stops the REST and
 // MCP surfaces drifting apart.
 const (
-	CodeInvalidRequest     = "invalid_request"
-	CodeValidationFailed   = "validation_failed"
-	CodeWouldRemove        = "would_remove"
+	CodeInvalidRequest   = "invalid_request"
+	CodeValidationFailed = "validation_failed"
+	// There is deliberately no would_remove: removal is not an operation the
+	// write surface offers, so there is nothing to warn about or override.
 	CodeNotFound           = "not_found"
 	CodeConflict           = "conflict"
 	CodeWriteNotConfigured = "write_not_configured"

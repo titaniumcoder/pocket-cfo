@@ -67,7 +67,7 @@ func TestMCPUnauthenticatedLearnsNothing(t *testing.T) {
 		if w.Code != http.StatusUnauthorized {
 			t.Errorf("status = %d, want 401 for %.40s", w.Code, body)
 		}
-		for _, leak := range []string{"list_budget_categories", "put_actuals", "Rent", "tools"} {
+		for _, leak := range []string{"list_budget_categories", "add_transactions", "Rent", "tools"} {
 			if strings.Contains(w.Body.String(), leak) {
 				t.Errorf("a 401 body leaked %q: %s", leak, w.Body)
 			}
@@ -111,7 +111,8 @@ func TestMCPToolsList(t *testing.T) {
 	want := map[string]bool{
 		"list_budget_categories": true, "get_budget": true, "get_actuals": true,
 		"search_transactions": true, "get_reconciliation_status": true,
-		"list_accounts": true, "put_actuals": true, "move_planned_expense": true,
+		"list_accounts": true, "add_transactions": true, "edit_transactions": true,
+		"move_planned_expense": true,
 	}
 	got := map[string]bool{}
 	for _, raw := range tools {
@@ -135,28 +136,47 @@ func TestMCPToolsList(t *testing.T) {
 	}
 }
 
-// TestMCPPutActualsDescribesItsContract: the description is where Hermes
-// learns that omitting a transaction is a removal, so pin it.
-func TestMCPPutActualsDescribesItsContract(t *testing.T) {
+// TestMCPWriteToolsDescribeTheirContract: the description is the only thing
+// Hermes reads at call time — HERMES.md may not be in context and the input
+// schema says nothing about intent. Every rule the Go code enforces has to be
+// findable here, so pin the ones that decide whether a write is safe.
+func TestMCPWriteToolsDescribeTheirContract(t *testing.T) {
 	s := apiServer(t, apiTestToken, "prod")
 	w := mcpCall(t, s, apiTestToken, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	resp := decodeRPC(t, w.Body.String())
 	tools := resp["result"].(map[string]any)["tools"].([]any)
 
+	want := map[string][]string{
+		// That it never removes, that the month is derived rather than sent,
+		// that a re-send is safe, and what to do with money you cannot place.
+		"add_transactions": {"never touches", "removes", "date decides", "skipped", "untracked"},
+		// That a disposition is replaced wholesale, that the statement facts
+		// and other lines are off limits, and that there is no lock to pass.
+		"edit_transactions": {"replaces", "cannot", "left alone", "no base_sha", "month"},
+	}
+	desc := map[string]string{}
 	for _, raw := range tools {
 		tool := raw.(map[string]any)
-		if tool["name"] != "put_actuals" {
+		name, _ := tool["name"].(string)
+		desc[name] = strings.ToLower(tool["description"].(string))
+	}
+	for name, phrases := range want {
+		got, ok := desc[name]
+		if !ok {
+			t.Errorf("%s is not listed", name)
 			continue
 		}
-		desc := strings.ToLower(tool["description"].(string))
-		for _, want := range []string{"whole-month", "removal", "re-read"} {
-			if !strings.Contains(desc, want) {
-				t.Errorf("put_actuals description does not mention %q: %s", want, desc)
+		for _, phrase := range phrases {
+			if !strings.Contains(got, phrase) {
+				t.Errorf("%s description does not mention %q:\n%s", name, phrase, got)
 			}
 		}
-		return
 	}
-	t.Fatal("put_actuals not listed")
+	// And the retired tool must be gone, not merely undocumented: its whole
+	// contract was that omitting a line deletes it.
+	if _, ok := desc["put_actuals"]; ok {
+		t.Error("put_actuals is still listed")
+	}
 }
 
 func TestMCPToolsCall(t *testing.T) {
@@ -335,7 +355,7 @@ func TestMCPRejectsAnImpossibleYear(t *testing.T) {
 	}
 }
 
-// TestMCPBodyIsCapped: put_actuals is the one tool that accepts a document, so
+// TestMCPBodyIsCapped: add_transactions accepts a whole statement import, so
 // an uncapped body here is an uncapped body full stop.
 func TestMCPBodyIsCapped(t *testing.T) {
 	s := apiServer(t, apiTestToken, "prod")

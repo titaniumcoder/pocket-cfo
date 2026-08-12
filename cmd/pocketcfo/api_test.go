@@ -22,6 +22,8 @@ import (
 
 const apiTestToken = "test-hermes-token"
 
+const apiRentCategory = "00000000-0000-4000-8000-000000000001"
+
 const apiBudgetJSON = `{
   "groups": [
     { "name": "Housing", "kind": "private", "categories": [
@@ -468,9 +470,11 @@ func putServer(t *testing.T) *server {
 	return s
 }
 
-func apiPut(t *testing.T, s *server, month, body, token string) *httptest.ResponseRecorder {
+// apiWrite posts to one of the two write routes. No month in the path: add
+// works it out from each line's date and edit from the id.
+func apiWrite(t *testing.T, s *server, path, body, token string) *httptest.ResponseRecorder {
 	t.Helper()
-	r := httptest.NewRequest(http.MethodPut, "/api/actuals/"+month, strings.NewReader(body))
+	r := httptest.NewRequest(http.MethodPost, "/api/actuals/"+path, strings.NewReader(body))
 	if token != "" {
 		r.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -480,18 +484,22 @@ func apiPut(t *testing.T, s *server, month, body, token string) *httptest.Respon
 	return w
 }
 
-func TestAPIPutRequiresABearer(t *testing.T) {
+const addBody = `{"transactions":[{"id":"x","date":"2026-08-01","description":"X","amount":1,"account":"A","category":"` +
+	apiRentCategory + `"}],"coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}]}`
+
+func TestAPIWritesRequireABearer(t *testing.T) {
 	s := putServer(t)
-	w := apiPut(t, s, "2026-08", `{"document":{},"base_sha":""}`, "")
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401", w.Code)
+	for _, path := range []string{"add", "edit"} {
+		w := apiWrite(t, s, path, `{}`, "")
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("%s: status = %d, want 401", path, w.Code)
+		}
 	}
 }
 
-func TestAPIPutWithoutAWriteTokenIs503(t *testing.T) {
+func TestAPIWritesWithoutAWriteTokenAre503(t *testing.T) {
 	s := apiServer(t, apiTestToken, "prod") // no githubDataToken
-	body := `{"document":{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],"transactions":[]},"base_sha":""}`
-	w := apiPut(t, s, "2026-08", body, apiTestToken)
+	w := apiWrite(t, s, "add", addBody, apiTestToken)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503, body %s", w.Code, w.Body)
 	}
@@ -502,43 +510,71 @@ func TestAPIPutWithoutAWriteTokenIs503(t *testing.T) {
 	}
 }
 
-func TestAPIPutRejectsAnOversizedBody(t *testing.T) {
+func TestAPIWritesRejectAnOversizedBody(t *testing.T) {
 	s := putServer(t)
-	w := apiPut(t, s, "2026-08", `{"document":`+strings.Repeat("a", 2<<20)+`}`, apiTestToken)
+	w := apiWrite(t, s, "add", `{"transactions":`+strings.Repeat("a", 2<<20)+`}`, apiTestToken)
 	if w.Code != http.StatusRequestEntityTooLarge && w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want the body cap to reject it", w.Code)
 	}
 }
 
-func TestAPIPutRejectsAnUnknownEnvelopeField(t *testing.T) {
+func TestAPIWritesRejectAnUnknownEnvelopeField(t *testing.T) {
 	s := putServer(t)
-	w := apiPut(t, s, "2026-08", `{"document":{},"base_sha":"","typo":1}`, apiTestToken)
+	w := apiWrite(t, s, "add", `{"transactions":[],"typo":1}`, apiTestToken)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 for an unknown field", w.Code)
 	}
 }
 
-func TestAPIPutMapsServiceCodesToStatuses(t *testing.T) {
+// TestAPIRemovalHasNoRoute: the whole-month PUT is gone, and with it the only
+// way the API could ever have deleted a recorded transaction.
+func TestAPIRemovalHasNoRoute(t *testing.T) {
+	s := putServer(t)
+	r := httptest.NewRequest(http.MethodPut, "/api/actuals/2026-08", strings.NewReader(`{}`))
+	r.Header.Set("Authorization", "Bearer "+apiTestToken)
+	w := httptest.NewRecorder()
+	s.routes().ServeHTTP(w, r)
+	if w.Code == http.StatusOK {
+		t.Errorf("PUT /api/actuals/{month} still answers: %s", w.Body)
+	}
+
+	for _, method := range []string{http.MethodDelete, http.MethodPost} {
+		r := httptest.NewRequest(method, "/api/actuals/remove", strings.NewReader(`{}`))
+		r.Header.Set("Authorization", "Bearer "+apiTestToken)
+		w := httptest.NewRecorder()
+		s.routes().ServeHTTP(w, r)
+		if w.Code == http.StatusOK {
+			t.Errorf("%s /api/actuals/remove answers: %s", method, w.Body)
+		}
+	}
+}
+
+func TestAPIWritesMapServiceCodesToStatuses(t *testing.T) {
 	tests := []struct {
-		name, month, body string
-		want              int
+		name, path, body string
+		want             int
 	}{
 		{
-			name: "bad month", month: "2026-13",
-			body: `{"document":{"month":"2026-13","coverage":[],"transactions":[]},"base_sha":""}`,
+			name: "a date that is not a date", path: "add",
+			body: `{"transactions":[{"id":"x","date":"2026-13-01","description":"X","amount":1,"account":"A","category":"` + apiRentCategory + `"}]}`,
 			want: http.StatusBadRequest,
 		},
 		{
-			name: "validation failure", month: "2026-08",
-			body: `{"document":{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],` +
-				`"transactions":[{"id":"x","date":"2026-08-01","description":"X","amount":1,"account":"A","category":"00000000-0000-4000-8000-0000000000ff"}]},"base_sha":""}`,
+			name: "an unknown category", path: "add",
+			body: `{"transactions":[{"id":"x","date":"2026-08-01","description":"X","amount":1,"account":"A","category":"00000000-0000-4000-8000-0000000000ff"}],` +
+				`"coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}]}`,
+			want: http.StatusBadRequest,
+		},
+		{
+			name: "an edit naming no change", path: "edit",
+			body: `{"edits":[{"id":"x","month":"2026-08"}]}`,
 			want: http.StatusBadRequest,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := putServer(t)
-			w := apiPut(t, s, tt.month, tt.body, apiTestToken)
+			w := apiWrite(t, s, tt.path, tt.body, apiTestToken)
 			if w.Code != tt.want {
 				t.Errorf("status = %d, want %d, body %s", w.Code, tt.want, w.Body)
 			}
@@ -556,7 +592,6 @@ func TestAPIStatusMapping(t *testing.T) {
 	}{
 		{api.CodeInvalidRequest, http.StatusBadRequest},
 		{api.CodeValidationFailed, http.StatusBadRequest},
-		{api.CodeWouldRemove, http.StatusBadRequest},
 		{api.CodeNotFound, http.StatusNotFound},
 		{api.CodeConflict, http.StatusConflict},
 		{api.CodeWriteNotConfigured, http.StatusServiceUnavailable},

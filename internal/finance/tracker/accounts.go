@@ -138,7 +138,7 @@ func snapshotFor(af accountsdata.AccountsFile) (AccountSnapshot, bool) {
 			Name:  acc.Name,
 			Cents: cents,
 			Note:  derefStr(acc.Note),
-			AsOf:  acc.AsOf,
+			AsOf:  formatDay(acc.AsOf),
 		})
 		if !found || opens.ordinal() > snap.OpensMonth.ordinal() {
 			snap.OpensMonth = opens

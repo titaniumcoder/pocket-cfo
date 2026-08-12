@@ -33,6 +33,12 @@ func (ym yearMonth) String() string {
 // ordinal orders yearMonths chronologically, for invoiced.go's comparisons.
 func (ym yearMonth) ordinal() int { return ym.Year*12 + int(ym.Month) }
 
+// configForm is the month as config.json writes it, for the places that exist
+// to be compared against the file rather than read as prose.
+func (ym yearMonth) configForm() string {
+	return fmt.Sprintf("%04d-%02d", ym.Year, int(ym.Month))
+}
+
 // monthsBetween returns every month from start to end inclusive. Callers
 // guarantee start <= end.
 func monthsBetween(start, end yearMonth) []yearMonth {

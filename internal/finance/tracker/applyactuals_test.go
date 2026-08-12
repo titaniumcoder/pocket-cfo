@@ -382,10 +382,20 @@ func TestGroupHeaderColumnsMatchItsRows(t *testing.T) {
 		t.Fatalf("group header cells = %v, want mid then amt so they align with the rows", cells)
 	}
 
-	// The header's planned figure must be in .mid, like every row's.
-	mid := regexp.MustCompile(`(?s)<span class="mid">(.*?)</span>`).FindStringSubmatch(header[1])
-	if mid == nil || strings.Contains(mid[1], "&minus;") {
-		t.Errorf("header .mid = %q, want the planned figure without a minus, matching the rows", mid)
+	// The header's planned figure must be in .mid and rendered like every
+	// row's, minus included — both are money leaving.
+	midCell := regexp.MustCompile(`(?s)<span class="mid[^"]*">(.*?)</span>`)
+	mid := midCell.FindStringSubmatch(header[1])
+	if mid == nil || !strings.Contains(mid[1], "&minus;") {
+		t.Errorf("header .mid = %q, want the planned figure as an expense", mid)
+	}
+	rows := regexp.MustCompile(`(?s)<div class="group-rows">(.*?)</div>\s*</div>`).FindStringSubmatch(body)
+	if rows == nil {
+		t.Fatal("no group rows rendered")
+	}
+	rowMid := midCell.FindStringSubmatch(rows[1])
+	if rowMid == nil || !strings.Contains(rowMid[1], "&minus;") {
+		t.Errorf("row .mid = %q, want the planned figure as an expense too", rowMid)
 	}
 
 	// And the column header exists on both ledgers, so the two numbers are labelled.

@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -214,5 +215,76 @@ func TestBudgetGradesAreNotColoured(t *testing.T) {
 	}
 	if !strings.Contains(string(css), ".flagged { font-weight: 700; }") {
 		t.Error("off-plan is no longer set in bold")
+	}
+}
+
+// TestExpenseLedgerReadsAsExpenses: every figure in the two expense ledgers is
+// money leaving, so every one carries a minus — planned and actual, group
+// header and row alike. Printing them unsigned put a budget of 1 420 next to a
+// Net income of 4 715 in the same shape.
+func TestExpenseLedgerReadsAsExpenses(t *testing.T) {
+	trk := actualsTracker(t, map[string]string{
+		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+			"transactions":[{"id":"t1","date":"2026-08-03","description":"LIDL","amount":1002,"account":"A","category":"00000000-0000-4000-8000-000000000001"}]}`,
+	})
+	f := trk.ComputeMonth(context.Background(), 2026, time.August)
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	body := rec.Body.String()
+
+	// The signed figure and its colour travel together, in both columns.
+	for _, want := range []string{`<span class="mid neg">&minus;`, `<span class="amt act neg`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("no %s in the ledger — an expense is not rendered as one", want)
+		}
+	}
+
+	// One totals row per ledger, planned and actual side by side, rather than
+	// a total followed by a second row that repeats the label.
+	if strings.Contains(body, "Actually spent") {
+		t.Error(`"Actually spent" is back; the total carries both figures in its own columns`)
+	}
+	for _, label := range []string{"Total company expenses", "Total private expenses"} {
+		row := regexp.MustCompile(`(?s)<div class="row net neg"><span class="label">` +
+			regexp.QuoteMeta(label) + `</span>(.*?)</div>`).FindStringSubmatch(body)
+		if row == nil {
+			t.Fatalf("no %s row", label)
+		}
+		if n := strings.Count(row[1], `class="mid`); n != 1 {
+			t.Errorf("%s has %d planned cells, want 1", label, n)
+		}
+		// Signed unless it is zero, which is the rule outEuro implements:
+		// nothing left, so there is no direction to show.
+		if !strings.Contains(row[1], "&minus;") && !strings.Contains(row[1], ">0<") {
+			t.Errorf("%s does not read as an expense: %s", label, row[1])
+		}
+		// The "of planned" is what the phone layout shows in place of .mid,
+		// so a total without it loses its budget on a narrow screen.
+		if !strings.Contains(row[1], `class="plan-m"`) {
+			t.Errorf("%s carries no of-planned for the phone layout", label)
+		}
+	}
+}
+
+// TestPhoneLayoutCoversTheTotals: the narrow layout drops the planned column
+// and shows "of 2,115" under the actual instead. That swap was scoped to the
+// group rows, so the totals would have shown both at once — the column it was
+// meant to replace, and the replacement.
+func TestPhoneLayoutCoversTheTotals(t *testing.T) {
+	css, err := os.ReadFile(filepath.Join("..", "..", "..", "static", "app.css"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	phone := regexp.MustCompile(`(?s)@media \(max-width: 600px\) \{(.*)`).FindStringSubmatch(string(css))
+	if phone == nil {
+		t.Fatal("no phone block in the stylesheet")
+	}
+	for _, want := range []string{
+		".ledger.with-actuals .row.net .mid",
+		".ledger.with-actuals .row.net .amt",
+	} {
+		if !strings.Contains(phone[1], want) {
+			t.Errorf("the phone layout does not cover %s, so a total shows its budget twice", want)
+		}
 	}
 }

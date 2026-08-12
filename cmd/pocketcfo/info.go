@@ -69,6 +69,18 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		Header:       s.header(sess, webui.PageInfo, webui.ParsePeriod(r.URL.Query().Get("year"), r.URL.Query().Get("month"))),
 		ConfigGroups: s.configGroups(),
 	}
+	// The avatar is the one thing on any page fetched from a third party, so
+	// when it does not appear the useful question is which address failed —
+	// and the answer is not visible anywhere else. Appended as its own group
+	// because it describes this session rather than the process.
+	view.ConfigGroups = append(view.ConfigGroups, configGroup{
+		Name: "This session",
+		Rows: []configRow{
+			{Name: "Login", Value: orUnset(sess.Login)},
+			{Name: "Permission", Value: orUnset(sess.Permission)},
+			{Name: "Avatar URL", Value: orUnset(view.Header.AvatarURL())},
+		},
+	})
 
 	if s.tracker.Toggl != nil {
 		view.TogglConfigured = true

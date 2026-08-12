@@ -13,6 +13,11 @@ type PersonalParams struct {
 	EmployeeRate        float64 // employee social + health contributions, e.g. 0.1378
 	MaxInsurableMonthly float64 // monthly maximum insurable income (EUR); 0 = no cap
 	IncomeTaxRate       float64 // personal income tax, e.g. 0.10
+
+	// MinimumWage is the statutory floor on gross salary, by period. Empty
+	// means no floor — either not configured or before employment started.
+	// See minimumFor.
+	MinimumWage []MinimumWagePeriod
 }
 
 // PersonalView is the rendered waterfall, in cents. CompanyGroups is filled in
@@ -28,6 +33,15 @@ type PersonalView struct {
 	EmployeeContribCents int
 	IncomeTaxCents       int
 	NetIncomeCents       int
+
+	// MinimumWageCents is the floor in force for the period, and
+	// MinimumEnforced says it bound — the salary is the legal minimum rather
+	// than what the company could afford. ShortfallCents is what that costs
+	// beyond the period's own income, and it is the figure worth seeing: the
+	// salary is owed whether or not the month paid for it.
+	MinimumWageCents int
+	MinimumEnforced  bool
+	ShortfallCents   int
 
 	CompanyGroups []CategoryGroupView
 
@@ -46,7 +60,7 @@ type PersonalView struct {
 // breakdown computes the waterfall over `months` months. Salary is smoothed
 // evenly so the monthly social-contribution cap applies correctly, then the
 // per-month figures are scaled back up for display.
-func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, months int) PersonalView {
+func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, months int, minimumEUR float64) PersonalView {
 	result := PersonalView{
 		EmployerPct:  formatNum(p.EmployerRate * 100),
 		EmployeePct:  formatNum(p.EmployeeRate * 100),
@@ -70,6 +84,15 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 	if gross < 0 {
 		gross = 0
 	}
+	// The floor goes on last, after the affordability arithmetic, because it
+	// is not an affordability question: an employed person is owed the
+	// statutory minimum whether the company earned it or not. Everything
+	// downstream — both contributions, the tax, the net — is then computed on
+	// what is actually paid.
+	if minimumEUR > 0 && gross < minimumEUR {
+		gross = minimumEUR
+		result.MinimumEnforced = true
+	}
 
 	base := gross // insurable base, capped at the monthly maximum
 	if p.MaxInsurableMonthly > 0 && base > p.MaxInsurableMonthly {
@@ -85,8 +108,23 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 	incomeTax := p.IncomeTaxRate * taxable
 	net := gross - employeeContrib - incomeTax
 
+	// What the payroll costs the company against what the period produced —
+	// but only reported when the floor is what caused it. Without a floor the
+	// salary is solved to fit the income exactly, so any gap is the older
+	// "company expenses exceeded company income" case, which the zero salary
+	// already says and which this wording would describe wrongly.
+	var shortfall float64
+	if result.MinimumEnforced {
+		shortfall = gross + employerContrib - monthlyIncome
+		if shortfall < 0 {
+			shortfall = 0
+		}
+	}
+
 	m := float64(months)
 	cents := func(x float64) int { return round(x * 100 * m) }
+	result.MinimumWageCents = round(minimumEUR * 100)
+	result.ShortfallCents = cents(shortfall)
 	result.CompanyIncomeCents = cents(monthlyRawIncome)
 	result.CompanyExpensesCents = cents(monthlyCompanyExpenses)
 	result.EmployerContribCents = cents(employerContrib)
@@ -100,7 +138,7 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 // breakdownMonths runs the waterfall month by month and sums, preserving the
 // monthly caps for partial years and uneven income. A short or nil
 // monthlyCompanyExpensesEUR treats missing months as zero.
-func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpensesEUR []float64) PersonalView {
+func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpensesEUR []float64, start yearMonth) PersonalView {
 	result := PersonalView{
 		EmployerPct:  formatNum(p.EmployerRate * 100),
 		EmployeePct:  formatNum(p.EmployeeRate * 100),
@@ -111,7 +149,17 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 		if i < len(monthlyCompanyExpensesEUR) {
 			companyExpenses = monthlyCompanyExpensesEUR[i]
 		}
-		m := p.breakdown(income, companyExpenses, 1)
+		// Each month gets the floor that was in force in it, so a year
+		// spanning a January increase is summed against both figures rather
+		// than one of them twice.
+		m := p.breakdown(income, companyExpenses, 1, p.minimumFor(start.addMonths(i)))
+		if m.MinimumEnforced {
+			result.MinimumEnforced = true
+		}
+		if m.MinimumWageCents > result.MinimumWageCents {
+			result.MinimumWageCents = m.MinimumWageCents
+		}
+		result.ShortfallCents += m.ShortfallCents
 		result.CompanyIncomeCents += m.CompanyIncomeCents
 		result.CompanyExpensesCents += m.CompanyExpensesCents
 		result.EmployerContribCents += m.EmployerContribCents

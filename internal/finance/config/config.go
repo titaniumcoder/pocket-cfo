@@ -11,6 +11,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
 
 // FileConfig is config.json's shape. Every field is optional; a nil pointer, or
@@ -34,6 +36,17 @@ type FileConfig struct {
 	SocialMaxInsurableMonthly *float64 `json:"socialMaxInsurableMonthly"`
 	IncomeTaxRate             *float64 `json:"incomeTaxRate"`
 	AnnualVacationDays        *int     `json:"annualVacationDays"`
+
+	// MinimumWage is the statutory floor on gross salary, by period. A list
+	// rather than one figure because a minimum wage is legislation and
+	// legislation changes; the earliest entry's date is also when employment
+	// began, since before that there is nothing to enforce.
+	//
+	//   "minimumWage": [{ "from": "2026-07", "amount": 1077 }]
+	//
+	// Absent or empty means no floor, and the salary is whatever the company
+	// can afford — which is the right answer for a company with no employees.
+	MinimumWage []tracker.MinimumWageEntry `json:"minimumWage"`
 }
 
 // LoadFileConfig reads config.json from path. A missing file is fine and
@@ -49,6 +62,13 @@ func LoadFileConfig(path string) (FileConfig, error) {
 	}
 	var fc FileConfig
 	if err := json.Unmarshal(data, &fc); err != nil {
+		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	// Validated here, where the error can be returned, rather than in Load,
+	// which cannot fail. A minimum wage is a legal obligation: a typo in its
+	// date silently disabling it is the one failure this setting exists to
+	// prevent, so it is the one setting that does not degrade quietly.
+	if _, err := tracker.ParseMinimumWage(fc.MinimumWage); err != nil {
 		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	return fc, nil
@@ -78,6 +98,7 @@ type Config struct {
 	MaxInsurableMonthly float64
 	IncomeTaxRate       float64
 	AnnualVacationDays  int
+	MinimumWage         []tracker.MinimumWagePeriod
 }
 
 // Load merges fc (already loaded via LoadFileConfig) with the
@@ -102,7 +123,18 @@ func Load(fc FileConfig) Config {
 		MaxInsurableMonthly: floatOr(fc.SocialMaxInsurableMonthly, 2112),
 		IncomeTaxRate:       floatOr(fc.IncomeTaxRate, 0.10),
 		AnnualVacationDays:  intOr(fc.AnnualVacationDays, 25),
+		// Already validated by LoadFileConfig, which is the only way to get a
+		// FileConfig with entries in it.
+		MinimumWage: mustParseMinimumWage(fc.MinimumWage),
 	}
+}
+
+func mustParseMinimumWage(entries []tracker.MinimumWageEntry) []tracker.MinimumWagePeriod {
+	periods, err := tracker.ParseMinimumWage(entries)
+	if err != nil {
+		return nil
+	}
+	return periods
 }
 
 func floatOr(p *float64, def float64) float64 {

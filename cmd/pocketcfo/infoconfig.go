@@ -3,6 +3,8 @@ package main
 import (
 	"strconv"
 	"strings"
+
+	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
 
 // configRow is one setting as shown on /info. Value is already
@@ -111,8 +113,23 @@ func (s *server) configGroups() []configGroup {
 			{Name: "socialEmployeeRate", Value: strconv.FormatFloat(f.EmployeeRate, 'f', -1, 64)},
 			{Name: "socialMaxInsurableMonthly", Value: strconv.FormatFloat(f.MaxInsurableMonthly, 'f', -1, 64)},
 			{Name: "incomeTaxRate", Value: strconv.FormatFloat(f.IncomeTaxRate, 'f', -1, 64)},
+			{Name: "minimumWage", Value: minimumWageSummary(f.MinimumWage)},
 		}},
 	}
+}
+
+// minimumWageSummary renders the schedule as "from 2026-07: 1077.00", so the
+// figure being enforced and the month it started are both checkable from
+// /info. A floor you cannot see is one you cannot verify.
+func minimumWageSummary(periods []tracker.MinimumWagePeriod) string {
+	if len(periods) == 0 {
+		return "unset — no floor, salary is whatever the company can afford"
+	}
+	parts := make([]string, 0, len(periods))
+	for _, p := range periods {
+		parts = append(parts, p.String())
+	}
+	return strings.Join(parts, " · ")
 }
 
 // enabledIf renders a derived, non-secret on/off row.

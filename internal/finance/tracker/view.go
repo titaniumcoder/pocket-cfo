@@ -319,7 +319,7 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 
 	result.computeActuals(t, ctx, year, start, now, months, &bv)
 
-	result.computePersonal(t, ctx, year, months, monthlyCompanyCents, bv)
+	result.computePersonal(t, ctx, year, months, yearMonth{year, start.Month()}, monthlyCompanyCents, bv)
 
 	result.computeSpendable(months, year, start, trackedHours > 0 || expectedNetHours > 0)
 
@@ -524,7 +524,7 @@ func (f *Figures) computeBudget(t *Tracker, ctx context.Context, year int, start
 // computePersonal fills in the Bulgaria salary cascade for the viewed period.
 // Company expenses come off first, before employer-social/gross/employee-social
 // /tax (see PersonalParams.breakdown), so they never look like salary spending.
-func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months int, monthlyCompanyCents map[time.Month]int, bv BudgetView) {
+func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months int, viewed yearMonth, monthlyCompanyCents map[time.Month]int, bv BudgetView) {
 	if f.TotalErr != "" {
 		f.Personal = PersonalView{Err: "company income unavailable"}
 		return
@@ -543,9 +543,11 @@ func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months 
 		f.Personal = t.Personal.breakdownMonths(
 			monthlyIncomeEUR(start, end, monthlyCompanyCents),
 			monthlyIncomeEUR(start, end, monthlyCompanyExpenseCents),
+			yearMonth{year, time.January},
 		)
 	} else {
-		f.Personal = t.Personal.breakdown(float64(f.TotalCents)/100, float64(bv.CompanyTotalPlannedCents)/100, 1)
+		f.Personal = t.Personal.breakdown(float64(f.TotalCents)/100, float64(bv.CompanyTotalPlannedCents)/100, 1,
+			t.Personal.minimumFor(viewed))
 	}
 	f.Personal.CompanyGroups = bv.CompanyGroups
 }

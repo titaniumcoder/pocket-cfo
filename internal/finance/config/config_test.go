@@ -115,3 +115,56 @@ func TestLoad_TogglFromEnv(t *testing.T) {
 		t.Errorf("Toggl creds = %q/%q, want tok/ws", cfg.TogglToken, cfg.TogglWorkspace)
 	}
 }
+
+// TestLoadFileConfigRefusesAMalformedMinimumWage: every other setting here
+// degrades quietly to a default, and this one must not. A minimum wage is a
+// legal obligation, so a typo in its date silently disabling the floor is the
+// single failure the setting exists to prevent.
+func TestLoadFileConfigRefusesAMalformedMinimumWage(t *testing.T) {
+	bad := map[string]string{
+		"a date that is not one":  `{"minimumWage":[{"from":"July 2026","amount":1077}]}`,
+		"no date at all":          `{"minimumWage":[{"amount":1077}]}`,
+		"a negative amount":       `{"minimumWage":[{"from":"2026-07","amount":-5}]}`,
+		"two entries for a month": `{"minimumWage":[{"from":"2026-07","amount":1077},{"from":"2026-07-20","amount":1100}]}`,
+	}
+	for name, body := range bad {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := LoadFileConfig(path); err == nil {
+				t.Error("loaded without complaint; the floor would silently not apply")
+			}
+		})
+	}
+}
+
+// TestLoadResolvesTheMinimumWageSchedule closes the loop: a valid schedule
+// reaches Config sorted, so the tracker gets periods rather than strings.
+func TestLoadResolvesTheMinimumWageSchedule(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	body := `{"minimumWage":[{"from":"2027-01","amount":1150},{"from":"2026-07","amount":1077}]}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fc, err := LoadFileConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Load(fc).MinimumWage
+	if len(got) != 2 {
+		t.Fatalf("resolved %d periods, want 2", len(got))
+	}
+	if got[0].AmountEUR != 1077 || got[1].AmountEUR != 1150 {
+		t.Errorf("periods = %v, want the earlier month first", got)
+	}
+}
+
+// TestNoMinimumWageIsNoFloor: a company with no employees is the default, and
+// it must stay silent rather than enforcing zero as if it were a figure.
+func TestNoMinimumWageIsNoFloor(t *testing.T) {
+	if got := Load(FileConfig{}).MinimumWage; len(got) != 0 {
+		t.Errorf("MinimumWage = %v with nothing configured, want empty", got)
+	}
+}

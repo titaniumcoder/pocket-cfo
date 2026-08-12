@@ -7,9 +7,6 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/budgetdata"
 )
 
-// PlannedCategory is one budget category's plan for one month, flattened for
-// callers outside this package. Date is the due month of a one-off, empty when
-// the category recurs.
 type PlannedCategory struct {
 	ID           string
 	Group        string
@@ -20,12 +17,6 @@ type PlannedCategory struct {
 	Date         string
 }
 
-// PlannedForMonth returns every category with its planned figure for that
-// month, overrides applied.
-//
-// minimal is hard-wired false, unlike ForMonth: minimal-budget mode is a
-// transient in-memory UI toggle, and a caller whose numbers change because
-// someone clicked a button in a browser tab is a bug.
 func (b *Budget) PlannedForMonth(ctx context.Context, year int, month time.Month) ([]PlannedCategory, error) {
 	bf, err := b.File(ctx)
 	if err != nil {
@@ -34,7 +25,6 @@ func (b *Budget) PlannedForMonth(ctx context.Context, year int, month time.Month
 	return plannedFrom(bf, monthKey(year, month)), nil
 }
 
-// PlannedByMonth returns all twelve months of a year, keyed "2026-08".
 func (b *Budget) PlannedByMonth(ctx context.Context, year int) (map[string][]PlannedCategory, error) {
 	bf, err := b.File(ctx)
 	if err != nil {
@@ -48,8 +38,6 @@ func (b *Budget) PlannedByMonth(ctx context.Context, year int) (map[string][]Pla
 	return out, nil
 }
 
-// CategoryIndex maps category id to its definition, for resolving the ids a
-// recorded transaction cites. PlannedCents is zero here: it has no month.
 func (b *Budget) CategoryIndex(ctx context.Context) (map[string]PlannedCategory, error) {
 	bf, err := b.File(ctx)
 	if err != nil {

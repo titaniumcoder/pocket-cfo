@@ -7,26 +7,13 @@ import (
 	"time"
 )
 
-// Band is a slice of a base and the rate charged on it. Bands are MARGINAL: a
-// rate applies only to the part of the base that falls inside its own band, and
-// From is where that band opens.
-//
-// This is what lets a ceiling be an ordinary band with a rate of zero rather
-// than its own concept. "Contributions stop at the ceiling" is one special case
-// of a rate changing at a threshold, not the general rule — UK employee NI
-// drops from 8% to 2% above the Upper Earnings Limit instead of stopping, and
-// UK employer NI never stops at all.
 type Band struct {
 	From float64 `json:"from"`
 	Rate float64 `json:"rate"`
 }
 
-// Bands is one party's schedule, ascending and opening at zero so that no base
-// is ever left with no rate.
 type Bands []Band
 
-// on returns what this schedule charges on base: each rate applied to the width
-// of its own band, and to nothing else.
 func (b Bands) on(base float64) float64 {
 	total := 0.0
 	for i, band := range b {
@@ -42,10 +29,6 @@ func (b Bands) on(base float64) float64 {
 	return total
 }
 
-// String renders a schedule the way a reader would say it out loud — "18.92% to
-// 2111.64, then 0%" for Bulgaria, "0% to 12570, 8% to 50270, then 2%" for UK
-// employee NI. Unpunctuated on purpose: /info exists to be compared against
-// config.json by eye, and the file has no thousands separators either.
 func (b Bands) String() string {
 	if len(b) == 0 {
 		return ""
@@ -66,17 +49,6 @@ func (b Bands) String() string {
 	return strings.Join(parts, ", ")
 }
 
-// applied describes what this schedule charged on a base of this size:
-// "18.92%" when nothing bound it, "18.92% up to 2,112" when a boundary did,
-// "18.92% on a 933 minimum base" when the charge was levied on a raised base.
-//
-// It replaces a blended charged-over-base percentage, which above a ceiling is
-// a number in no law and no config file — 18.92% up to 2,112 on a salary of
-// 10,000 read as 4%.
-//
-// A trailing zero-rate band is dropped, since "up to 2,112" has already said
-// where the charge stopped; a real top rate (UK employee NI at 2%) is not zero
-// and still shows.
 func (b Bands) applied(base, minBase float64) string {
 	if base <= 0 || len(b) == 0 {
 		return ""
@@ -95,7 +67,6 @@ func (b Bands) applied(base, minBase float64) string {
 		last := i+1 == len(b) || charged <= b[i+1].From
 		switch {
 		case last && band.Rate == 0:
-			// The ceiling itself. The band below already named the boundary.
 		case last && i == 0:
 			parts = append(parts, pct)
 		case last:
@@ -111,39 +82,11 @@ func (b Bands) applied(base, minBase float64) string {
 	return out
 }
 
-// PartySchedule is one party's contribution rules as an entry states them.
-// Both fields carry forward independently, but a band list is one indivisible
-// statement: giving Bands replaces the list whole rather than patching it,
-// since there is no sensible way to merge a newly published schedule into an
-// old one band at a time.
-//
-// Bands sits inside a struct rather than being the party itself so a sliding
-// scale — Germany's Übergangsbereich, France's réduction générale — can arrive
-// as a sibling field. Those are formulas, not bands, and retrofitting the room
-// for them later is the awkward part.
 type PartySchedule struct {
-	// MinBase raises the base a contribution is computed on when the salary is
-	// lower than it. It is NOT a band: a band can only change a rate applied to
-	// a base, and this changes the base. Bulgaria needs both, and they are not
-	// the same number — the minimum wage is one figure, while the minimum
-	// insurable income (МОД) is a range that depends on occupation.
 	MinBase *float64
 	Bands   Bands
 }
 
-// LegislationPeriod is the payroll law in force from a month: everything a
-// government changes in one announcement, in one entry.
-//
-// Nested this way rather than one dated list per figure because that is how it
-// arrives — a January package moves the minimum wage, the contribution
-// schedules and sometimes the tax bands together, and splitting one
-// announcement across four schedules is four chances to transcribe the date
-// differently.
-//
-// Every figure is optional and carries forward: an entry states what changed,
-// not what stayed. Repeating unchanged numbers in every entry is how one of
-// them eventually gets repeated wrong. Pointers throughout, so an explicitly
-// zeroed rate stays distinguishable from one that was never mentioned.
 type LegislationPeriod struct {
 	From        yearMonth
 	MinimumWage *float64
@@ -152,84 +95,57 @@ type LegislationPeriod struct {
 	IncomeTax   Bands
 }
 
-// Legislation is the periods in date order.
 type Legislation []LegislationPeriod
 
-// PartyRules is one party's resolved schedule for a payroll month.
 type PartyRules struct {
-	MinBase float64 // 0 = none
+	MinBase float64
 	Bands   Bands
 }
 
-// Rules are the figures resolved for one payroll month. It holds slices and so
-// is not comparable with ==; compare with reflect.DeepEqual.
 type Rules struct {
-	MinimumEUR float64 // statutory floor on gross salary; 0 = none
+	MinimumEUR float64
 	Employer   PartyRules
 	Employee   PartyRules
 	IncomeTax  Bands
 }
 
-// nothingInForce says no entry has stated any figure for this month — before
-// the earliest entry, or with no legislation configured at all. The month is
-// then charged nothing, which is worth saying out loud on the page: a salary
-// with no deductions is indistinguishable from a working one at a glance.
 func (r Rules) nothingInForce() bool {
 	return r.MinimumEUR == 0 && len(r.IncomeTax) == 0 &&
 		r.Employer.MinBase == 0 && len(r.Employer.Bands) == 0 &&
 		r.Employee.MinBase == 0 && len(r.Employee.Bands) == 0
 }
 
-// BandEntry is one band as config.json writes it.
 type BandEntry struct {
 	From float64  `json:"from"`
 	Rate *float64 `json:"rate"`
 }
 
-// PartyEntry is one party's block under "contributions".
 type PartyEntry struct {
 	MinBase *float64    `json:"minBase"`
 	Bands   []BandEntry `json:"bands"`
 }
 
-// ContributionsEntry is the "contributions" block: one schedule per party,
-// because employer and employee genuinely differ. UK employer NI starts at
-// £5,000 a year and employee NI at £12,570; a single shared ceiling has nowhere
-// to put two numbers.
 type ContributionsEntry struct {
 	Employer *PartyEntry `json:"employer"`
 	Employee *PartyEntry `json:"employee"`
 }
 
-// TaxEntry is the "incomeTax" block. No minBase: a tax base is what it is.
 type TaxEntry struct {
 	Bands []BandEntry `json:"bands"`
 }
 
-// LegislationEntry is one config.json entry. It lives here rather than in the
-// config package so the parsing and the meaning stay together.
 type LegislationEntry struct {
 	From          string              `json:"from"`
 	MinimumWage   *float64            `json:"minimumWage"`
 	Contributions *ContributionsEntry `json:"contributions"`
 	IncomeTax     *TaxEntry           `json:"incomeTax"`
 
-	// The v0.15.0 keys, read for exactly one reason: to reject a file that
-	// still carries them and say what to write instead. Dropping them silently
-	// would leave a half-migrated file reporting plausible wrong numbers, which
-	// is the failure worth being loud about.
 	SocialMaxInsurableMonthly *float64 `json:"socialMaxInsurableMonthly"`
 	SocialEmployerRate        *float64 `json:"socialEmployerRate"`
 	SocialEmployeeRate        *float64 `json:"socialEmployeeRate"`
 	IncomeTaxRate             *float64 `json:"incomeTaxRate"`
 }
 
-// ParseLegislation turns config.json's entries into periods in date order.
-// "2026-07" and "2026-07-01" are both accepted: the day is noise, since these
-// figures apply to whole payroll months.
-//
-// Fail-fast throughout. These are legal obligations, and a config that parses
-// into the wrong shape reports a salary nobody is owed.
 func ParseLegislation(entries []LegislationEntry) (Legislation, error) {
 	out := make(Legislation, 0, len(entries))
 	for i, e := range entries {
@@ -277,9 +193,6 @@ func ParseLegislation(entries []LegislationEntry) (Legislation, error) {
 	return out, nil
 }
 
-// rejectRetiredKeys turns a v0.15.0 file into an error that says what to write,
-// rather than into a silent half-migration. The message carries the entry's own
-// figures so the replacement can be pasted rather than worked out.
 func rejectRetiredKeys(i int, e LegislationEntry) error {
 	where := fmt.Sprintf("legislation[%d]", i)
 	if e.SocialEmployerRate != nil || e.SocialEmployeeRate != nil {
@@ -309,8 +222,6 @@ func rejectRetiredKeys(i int, e LegislationEntry) error {
 	return nil
 }
 
-// formatRate renders a rate for a migration message without the two-decimal
-// truncation formatNum applies — 0.1892 has to come back out as 0.1892.
 func formatRate(v float64) string {
 	return fmt.Sprintf("%g", v)
 }
@@ -332,9 +243,6 @@ func parseParty(i int, ym yearMonth, name string, e *PartyEntry) (*PartySchedule
 	return &PartySchedule{MinBase: e.MinBase, Bands: bands}, nil
 }
 
-// parseBands validates one schedule. An absent list is nil (carry the previous
-// one forward); a present list must be usable on its own, since it replaces
-// whatever was there.
 func parseBands(i int, ym yearMonth, where string, entries []BandEntry) (Bands, error) {
 	if len(entries) == 0 {
 		return nil, nil
@@ -362,8 +270,6 @@ func (p LegislationPeriod) empty() bool {
 	return p.MinimumWage == nil && p.Employer == nil && p.Employee == nil && p.IncomeTax == nil
 }
 
-// String renders a period the way config.json writes it, so what /info shows
-// and what the file says can be compared by eye.
 func (p LegislationPeriod) String() string {
 	parts := []string{}
 	if p.MinimumWage != nil {
@@ -398,23 +304,8 @@ func parseMonthOrDay(s string) (yearMonth, error) {
 	return yearMonth{}, fmt.Errorf("unparseable")
 }
 
-// rulesFor resolves the figures for a payroll month by applying every period
-// that has taken effect, in order.
-//
-// Forwards only, and nothing else: a figure applies from the month its entry
-// names, stays in force until a later entry changes it, and does not exist
-// before that. A month earlier than every entry has nothing in force and is
-// charged nothing — there is no fallback to the oldest figures on file and no
-// built-in schedule underneath, because either would report a rate that is
-// nowhere in config.json for a month nobody legislated.
-//
-// A month resolving to zero is a real answer and the honest one, but it does
-// look like a working payslip, so breakdown flags it — see
-// PersonalView.NoLegislation.
 func (p PersonalParams) rulesFor(ym yearMonth) Rules { return p.Legislation.rulesAt(ym) }
 
-// rulesAt is rulesFor without needing a PersonalParams around it, so config
-// validation can ask the same question the cascade asks.
 func (l Legislation) rulesAt(ym yearMonth) Rules {
 	var r Rules
 	for _, period := range l {
@@ -431,9 +322,6 @@ func (l Legislation) rulesAt(ym yearMonth) Rules {
 	return r
 }
 
-// applyParty carries a party's figures forward one period. MinBase and Bands
-// move independently, so an entry that publishes only a new schedule keeps the
-// minimum insurable base already in force.
 func applyParty(dst *PartyRules, s *PartySchedule) {
 	if s == nil {
 		return

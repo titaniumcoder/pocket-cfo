@@ -85,7 +85,7 @@ func TestDiffCatchesRemoval(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("Diff() = %v, want exactly one change", got)
 	}
-	if got[0].Kind != Removed || got[0].ID != "t1" {
+	if got[0].Kind != Removed || got[0].Subject != "t1" {
 		t.Errorf("got %+v, want a removal naming t1", got[0])
 	}
 }
@@ -135,7 +135,7 @@ func TestDiffCatchesCoverageRegression(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("Diff() = %v, want exactly one change", got)
 	}
-	if got[0].Kind != CoverageShrank || got[0].ID != "A" {
+	if got[0].Kind != CoverageShrank || got[0].Subject != "A" {
 		t.Errorf("got %+v, want a coverage regression naming account A", got[0])
 	}
 	if !strings.Contains(got[0].Detail, "14 day(s)") {
@@ -149,7 +149,7 @@ func TestDiffCatchesADroppedAccount(t *testing.T) {
 	after := file(wholeAugust)
 
 	got := Diff(before, after)
-	if len(got) != 1 || got[0].ID != "B" {
+	if len(got) != 1 || got[0].Subject != "B" {
 		t.Fatalf("Diff() = %v, want one regression naming account B", got)
 	}
 }

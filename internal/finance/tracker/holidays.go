@@ -14,51 +14,35 @@ import (
 	"time"
 )
 
-// Holidays is an abstraction over the OpenHolidays API — no API key needed,
-// so unlike Toggl/api2pdf it's never "not configured," only optionally
-// pointed at a country/subdivision other than the AT default.
-// Successful responses are cached in memory forever (a given month's
-// holidays, or the reference list of countries/subdivisions, don't change).
 type Holidays struct {
-	Country     string // optional, e.g. "AT"; falls back to "AT" when empty, see countryOrDefault
-	Subdivision string // optional, e.g. "AT-9" for Vienna
+	Country     string
+	Subdivision string
 	HTTP        *http.Client
 
 	mu    sync.Mutex
 	cache map[string]any
 }
 
-// Holiday is a single public-holiday day.
 type Holiday struct {
 	Date time.Time
 	Name string
 }
 
-// localizedName is the OpenHolidays API's [{language, text}, ...] shape,
-// used for country/subdivision/holiday names alike.
 type localizedName struct {
 	Language string `json:"language"`
 	Text     string `json:"text"`
 }
 
-// Country is one country OpenHolidays knows about — see Countries, used by
-// the /info diagnostics page to help pick config.json's holidayCountry.
 type Country struct {
 	IsoCode string
 	Name    string
 }
 
-// Subdivision is one country's subdivision (state/region/etc.) — see
-// Subdivisions. IsoCode is what config.json's holidaySubdivision expects
-// (e.g. "AT-9").
 type Subdivision struct {
 	IsoCode string
 	Name    string
 }
 
-// countryOrDefault is "AT" when Country is unset — the default this app
-// shipped with before holidayCountry existed, kept so existing configs and
-// every test constructing a bare &Holidays{...} keep working unchanged.
 func (h *Holidays) countryOrDefault() string {
 	if h.Country == "" {
 		return "AT"
@@ -66,8 +50,6 @@ func (h *Holidays) countryOrDefault() string {
 	return h.Country
 }
 
-// Fetch returns the public holidays in [start, end], one entry per calendar day
-// (multi-day holidays are expanded), sorted by date.
 func (h *Holidays) Fetch(ctx context.Context, start, end time.Time) ([]Holiday, error) {
 	cacheKey := "holidays|" + h.countryOrDefault() + "|" + h.Subdivision + "|" + start.Format("2006-01-02") + "|" + end.Format("2006-01-02")
 	v, err := h.getCached(cacheKey, func() (any, error) {
@@ -132,9 +114,6 @@ func (h *Holidays) fetchHolidays(ctx context.Context, start, end time.Time) ([]H
 	return holidays, nil
 }
 
-// Countries returns every country OpenHolidays knows about, cached forever
-// (this reference list doesn't change at runtime) — for the /info
-// diagnostics page, to help pick config.json's holidayCountry.
 func (h *Holidays) Countries(ctx context.Context) ([]Country, error) {
 	v, err := h.getCached("countries", func() (any, error) {
 		return h.fetchCountries(ctx)
@@ -179,9 +158,6 @@ func (h *Holidays) fetchCountries(ctx context.Context) ([]Country, error) {
 	return out, nil
 }
 
-// Subdivisions returns countryIsoCode's subdivisions (state/region/etc.),
-// cached forever per country — an empty result (200 with []) is normal for
-// a country OpenHolidays tracks with no subdivision granularity.
 func (h *Holidays) Subdivisions(ctx context.Context, countryIsoCode string) ([]Subdivision, error) {
 	v, err := h.getCached("subdivisions|"+countryIsoCode, func() (any, error) {
 		return h.fetchSubdivisions(ctx, countryIsoCode)
@@ -229,11 +205,6 @@ func (h *Holidays) fetchSubdivisions(ctx context.Context, countryIsoCode string)
 	return out, nil
 }
 
-// getCached returns the cached value for key, or computes it via fn and
-// stores it forever — same unconditional-forever-cache convention as
-// Toggl.getCached, just without the date-range eviction tagging Toggl needs
-// (nothing here is ever evicted: holidays/countries/subdivisions are all
-// reference data that doesn't change during the process lifetime).
 func (h *Holidays) getCached(key string, fn func() (any, error)) (any, error) {
 	if v, ok := h.cached(key); ok {
 		log.Printf("holidays: %s — served from cache", key)
@@ -269,13 +240,10 @@ func (h *Holidays) store(key string, v any) {
 	h.cache[key] = v
 }
 
-// pickName returns the German name if present, otherwise the first available.
 func pickName(names []localizedName) string {
 	return pickNameLang(names, "DE")
 }
 
-// pickNameLang returns the name in the given language if present, otherwise
-// the first available.
 func pickNameLang(names []localizedName, lang string) string {
 	for _, n := range names {
 		if strings.EqualFold(n.Language, lang) {

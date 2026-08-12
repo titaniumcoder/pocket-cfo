@@ -1,9 +1,3 @@
-// Package actualsdiff compares two versions of one month's recorded spending
-// and reports what would disappear or change.
-//
-// The risk isn't a malformed file — validation catches that — but a subtly
-// smaller one: a month rebuilt from a partial statement, where every figure
-// still adds up and nothing looks wrong.
 package actualsdiff
 
 import (
@@ -15,26 +9,22 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/actualsdata"
 )
 
-// Kind values for Change.
 const (
 	Removed        = "removed"
 	Mutated        = "mutated"
 	CoverageShrank = "coverage-shrank"
 )
 
-// Change is one thing the incoming document would destroy.
 type Change struct {
-	Kind   string
-	ID     string // transaction id, or account name for a coverage regression
-	Detail string
+	Kind    string
+	Subject string
+	Detail  string
 }
 
 func (c Change) String() string {
-	return fmt.Sprintf("%s %s: %s", c.Kind, c.ID, c.Detail)
+	return fmt.Sprintf("%s %s: %s", c.Kind, c.Subject, c.Detail)
 }
 
-// Diff reports what after would remove or rewrite relative to before. Adding
-// transactions, extending coverage and a new month are always clean.
 func Diff(before, after actualsdata.ActualsFile) []Change {
 	var changes []Change
 	changes = append(changes, transactionChanges(before, after)...)
@@ -52,20 +42,17 @@ func transactionChanges(before, after actualsdata.ActualsFile) []Change {
 	for _, was := range before.Transactions {
 		is, ok := now[was.Id]
 		if !ok {
-			changes = append(changes, Change{Kind: Removed, ID: was.Id,
+			changes = append(changes, Change{Kind: Removed, Subject: was.Id,
 				Detail: fmt.Sprintf("%s %s %.2f is no longer present", was.Date, was.Description, was.Amount)})
 			continue
 		}
 		for _, d := range mutations(was, is) {
-			changes = append(changes, Change{Kind: Mutated, ID: was.Id, Detail: d})
+			changes = append(changes, Change{Kind: Mutated, Subject: was.Id, Detail: d})
 		}
 	}
 	return changes
 }
 
-// mutations lists the fields that changed under a stable id. description is
-// not one: correcting a mangled statement line is legitimate and feeds no
-// figure.
 func mutations(was, is actualsdata.Transaction) []string {
 	var out []string
 	if was.Date != is.Date {
@@ -92,18 +79,12 @@ func mutations(was, is actualsdata.Transaction) []string {
 	return out
 }
 
-// splitLabel renders a line's parts for comparison. Order counts as a change:
-// it is cheap to preserve, and treating a reordering as identical would mean
-// the diff has to decide which of two equal-amount parts is which — a guess
-// that could hide one part's category being swapped for another's.
 func splitLabel(tx actualsdata.Transaction) string {
 	if len(tx.Splits) == 0 {
 		return "none"
 	}
 	parts := make([]string, 0, len(tx.Splits))
 	for _, s := range tx.Splits {
-		// Exactly one of the three is set, so concatenating them names the
-		// part without needing to say which kind it was.
 		parts = append(parts, fmt.Sprintf("%.2f→%s%s%s", s.Amount, deref(s.Category), deref(s.Ignored), deref(s.Untracked)))
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
@@ -116,9 +97,6 @@ func deref(s *string) string {
 	return *s
 }
 
-// coverageChanges compares covered days per account, not ranges: a
-// range-by-range compare false-positives the moment a second weekly import
-// merges two adjacent ranges, which is what the normal workflow does.
 func coverageChanges(before, after actualsdata.ActualsFile) []Change {
 	wasDays := coveredDays(before)
 	isDays := coveredDays(after)
@@ -145,7 +123,7 @@ func coverageChanges(before, after actualsdata.ActualsFile) []Change {
 		if len(lost) > 1 {
 			detail = fmt.Sprintf("%d day(s) no longer covered, %s..%s", len(lost), lost[0], lost[len(lost)-1])
 		}
-		changes = append(changes, Change{Kind: CoverageShrank, ID: account, Detail: detail})
+		changes = append(changes, Change{Kind: CoverageShrank, Subject: account, Detail: detail})
 	}
 	return changes
 }

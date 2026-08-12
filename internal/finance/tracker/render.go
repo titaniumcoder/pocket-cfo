@@ -16,13 +16,6 @@ var tmpl = template.Must(template.Must(template.New("").Funcs(template.FuncMap{
 	"outClass":   outClass,
 }).Parse(webui.HeaderTemplate)).Parse(templates))
 
-// outEuro renders a figure from the expense ledger the way the rest of the
-// page renders money leaving: with a minus. Every row in there is an expense,
-// planned and actual alike, and printing them unsigned made a budget of 1 420
-// read like income sitting next to a Net income that looked the same.
-//
-// A category that nets out the other way — a refund larger than the spending
-// on it — is money coming back, and loses the sign.
 func outEuro(cents int) template.HTML {
 	if cents > 0 {
 		return template.HTML("&minus;" + formatEuro(cents))
@@ -30,9 +23,6 @@ func outEuro(cents int) template.HTML {
 	return template.HTML(formatEuro(-cents))
 }
 
-// outClass is that figure's colour, and the only colour these rows carry:
-// how a figure compares with its budget is weight and a mark instead (see
-// statusMark), so red here always means money out and never means over.
 func outClass(cents int) string {
 	switch {
 	case cents > 0:
@@ -43,8 +33,6 @@ func outClass(cents int) string {
 	return ""
 }
 
-// statusMark is the icon for a budget grade, and empty for a figure that is
-// on plan — the common case, which should say nothing at all.
 func statusMark(status string) template.HTML {
 	switch status {
 	case ActualUnder:
@@ -55,9 +43,6 @@ func statusMark(status string) template.HTML {
 	return ""
 }
 
-// untrackedMark is the marker beside a month's title when it still has money
-// nobody has placed. Empty for a month with none, so the ordinary case says
-// nothing at all — same rule statusMark follows.
 func untrackedMark(count int) template.HTML {
 	if count <= 0 {
 		return ""
@@ -65,50 +50,31 @@ func untrackedMark(count int) template.HTML {
 	return template.HTML(markUntracked)
 }
 
-// loginData is the login template's data: errMsg is shown when non-empty;
-// showEmailLogin hides the "Continue with email" option entirely when no
-// email addresses are allowlisted (see Server.EmailAllowedAddresses) — that
-// path can never succeed with an empty allowlist, so there's no point
-// showing it.
 type loginData struct {
 	Error          string
 	ShowEmailLogin bool
 }
 
-// RenderLogin renders the login page. errMsg is shown when non-empty.
-// showEmailLogin controls whether the "Continue with email" option appears.
 func RenderLogin(w http.ResponseWriter, errMsg string, showEmailLogin bool) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	tmpl.ExecuteTemplate(w, "login", loginData{Error: errMsg, ShowEmailLogin: showEmailLogin})
 }
 
-// RenderEmailLogin renders the email-entry form for the email-login flow.
-// showError is set when the visitor arrived via an invalid or expired
-// callback link.
 func RenderEmailLogin(w http.ResponseWriter, showError bool) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	tmpl.ExecuteTemplate(w, "emailLogin", showError)
 }
 
-// RenderEmailSent renders the "check your email" confirmation shown after
-// submitting the email-login form, regardless of whether the address was
-// actually allowlisted (see Server.handleEmailLoginRequest).
 func RenderEmailSent(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	tmpl.ExecuteTemplate(w, "emailSent", nil)
 }
 
-// RenderSpending renders the admin-only spending drill-down, the only
-// template that receives transaction descriptions.
 func RenderSpending(w http.ResponseWriter, v SpendingView) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	tmpl.ExecuteTemplate(w, "spending", v)
 }
 
-// RenderPage renders the full dashboard page — chrome, navigation, and the
-// computed ledger — in one response. f must already be fully computed (see
-// Tracker.ComputeMonth/ComputeYear); there's no separate placeholder/loading
-// state to render.
 func RenderPage(w http.ResponseWriter, f Figures) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	tmpl.ExecuteTemplate(w, "page", f)
@@ -304,9 +270,6 @@ var templates = `
       setTimeout(function () { a.classList.remove(state); }, 1500);
     }
 
-    // navigator.clipboard needs a secure context. Over plain HTTP it is
-    // simply absent, so fall back to selecting the text in a throwaway
-    // textarea, which leaves the copy command working.
     function fallback() {
       var box = document.createElement('textarea');
       box.value = a.dataset.copy;
@@ -535,32 +498,14 @@ var templates = `
 </html>{{end}}
 `
 
-// githubMark is GitHub's own mark, inlined so the login page needs no
-// external request (the app links no CDNs anywhere else either). Drawn in
-// currentColor so it follows the button's text in both light and dark
-// themes.
 const githubMark = `<svg class="gh-mark" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>`
 
-// chevronLeft/chevronRight replace the guillemets the period arrows used
-// to draw: a real icon centres on its own box, so it lines up with the
-// month/year selects instead of riding high on the text baseline.
-// markUnder and markOver are the only signal a budget comparison gets, next
-// to bold text. Colour is reserved for the sign of an amount, so spending it
-// on over/under budget as well left a page where red could mean either — and
-// so meant neither loudly.
 const markUnder = `<svg class="mark" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>under budget</title><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5s1.3 1.8 3.5 1.8 3.5-1.8 3.5-1.8"/><line x1="9" y1="9.5" x2="9.01" y2="9.5"/><line x1="15" y1="9.5" x2="15.01" y2="9.5"/></svg>`
 
-// markUntracked flags money that left the account and belongs to nowhere yet.
-// Deliberately not markOver: an overspend is a judgement about a figure, this
-// is a question waiting for an answer, and reusing the warning icon would say
-// the wrong thing about both.
 const markUntracked = `<svg class="mark" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>untracked cash</title><circle cx="12" cy="12" r="9"/><path d="M9.2 9.3a2.9 2.9 0 0 1 5.6 1c0 1.9-2.8 2.4-2.8 4"/><line x1="12" y1="17.5" x2="12.01" y2="17.5"/></svg>`
 
 const markOver = `<svg class="mark" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>over budget</title><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9.5" x2="12" y2="13.5"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`
 
-// copyIcon and copiedIcon are the two states of the per-transaction copy
-// control. Both live in the link; a class swaps which one shows, so the
-// feedback never rewrites the link's contents and cannot lose the icon.
 const copyIcon = `<svg class="i-copy" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`
 
 const copiedIcon = `<svg class="i-done" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>`
@@ -569,7 +514,4 @@ const chevronLeft = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none"
 
 const chevronRight = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`
 
-// favicon is a small inline SVG (a blue rounded-square with an ascending
-// three-bar chart), embedded as a base64 data URI so no static file route or
-// build step is needed.
 const favicon = `<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIGZpbGw9IiMxYTczZTgiLz48cmVjdCB4PSIxNCIgeT0iMzYiIHdpZHRoPSI5IiBoZWlnaHQ9IjE2IiByeD0iMiIgZmlsbD0iI2ZmZiIvPjxyZWN0IHg9IjI3LjUiIHk9IjI2IiB3aWR0aD0iOSIgaGVpZ2h0PSIyNiIgcng9IjIiIGZpbGw9IiNmZmYiLz48cmVjdCB4PSI0MSIgeT0iMTQiIHdpZHRoPSI5IiBoZWlnaHQ9IjM4IiByeD0iMiIgZmlsbD0iI2ZmZiIvPjwvc3ZnPgo=">`

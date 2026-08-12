@@ -793,6 +793,33 @@ that is an image layer or a mount, so a write there would be lost on restart and
 from the repo. This is what makes handing an agent an API tolerable — it is not trusted,
 it is audited, and every change can be read in `git log` and reverted.
 
+**Read-after-write.** A commit takes minutes to become a running image, so between the two
+the app serves the bytes it just committed from memory, keyed by month. The overlay sits in
+the tracker's loaders rather than in this package, because `Actuals.month()` and
+`Budget.File()` are the single funnels every read passes through — one insertion point
+makes the API and the web pages agree, where four call sites would eventually disagree. An
+entry is dropped as soon as the file on disk says the same thing, so nothing has to guess
+at a deploy's duration.
+
+It is memory, never disk. Writing the file would create a second source of truth, be
+replaced by the very deploy the commit triggers, and diverge between instances. The overlay
+cannot disagree with the commit because it *is* the commit, and it carries bytes through the
+same parse and validation a file gets, so it can surface nothing a file could not.
+
+The limit is per-process: a second instance has no overlay from the first, and a change made
+outside the app appears only once deployed. Both are stated in the tool descriptions.
+
+**A GitHub webhook is the obvious way to close that, and is deliberately not built.** It
+would not actually close it: a webhook is delivered to one instance through the load
+balancer, so the other instances stay exactly as stale — making it work would need fan-out
+across them, which means a shared store or a pub/sub channel, and at that point the overlay
+should live in the shared store instead. Against that: the commit triggers a deploy that
+restarts every instance within the same few minutes, which is total invalidation for free;
+`min_machines_running = 0` means one machine is the normal case; and a webhook is a new
+public endpoint with a secret to hold, for a few minutes of freshness on a second machine
+that usually is not running. If cross-instance freshness ever does matter, the honest fix is
+a shared store for the overlay, not a notification.
+
 `docs/HERMES.md` is the contract the agent works to, and the MCP tool descriptions are
 where it actually reads it.
 

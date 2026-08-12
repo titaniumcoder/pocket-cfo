@@ -111,6 +111,7 @@ func (s *Service) MovePlannedExpense(ctx context.Context, req MoveRequest) (*Mov
 		}
 		return nil, errorf(CodeUpstream, "writing %s: %v", path, perr)
 	}
+	s.Budget.Publish(out)
 
 	return &MoveResult{
 		CategoryID: req.CategoryID, Name: cat.Name,

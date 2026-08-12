@@ -18,6 +18,7 @@ import (
 // Page identifiers for Header.Active — which nav entry renders as current.
 const (
 	PageFinance   = "finance"
+	PageSpending  = "spending"
 	PageInvoicing = "invoicing"
 	PageInfo      = "info"
 )
@@ -35,8 +36,14 @@ type Header struct {
 	Active string
 
 	ShowFinance   bool
+	ShowSpending  bool
 	ShowInvoicing bool
 	ShowInfo      bool
+
+	// SpendingURL is per-page rather than fixed, because spending is a
+	// month at a time: the menu keeps you in the month you are reading
+	// and lands on the current one from everywhere else.
+	SpendingURL string
 }
 
 // AvatarURL is the user's picture: Gravatar for an email login, GitHub's for a
@@ -89,7 +96,7 @@ func (h Header) Initials() string {
 // the page it's already on.
 func (h Header) HasNav() bool {
 	n := 0
-	for _, shown := range []bool{h.ShowFinance, h.ShowInvoicing, h.ShowInfo} {
+	for _, shown := range []bool{h.ShowFinance, h.ShowSpending, h.ShowInvoicing, h.ShowInfo} {
 		if shown {
 			n++
 		}
@@ -109,6 +116,7 @@ const HeaderTemplate = `
   {{if .HasNav}}
   <nav class="topnav">
     {{if .ShowFinance}}<a{{if .IsActive "finance"}} class="active"{{end}} href="/">Finance</a>{{end}}
+    {{if .ShowSpending}}<a{{if .IsActive "spending"}} class="active"{{end}} href="{{.SpendingURL}}">Spending</a>{{end}}
     {{if .ShowInvoicing}}<a{{if .IsActive "invoicing"}} class="active"{{end}} href="/invoicing">Invoicing</a>{{end}}
     {{if .ShowInfo}}<a{{if .IsActive "info"}} class="active"{{end}} href="/info">Info</a>{{end}}
   </nav>

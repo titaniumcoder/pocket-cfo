@@ -35,6 +35,11 @@ type actualsResult struct {
 	err     error
 }
 
+// Configured reports whether an actuals directory was wired up at all. The
+// menu asks before offering the spending page: a month with no file is worth
+// showing (it says so), a deployment with no directory is not.
+func (a *Actuals) Configured() bool { return a != nil && a.FS != nil }
+
 // ActualsView is one period's recorded spending, ready to display.
 type ActualsView struct {
 	Present    bool

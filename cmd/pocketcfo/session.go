@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
 	"github.com/titaniumcoder/pocket-cfo/internal/users"
@@ -66,9 +68,29 @@ func (s *server) header(sess auth.Session, active string) webui.Header {
 		Login:         sess.Login,
 		Active:        active,
 		ShowFinance:   sess.HasPart(users.PartFinance),
+		ShowSpending:  s.showSpending(sess),
+		SpendingURL:   s.spendingURL(time.Now()),
 		ShowInvoicing: sess.HasPart(users.PartInvoicing),
 		ShowInfo:      s.authorized(sess),
 	}
+}
+
+// showSpending mirrors financeSpending's own gate. It carries statement
+// descriptions, so it is admin-only like /info; and a deployment with no
+// actuals directory has nothing to show, so it gets no entry rather than one
+// leading to a permanently empty page.
+func (s *server) showSpending(sess auth.Session) bool {
+	return s.authorized(sess) && s.tracker != nil && s.tracker.Actuals.Configured()
+}
+
+// spendingURL addresses one month, since that is what the page renders. Pages
+// that know which month you are reading override it with that one; from
+// everywhere else the menu lands on the current month.
+func (s *server) spendingURL(t time.Time) string {
+	if s.tracker != nil && s.tracker.Loc != nil {
+		t = t.In(s.tracker.Loc)
+	}
+	return fmt.Sprintf("/%d/%d/spending", t.Year(), int(t.Month()))
 }
 
 func (s *server) secureCookies() bool {

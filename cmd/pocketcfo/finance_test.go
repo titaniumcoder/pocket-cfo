@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
@@ -639,4 +640,98 @@ func TestHandleStatic(t *testing.T) {
 			}
 		})
 	}
+}
+
+// adminFinanceRequest is authorizedRequest against an arbitrary path: the
+// spending page is admin-only, so every menu test below needs a push session.
+func adminFinanceRequest(t *testing.T, s *server, path string) *http.Request {
+	t.Helper()
+	encoded, err := auth.Encode(s.cfg.sessionSecret, auth.NewSession("octocat", "push", time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodGet, path, nil)
+	r.AddCookie(&http.Cookie{Name: sessionCookie, Value: encoded})
+	return r
+}
+
+// withActuals points the tracker at an actuals directory, which is what makes
+// the Spending menu entry appear at all.
+func withActuals(s *server, files fstest.MapFS) {
+	s.tracker.Actuals = &tracker.Actuals{FS: files}
+}
+
+// TestSpendingNav_AdminSeesItInTheMenu: the page is reachable from the menu
+// rather than only from a figure on the dashboard, so it can be opened
+// without first finding a month that has one.
+func TestSpendingNav_AdminSeesItInTheMenu(t *testing.T) {
+	s := newFinanceTestServer(t)
+	withActuals(s, fstest.MapFS{})
+	w := httptest.NewRecorder()
+
+	s.financeMonth(w, withPathValues(adminFinanceRequest(t, s, "/2026/8"), "2026", "8"))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `href="/2026/8/spending">Spending</a>`) {
+		t.Error("the menu should offer Spending for the month being viewed")
+	}
+}
+
+// TestSpendingNav_HiddenWithoutActuals: an entry leading to a page that can
+// never have content is worse than no entry.
+func TestSpendingNav_HiddenWithoutActuals(t *testing.T) {
+	s := newFinanceTestServer(t)
+	s.tracker.Actuals = nil
+	w := httptest.NewRecorder()
+
+	s.financeMonth(w, withPathValues(adminFinanceRequest(t, s, "/2026/8"), "2026", "8"))
+
+	if strings.Contains(w.Body.String(), ">Spending</a>") {
+		t.Error("no actuals directory configured — the entry should be absent")
+	}
+}
+
+// TestSpendingNav_HiddenForReadOnly mirrors financeSpending's 403: the menu
+// never offers a page the session would be bounced from.
+func TestSpendingNav_HiddenForReadOnly(t *testing.T) {
+	s := newFinanceTestServer(t)
+	withActuals(s, fstest.MapFS{})
+	w := httptest.NewRecorder()
+
+	s.financeMonth(w, withPathValues(readOnlyRequest(t, s, "/2026/8", []string{users.PartFinance}), "2026", "8"))
+
+	if strings.Contains(w.Body.String(), ">Spending</a>") {
+		t.Error("a readonly session must never see a link to the drill-down")
+	}
+}
+
+// TestSpendingNav_YearViewLinksAMonth: the menu target must be a month even
+// when the dashboard is showing a year, or the link lands on /2026/0/spending
+// and bounces back to the dashboard.
+func TestSpendingNav_YearViewLinksAMonth(t *testing.T) {
+	s := newFinanceTestServer(t)
+	withActuals(s, fstest.MapFS{})
+	r := adminFinanceRequest(t, s, "/2026")
+	r.SetPathValue("year", "2026")
+	w := httptest.NewRecorder()
+
+	s.financeYear(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), `/0/spending`) {
+		t.Error("year view produced a monthless spending URL")
+	}
+	if !strings.Contains(w.Body.String(), `/spending">Spending</a>`) {
+		t.Error("the menu entry is missing in year view")
+	}
+}
+
+func withPathValues(r *http.Request, year, month string) *http.Request {
+	r.SetPathValue("year", year)
+	r.SetPathValue("month", month)
+	return r
 }

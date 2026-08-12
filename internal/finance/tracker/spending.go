@@ -13,13 +13,19 @@ import (
 // description is rendered: Figures carries none, so a non-admin's HTML cannot
 // contain one however the template is later edited.
 type SpendingView struct {
-	Header  webui.Header
-	Month   string // "August 2026"
-	BackURL string
+	Header webui.Header
+	Month  string // "August 2026"
+
+	// Nav is the same stepper the dashboard has, pointed at this page, so a
+	// month is a month wherever you are reading it. OverviewURL and
+	// SpendingURL back the toggle between the two views of it.
+	Nav         MonthNav
+	OverviewURL string
+	SpendingURL string
+	RefreshURL  string
 
 	Present  bool
 	Coverage []CoverageRow
-	Note     string // the coverage caveat; empty once the period is fully read
 
 	Groups    []SpendingGroup
 	Ignored   []SpendingTx // not budget expenses; listed so the page reconciles to the statement
@@ -68,9 +74,14 @@ type SpendingTx struct {
 // month returns Present=false rather than an error: it exists, it just has no
 // data.
 func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Month) SpendingView {
+	now := time.Now().In(t.Loc)
+	start := time.Date(year, month, 1, 0, 0, 0, 0, t.Loc)
 	v := SpendingView{
-		Month:   fmt.Sprintf("%s %d", month.String(), year),
-		BackURL: fmt.Sprintf("/%d/%d", year, int(month)),
+		Month:       fmt.Sprintf("%s %d", month.String(), year),
+		Nav:         monthNav(now, start, spendingURL),
+		OverviewURL: monthURL(year, month),
+		SpendingURL: spendingURL(year, month),
+		RefreshURL:  spendingURL(year, month) + "?refresh=1",
 	}
 	if t.Actuals == nil {
 		return v

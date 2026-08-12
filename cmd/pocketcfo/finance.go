@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -142,9 +141,14 @@ func (s *server) renderFinancePage(w http.ResponseWriter, sess auth.Session, f t
 	f.ShowInvoicingLink = sess.HasPart(users.PartInvoicing)
 	f.ShowInfoLink = s.authorized(sess)
 	// The drill-down carries statement descriptions, so only admins get a
-	// link; everyone else sees the figures as plain text.
-	if s.authorized(sess) && f.ShowActuals {
-		f.SpendingDetailURL = fmt.Sprintf("/%d/%d/spending", f.Year, f.MonthNum)
+	// link; everyone else sees the figures as plain text. The menu entry
+	// follows the month being viewed; the per-row links need actuals to
+	// point at, and a month rather than a year.
+	if s.showSpending(sess) {
+		f.SpendingURL = f.MonthViewURL + "/spending"
+		if f.ShowActuals && f.Mode == "month" {
+			f.SpendingDetailURL = f.SpendingURL
+		}
 	}
 	fillInvoiceLinks(f.Invoiced, f.ShowInvoicingLink)
 	tracker.RenderPage(w, f)
@@ -289,11 +293,17 @@ func (s *server) financeSpending(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if isRefresh(r) {
+		trk.EvictMonth(year, time.Month(month))
+		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
 
 	v := trk.ComputeSpending(ctx, year, time.Month(month))
-	v.Header = s.header(sess, webui.PageFinance)
+	v.Header = s.header(sess, webui.PageSpending)
+	v.Header.SpendingURL = v.SpendingURL
 	tracker.RenderSpending(w, v)
 }

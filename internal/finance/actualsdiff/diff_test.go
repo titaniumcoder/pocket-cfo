@@ -171,3 +171,59 @@ func TestDiffReportsEverything(t *testing.T) {
 		}
 	}
 }
+
+func split(id, date string, amount float64, parts ...actualsdata.Split) actualsdata.Transaction {
+	return actualsdata.Transaction{Id: id, Date: date, Description: "X", Amount: amount, Account: "A", Splits: parts}
+}
+
+// TestDiffSeesSplitChanges: re-uploading a statement can re-split a line
+// without touching its id, date, amount, account or the fields the diff
+// already watched — so without this, money moves between categories and the
+// anti-vanish check reports a clean run.
+func TestDiffSeesSplitChanges(t *testing.T) {
+	base := file(wholeAugust, split("w1", "2026-08-14", 100,
+		actualsdata.Split{Amount: 60, Category: strp("restaurants")},
+		actualsdata.Split{Amount: 40, Category: strp("clothes")},
+	))
+
+	tests := []struct {
+		name  string
+		after actualsdata.ActualsFile
+		want  bool
+	}{
+		{"identical", file(wholeAugust, split("w1", "2026-08-14", 100,
+			actualsdata.Split{Amount: 60, Category: strp("restaurants")},
+			actualsdata.Split{Amount: 40, Category: strp("clothes")})), false},
+		{"a part moves to another category", file(wholeAugust, split("w1", "2026-08-14", 100,
+			actualsdata.Split{Amount: 60, Category: strp("restaurants")},
+			actualsdata.Split{Amount: 40, Category: strp("groceries")})), true},
+		{"the parts are re-weighted", file(wholeAugust, split("w1", "2026-08-14", 100,
+			actualsdata.Split{Amount: 80, Category: strp("restaurants")},
+			actualsdata.Split{Amount: 20, Category: strp("clothes")})), true},
+		{"a part becomes ignored", file(wholeAugust, split("w1", "2026-08-14", 100,
+			actualsdata.Split{Amount: 60, Category: strp("restaurants")},
+			actualsdata.Split{Amount: 40, Ignored: strp("cash")})), true},
+		{"the split collapses to one category", file(wholeAugust,
+			tx("w1", "2026-08-14", 100, "restaurants")), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			changes := Diff(base, tt.after)
+			if got := len(changes) > 0; got != tt.want {
+				t.Fatalf("changes = %v, want any=%v", changes, tt.want)
+			}
+			if !tt.want {
+				return
+			}
+			var mutated bool
+			for _, c := range changes {
+				if strings.Contains(c.Detail, "splits") || strings.Contains(c.Detail, "category") {
+					mutated = true
+				}
+			}
+			if !mutated {
+				t.Errorf("changes = %v, want one naming the split", changes)
+			}
+		})
+	}
+}

@@ -300,3 +300,72 @@ func TestPhoneLayoutCoversTheTotals(t *testing.T) {
 		}
 	}
 }
+
+const splitMonth = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+	"transactions":[
+	  {"id":"w1","date":"2026-08-14","description":"ATM WITHDRAWAL","amount":100,"account":"A","splits":[
+	    {"amount":60,"category":"00000000-0000-4000-8000-000000000001"},
+	    {"amount":40,"ignored":"cash still in my pocket"}]}]}`
+
+// TestSplitCountsOncePerPart is the whole risk in one test: a split must put
+// each part's money against its own category and the line's own amount
+// nowhere, or the month silently gains or loses the difference.
+func TestSplitCountsOncePerPart(t *testing.T) {
+	trk := actualsTracker(t, map[string]string{"actuals/2026-08.json": splitMonth})
+	av, err := trk.Actuals.ForMonth(context.Background(), 2026, time.August)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 60 against Rent, 40 ignored, and the 100 counted nowhere.
+	if got := av.ByCategory["00000000-0000-4000-8000-000000000001"]; got != 6000 {
+		t.Errorf("category total = %d cents, want 6000 — the part, not the line", got)
+	}
+	if av.TotalCents != 6000 {
+		t.Errorf("month total = %d cents, want 6000: the ignored part is out and the line is not double-counted", av.TotalCents)
+	}
+}
+
+// TestSplitAppearsUnderEachPart: the spending page reconciles line for line,
+// so a split has to show up in both places it belongs, each saying what it is
+// a part of.
+func TestSplitAppearsUnderEachPart(t *testing.T) {
+	trk := actualsTracker(t, map[string]string{"actuals/2026-08.json": splitMonth})
+	v := trk.ComputeSpending(context.Background(), 2026, time.August)
+	if !v.Present {
+		t.Fatal("the fixture did not load")
+	}
+
+	var spent, ignored *SpendingTx
+	for gi := range v.Groups {
+		for ci := range v.Groups[gi].Categories {
+			for ti := range v.Groups[gi].Categories[ci].Transactions {
+				if tx := &v.Groups[gi].Categories[ci].Transactions[ti]; tx.ID == "w1" {
+					spent = tx
+				}
+			}
+		}
+	}
+	for i := range v.Ignored {
+		if v.Ignored[i].ID == "w1" {
+			ignored = &v.Ignored[i]
+		}
+	}
+	if spent == nil || ignored == nil {
+		t.Fatalf("the split is missing a side: spent=%v ignored=%v", spent, ignored)
+	}
+	if spent.Cents != 6000 || ignored.Cents != 4000 {
+		t.Errorf("parts are %d and %d cents, want 6000 and 4000", spent.Cents, ignored.Cents)
+	}
+	if spent.PartOf != "100" || ignored.PartOf != "100" {
+		t.Errorf("parts do not name the line they came from: %q / %q", spent.PartOf, ignored.PartOf)
+	}
+	if !strings.Contains(spent.ChangeRequest(), "60.00 of 100") {
+		t.Errorf("the copy text does not identify the part: %q", spent.ChangeRequest())
+	}
+
+	rec := httptest.NewRecorder()
+	RenderSpending(rec, v)
+	if n := strings.Count(rec.Body.String(), `class="part-of"`); n != 2 {
+		t.Errorf("found %d part-of notes, want one per part", n)
+	}
+}

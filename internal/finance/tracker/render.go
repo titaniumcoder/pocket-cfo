@@ -248,7 +248,7 @@ var templates = `
       <table class="data">
         <thead><tr><th class="col-secondary">Date</th><th>Description</th><th class="col-secondary">Account</th><th class="num">Amount</th><th class="copy-col no-print"></th></tr></thead>
         <tbody>
-          {{range .Transactions}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td class="col-secondary">{{.Account}}</td><td class="num">{{eur .Cents}}</td><td class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></td></tr>{{end}}
+          {{range .Transactions}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td class="col-secondary">{{.Account}}</td><td class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</td><td class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></td></tr>{{end}}
         </tbody>
         <tfoot>
           <tr><td class="col-secondary"></td><td></td><td class="budget-of">(Budget: {{eur .PlannedCents}})</td><td class="num{{if .Status}} flagged{{end}}">{{mark .Status}}{{eur .ActualCents}}</td><td class="copy-col no-print"></td></tr>
@@ -266,7 +266,7 @@ var templates = `
     <table class="data">
       <thead><tr><th class="col-secondary">Date</th><th>Description</th><th>Category</th><th class="num">Amount</th><th class="copy-col no-print"></th></tr></thead>
       <tbody>
-        {{range .Unmatched}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td>{{.Category}}</td><td class="num">{{eur .Cents}}</td><td class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></td></tr>{{end}}
+        {{range .Unmatched}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td>{{.Category}}</td><td class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</td><td class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></td></tr>{{end}}
       </tbody>
     </table>
     </div>
@@ -279,7 +279,7 @@ var templates = `
     <table class="data">
       <thead><tr><th class="col-secondary">Date</th><th>Description</th><th>Reason</th><th class="num">Amount</th><th class="copy-col no-print"></th></tr></thead>
       <tbody>
-        {{range .Ignored}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td>{{.Reason}}</td><td class="num">{{eur .Cents}}</td><td class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></td></tr>{{end}}
+        {{range .Ignored}}<tr><td class="col-secondary">{{.Date}}</td><td>{{.Description}}</td><td>{{.Reason}}</td><td class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</td><td class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></td></tr>{{end}}
       </tbody>
     </table>
     </div>

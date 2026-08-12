@@ -129,7 +129,7 @@ func (s *Service) registerTools(server *mcp.Server) {
 	})
 
 	mcp.AddTool(server, tool("put_actuals",
-		"Commit one month. This is a WHOLE-MONTH REPLACEMENT: any transaction you omit is a removal and will be refused unless allow_removals gives a reason. Submit every transaction already recorded, not just new ones. base_sha comes from get_actuals; a conflict means the file changed underneath you, so re-read, merge and resubmit — never retry blind. Each accepted call is a git commit that redeploys the app.",
+		"Commit one month. A line that paid for more than one thing carries a splits array instead of a category — the parts must add up to the line's amount, and each part takes exactly one of category or ignored. This is a WHOLE-MONTH REPLACEMENT: any transaction you omit is a removal and will be refused unless allow_removals gives a reason. Submit every transaction already recorded, not just new ones. base_sha comes from get_actuals; a conflict means the file changed underneath you, so re-read, merge and resubmit — never retry blind. Each accepted call is a git commit that redeploys the app.",
 		false), func(ctx context.Context, _ *mcp.CallToolRequest, a putActualsArgs) (*mcp.CallToolResult, any, error) {
 		return result(s.PutActuals(ctx, a.Month, PutRequest{
 			Document: a.Document, BaseSHA: a.BaseSHA, AllowRemovals: a.AllowRemovals,

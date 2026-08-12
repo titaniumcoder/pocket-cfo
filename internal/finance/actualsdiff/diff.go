@@ -9,6 +9,7 @@ package actualsdiff
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/actualsdata"
@@ -82,7 +83,25 @@ func mutations(was, is actualsdata.Transaction) []string {
 	if deref(was.Ignored) != deref(is.Ignored) {
 		out = append(out, fmt.Sprintf("ignored %q became %q", deref(was.Ignored), deref(is.Ignored)))
 	}
+	if a, b := splitLabel(was), splitLabel(is); a != b {
+		out = append(out, fmt.Sprintf("splits %s became %s", a, b))
+	}
 	return out
+}
+
+// splitLabel renders a line's parts for comparison. Order counts as a change:
+// it is cheap to preserve, and treating a reordering as identical would mean
+// the diff has to decide which of two equal-amount parts is which — a guess
+// that could hide one part's category being swapped for another's.
+func splitLabel(tx actualsdata.Transaction) string {
+	if len(tx.Splits) == 0 {
+		return "none"
+	}
+	parts := make([]string, 0, len(tx.Splits))
+	for _, s := range tx.Splits {
+		parts = append(parts, fmt.Sprintf("%.2f→%s%s", s.Amount, deref(s.Category), deref(s.Ignored)))
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
 }
 
 func deref(s *string) string {

@@ -30,10 +30,31 @@ reads work and writes return `write_not_configured`.
    ask the user. This is deliberately grounded in committed history rather than a rules
    file, which would drift out of sync with what was actually recorded.
 
-4. **Every line gets exactly one of `category` or `ignored`.** A salary credit or a
-   transfer between the user's own accounts is not a budget expense — record it with an
-   `ignored` reason rather than dropping it, so the file still reconciles line-for-line
+4. **Every line gets exactly one of `category`, `ignored` or `splits`.** A salary credit
+   or a transfer between the user's own accounts is not a budget expense — record it with
+   an `ignored` reason rather than dropping it, so the file still reconciles line-for-line
    against the statement. Never guess, never drop a line.
+
+   **`splits` is for one line that paid for more than one thing** — a cash withdrawal, a
+   supermarket run that was half groceries and half hardware, a card settlement covering
+   two purchases. The line stays one row and the parts go inside it:
+
+   ```json
+   { "id": "f4c8a012", "date": "2026-08-14", "description": "ATM WITHDRAWAL",
+     "amount": 100, "account": "Private Checking",
+     "splits": [
+       { "amount": 50, "category": "<restaurants>" },
+       { "amount": 30, "category": "<clothes>" },
+       { "amount": 20, "ignored": "cash still in my pocket" }
+     ] }
+   ```
+
+   Each part follows the same rule as a line: exactly one of `category` or `ignored`, and
+   never an amount of 0. **The parts must add up to the line's `amount`** — a split that
+   does not reconcile moves money that nothing else would catch, and validation refuses
+   it. Two parts minimum; one part is just a category. Do not split on a guess: if you
+   cannot tell how a withdrawal was spent, ask, or record the whole line against one
+   category and let the user correct it.
 
 5. If the answer is "this needs a new budget category", **ask the user**. Hermes does not
    create categories.

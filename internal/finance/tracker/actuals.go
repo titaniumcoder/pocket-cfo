@@ -189,12 +189,14 @@ func (a *Actuals) fetch(year int, month time.Month) actualsResult {
 func viewOf(af actualsdata.ActualsFile, year int, month time.Month) ActualsView {
 	v := ActualsView{Present: true, ByCategory: map[string]int{}}
 	for _, tx := range af.Transactions {
-		if tx.Category == nil || *tx.Category == "" {
-			continue
+		for _, part := range actualsdata.PartsOf(tx) {
+			if part.Category == "" {
+				continue
+			}
+			cents := eurToCents(part.Amount)
+			v.ByCategory[part.Category] += cents
+			v.TotalCents += cents
 		}
-		cents := eurToCents(tx.Amount)
-		v.ByCategory[*tx.Category] += cents
-		v.TotalCents += cents
 	}
 	v.Complete = coverageComplete(af, year, month)
 	return v

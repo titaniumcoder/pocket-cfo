@@ -458,6 +458,9 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
 .mistimed-inline { font-weight: 700; font-size: .9rem; }
 .muted { opacity: .6; font-size: .88rem; }
 .budget-of { text-align: right; opacity: .55; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* A part of a split says what it is a part of: 50 under Restaurant against a
+   statement line of 100 otherwise reads as a mistake. */
+.part-of { font-size: .78em; opacity: .55; white-space: nowrap; }
 .copy-col { width: 1%; white-space: nowrap; text-align: right; }
 .copy-tx { display: inline-flex; opacity: .4; text-decoration: none; padding: .15rem; border-radius: 5px; }
 .copy-tx:hover { opacity: 1; background: var(--hover-bg); }

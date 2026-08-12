@@ -631,3 +631,93 @@ func TestMistimedComparesYearAndMonth(t *testing.T) {
 		t.Errorf("mistimed = %+v, want planned 2027-08 charged 2026-08", m)
 	}
 }
+
+const splitActuals = `{
+  "month": "2026-08",
+  "coverage": [{ "account": "Private Checking", "from": "2026-08-01", "to": "2026-08-31", "imported_at": "2026-09-01" }],
+  "transactions": [
+    { "id": "w1", "date": "2026-08-14", "description": "ATM WITHDRAWAL SOFIA", "amount": 100, "account": "Private Checking",
+      "splits": [
+        { "amount": 30, "ignored": "cash still in my pocket" },
+        { "amount": 70, "category": "` + idGroceries + `" }
+      ] }
+  ]
+}`
+
+// The ignored part is deliberately first in splitActuals: code that reaches
+// for one part instead of walking them all then gets the wrong answer here,
+// rather than the right one by accident.
+func splitService(t *testing.T) *Service {
+	t.Helper()
+	return &Service{
+		Budget:   &tracker.Budget{FS: fstest.MapFS{"budget.json": &fstest.MapFile{Data: []byte(budgetJSON)}}},
+		Accounts: &tracker.Accounts{FS: fstest.MapFS{}},
+		Actuals:  &tracker.Actuals{FS: fstest.MapFS{"actuals/2026-08.json": &fstest.MapFile{Data: []byte(splitActuals)}}},
+	}
+}
+
+// TestReconciliationCountsSplitParts: a part-ignored split is not an ignored
+// line — its spent part is still in the month's total, and counting the whole
+// line either way is wrong in both directions.
+func TestReconciliationCountsSplitParts(t *testing.T) {
+	got, err := splitService(t).Reconciliation(context.Background(), 2026)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var aug MonthStatus
+	for _, m := range got {
+		if m.Month == "2026-08" {
+			aug = m
+		}
+	}
+	if aug.ActualCents != 7000 {
+		t.Errorf("ActualCents = %d, want 7000 — the spent part, not the whole line and not nothing", aug.ActualCents)
+	}
+	if aug.IgnoredCount != 0 {
+		t.Errorf("IgnoredCount = %d, want 0 — one part being ignored does not make the line ignored", aug.IgnoredCount)
+	}
+	if aug.TransactionCount != 1 {
+		t.Errorf("TransactionCount = %d, want 1 — a split is one statement line", aug.TransactionCount)
+	}
+}
+
+// TestSearchReportsSplitParts: Hermes searches history to learn how a merchant
+// was treated last time, so "70 groceries, 30 pocket, out of 100" is the
+// answer — one result carrying its parts, not a result per part.
+func TestSearchReportsSplitParts(t *testing.T) {
+	s := splitService(t)
+	ctx := context.Background()
+
+	got, err := s.Search(ctx, SearchQuery{Query: "ATM", Years: []int{2026}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Transactions) != 1 {
+		t.Fatalf("got %d results, want the one statement line", len(got.Transactions))
+	}
+	tx := got.Transactions[0]
+	if tx.Category != "" || tx.Ignored != "" {
+		t.Errorf("a split line reported a single category: %+v", tx)
+	}
+	if len(tx.Splits) != 2 || tx.Splits[0].Ignored == "" || tx.Splits[1].Amount != 70 {
+		t.Errorf("splits = %+v, want the two parts", tx.Splits)
+	}
+
+	// Filtering by a category one part carries must find the line.
+	byCat, err := s.Search(ctx, SearchQuery{Category: idGroceries, Years: []int{2026}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byCat.Transactions) != 1 {
+		t.Errorf("filtering by a split's category found %d lines, want 1", len(byCat.Transactions))
+	}
+
+	// And a line whose parts are not all ignored is not an ignored line.
+	noIgnored, err := s.Search(ctx, SearchQuery{Years: []int{2026}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(noIgnored.Transactions) != 1 {
+		t.Errorf("the default search dropped a partly-ignored line: %d results", len(noIgnored.Transactions))
+	}
+}

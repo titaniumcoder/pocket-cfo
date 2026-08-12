@@ -30,6 +30,7 @@ func (s *server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/transactions", s.apiTransactions)
 	mux.HandleFunc("GET /api/reconciliation", s.apiReconciliation)
 	mux.HandleFunc("PUT /api/actuals/{month}", s.apiPutActuals)
+	mux.HandleFunc("POST /api/budget/move-planned-expense", s.apiMovePlannedExpense)
 	// So a typo'd path answers Hermes in JSON rather than with a finance page.
 	// Two exact shapes rather than an /api/ subtree: a subtree overlaps
 	// /{year}/{month} with neither more specific, which ServeMux rejects.
@@ -286,4 +287,30 @@ func writeAPIJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
+}
+
+// apiMovePlannedExpense shifts one dated category to the month it was actually
+// charged in. Narrow on purpose: budget.json drives every figure on the
+// dashboard, so this changes a date and nothing else.
+func (s *server) apiMovePlannedExpense(w http.ResponseWriter, r *http.Request) {
+	if !s.apiAuthorized(w, r) {
+		return
+	}
+	var req api.MoveRequest
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPutBody))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeAPIError(w, &api.Error{Code: api.CodeInvalidRequest, Message: err.Error()}, http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
+	defer cancel()
+
+	out, err := s.apiService().MovePlannedExpense(ctx, req)
+	if err != nil {
+		writeAPIError(w, err, apiStatus(err))
+		return
+	}
+	writeAPIJSON(w, http.StatusOK, out)
 }

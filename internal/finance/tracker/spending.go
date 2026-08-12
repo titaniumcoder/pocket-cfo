@@ -97,7 +97,7 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 	start := time.Date(year, month, 1, 0, 0, 0, 0, t.Loc)
 	v := SpendingView{
 		Month:       fmt.Sprintf("%s %d", month.String(), year),
-		Nav:         monthNav(now, start, spendingURL),
+		Nav:         monthNav(now, start, t.startMonth(), spendingURL),
 		OverviewURL: monthURL(year, month),
 		SpendingURL: spendingURL(year, month),
 		RefreshURL:  spendingURL(year, month) + "?refresh=1",
@@ -124,7 +124,7 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 		v.Err = err.Error()
 		return v
 	}
-	if untracked, uerr := t.Actuals.UntrackedMonths(ctx, year); uerr == nil {
+	if untracked, uerr := t.Actuals.UntrackedMonths(ctx, year, t.Start); uerr == nil {
 		markUntrackedMonths(v.Nav.Months, untracked)
 	}
 
@@ -169,7 +169,7 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 	if t.Budget != nil {
 		if built, berr := t.Budget.ForMonth(ctx, year, month, time.Now().In(t.locOrUTC())); berr == nil {
 			bv = built
-			charged, cerr := t.Actuals.ChargedMonths(ctx, year)
+			charged, cerr := t.Actuals.ChargedMonths(ctx, year, t.Start)
 			if cerr == nil {
 				ApplyActuals(&bv, av, month, charged)
 			}

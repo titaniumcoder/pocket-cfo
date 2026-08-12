@@ -193,7 +193,7 @@ func (s *server) financeYear(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	year, ok := parseYear(w, r, trk.Loc)
+	year, ok := s.parseYear(w, r, trk.Loc)
 	if !ok {
 		return
 	}
@@ -217,7 +217,7 @@ func (s *server) financeMonth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	year, month, ok := parseYearMonth(w, r, trk.Loc)
+	year, month, ok := s.parseYearMonth(w, r, trk.Loc)
 	if !ok {
 		return
 	}
@@ -236,29 +236,34 @@ func (s *server) financeMonth(w http.ResponseWriter, r *http.Request) {
 	s.renderFinancePage(w, sess, trk.ComputeMonth(ctx, year, time.Month(month)))
 }
 
-const yearRange = 2
-
-func parseYear(w http.ResponseWriter, r *http.Request, loc *time.Location) (int, bool) {
+// The viewable range comes from tracker.NavBounds, the same function the
+// pickers use. It used to be a second yearRange constant here that happened to
+// agree with the tracker's — which is exactly how a URL check and a month
+// picker come to disagree about which months exist.
+func (s *server) parseYear(w http.ResponseWriter, r *http.Request, loc *time.Location) (int, bool) {
 	now := time.Now().In(loc)
+	minYear, maxYear := tracker.NavBounds(now, s.budgetStart())
 	year, err := strconv.Atoi(r.PathValue("year"))
-	if err != nil || year < now.Year()-yearRange || year > now.Year()+yearRange {
+	if err != nil || year < minYear || year > maxYear {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return 0, false
 	}
 	return year, true
 }
 
-func parseYearMonth(w http.ResponseWriter, r *http.Request, loc *time.Location) (int, int, bool) {
+func (s *server) parseYearMonth(w http.ResponseWriter, r *http.Request, loc *time.Location) (int, int, bool) {
 	now := time.Now().In(loc)
 	year, err1 := strconv.Atoi(r.PathValue("year"))
 	month, err2 := strconv.Atoi(r.PathValue("month"))
-	if err1 != nil || err2 != nil || month < 1 || month > 12 ||
-		year < now.Year()-yearRange || year > now.Year()+yearRange {
+	if err1 != nil || err2 != nil || !tracker.MonthIsOffered(year, month, now, s.budgetStart()) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return 0, 0, false
 	}
 	return year, month, true
 }
+
+// budgetStart is the configured first budgeted month, zero when unset.
+func (s *server) budgetStart() time.Time { return s.cfg.finance.StartMonth }
 
 // isRefresh reports whether the request came from the Reload button (?refresh=1).
 func isRefresh(r *http.Request) bool {
@@ -291,7 +296,7 @@ func (s *server) financeSpending(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	year, month, ok := parseYearMonth(w, r, trk.Loc)
+	year, month, ok := s.parseYearMonth(w, r, trk.Loc)
 	if !ok {
 		return
 	}

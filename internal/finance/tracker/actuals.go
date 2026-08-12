@@ -69,12 +69,15 @@ func (a *Actuals) ForMonth(ctx context.Context, year int, month time.Month) (Act
 }
 
 // ForYear sums whichever months have been reconciled. Complete requires all
-// twelve, so a partly-imported year never reads as a finished one.
-func (a *Actuals) ForYear(ctx context.Context, year int) (ActualsView, error) {
+// the months the year budgets, so a partly-imported year never reads as a
+// finished one — and a year that began in April is measured against nine.
+func (a *Actuals) ForYear(ctx context.Context, year int, start time.Time) (ActualsView, error) {
 	out := ActualsView{ByCategory: map[string]int{}}
 	months := 0
 	complete := 0
-	for m := time.January; m <= time.December; m++ {
+	first, last := yearMonthRange(year, floorOf(start))
+	want := int(last-first) + 1
+	for m := first; m <= last; m++ {
 		res := a.month(ctx, year, m)
 		if res.err != nil {
 			return ActualsView{}, res.err
@@ -98,19 +101,23 @@ func (a *Actuals) ForYear(ctx context.Context, year int) (ActualsView, error) {
 		return ActualsView{}, nil
 	}
 	out.Present = true
-	out.Complete = months == 12 && complete == 12
+	// Against the months the year actually budgets, not always twelve: a year
+	// that began in April has nine, and measuring it against twelve would mean
+	// it could never read as reconciled however complete it was.
+	out.Complete = months == want && complete == want
 	return out, nil
 }
 
 // ChargedMonths reports which months each category was charged in. The
 // mistimed check needs it: a cost budgeted for August and paid in July is
 // invisible from either month alone.
-func (a *Actuals) ChargedMonths(ctx context.Context, year int) (map[string][]time.Month, error) {
+func (a *Actuals) ChargedMonths(ctx context.Context, year int, start time.Time) (map[string][]time.Month, error) {
 	if a == nil || a.FS == nil {
 		return nil, nil
 	}
 	out := map[string][]time.Month{}
-	for m := time.January; m <= time.December; m++ {
+	first, last := yearMonthRange(year, floorOf(start))
+	for m := first; m <= last; m++ {
 		res := a.month(ctx, year, m)
 		if res.err != nil {
 			return nil, res.err
@@ -137,12 +144,13 @@ func (a *Actuals) ChargedMonths(ctx context.Context, year int) (map[string][]tim
 // is allowed.
 //
 // Months are cached, so after the first read this is a walk over memory.
-func (a *Actuals) UntrackedMonths(ctx context.Context, year int) (map[time.Month]int, error) {
+func (a *Actuals) UntrackedMonths(ctx context.Context, year int, start time.Time) (map[time.Month]int, error) {
 	if a == nil || a.FS == nil {
 		return nil, nil
 	}
 	out := map[time.Month]int{}
-	for m := time.January; m <= time.December; m++ {
+	first, last := yearMonthRange(year, floorOf(start))
+	for m := first; m <= last; m++ {
 		res := a.month(ctx, year, m)
 		if res.err != nil {
 			return nil, res.err

@@ -45,10 +45,10 @@ func TestActualsNilIsSafe(t *testing.T) {
 	if _, err := a.ForMonth(context.Background(), 2026, time.August); err != nil {
 		t.Errorf("nil receiver: %v", err)
 	}
-	if _, err := a.ForYear(context.Background(), 2026); err != nil {
+	if _, err := a.ForYear(context.Background(), 2026, time.Time{}); err != nil {
 		t.Errorf("nil receiver ForYear: %v", err)
 	}
-	if _, err := a.ChargedMonths(context.Background(), 2026); err != nil {
+	if _, err := a.ChargedMonths(context.Background(), 2026, time.Time{}); err != nil {
 		t.Errorf("nil receiver ChargedMonths: %v", err)
 	}
 	a.Evict() // must not panic
@@ -148,7 +148,7 @@ func TestActualsForYear(t *testing.T) {
 		"actuals/2026-09.json": `{"month":"2026-09","coverage":[{"account":"A","from":"2026-09-01","to":"2026-09-30","imported_at":"2026-10-01"}],
 			"transactions":[{"id":"s1","date":"2026-09-02","description":"MIETE","amount":900,"account":"A","category":"housing.rent"}]}`,
 	})
-	got, err := a.ForYear(context.Background(), 2026)
+	got, err := a.ForYear(context.Background(), 2026, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestActualsForYear(t *testing.T) {
 
 func TestActualsForYearEmpty(t *testing.T) {
 	a := newTestActuals(t, nil)
-	got, err := a.ForYear(context.Background(), 2026)
+	got, err := a.ForYear(context.Background(), 2026, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestActualsChargedMonths(t *testing.T) {
 			"transactions":[{"id":"j1","date":"2026-07-05","description":"NOTEBOOK","amount":1800,"account":"A","category":"company-equipment.laptop"}]}`,
 		"actuals/2026-08.json": testActualsAugust,
 	})
-	got, err := a.ChargedMonths(context.Background(), 2026)
+	got, err := a.ChargedMonths(context.Background(), 2026, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}

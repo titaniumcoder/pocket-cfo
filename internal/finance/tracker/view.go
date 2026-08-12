@@ -32,6 +32,23 @@ type Tracker struct {
 	RateCents    int                    // configured hourly rate, projects Expected work
 	RateCurrency string                 // ISO code for RateCents; "" defaults to EUR (see CurrencySymbol)
 	Invoiced     map[int]InvoicedClient // Toggl client ID (or UnscopedClientID) -> invoicing state, see invoiced.go
+
+	// Start is the first month budgeting covers, zero for no floor at all.
+	// Before it there is no plan, no statement and no balance, so the app does
+	// not offer those months rather than showing pages of structural zeroes
+	// and counting them into a year.
+	//
+	// A time.Time rather than the internal yearMonth so cmd/pocketcfo can set
+	// it; only the year and month are read.
+	Start time.Time
+}
+
+// startMonth is Start as the internal month type, zero when unbounded.
+func (t *Tracker) startMonth() yearMonth {
+	if t == nil || t.Start.IsZero() {
+		return yearMonth{}
+	}
+	return yearMonth{t.Start.Year(), t.Start.Month()}
 }
 
 type TrackedRow struct {
@@ -243,7 +260,7 @@ func (t *Tracker) ComputeMonth(ctx context.Context, year int, month time.Month) 
 	start := time.Date(year, month, 1, 0, 0, 0, 0, t.Loc)
 	end := start.AddDate(0, 1, -1) // last day of the month
 	result := t.compute(ctx, year, start, end, start.Format("January 2006"), 1, 0)
-	result.fillMonthNav(now, start)
+	result.fillMonthNav(now, start, t.startMonth())
 	return result
 }
 
@@ -253,7 +270,7 @@ func (t *Tracker) ComputeYear(ctx context.Context, year int) Figures {
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, t.Loc)
 	end := start.AddDate(1, 0, -1) // 31 December
 	result := t.compute(ctx, year, start, end, start.Format("2006"), 12, t.VacationDays)
-	result.fillYearNav(now, start)
+	result.fillYearNav(now, start, t.startMonth())
 	return result
 }
 
@@ -523,7 +540,7 @@ func (f *Figures) computeBudget(t *Tracker, ctx context.Context, year int, start
 	}
 	var berr error
 	if months > 1 {
-		bv, berr = t.Budget.ForYear(ctx, year, now)
+		bv, berr = t.Budget.ForYear(ctx, year, now, t.Start)
 	} else {
 		f.MinimalMode = t.Budget.IsMinimal()
 		bv, berr = t.Budget.ForMonth(ctx, year, start.Month(), now)
@@ -545,18 +562,21 @@ func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months 
 	if months > 1 {
 		var monthlyCompanyExpenseCents map[time.Month]int
 		if t.Budget != nil && f.BudgetErr == "" {
-			if m, err := t.Budget.CompanyExpensesByMonth(ctx, year); err != nil {
+			if m, err := t.Budget.CompanyExpensesByMonth(ctx, year, t.Start); err != nil {
 				f.BudgetErr = err.Error()
 			} else {
 				monthlyCompanyExpenseCents = m
 			}
 		}
-		start := time.Date(year, time.January, 1, 0, 0, 0, 0, t.Loc)
-		end := start.AddDate(1, 0, -1)
+		// The slice and the month it starts from move together, or the
+		// per-month rules would be read against the wrong months.
+		first, _ := yearMonthRange(year, t.startMonth())
+		start := time.Date(year, first, 1, 0, 0, 0, 0, t.Loc)
+		end := time.Date(year, time.December, 31, 0, 0, 0, 0, t.Loc)
 		f.Personal = t.Personal.breakdownMonths(
 			monthlyIncomeEUR(start, end, monthlyCompanyCents),
 			monthlyIncomeEUR(start, end, monthlyCompanyExpenseCents),
-			yearMonth{year, time.January},
+			yearMonth{year, first},
 		)
 	} else {
 		f.Personal = t.Personal.breakdown(float64(f.TotalCents)/100, float64(bv.CompanyTotalPlannedCents)/100, 1,
@@ -594,7 +614,7 @@ func (f *Figures) computeSpendable(months, year int, start time.Time, hasHours b
 func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year int, start, now time.Time, months, rateCents int, bv BudgetView) {
 	var fundingStart, fundingEnd yearMonth
 	if months > 1 {
-		fundingStart, fundingEnd = fundingRangeForYear(year, now)
+		fundingStart, fundingEnd = fundingRangeForYear(year, now, t.startMonth())
 	} else {
 		fundingStart, fundingEnd = fundingRangeForMonth(year, start.Month())
 	}
@@ -689,7 +709,7 @@ func (t *Tracker) EvictMonth(year int, month time.Month) {
 func (t *Tracker) EvictYear(year int) {
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, t.Loc)
 	t.Toggl.EvictRange(start, start.AddDate(1, 0, -1))
-	fs, fe := fundingRangeForYear(year, time.Now().In(t.Loc))
+	fs, fe := fundingRangeForYear(year, time.Now().In(t.Loc), t.startMonth())
 	t.evictFundingRange(fs, fe)
 	if t.Budget != nil {
 		t.Budget.Evict()
@@ -717,19 +737,30 @@ func monthURL(year int, month time.Month) string { return fmt.Sprintf("/%d/%d", 
 
 func spendingURL(year int, month time.Month) string { return monthURL(year, month) + "/spending" }
 
-func monthNav(now, start time.Time, url func(int, time.Month) string) MonthNav {
+// monthNav builds the stepper. floor is the first budgeted month, zero for
+// none.
+//
+// The arrows compare whole months rather than years once there is a floor:
+// gating on the year alone was why stepping back from January always worked,
+// which is right for a ±2-year window and wrong for a start month.
+func monthNav(now, start time.Time, floor yearMonth, url func(int, time.Month) string) MonthNav {
 	prev, next := start.AddDate(0, -1, 0), start.AddDate(0, 1, 0)
-	minYear, maxYear := navYearBounds(now)
+	minYear, maxYear := navYearBounds(now, floor)
 	nav := MonthNav{
 		Year:     start.Year(),
 		MonthNum: int(start.Month()),
-		Years:    navYears(now),
+		Years:    navYears(now, floor),
 		TodayURL: url(now.Year(), now.Month()),
 	}
 	for m := time.January; m <= time.December; m++ {
+		// In the first budgeted year the months before the start are not
+		// offered at all: they would render as pages of structural zeroes.
+		if floor != (yearMonth{}) && (yearMonth{start.Year(), m}).ordinal() < floor.ordinal() {
+			continue
+		}
 		nav.Months = append(nav.Months, MonthOption{Num: int(m), Name: m.String()})
 	}
-	if prev.Year() < minYear {
+	if prev.Year() < minYear || (floor != (yearMonth{}) && (yearMonth{prev.Year(), prev.Month()}).ordinal() < floor.ordinal()) {
 		nav.PrevDisabled = true
 	} else {
 		nav.PrevURL = url(prev.Year(), prev.Month())
@@ -755,8 +786,8 @@ func markUntrackedMonths(months []MonthOption, untracked map[time.Month]int) {
 }
 
 // fillMonthNav populates navigation for month view.
-func (f *Figures) fillMonthNav(now, start time.Time) {
-	nav := monthNav(now, start, monthURL)
+func (f *Figures) fillMonthNav(now, start time.Time, floor yearMonth) {
+	nav := monthNav(now, start, floor, monthURL)
 	f.Mode = "month"
 	f.Year, f.MonthNum, f.NavMonth = nav.Year, nav.MonthNum, nav.MonthNum
 	f.Years, f.Months = nav.Years, nav.Months
@@ -771,8 +802,8 @@ func (f *Figures) fillMonthNav(now, start time.Time) {
 
 // fillYearNav populates navigation for year view. Switching to month view lands
 // on the current month in the current year, otherwise January.
-func (f *Figures) fillYearNav(now, start time.Time) {
-	minYear, maxYear := navYearBounds(now)
+func (f *Figures) fillYearNav(now, start time.Time, floor yearMonth) {
+	minYear, maxYear := navYearBounds(now, floor)
 	f.Mode = "year"
 	f.Year = start.Year()
 	if start.Year() <= minYear {
@@ -785,11 +816,16 @@ func (f *Figures) fillYearNav(now, start time.Time) {
 	} else {
 		f.NextURL = fmt.Sprintf("/%d", start.Year()+1)
 	}
-	f.Years = navYears(now)
+	f.Years = navYears(now, floor)
 	f.YearViewURL = fmt.Sprintf("/%d", start.Year())
+	// The month the "Month" toggle lands on: this month in the current year,
+	// otherwise the first one the year actually budgets — January is not a
+	// month that exists in the year budgeting began.
 	month := time.January
 	if start.Year() == now.Year() {
 		month = now.Month()
+	} else if floor != (yearMonth{}) && floor.Year == start.Year() {
+		month = floor.Month
 	}
 	f.NavMonth = int(month)
 	f.MonthViewURL = monthURL(start.Year(), month)
@@ -798,8 +834,8 @@ func (f *Figures) fillYearNav(now, start time.Time) {
 }
 
 // navYears returns the selectable years around the current year.
-func navYears(now time.Time) []int {
-	minYear, maxYear := navYearBounds(now)
+func navYears(now time.Time, start yearMonth) []int {
+	minYear, maxYear := navYearBounds(now, start)
 	years := make([]int, 0, maxYear-minYear+1)
 	for y := minYear; y <= maxYear; y++ {
 		years = append(years, y)
@@ -807,9 +843,41 @@ func navYears(now time.Time) []int {
 	return years
 }
 
-func navYearBounds(now time.Time) (int, int) {
+// navYearBounds is the only place the viewable range is decided, for the
+// pickers and the router alike. Two constants that happened to agree is how
+// the URL check and the month picker come to disagree about the first month.
+func navYearBounds(now time.Time, start yearMonth) (int, int) {
 	const yearRange = 2
-	return now.Year() - yearRange, now.Year() + yearRange
+	minYear := now.Year() - yearRange
+	if start != (yearMonth{}) && start.Year > minYear {
+		minYear = start.Year
+	}
+	return minYear, now.Year() + yearRange
+}
+
+// NavBounds is navYearBounds for callers outside this package — the router,
+// which must refuse exactly the months the pickers refuse to offer.
+func NavBounds(now, start time.Time) (minYear, maxYear int) {
+	var ym yearMonth
+	if !start.IsZero() {
+		ym = yearMonth{start.Year(), start.Month()}
+	}
+	return navYearBounds(now, ym)
+}
+
+// MonthIsOffered reports whether a month is inside the budgeting range. The
+// year bounds alone are not enough once there is a start month: the first year
+// is offered from that month on, not from January.
+func MonthIsOffered(year, month int, now, start time.Time) bool {
+	minYear, maxYear := NavBounds(now, start)
+	if year < minYear || year > maxYear || month < 1 || month > 12 {
+		return false
+	}
+	if start.IsZero() {
+		return true
+	}
+	first := yearMonth{start.Year(), start.Month()}
+	return yearMonth{year, time.Month(month)}.ordinal() >= first.ordinal()
 }
 
 // aggHours derives hours from the Toggl-calculated amount and rate so hours and
@@ -929,7 +997,7 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 	// The picker is marked before any of the early returns below: which months
 	// still have undecided money is worth seeing even from a year view, or from
 	// a month that has not been reconciled at all.
-	if untracked, uerr := t.Actuals.UntrackedMonths(ctx, year); uerr == nil {
+	if untracked, uerr := t.Actuals.UntrackedMonths(ctx, year, t.Start); uerr == nil {
 		markUntrackedMonths(f.Months, untracked)
 	}
 
@@ -941,7 +1009,7 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 		if year >= now.Year() {
 			return
 		}
-		av, err = t.Actuals.ForYear(ctx, year)
+		av, err = t.Actuals.ForYear(ctx, year, t.Start)
 	} else {
 		av, err = t.Actuals.ForMonth(ctx, year, start.Month())
 	}
@@ -958,7 +1026,7 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 	// The mistimed check spans the year, so month view only.
 	var charged map[string][]time.Month
 	if months == 1 {
-		if charged, err = t.Actuals.ChargedMonths(ctx, year); err != nil {
+		if charged, err = t.Actuals.ChargedMonths(ctx, year, t.Start); err != nil {
 			f.ActualsErr = err.Error()
 			return
 		}

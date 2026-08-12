@@ -192,14 +192,43 @@ func (b *Budget) ForMonth(ctx context.Context, year int, month time.Month, now t
 
 // privateExpenseStartMonth is where ForYear's private-category range starts:
 // now's month for the current year, since months already gone by don't count;
-// January for any other year. Also used by fundingRangeForYear, so the shifted
-// funding-income range tracks the same span ForYear uses for expenses — the two
-// must never drift apart.
-func privateExpenseStartMonth(year int, now time.Time) time.Month {
+// January for any other year, unless budgeting began partway through it. Also
+// used by fundingRangeForYear, so the shifted funding-income range tracks the
+// same span ForYear uses for expenses — the two must never drift apart.
+//
+// floor is the first budgeted month, zero for none. A year that began in April
+// has no January to plan, and counting three months of nothing into its total
+// would report a year that underspent by a quarter.
+func privateExpenseStartMonth(year int, now time.Time, floor yearMonth) time.Month {
 	if year == now.Year() {
+		if floor.Year == year && floor.Month > now.Month() {
+			return floor.Month
+		}
 		return now.Month()
 	}
+	if floor.Year == year {
+		return floor.Month
+	}
 	return time.January
+}
+
+// floorOf is a configured start month as the internal type; a zero time means
+// no floor. Exported methods take the time.Time so callers outside this
+// package can pass one.
+func floorOf(start time.Time) yearMonth {
+	if start.IsZero() {
+		return yearMonth{}
+	}
+	return yearMonth{start.Year(), start.Month()}
+}
+
+// yearMonthRange is the months of a year budgeting actually covers.
+func yearMonthRange(year int, floor yearMonth) (first, last time.Month) {
+	first, last = time.January, time.December
+	if floor.Year == year {
+		first = floor.Month
+	}
+	return first, last
 }
 
 // ForYear sums each category across the year, with the month range differing
@@ -208,12 +237,12 @@ func privateExpenseStartMonth(year int, now time.Time) time.Month {
 // now: it feeds the salary cascade, which projects a full year of company
 // income, so the cost side has to span the same full year to stay consistent.
 // now is real current time, not the viewed year.
-func (b *Budget) ForYear(ctx context.Context, year int, now time.Time) (BudgetView, error) {
+func (b *Budget) ForYear(ctx context.Context, year int, now, start time.Time) (BudgetView, error) {
 	bf, err := b.File(ctx)
 	if err != nil {
 		return BudgetView{}, err
 	}
-	privateStart := privateExpenseStartMonth(year, now)
+	privateStart := privateExpenseStartMonth(year, now, floorOf(start))
 	// Overridden is meaningful for a single month, not a yearly aggregate.
 	privatePlanned := func(c budgetdata.Category) (int, bool) {
 		sum := 0
@@ -222,9 +251,13 @@ func (b *Budget) ForYear(ctx context.Context, year int, now time.Time) (BudgetVi
 		}
 		return sum, false
 	}
+	// Company still spans the whole year regardless of now — it feeds the
+	// salary cascade, which projects a full year of income — but not months
+	// before budgeting began, which have no plan to sum.
+	companyFirst, companyLast := yearMonthRange(year, floorOf(start))
 	companyPlanned := func(c budgetdata.Category) (int, bool) {
 		sum := 0
-		for m := time.January; m <= time.December; m++ {
+		for m := companyFirst; m <= companyLast; m++ {
 			sum += categoryCents(c, monthKey(year, m), false)
 		}
 		return sum, false
@@ -236,7 +269,7 @@ func (b *Budget) ForYear(ctx context.Context, year int, now time.Time) (BudgetVi
 // all twelve unconditionally (see ForYear). Year view needs the per-month
 // breakdown because contribution bands are monthly thresholds (PersonalParams.
 // breakdownMonths); ForYear's aggregate isn't enough on its own.
-func (b *Budget) CompanyExpensesByMonth(ctx context.Context, year int) (map[time.Month]int, error) {
+func (b *Budget) CompanyExpensesByMonth(ctx context.Context, year int, start time.Time) (map[time.Month]int, error) {
 	bf, err := b.File(ctx)
 	if err != nil {
 		return nil, err

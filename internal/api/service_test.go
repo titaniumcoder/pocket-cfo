@@ -59,6 +59,18 @@ const september = `{
   ]
 }`
 
+// October is the month the laptop is budgeted for, reconciled and with the
+// laptop nowhere in it — it was already paid in August. Nothing in this file
+// says so, which is the whole point: the second direction of the mistimed
+// check is invisible from one month's transactions.
+const october = `{
+  "month": "2026-10",
+  "coverage": [{ "account": "Private Checking", "from": "2026-10-01", "to": "2026-10-31", "imported_at": "2026-11-01" }],
+  "transactions": [
+    { "id": "o1", "date": "2026-10-02", "description": "LIDL SOFIA 4412", "amount": 205, "account": "Private Checking", "category": "` + idGroceries + `" }
+  ]
+}`
+
 func newService(t *testing.T) *Service {
 	t.Helper()
 	budgetFS := fstest.MapFS{
@@ -68,6 +80,7 @@ func newService(t *testing.T) *Service {
 	actualsFS := fstest.MapFS{
 		"actuals/2026-08.json": &fstest.MapFile{Data: []byte(august)},
 		"actuals/2026-09.json": &fstest.MapFile{Data: []byte(september)},
+		"actuals/2026-10.json": &fstest.MapFile{Data: []byte(october)},
 	}
 	return &Service{
 		Budget:   &tracker.Budget{FS: budgetFS},
@@ -257,10 +270,10 @@ func TestSearch(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(got.Transactions) != 2 {
-			t.Fatalf("got %d matches, want 2", len(got.Transactions))
+		if len(got.Transactions) != 3 {
+			t.Fatalf("got %d matches, want 3", len(got.Transactions))
 		}
-		if got.Transactions[0].Month != "2026-09" {
+		if got.Transactions[0].Month != "2026-10" {
 			t.Errorf("first match is from %s, want the newest month first", got.Transactions[0].Month)
 		}
 		if got.Transactions[0].Category != idGroceries {
@@ -273,8 +286,8 @@ func TestSearch(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(got.Transactions) != 2 {
-			t.Errorf("got %d matches, want 2", len(got.Transactions))
+		if len(got.Transactions) != 3 {
+			t.Errorf("got %d matches, want 3", len(got.Transactions))
 		}
 	})
 
@@ -296,8 +309,8 @@ func TestSearch(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(got.Transactions) != 4 {
-			t.Errorf("got %d, want 4 non-ignored transactions", len(got.Transactions))
+		if len(got.Transactions) != 5 {
+			t.Errorf("got %d, want 5 non-ignored transactions", len(got.Transactions))
 		}
 	})
 
@@ -334,7 +347,7 @@ func TestSearch(t *testing.T) {
 			t.Fatal(err)
 		}
 		if got.Truncated {
-			t.Error("a 4-transaction fixture should not truncate at the cap")
+			t.Error("a 5-transaction fixture should not truncate at the cap")
 		}
 	})
 
@@ -343,8 +356,8 @@ func TestSearch(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(got.Transactions) != 1 || got.Transactions[0].Month != "2026-09" {
-			t.Errorf("got %+v, want only September", got.Transactions)
+		if len(got.Transactions) != 2 || got.Transactions[0].Month != "2026-10" {
+			t.Errorf("got %+v, want September onwards, newest first", got.Transactions)
 		}
 		got, err = s.Search(ctx, SearchQuery{Query: "LIDL", To: "2026-08", Years: years})
 		if err != nil {
@@ -409,8 +422,20 @@ func TestReconciliation(t *testing.T) {
 	if len(aug.Mistimed) != 1 || aug.Mistimed[0].CategoryID != idLaptop {
 		t.Fatalf("August Mistimed = %+v, want the laptop", aug.Mistimed)
 	}
-	if m := aug.Mistimed[0]; m.PlannedFor != "October" || m.ChargedIn != "August" {
-		t.Errorf("mistimed = %+v, want planned October charged August", m)
+	// Month keys, not month names: "October" alone is ambiguous in a JSON API.
+	if m := aug.Mistimed[0]; m.PlannedFor != "2026-10" || m.ChargedIn != "2026-08" {
+		t.Errorf("mistimed = %+v, want planned 2026-10 charged 2026-08", m)
+	}
+
+	// The other direction, and the one that used to be missing: October is the
+	// month the plan expects the laptop in, and the money is already gone.
+	// Nothing in October's own transactions can show this.
+	oct := byMonth["2026-10"]
+	if len(oct.Mistimed) != 1 || oct.Mistimed[0].CategoryID != idLaptop {
+		t.Fatalf("October Mistimed = %+v, want the laptop it is still waiting for", oct.Mistimed)
+	}
+	if m := oct.Mistimed[0]; m.PlannedFor != "2026-10" || m.ChargedIn != "2026-08" || m.AmountCents != 180000 {
+		t.Errorf("October mistimed = %+v, want planned 2026-10 charged 2026-08 at 1800", m)
 	}
 
 	sep := byMonth["2026-09"]
@@ -465,19 +490,60 @@ func TestServicePropagatesABrokenBudget(t *testing.T) {
 }
 
 // TestSearchDefaultsToTheCurrentYear pins that a caller passing no Years still
-// gets a sensible scan rather than nothing.
+// gets a sensible scan rather than nothing. Pinned to a fixed now rather than
+// the wall clock, which would quietly assert nothing at all from 2027.
 func TestSearchDefaultsToTheCurrentYear(t *testing.T) {
 	s := newService(t)
+	s.Now = func() time.Time { return time.Date(2026, time.November, 3, 0, 0, 0, 0, time.UTC) }
 	got, err := s.Search(context.Background(), SearchQuery{Query: "LIDL"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := 0
-	if time.Now().Year() == 2026 {
-		want = 2
+	if len(got.Transactions) != 3 {
+		t.Errorf("got %d matches for the current year, want 3", len(got.Transactions))
 	}
-	if len(got.Transactions) != want {
-		t.Errorf("got %d matches for the current year, want %d", len(got.Transactions), want)
+}
+
+// TestSearchDerivesYearsFromTheRange is the bug the REST adapter used to hide:
+// a from/to naming a past year must scan that year, whoever is asking.
+func TestSearchDerivesYearsFromTheRange(t *testing.T) {
+	s := newService(t)
+	s.Now = func() time.Time { return time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC) }
+	got, err := s.Search(context.Background(), SearchQuery{Query: "LIDL", From: "2026-09", To: "2026-09"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Transactions) != 1 || got.Transactions[0].Month != "2026-09" {
+		t.Fatalf("got %+v, want September 2026 — the range says which year", got.Transactions)
+	}
+}
+
+func TestScanYears(t *testing.T) {
+	tests := []struct {
+		name string
+		q    SearchQuery
+		want []int
+	}{
+		{"nothing given falls back to now", SearchQuery{}, []int{2026}},
+		{"explicit wins", SearchQuery{Years: []int{2024}, From: "2019-01"}, []int{2024}},
+		{"from alone", SearchQuery{From: "2025-03"}, []int{2025}},
+		{"to alone", SearchQuery{To: "2025-03"}, []int{2025}},
+		{"the span is filled in", SearchQuery{From: "2024-01", To: "2026-12"}, []int{2024, 2025, 2026}},
+		{"a nonsense bound is not a year", SearchQuery{From: "no"}, []int{2026}},
+		{"an out-of-range bound is not a year", SearchQuery{From: "0001-01"}, []int{2026}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := scanYears(tt.q, 2026)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("got %v, want %v", got, tt.want)
+				}
+			}
+		})
 	}
 }
 
@@ -519,5 +585,49 @@ func TestBudgetForMonthMatchesTheDashboard(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestMistimedComparesYearAndMonth: a one-off dated next August is not the
+// same plan as this August. Comparing months alone reads the charge as
+// on-time and says nothing, which is the failure mode this whole check
+// exists to prevent.
+func TestMistimedComparesYearAndMonth(t *testing.T) {
+	const idNextYear = "00000000-0000-4000-8000-00000000009f"
+	budget := `{
+  "groups": [
+    { "name": "Equipment", "kind": "company", "categories": [
+      { "id": "` + idNextYear + `", "name": "Server", "amount": 3000, "date": "2027-08-01" }
+    ]}
+  ]
+}`
+	actuals := `{
+  "month": "2026-08",
+  "coverage": [{ "account": "Company Checking", "from": "2026-08-01", "to": "2026-08-31", "imported_at": "2026-09-01" }],
+  "transactions": [
+    { "id": "x1", "date": "2026-08-04", "description": "SERVER SHOP", "amount": 3000, "account": "Company Checking", "category": "` + idNextYear + `" }
+  ]
+}`
+	budgetFS := fstest.MapFS{"budget.json": &fstest.MapFile{Data: []byte(budget)}}
+	s := &Service{
+		Budget:  &tracker.Budget{FS: budgetFS},
+		Actuals: &tracker.Actuals{FS: fstest.MapFS{"actuals/2026-08.json": &fstest.MapFile{Data: []byte(actuals)}}},
+	}
+
+	got, err := s.Reconciliation(context.Background(), 2026)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var aug MonthStatus
+	for _, m := range got {
+		if m.Month == "2026-08" {
+			aug = m
+		}
+	}
+	if len(aug.Mistimed) != 1 {
+		t.Fatalf("Mistimed = %+v, want the server budgeted for next August", aug.Mistimed)
+	}
+	if m := aug.Mistimed[0]; m.PlannedFor != "2027-08" || m.ChargedIn != "2026-08" {
+		t.Errorf("mistimed = %+v, want planned 2027-08 charged 2026-08", m)
 	}
 }

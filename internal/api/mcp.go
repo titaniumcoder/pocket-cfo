@@ -51,7 +51,7 @@ type searchArgs struct {
 	Account        string `json:"account,omitempty" jsonschema:"only transactions on this account"`
 	IncludeIgnored bool   `json:"include_ignored,omitempty" jsonschema:"include lines recorded as not-an-expense"`
 	Limit          int    `json:"limit,omitempty" jsonschema:"maximum results, default 50, capped at 500"`
-	Years          []int  `json:"years,omitempty" jsonschema:"which years to scan; defaults to the current one"`
+	Years          []int  `json:"years,omitempty" jsonschema:"which years to scan; derived from from/to when those are given, else the current year"`
 }
 
 type reconciliationArgs struct {
@@ -98,7 +98,7 @@ func (s *Service) registerTools(server *mcp.Server) {
 	})
 
 	mcp.AddTool(server, tool("get_actuals",
-		"The committed document for one month. This file is the source of truth: where it disagrees with your own recollection, it wins. Returns not_found when the month has never been reconciled.",
+		"The committed document for one month, with the sha to pass back as put_actuals' base_sha. This file is the source of truth: where it disagrees with your own recollection, it wins. Returns not_found when the month has never been reconciled — that is the case where base_sha is empty.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, a monthArgs) (*mcp.CallToolResult, any, error) {
 		return result(s.ActualsFor(ctx, a.Month))
 	})

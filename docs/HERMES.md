@@ -21,7 +21,9 @@ reads work and writes return `write_not_configured`.
 
 2. **`get_actuals`** for the month. The committed file is the source of truth. Your own
    memory of recurring merchants is a starting point for *proposing*, never for
-   overriding it. Keep the `sha` — you need it to write.
+   overriding it. Keep the `sha` it returns — that is `base_sha` for the write in step 6.
+   A month that has never been reconciled comes back `not_found`, and its `base_sha` is
+   the empty string.
 
 3. For each statement line you can't place immediately, **`search_transactions`** on the
    description. A past match with an assigned category is a strong answer; no match means

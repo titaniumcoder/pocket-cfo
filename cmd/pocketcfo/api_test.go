@@ -49,7 +49,13 @@ func apiServer(t *testing.T, token, env string) *server {
 		"budget.json":   &fstest.MapFile{Data: []byte(apiBudgetJSON)},
 		"accounts.json": &fstest.MapFile{Data: []byte(`{"accounts":[{"name":"Private Checking","balance":100,"as_of":"2026-07-31"}]}`)},
 	}
-	actualsFS := fstest.MapFS{"actuals/2026-08.json": &fstest.MapFile{Data: []byte(apiActualsJSON)}}
+	actualsFS := fstest.MapFS{
+		"actuals/2026-08.json": &fstest.MapFile{Data: []byte(apiActualsJSON)},
+		// A month in a year that is not the current one, so a search whose
+		// range names it can only be answered by deriving the year from that
+		// range — see TestMCPAndRESTAgreeOnSearch.
+		"actuals/2025-11.json": &fstest.MapFile{Data: []byte(apiOldActualsJSON)},
+	}
 	return &server{
 		cfg: config{hermesAPIToken: token, env: env, sessionSecret: "test-secret"},
 		tracker: &tracker.Tracker{
@@ -60,6 +66,14 @@ func apiServer(t *testing.T, token, env string) *server {
 		},
 	}
 }
+
+const apiOldActualsJSON = `{
+  "month": "2025-11",
+  "coverage": [{ "account": "Private Checking", "from": "2025-11-01", "to": "2025-11-30", "imported_at": "2025-12-01" }],
+  "transactions": [
+    { "id": "old1", "date": "2025-11-04", "description": "LIDL SOFIA 4412", "amount": 180, "account": "Private Checking", "ignored": "before the plan" }
+  ]
+}`
 
 func apiGet(t *testing.T, s *server, path, token string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -376,24 +390,25 @@ func TestAPIRoutesDoNotShadowThePages(t *testing.T) {
 	}
 }
 
-func TestParseYears(t *testing.T) {
+// TestDecodeYears covers what the adapter still owns: turning ?year= strings
+// into ints. Which years a from/to span covers moved to api.Service, where
+// both adapters get the same answer — see TestScanYears.
+func TestDecodeYears(t *testing.T) {
 	tests := []struct {
 		name     string
 		explicit []string
-		from, to string
 		want     []int
 		wantErr  bool
 	}{
 		{name: "none", want: nil},
 		{name: "explicit", explicit: []string{"2026"}, want: []int{2026}},
-		{name: "from and to span the gap", from: "2024-01", to: "2026-12", want: []int{2024, 2025, 2026}},
-		{name: "from only", from: "2025-03", want: []int{2025}},
-		{name: "bad explicit year", explicit: []string{"abc"}, wantErr: true},
+		{name: "several", explicit: []string{"2024", "2026"}, want: []int{2024, 2026}},
+		{name: "not a number", explicit: []string{"abc"}, wantErr: true},
 		{name: "out of range", explicit: []string{"12"}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseYears(tt.explicit, tt.from, tt.to)
+			got, err := decodeYears(tt.explicit)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
 			}

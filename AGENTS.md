@@ -11,8 +11,7 @@ that aren't obvious from the code itself.
   strong reason. The CLI uses `flag`/`os.Args`, not `cobra`. The web app uses
   `net/http` + `html/template`, not a router library. The one named exception:
   `go-jsonschema`, used as a dev-time `tool` dependency (Go 1.24+ `tool` directive) to
-  generate Go structs from `schemas/*.json` — never imported by runtime code. Digital
-  signing (`internal/sign`, later) is expected to be a second such exception. The third,
+  generate Go structs from `schemas/*.json` — never imported by runtime code. The second,
   and the only one linked into a binary, is `github.com/modelcontextprotocol/go-sdk` for
   the MCP server at `/mcp`: a moving external wire protocol with strict framing, where
   being subtly wrong presents as *silence* — the agent sees no tools at the moment you

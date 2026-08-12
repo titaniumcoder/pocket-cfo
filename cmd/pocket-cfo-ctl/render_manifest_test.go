@@ -117,7 +117,7 @@ func TestRenderOne_BackfillsManifestWithoutTouchingExistingPDF(t *testing.T) {
 	}
 
 	manifest := render.Manifest{}
-	if err := renderOne(context.Background(), nil, nil, "INV-0000000001", false, false, manifest, nil); err != nil {
+	if err := renderOne(context.Background(), nil, "INV-0000000001", false, false, manifest, nil); err != nil {
 		t.Fatalf("renderOne: %v", err)
 	}
 

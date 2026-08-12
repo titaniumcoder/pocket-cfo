@@ -15,13 +15,6 @@ export GITHUB_DATA_TOKEN=
 export GITHUB_API_URL=
 # Used by `pocket-cfo-ctl translate` to fill missing Bulgarian text on drafts.
 export DEEPL_API_KEY=
-# base64 PEM cert/key `pocket-cfo-ctl render` certifies each rendered PDF with
-# (DocMDP, no further changes allowed — see internal/sign, ARCHITECTURE.md
-# §6). Leave unset and signing is skipped entirely. `make dev-cert` prints a
-# throwaway self-signed pair for local testing — never the real org cert.
-export SIGN_CERT_B64=
-export SIGN_KEY_B64=
-export SIGN_KEY_PASS=
 
 # GitHub OAuth login, see internal/auth/github.go and ARCHITECTURE.md §8.
 export GITHUB_OAUTH_CLIENT_ID=

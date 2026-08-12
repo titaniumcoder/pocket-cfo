@@ -133,9 +133,6 @@ func TestMinimumWageIsEnforcedWhateverTheCompanyEarned(t *testing.T) {
 	if lean.EmployerContribCents == 0 || lean.EmployeeContribCents == 0 || lean.IncomeTaxCents == 0 {
 		t.Errorf("a paid salary owes contributions and tax: %+v", lean)
 	}
-	if want := lean.GrossSalaryCents + lean.EmployerContribCents; lean.ShortfallCents != want {
-		t.Errorf("shortfall = %d, want %d — the salary and its employer cost", lean.ShortfallCents, want)
-	}
 }
 
 func TestMinimumWageDoesNotCapAGoodMonth(t *testing.T) {
@@ -147,7 +144,7 @@ func TestMinimumWageDoesNotCapAGoodMonth(t *testing.T) {
 		t.Errorf("gross = %d with a floor, %d without — a floor must not change an affordable salary",
 			rich.GrossSalaryCents, unfloored.GrossSalaryCents)
 	}
-	if rich.MinimumEnforced || rich.ShortfallCents != 0 {
+	if rich.MinimumEnforced {
 		t.Errorf("a month that cleared the floor reports it as binding: %+v", rich)
 	}
 }
@@ -203,20 +200,27 @@ func TestFloorFollowsThePayrollMonthNotTheIncomeMonth(t *testing.T) {
 	}
 }
 
-func TestShortfallOnlyReportedWhenTheFloorCausedIt(t *testing.T) {
+// TestAMonthThatCannotPayPaysNothing: with expenses above income and no floor
+// in force there is no salary, rather than a negative one propagating through
+// the contributions and tax below it.
+func TestAMonthThatCannotPayPaysNothing(t *testing.T) {
 	p := params()
 	underwater := p.breakdown(500, 2000, 1, p.rulesFor(testMonth))
 	if underwater.GrossSalaryCents != 0 {
 		t.Fatalf("gross = %d, want 0 on a month that cannot pay", underwater.GrossSalaryCents)
 	}
-	if underwater.ShortfallCents != 0 {
-		t.Errorf("shortfall = %d with no floor configured — that note is about the floor", underwater.ShortfallCents)
+	if underwater.EmployerContribCents != 0 || underwater.EmployeeContribCents != 0 || underwater.IncomeTaxCents != 0 {
+		t.Errorf("a salary nobody was paid owes contributions and tax: %+v", underwater)
 	}
 
+	// A floor is not an affordability question: the minimum is owed whether the
+	// month funded it or not, so it is paid and charged for.
 	floored := p.rulesFor(testMonth)
 	floored.MinimumEUR = 1077
-	if p.breakdown(500, 2000, 1, floored).ShortfallCents <= 0 {
-		t.Error("shortfall = 0 with a floor the month cannot fund")
+	got := p.breakdown(500, 2000, 1, floored)
+	if !got.MinimumEnforced || got.GrossSalaryCents != 107700 {
+		t.Errorf("with a floor the month cannot fund, gross = %d, enforced = %v; want the minimum paid anyway",
+			got.GrossSalaryCents, got.MinimumEnforced)
 	}
 }
 
@@ -250,7 +254,7 @@ func TestEnforcedMinimumIsVisible(t *testing.T) {
 	f := Figures{
 		Currency: "€",
 		FundingPersonal: PersonalView{
-			GrossSalaryCents: 107700, MinimumWageCents: 107700, MinimumEnforced: true, ShortfallCents: 128077,
+			GrossSalaryCents: 107700, MinimumWageCents: 107700, MinimumEnforced: true,
 			EmployerPct: "18.92", EmployeePct: "13.78", IncomeTaxPct: "10",
 		},
 	}
@@ -258,10 +262,15 @@ func TestEnforcedMinimumIsVisible(t *testing.T) {
 	RenderPage(rec, f)
 	body := rec.Body.String()
 
-	for _, want := range []string{"statutory minimum", "1,077/month", "more than this period earned"} {
+	for _, want := range []string{"statutory minimum", "1,077/month"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the page never says %q", want)
 		}
+	}
+	// The salary being the legal minimum is worth saying; what it cost beyond
+	// the period's own income is not, since dividends cover it.
+	if strings.Contains(body, "more than this period earned") {
+		t.Error("the shortfall note is back")
 	}
 
 	quiet := Figures{Currency: "€", FundingPersonal: PersonalView{GrossSalaryCents: 500000, EmployerPct: "18.92", EmployeePct: "13.78", IncomeTaxPct: "10"}}

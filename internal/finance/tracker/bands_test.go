@@ -182,9 +182,6 @@ func TestVectorTheMinimumWageBinding(t *testing.T) {
 	if cost := v.GrossSalaryCents + v.EmployerContribCents; cost != 73754 {
 		t.Errorf("total employer cost = %d, want 73754", cost)
 	}
-	if v.ShortfallCents != 43754 {
-		t.Errorf("gap = %d, want 43754 — the cost beyond what the month earned", v.ShortfallCents)
-	}
 }
 
 // TestVectorUKTwoPartiesTwoThresholds is the regression test, because it fails

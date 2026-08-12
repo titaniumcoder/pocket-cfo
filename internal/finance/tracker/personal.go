@@ -35,12 +35,9 @@ type PersonalView struct {
 
 	// MinimumWageCents is the floor in force for the period, and
 	// MinimumEnforced says it bound — the salary is the legal minimum rather
-	// than what the company could afford. ShortfallCents is what that costs
-	// beyond the period's own income, and it is the figure worth seeing: the
-	// salary is owed whether or not the month paid for it.
+	// than what the company could afford.
 	MinimumWageCents int
 	MinimumEnforced  bool
-	ShortfallCents   int
 
 	// NoLegislation says no figure was in force for this period at all — the
 	// months before the earliest entry, or a config.json that states none.
@@ -208,26 +205,12 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 	incomeTax := toCent(r.IncomeTax.on(taxable))
 	net := gross - employeeContrib - incomeTax
 
-	// What the payroll costs the company against what the period produced —
-	// but only reported when the floor is what caused it. Without a floor the
-	// salary is solved to fit the income exactly, so any gap is the older
-	// "company expenses exceeded company income" case, which the zero salary
-	// already says and which this wording would describe wrongly.
-	var shortfall float64
-	if result.MinimumEnforced {
-		shortfall = gross + employerContrib - monthlyIncome
-		if shortfall < 0 {
-			shortfall = 0
-		}
-	}
-
 	m := float64(months)
 	cents := func(x float64) int { return round(x * 100 * m) }
 	result.EmployerPct = effectivePct(employerContrib, gross, r.Employer.Bands)
 	result.EmployeePct = effectivePct(employeeContrib, gross, r.Employee.Bands)
 	result.IncomeTaxPct = effectivePct(incomeTax, taxable, r.IncomeTax)
 	result.MinimumWageCents = round(r.MinimumEUR * 100)
-	result.ShortfallCents = cents(shortfall)
 	result.CompanyIncomeCents = cents(monthlyRawIncome)
 	result.CompanyExpensesCents = cents(monthlyCompanyExpenses)
 	result.EmployerContribCents = cents(employerContrib)
@@ -261,7 +244,6 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 		if m.MinimumWageCents > result.MinimumWageCents {
 			result.MinimumWageCents = m.MinimumWageCents
 		}
-		result.ShortfallCents += m.ShortfallCents
 		result.CompanyIncomeCents += m.CompanyIncomeCents
 		result.CompanyExpensesCents += m.CompanyExpensesCents
 		result.EmployerContribCents += m.EmployerContribCents

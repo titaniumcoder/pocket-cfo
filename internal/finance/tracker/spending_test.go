@@ -598,3 +598,23 @@ func TestAccountAsOfReadsDayFirst(t *testing.T) {
 		}
 	}
 }
+
+// TestRowRulesEndTogether: each cell draws its own bottom rule, so they only
+// line up if every cell is as tall as the row. A baseline-aligned cell is only
+// as tall as its own content — a description wrapping to three lines drew
+// three rules at three different heights.
+func TestRowRulesEndTogether(t *testing.T) {
+	css := appCSS(t)
+	for _, selector := range []string{".spend-grid", ".cov-grid"} {
+		rule := regexp.MustCompile(regexp.QuoteMeta(selector) + ` \{ display: grid;[^}]*\}`).FindString(css)
+		if rule == "" {
+			t.Fatalf("no base rule for %s", selector)
+		}
+		if strings.Contains(rule, "align-items: baseline") {
+			t.Errorf("%s aligns to the baseline, so a wrapped row draws its rules at different heights", selector)
+		}
+		if !strings.Contains(rule, "align-items: stretch") {
+			t.Errorf("%s does not stretch its cells to the row height: %s", selector, rule)
+		}
+	}
+}

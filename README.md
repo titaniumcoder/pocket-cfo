@@ -2,157 +2,228 @@
 
 [![Build](https://github.com/titaniumcoder/pocket-cfo/actions/workflows/build.yml/badge.svg)](https://github.com/titaniumcoder/pocket-cfo/actions/workflows/build.yml)
 
-A freelancer's finance tracker and invoicing tool in one app, originally built by
-**Titanium Coder EOOD** for its own use, released here as the public half of a
-two-repo split: this repo is the application code, MIT licensed; a private companion
-repo (`pocket-cfo-data`) holds one particular business's real data (invoices,
-recipients, budget, user access) and is what an actual deployment mounts into this
-repo's published Docker image — see [`AGENTS.md`](AGENTS.md#releases) for how that
-image gets built and tagged. Clone this repo on its own and it runs standalone against
-the fabricated sample data checked into `data/` — no companion repo required to try
-it out.
+A freelancer's finance tracker and invoicing tool in one Go binary, MIT licensed.
 
-- **Finance tracker** (`/`, the landing page) — monthly income predictions off a
-  configured hourly rate, optionally backed by real Toggl-tracked hours, automatically
-  superseded by real invoiced income once an invoice for a linked client is issued; plus
-  a hand-maintained expense budget.
-- **Invoicing** (`/invoicing`) — one JSON file per invoice, GitHub Actions builds the
-  PDFs, a read-only web app for viewing them.
+- **Finance tracker** (`/`) — income predicted from an hourly rate, optionally from real
+  Toggl-tracked hours, superseded by real invoiced income once an invoice is issued; a
+  planned expense budget; and the money actually spent, reconciled from bank statements
+  and shown beside the plan.
+- **Invoicing** (`/invoicing`) — one JSON file per invoice, PDFs rendered and digitally
+  signed by CI, a read-only viewer, and per-client portal links.
+- **An agent-facing write API** (`/api`, `/mcp`) — so a reconciliation agent can record
+  and correct transactions without a shell. Every accepted write is a git commit; see
+  [`docs/HERMES.md`](docs/HERMES.md).
 
-Both parts share one login (GitHub OAuth for full/admin access, email-OTP for
-per-part read-only access controlled by the private data repo's `users.json`) and one
-top nav — see [`ARCHITECTURE.md`](ARCHITECTURE.md) for the invoicing side's full
-design (data model, tax regime handling, rendering/signing pipeline, build order); the
-finance tracker's own conventions are documented inline in `internal/finance`. This
-README is deliberately short and points there instead of duplicating it.
+Clone it, `make generate`, `go run ./cmd/pocketcfo`, and it serves the fabricated sample
+data in `data/`. That is enough to look around, and not enough to run a business — for
+that you want your own data repo, which is what most of this README is about.
 
-## Status
+## The two-repo split
 
-Directory layout, JSON Schemas, invoice rendering (`internal/money`, `internal/render`,
-`pocket-cfo-ctl render`, original + `-paid.pdf` artifacts), a GitHub Actions build/test
-pipeline (`.github/workflows/build.yml`), conventional-commit-driven releases (cut locally
-via the `release-it` skill, which triggers `.github/workflows/release.yml`'s image publish
-on tag push — see [`AGENTS.md`](AGENTS.md#releases)), and a GitHub-OAuth-gated web app
-(`cmd/pocketcfo`) covering both the finance tracker and invoicing are in place. PDF
-signing (`internal/sign`, DocMDP-certified via `digitorus/pdfsign`) is implemented but
-inert — no signing secrets are configured yet.
+**This repo is code and sample data. Your real data belongs in a second, private repo.**
 
-## Prerequisites
+Nothing here is coupled to one business: the app reads its data from directories chosen
+by environment variables, and a released image with your data copied over the sample data
+is a complete deployment.
 
-- Go 1.26 or later (matches `go.mod`; uses the `tool` directive, available since Go
-  1.24, for dev-time tooling).
-- An [api2pdf](https://www.api2pdf.com/) API key, for `pocket-cfo-ctl render`.
-- A GitHub OAuth App (Settings → Developer settings → OAuth Apps), for `cmd/pocketcfo`'s
-  login. Callback URL must match `PUBLIC_BASE_URL` below plus `/auth/callback`.
-- A [Toggl Track](https://toggl.com/track/) account (optional) — `TOGGL_API_TOKEN`/
-  `TOGGL_WORKSPACE_ID` unset just leaves the finance tracker's tracked-hours layer
-  disabled; predictions still run off the configured hourly rate.
-- [direnv](https://direnv.net/) (optional) to auto-load `.envrc`.
-- [air](https://github.com/air-verse/air) (optional), for hot-reloading `cmd/pocketcfo`
-  while developing — install it yourself (`go install github.com/air-verse/air@latest`),
-  it's a dev-time tool, not a module dependency.
+```
+titaniumcoder/pocket-cfo            your-org/your-data  (private)
+├── cmd/, internal/                 ├── data/           ← your invoices, budget, actuals
+├── templates/, static/             ├── build/          ← rendered PDFs, committed by CI
+├── data/        (samples)          ├── config.json     ← your rates and payroll law
+└── Dockerfile   (samples baked)    ├── Dockerfile      ← FROM the published image
+                                    └── .github/workflows/
+```
+
+`titaniumcoder/pocket-cfo-data` is the reference implementation of the right-hand side. It
+holds no application code at all — only data, a validate-and-render pipeline, and a
+Dependabot config that opens a pull request whenever this repo publishes a new image tag.
+
+### Setting up your data repo
+
+**1. Copy `data/` as a starting point.** It has one of everything, and each file's shape is
+enforced by a schema. Keep the layout: the app's defaults point at these exact paths.
+
+| Path | What it is | Schema |
+|---|---|---|
+| `data/issuer.json` | your business's legal and bank details | `schemas/issuer.json` |
+| `data/recipients/NNNN.json` | one per client | `schemas/recipient.json` |
+| `data/invoices/INV-*.json` | one per invoice; never edited after issue | `schemas/invoice.json` |
+| `data/paid-invoices.json` | which invoices are paid, and when | `schemas/paid-invoices.json` |
+| `data/users.json` | who may read which part, by email | `schemas/users.json` |
+| `data/budget.json` | planned expenses; every category has a stable UUID | `internal/finance/data/budget.schema.json` |
+| `data/actuals/YYYY-MM.json` | what was actually spent, per month | `internal/finance/data/actuals.schema.json` |
+| `data/accounts.json` | real account balances, read at month end | `internal/finance/data/accounts.schema.json` |
+| `config.json` | non-secret tunables and payroll law | `internal/finance/config` |
+
+Payment lives in `data/paid-invoices.json` rather than in the invoice because an issued invoice
+is never edited again, and budget categories carry UUIDs rather than names so that renaming
+one does not orphan every transaction that cites it.
+
+**2. Write a Dockerfile starting from the published image**, copying your data over the
+samples. Every `*_DIR`/`*_FILE` default already points at these paths, so no env var
+overrides are needed:
+
+```dockerfile
+FROM ghcr.io/titaniumcoder/pocket-cfo:v0.17.0
+WORKDIR /app
+COPY data ./data
+COPY build ./build
+COPY config.json ./config.json
+```
+
+Point Dependabot at that `FROM` line and new releases arrive as pull requests.
+
+**3. Set the secrets** your deployment needs — see [Configuration](#configuration).
+Everything non-secret lives in `config.json` in your repo; everything secret lives in your
+host's environment and in neither repo.
+
+**4. Give CI the pipeline.** Four stages in order, each of them this repo's
+`pocket-cfo-ctl` doing the work: translate missing invoice text, validate against the
+schemas and the business rules, render any invoice with no PDF yet, then deploy. Pull
+requests run validation alone — nothing on a branch translates, renders, commits or ships.
+`pocket-cfo-ctl` comes from a GitHub Release rather than a source build, so CI needs no Go
+toolchain. `cmd/pocket-cfo-ctl` has the subcommands; `pocket-cfo-data`'s
+`.github/workflows/data-pipeline.yml` is a working copy.
+
+**5. For local work**, run this repo's binary against your data instead of committing to
+see a change. Point `DATA_DIR`, `BUILD_DIR` and `CONFIG_FILE` at your checkout, or run from
+inside it so the defaults resolve there — `pocket-cfo-data`'s `run.sh` is exactly that, in
+a script.
+
+### What the app never does
+
+It does not write to `DATA_DIR`. A deployment's data directory is a baked image layer or a
+mount, so a write landing there would be lost on restart and diverge from the repo.
+Everything the agent API accepts is committed through the GitHub Contents API instead, and
+the pipeline rebuilds. That is what makes an agent-facing write surface tolerable: it is
+not trusted, it is audited, and every change is one you can read in `git log` and revert.
+
+## Customizing the look
+
+Three separate surfaces. None requires forking this repo — point the relevant environment
+variable at your own directory and the defaults are ignored.
+
+### 1. Web pages — `templates/`, overridden by `TEMPLATES_DIR`
+
+| File | Page | Handler |
+|---|---|---|
+| `templates/index.html` | invoice list at `/invoicing` | `handleIndex`, `cmd/pocketcfo/main.go` |
+| `templates/info.html` | diagnostics at `/info` | `handleInfo`, `cmd/pocketcfo/info.go` |
+| `templates/client.html` | client portal at `/invoicing/client/{token}` | `handleClientPortal`, `cmd/pocketcfo/client.go` |
+
+Go `html/template` files. The data each receives is the struct its handler passes — read
+the handler rather than guessing, and note the field set *is* the contract: a template
+reaching for a field the handler does not set fails at render.
+
+All pages share one header, defined once in `internal/webui` and parsed into each template
+ahead of the file itself, so a template can use it without redefining it. Change that and
+the nav changes on every page at once.
+
+### 2. Finance pages — `internal/finance/tracker/render.go`
+
+The dashboard and the spending page are the exception: their templates are Go string
+constants in that file rather than files under `templates/`. They are the only pages that
+render bank-statement descriptions, and keeping them in the package is what stops that data
+reaching any other template. Changing them means editing that file and rebuilding.
+
+If what you want is different *figures* rather than a different layout, you want
+`config.json` and `data/budget.json` instead.
+
+### 3. The invoice PDF — `templates/invoice.html.tmpl`
+
+One template renders every invoice in every language, turned into a PDF by
+`internal/render`. Two things are deliberately *not* in it:
+
+- **Language strings** live in `internal/render/labels.go`, one struct per language, so
+  adding a language is adding an entry rather than copying the template.
+- **Tax and legal notes** are chosen at render time by `internal/tax` from the issuer's and
+  recipient's countries, against the catalog in `catalog/notes.json`. That resolver, not
+  the template, decides what an invoice says about VAT — see ARCHITECTURE.md §4.
+
+The web stylesheet is `static/app.css`, overridden by `STATIC_DIR`: one file for every
+page, by design. The invoice PDF carries its own styles inline instead, because it is
+rendered by an external service that cannot fetch your stylesheet.
 
 ## Configuration
 
-Copy `.envrc.example` to `.envrc` and fill in the real values — `.envrc` is gitignored,
-`.envrc.example` isn't. With direnv installed, `cd` into the repo loads it automatically;
-otherwise `source .envrc` before running `pocket-cfo-ctl render` or `cmd/pocketcfo`.
+Secrets and deployment-specific paths come from the environment. Copy `.envrc.example` to
+`.envrc` — gitignored — and fill it in; direnv loads it on `cd`, or source it yourself.
 
 | Variable | Used by | |
 |---|---|---|
-| `ENV` | `cmd/pocketcfo` | GitHub OAuth login is only enforced when this is exactly `prod` — unset/anything else skips auth entirely, so local dev needs none of the `GITHUB_OAUTH_*`/`SESSION_SECRET`/`PUBLIC_BASE_URL` vars below. A real deployment sets it to `prod`. |
+| `ENV` | `cmd/pocketcfo` | login is enforced only when this is exactly `prod`; anything else skips auth, so local dev needs none of the OAuth vars |
 | `API2PDF_KEY` | `pocket-cfo-ctl render` | api2pdf API key |
-| `HERMES_API_TOKEN` | `cmd/pocketcfo` | optional — bearer token for the Hermes API. Unset means `/api/` is never registered, so the endpoints don't exist rather than returning 401 |
-| `GITHUB_DATA_TOKEN` | `cmd/pocketcfo` | optional — fine-grained PAT with `contents: write` on the data repo only, for writing reconciled months back as commits |
-| `SIGN_CERT_B64` / `SIGN_KEY_B64` / `SIGN_KEY_PASS` | `pocket-cfo-ctl render` | base64 PEM cert/key `pocket-cfo-ctl render` certifies each PDF with; unset skips signing entirely (see `make dev-cert` below and ARCHITECTURE.md §6) |
-| `GITHUB_OAUTH_CLIENT_ID` / `_SECRET` | `cmd/pocketcfo`, prod only | the GitHub OAuth App above |
-| `SESSION_SECRET` | `cmd/pocketcfo`, prod only | any random string; encrypts the session cookie |
-| `PUBLIC_BASE_URL` | `cmd/pocketcfo`, prod only | `http://localhost:8080` locally, the deployed URL in prod |
-| `GITHUB_REPO` | `cmd/pocketcfo`, prod only | `owner/repo` collaborator permission is checked against |
-| `OTP_LINK_SECRET` | `cmd/pocketcfo`, prod only | any random string; signs the self-expiring `/auth/email` login link |
-| `DATA_DIR` | `cmd/pocketcfo`/`pocket-cfo-ctl`, optional | default `data` — recipients/, invoices/, users.json, budget.json all live under here; override to point at a data checkout outside this repo (e.g. the mounted private data repo in a real deployment). Who (beyond GitHub collaborators, always full admins) may reach which part(s) via the email-OTP login is `$DATA_DIR/users.json`; see `internal/users`, `schemas/users.json` |
-| `AWS_REGION` / `SES_FROM_EMAIL` | `cmd/pocketcfo`, prod only | Amazon SES sends the `/auth/email` login link; `SES_FROM_EMAIL` must be a verified SES identity, unset logs the link instead of emailing it, for local testing |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `cmd/pocketcfo`, prod only | AWS credentials for SES, read by the AWS SDK's default credential chain (not by this app's own config) — needs only `ses:SendEmail` on the `SES_FROM_EMAIL` identity, see ARCHITECTURE.md §8 |
-| `TOGGL_API_TOKEN` / `TOGGL_WORKSPACE_ID` | `cmd/pocketcfo`, optional | Toggl credentials for the finance tracker's tracked-hours layer; unset leaves it disabled, predictions still run off the configured hourly rate |
-| `TOGGL_REFRESH_INTERVAL` | `cmd/pocketcfo`, optional | default `15m` — how often the current year's Toggl data is refreshed in the background so page requests serve from cache instead of waiting on the API (see `tracker.Tracker.Warm`). A Go duration, e.g. `5m`; an unparseable or non-positive value logs a warning and falls back to the default |
-| `CONFIG_FILE` | `cmd/pocketcfo`, optional | default `config.json` — non-secret finance tunables: `hourlyRateCents`, `currency`, `hoursPerDay`, `annualVacationDays`, plus the three dated blocks below. See `internal/finance/config`, whose `FileConfig` doc comment is the reference for each |
-| `BUILD_DIR` | `cmd/pocketcfo`/`pocket-cfo-ctl` | optional, default `build` — rendered PDFs (generated output, kept separate from `DATA_DIR`'s hand-edited data) |
-| `TEMPLATES_DIR` / `STATIC_DIR` | `cmd/pocketcfo`; `TEMPLATES_DIR` also `pocket-cfo-ctl render` | optional, default to `templates` / `static`; override for a deployment with its own branding |
+| `HERMES_API_TOKEN` | `cmd/pocketcfo` | optional — bearer token for the agent API. Unset means `/api/` and `/mcp` are never registered, so they do not exist rather than returning 401 |
+| `GITHUB_DATA_TOKEN` | `cmd/pocketcfo` | optional — fine-grained PAT with `contents: write` on the data repo only, for committing reconciled months |
+| `SIGN_CERT_B64` / `SIGN_KEY_B64` / `SIGN_KEY_PASS` | `pocket-cfo-ctl render` | base64 PEM cert/key each PDF is certified with; unset skips signing (see `make dev-cert`) |
+| `GITHUB_OAUTH_CLIENT_ID` / `_SECRET` | `cmd/pocketcfo`, prod | the GitHub OAuth App; its callback is `PUBLIC_BASE_URL` + `/auth/callback` |
+| `SESSION_SECRET` | `cmd/pocketcfo`, prod | any random string; encrypts the session cookie |
+| `PUBLIC_BASE_URL` | `cmd/pocketcfo`, prod | the deployed URL |
+| `GITHUB_REPO` | `cmd/pocketcfo`, prod | `owner/repo` whose collaborators get full access |
+| `OTP_LINK_SECRET` | `cmd/pocketcfo`, prod | any random string; signs the email login link |
+| `AWS_REGION` / `SES_FROM_EMAIL` | `cmd/pocketcfo`, prod | SES sends the login link; unset logs it instead, for local testing |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `cmd/pocketcfo`, prod | read by the AWS SDK's own credential chain; needs only `ses:SendEmail` |
+| `TOGGL_API_TOKEN` / `TOGGL_WORKSPACE_ID` | `cmd/pocketcfo`, optional | unset leaves the tracked-hours layer disabled; predictions still run off the hourly rate |
+| `TOGGL_REFRESH_INTERVAL` | `cmd/pocketcfo`, optional | default `15m`; a Go duration |
+| `DATA_DIR` | both binaries, optional | default `data` |
+| `BUILD_DIR` | both binaries, optional | default `build` — rendered PDFs, kept apart from hand-edited data |
+| `CONFIG_FILE` | `cmd/pocketcfo`, optional | default `config.json` |
+| `TEMPLATES_DIR` / `STATIC_DIR` | `cmd/pocketcfo`; `TEMPLATES_DIR` also for `render` | default `templates` / `static` |
 
-### `config.json`'s dated blocks
+### `config.json`
 
-Three settings are lists of dated entries rather than single values, because the thing
-they describe changes on a date and last year's figures have to stay reproducible. Each
-entry states only what changed; anything it omits carries forward.
+Non-secret, and it lives in *your* data repo. Beyond the scalars — `hourlyRateCents`,
+`currency`, `hoursPerDay`, `annualVacationDays` — three settings are lists of dated
+entries, because what they describe changes on a date and last year's figures have to stay
+reproducible. Each entry states only what changed; anything it omits carries forward.
 
-| Block | What it decides |
+| Block | Decides |
 |---|---|
-| `legislation` | Every government-set payroll figure — both parties' contribution schedules as marginal bands, the income tax bands, the minimum wage. There are no built-in defaults: a figure no entry states is zero, and the page says so rather than inventing a plausible rate. |
-| `salary` | Whether a month pays a full salary, only the statutory minimum, or none at all. Absent means every month is full. |
-| `startMonth` | The first month budgeting covers. Earlier months are not offered at all, and the year it falls in is aggregated from it rather than from January. |
+| `legislation` | every government-set payroll figure: both parties' contribution schedules as marginal bands, the income tax bands, the minimum wage |
+| `salary` | whether a month pays a full salary, only the statutory minimum, or none at all |
+| `startMonth` | the first month budgeting covers; earlier months are not offered at all |
 
-```json
-{
-  "startMonth": "2026-04",
-  "legislation": [
-    { "from": "2026-01",
-      "contributions": {
-        "employer": { "bands": [ {"from": 0, "rate": 0.1892}, {"from": 2112, "rate": 0} ] },
-        "employee": { "bands": [ {"from": 0, "rate": 0.1378}, {"from": 2112, "rate": 0} ] }
-      },
-      "incomeTax": { "bands": [ {"from": 0, "rate": 0.10} ] } },
-    { "from": "2026-07", "minimumWage": 1077 }
-  ],
-  "salary": [ { "from": "2026-09", "to": "2026-10", "mode": "minimum" } ]
-}
-```
+Bands are marginal, so a contribution ceiling is an ordinary band with a rate of `0` rather
+than a concept of its own. There are no built-in defaults: a figure no entry states is
+zero, and the page says so rather than inventing a plausible rate. A malformed entry stops
+the app from starting — these are legal obligations, and a typo that silently disables one
+is the failure the setting exists to prevent.
 
-Bands are marginal — a rate applies only to the slice of the base inside its own band —
-which is why a contribution ceiling is an ordinary band with a rate of `0` rather than a
-field of its own. A malformed entry is a startup failure, not a warning: these are legal
-obligations, and a typo that silently disables one is the failure the setting exists to
-prevent. `/info` renders both blocks back as one line each, to be compared against the
-file by eye.
+`internal/finance/config`'s `FileConfig` is the reference for every field, and `/info`
+renders the parsed result back so it can be compared against the file by eye.
 
 ## Building and running
 
-**Run `make generate` first in a fresh clone.** The Go types generated from
-`schemas/*.json` are build output rather than source, so they aren't checked in and
-nothing compiles until they exist. Re-run it whenever a schema changes.
+**Run `make generate` first in a fresh clone.** The Go types generated from the schemas are
+build output, not source, so nothing compiles until they exist.
 
 ```
-make generate   # regenerate the schema-derived Go types (do this first)
+make generate   # regenerate schema-derived Go types (do this first)
 make build      # go build ./...
 make test       # go test ./...
 make vet        # go vet ./...
 make fmt        # gofmt -l -w .
-make clean      # go clean ./...
-make dev-cert   # print a throwaway self-signed SIGN_CERT_B64/SIGN_KEY_B64 pair for local testing
+make dev-cert   # print a throwaway signing cert/key pair for local testing
 
-go run ./cmd/pocketcfo                                 # run the web app (finance tracker + invoicing)
-go run ./cmd/pocket-cfo-ctl render                     # render every invoice under data/invoices
-go run ./cmd/pocket-cfo-ctl render INV-0000000001      # render just one
-go run ./cmd/pocket-cfo-ctl render --dry-run           # show what would render, without rendering
-go run ./cmd/pocket-cfo-ctl render INV-0000000001 --force  # re-render even an already-issued PDF
-                                                        # (--force requires a single invoice number)
-
-air                                             # hot-reload cmd/pocketcfo on file changes,
-
-docker build -t pocket-cfo .                    # build the release image locally
-docker run -p 8080:8080 pocket-cfo              # run it standalone against the fabricated
-                                                 # sample data baked into the image
-
-docker pull ghcr.io/titaniumcoder/pocket-cfo:latest   # or pull the published image instead
+go run ./cmd/pocketcfo                                # the web app
+go run ./cmd/pocket-cfo-ctl render                    # render every invoice
+go run ./cmd/pocket-cfo-ctl render INV-0000000001     # render one
+go run ./cmd/pocket-cfo-ctl render --dry-run          # show what would render
+go run ./cmd/pocket-cfo-ctl actuals validate          # check the recorded months
+air                                                   # hot reload
 ```
 
-For a real deployment, mount a real data checkout over `/app/data` (or point the
-`*_DIR`/`*_FILE` env vars at it individually) rather than rebuilding the image — see the
-Dockerfile and [`AGENTS.md`](AGENTS.md#releases) for how released images get published.
+Prebuilt binaries for Linux, macOS and Windows are attached to every
+[release](https://github.com/titaniumcoder/pocket-cfo/releases), and the image is
+`ghcr.io/titaniumcoder/pocket-cfo`.
 
-Prebuilt `pocketcfo`/`pocket-cfo-ctl` binaries for Linux, macOS (Intel and Apple Silicon), and
-Windows are attached directly to each [GitHub
-Release](https://github.com/titaniumcoder/pocket-cfo/releases) — no Docker or Go toolchain
-required, just download and run.
+## Further reading
+
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — the design: data model, tax regimes, rendering and
+  signing, the finance tracker, the agent API.
+- [`docs/HERMES.md`](docs/HERMES.md) — the contract a reconciliation agent works to.
+- [`AGENTS.md`](AGENTS.md) — conventions, and how releases are cut.
 
 ## License
 

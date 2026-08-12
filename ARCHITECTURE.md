@@ -1,9 +1,16 @@
 # PocketCFO — Architecture
 
-Invoicing for **Titanium Coder EOOD** (Varna, Bulgaria). Volume: 1–3 invoices/month.
+Two halves in one binary: **invoicing**, and a **finance tracker**. Sections 1–7 and 10
+are the invoicing side, which is the older and more constrained of the two; §8 covers the
+web app that serves both; §10 the finance tracker; §11 the agent-facing write API.
 
-**One private repo. One JSON file per invoice. GitHub Actions builds the PDFs. The web
-app is a read-only viewer.** Data is edited by hand and committed.
+**Code and data are separate repos.** This one is public and MIT licensed and carries
+fabricated sample data; a private data repo holds one business's real data and bakes it
+into the published image. See README.md for setting up the second one.
+
+**One JSON file per invoice, and CI builds the PDFs.** Invoice data is edited by hand and
+committed; it is never edited by the app. Finance data has one exception — the agent API
+in §10 — and that writes by committing to the data repo, never to its own disk.
 
 Reference documents: `INV-0000000001` (Swiss recipient, non-EU place of supply) and
 `INV-0000000002` (Austrian recipient, EU reverse charge). Between them they cover both
@@ -41,18 +48,22 @@ allocator, no transactions. If something below looks suspiciously simple, that's
 .github/workflows/
   build.yml          push to main → validate, render, index, commit
 cmd/
-  pocketcfo/         web app (finance tracker + read-only invoicing)
+  pocketcfo/         web app: finance tracker, invoicing viewer, agent API
   pocket-cfo-ctl/    CLI — the whole pipeline, identical locally and in CI
 internal/
-  schema/ 
-  tax/ 
-  money/ 
-  render/ 
-  sign/ 
-  stats/ 
-  translate/ 
-  auth/ 
-  gitts/
+  api/               the agent-facing service, and its REST and MCP adapters (§11)
+  finance/           the finance tracker (§10): tracker, config, and the data schemas
+  schema/            generated types for the invoicing documents
+  tax/               which VAT regime an invoice falls under (§4)
+  money/             totals, discounts, VAT grouping — integer minor units (§3.4)
+  render/            invoice HTML → api2pdf → PDF (§6)
+  sign/              PDF certification (§6)
+  stats/             derived state: which invoices are draft, issued, overdue, paid
+  translate/         DeepL, for the Bulgarian half of an invoice
+  auth/              sessions, GitHub OAuth, the email login token (§8)
+  mail/              Amazon SES, for that login link
+  users/             who may read which half, by email (§8)
+  webui/             the one site header every page shares
 schemas/             invoice.json, recipient.json, issuer.json, notes.json
 catalog/notes.json   ← accountant-owned
 data/
@@ -590,14 +601,15 @@ build step would be more machinery than the data justifies.
 
 ---
 
-## 8. Web app — read-only viewer
+## 8. Web app
 
-**Current state**: reads `data/`, `build/` from local disk (`DATA_DIR`/
-`BUILD_DIR`, see §2), same as `pocket-cfo-ctl`. No DB.
+Reads `data/` and `build/` from local disk (`DATA_DIR`/`BUILD_DIR`, see §2), same as
+`pocket-cfo-ctl`. No database. It is read-only for invoicing; the one write path is the
+agent API in §11, which commits to the data repo rather than to disk.
 
-**Planned**: stateless — no disk at all, reading `build/index.json`, `build/stats.json`
-and the PDFs from GitHub via the Contents API instead, cached in memory with an ETag and
-a short TTL. Not yet built.
+Reading `build/` from GitHub via the Contents API instead of disk, cached with an ETag,
+remains a possible direction and is not built. It would buy little now that the image
+carries its own data.
 
 Auth: GitHub OAuth App, scopes `read:user repo`. On callback,
 `GET /repos/{owner}/{repo}/collaborators/{login}/permission`; require `push` or `admin`.
@@ -706,7 +718,85 @@ costs money and churns the repo without failing.
 
 ---
 
-## 10. What is built, and what is deliberately not
+## 10. Finance tracker
+
+Lives in `internal/finance`. Two ledgers, because a one-person company spends from two
+different pots: **company** expenses come out of company income before anything becomes
+salary, and **private** expenses come out of net income after payroll. A budget category
+declares which by the `kind` of the group it sits in.
+
+**Income** is predicted from an hourly rate and, when Toggl is configured, from hours
+actually tracked. Once an invoice is issued for a linked client, the invoice supersedes
+the hours it covers — otherwise the same work would be counted as both a prediction and a
+receipt.
+
+**The two-month funding shift** is the domain rule that most of the module bends around:
+money earned in month M is invoiced at the end of M, paid during M+1, and is spendable in
+M+2. So the expenses shown for a month are funded by the income of two months earlier,
+and every range that touches income is shifted against the range that touches expenses.
+`funding.go` holds both, and they are derived from one function so they cannot drift.
+
+**The salary cascade** turns company income into net personal income: company income less
+company expenses, less the employer's contributions, gives gross salary; the employee's
+contributions and income tax come off that. Every government-set figure in it — both
+parties' contribution schedules, the tax bands, the minimum wage — is dated configuration,
+never a constant in the code, because last year's payslip has to stay reproducible. There
+are no built-in defaults; a month before the earliest entry has nothing in force and is
+charged nothing, and the page says so rather than borrowing a plausible rate from a later
+entry.
+
+Schedules are **marginal bands**: a rate applies only to the slice of the base inside its
+own band. That is what lets a contribution ceiling be an ordinary band with a rate of zero
+rather than a concept of its own — "contributions stop at the ceiling" is one case of a
+rate changing at a threshold, not the general rule. UK employee NI drops from 8% to 2%
+above the Upper Earnings Limit instead of stopping, and UK employer NI never stops at all;
+a ceiling field could express neither.
+
+A month also declares **whether a salary is drawn at all** — full, the statutory minimum,
+or none — because choosing the minimum to leave money in the company, and drawing nothing,
+are ordinary decisions that the affordability arithmetic cannot represent.
+
+**Planned versus actual.** `budget.json` is what was planned; `actuals/YYYY-MM.json` is
+what the bank statement said. The actuals layer is **display only**: it is shown beside the
+plan and feeds no figure the plan produces — not Balance, not Available to spend, not the
+account roll-forward. A test asserts every planned figure is unchanged with and without it,
+because that invariant is easy to break by accident and invisible when broken.
+
+Every statement line carries exactly one disposition: a budget category, an `ignored`
+reason, an `untracked` note for money not yet decided, or `splits` when one line paid for
+more than one thing. Absence is never a decision — the file accounts for every row on the
+statement, so a skipped line is recorded as skipped rather than inferred from silence.
+
+## 11. Agent-facing write API
+
+`internal/api` is one service with two adapters: REST under `/api` and MCP at `/mcp`.
+Both are gated by a bearer token, and when it is unset neither is registered at all — an
+unauthenticated caller gets a 404 and learns nothing about the surface. The service knows
+nothing of HTTP; the adapters translate and never compute, which is what stops the two
+drifting apart.
+
+Reads cover the budget, a month's transactions, a description search over committed
+history, and a reconciliation status per month. The search is deliberately the substitute
+for a rules file: an agent asks how a merchant was treated last time and gets the answer
+from what was actually recorded, rather than from a list that drifts out of sync with it.
+
+Writes are narrow by construction. Transactions can be **added** and **re-attributed**,
+and a planned one-off can be **moved** to the month it was really charged in. Nothing can
+be removed — there is no flag, no override and no reason that unlocks it, and each write
+path checks its own output before committing rather than trusting itself to stay
+append-only. A line recorded in error is repaired by a human editing the data repo, where
+the change is reviewed like any other.
+
+Every accepted write is a **commit to the data repo through the GitHub Contents API**,
+which redeploys the app. Nothing is written to the running container's own data directory:
+that is an image layer or a mount, so a write there would be lost on restart and diverge
+from the repo. This is what makes handing an agent an API tolerable — it is not trusted,
+it is audited, and every change can be read in `git log` and reverted.
+
+`docs/HERMES.md` is the contract the agent works to, and the MCP tool descriptions are
+where it actually reads it.
+
+## 12. What is built, and what is deliberately not
 
 Steps 1–8 of the original build order are done and released: schema and `money`,
 `tax.Resolve` and the §4.3 validators, the template against both reference invoices,
@@ -724,7 +814,7 @@ What remains is additive, and each item is deferred for a reason rather than pen
 
 ---
 
-## 11. Settled questions
+## 13. Settled questions
 
 - **Number format.** Frozen as `10 200,00 €` — non-breaking space for thousands, comma
   for the decimal, symbol last. `render.formatMoney` is the only implementation and

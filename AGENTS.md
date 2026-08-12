@@ -36,15 +36,23 @@ that aren't obvious from the code itself.
   Hermes API accepts is committed through the GitHub Contents API instead, which is what
   makes an agent-facing write surface tolerable — it isn't trusted, it's audited. See
   `docs/HERMES.md`.
-- **Let the code speak; comment only what it can't.** Keep a comment when it
-  records something unreachable from reading the function — a decision and its
-  reason ("marks stale rather than deletes, because a delete makes a failed
-  refetch look like never-fetched"), a non-obvious constraint, a domain rule
-  like the two-month funding shift, or a bug the shape of the code is guarding
-  against. Drop restatement of what the next line does, narration of why the
-  reader should care, and the same rationale repeated at three call sites.
-  Prefer one tight paragraph to five; a doc comment that has to be scrolled is
-  usually explaining a design that should have been named better instead.
+- **The code explains itself; comments do not.** Go code here carries no comments.
+  When a block needs explaining, that is the signal to extract it into a function
+  whose name is the explanation — `refuseDestruction`, `privateExpenseStartMonth`,
+  `describeSchedule` — or to name the constant, or to split the function until each
+  piece states its own intent. A comment is the option of last resort, and there
+  isn't one.
+  - **Where the *why* goes instead.** A fact from outside the code — a tax rule, a
+    vendor's behaviour, a regulator's requirement, a domain rule like the two-month
+    funding shift — cannot be carried by an identifier, so it belongs in
+    `ARCHITECTURE.md` (§10 and §11 for the finance and agent halves) or in
+    `docs/`. Write it there, once, and let the code be the mechanism.
+  - **What survives in a `.go` file.** Compiler directives only: `//go:generate`,
+    `//go:embed`, `//go:build`. Those are syntax, not commentary.
+  - **Tests are the exception**, and are where an intent that resists naming should
+    land. A test name is a sentence, and a test that fails is a comment nobody can
+    let rot — prefer `TestUntrackedCashReachesNoFinanceFigure` over a paragraph
+    above the field it protects.
 - **Generated types are build output, not source, and are not checked in.**
   `go generate ./...` (or `make generate`) regenerates them from `schemas/*.json` and
   `internal/finance/data/*.schema.json` via `go-jsonschema`; every one is gitignored, so

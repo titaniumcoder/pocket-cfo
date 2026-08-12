@@ -369,3 +369,132 @@ func TestSplitAppearsUnderEachPart(t *testing.T) {
 		t.Errorf("found %d part-of notes, want one per part", n)
 	}
 }
+
+// topLevelCells counts the direct children of one grid row, ignoring spans
+// nested inside a cell (the part-of note, an icon's title).
+func topLevelCells(row string) int {
+	depth, cells := 0, 0
+	for i := 0; i < len(row); i++ {
+		switch {
+		case strings.HasPrefix(row[i:], "<span") || strings.HasPrefix(row[i:], "<svg"):
+			if depth == 0 {
+				cells++
+			}
+			depth++
+		case strings.HasPrefix(row[i:], "</span>") || strings.HasPrefix(row[i:], "</svg>"):
+			depth--
+		}
+	}
+	return cells
+}
+
+// TestSpendingIsOneGrid is the fix for columns that never lined up: a table
+// per category sized its columns from its own contents, so a short category
+// put Description at one x and the next put it somewhere else. One grid makes
+// that impossible rather than unlikely — a single set of tracks, and every row
+// display:contents inside it.
+func TestSpendingIsOneGrid(t *testing.T) {
+	trk := actualsTracker(t, map[string]string{
+		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"Revolut Private","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+			"transactions":[
+			  {"id":"t1","date":"2026-08-03","description":"L","amount":210.4,"account":"A","category":"00000000-0000-4000-8000-000000000001"},
+			  {"id":"t2","date":"2026-08-04","description":"A much longer statement line than the other one","amount":15,"account":"Revolut Private","category":"00000000-0000-4000-8000-000000000002"},
+			  {"id":"t3","date":"2026-08-05","description":"X","amount":9,"account":"A","ignored":"own account"}]}`,
+	})
+	rec := httptest.NewRecorder()
+	RenderSpending(rec, trk.ComputeSpending(context.Background(), 2026, time.August))
+	body := rec.Body.String()
+
+	if n := strings.Count(body, `class="spend-grid"`); n != 1 {
+		t.Fatalf("found %d transaction grids, want exactly 1 — two grids can drift apart", n)
+	}
+	if strings.Contains(body, "<table") {
+		t.Error("a table is back on the spending page; its columns size themselves independently")
+	}
+
+	rows := regexp.MustCompile(`(?s)<div class="sg-row[^"]*">(.*?)</div>`).FindAllStringSubmatch(body, -1)
+	if len(rows) < 4 {
+		t.Fatalf("found %d rows, want the transactions and the category totals", len(rows))
+	}
+	for i, r := range rows {
+		if got := topLevelCells(r[1]); got != 5 {
+			t.Errorf("row %d contributes %d cells, want 5 — a row with a different count shifts every column after it", i, got)
+		}
+	}
+
+	// Headings span the whole grid rather than landing in the first column.
+	for _, want := range []string{`<h3 class="sg-span">`, `class="sg-span sg-cat"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %s; a heading in one track would squeeze the others", want)
+		}
+	}
+}
+
+// countTracks splits a grid-template-columns value into tracks, treating a
+// parenthesised function as one — strings.Fields sees minmax(0, 1fr) as two.
+func countTracks(value string) int {
+	depth, tracks, inTrack := 0, 0, false
+	for _, r := range value {
+		switch {
+		case r == '(':
+			depth++
+		case r == ')':
+			depth--
+		case r == ' ' && depth == 0:
+			inTrack = false
+			continue
+		}
+		if !inTrack {
+			tracks++
+			inTrack = true
+		}
+	}
+	return tracks
+}
+
+// TestGridTracksAreDeclaredNotComputed: the columns are the same everywhere
+// because the stylesheet says so once, not because the contents happen to
+// agree. Only Description flexes; the rest are content-width, which is what
+// puts every amount on the same right edge down the whole page.
+func TestGridTracksAreDeclaredNotComputed(t *testing.T) {
+	css, err := os.ReadFile(filepath.Join("..", "..", "..", "static", "app.css"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Anchored on display:grid so this reads the desktop rule rather than the
+	// phone override, which sits earlier in the file and declares fewer tracks
+	// on purpose.
+	m := regexp.MustCompile(`\.spend-grid \{ display: grid; grid-template-columns: ([^;]+);`).FindStringSubmatch(string(css))
+	if m == nil {
+		t.Fatal("the spending grid declares no columns")
+	}
+	if n := countTracks(m[1]); n != 5 {
+		t.Errorf("grid-template-columns = %q, want five tracks", m[1])
+	}
+	if strings.Count(m[1], "1fr") != 1 {
+		t.Errorf("grid-template-columns = %q, want exactly one flexible track so the amounts share a right edge", m[1])
+	}
+	// The third column holds an account, a category id and an ignore reason in
+	// different sections of this one grid. Content sizing takes the longest of
+	// them and gives it to every row, so a 36-character id would squeeze
+	// Description down the whole page — identical columns, useless ones.
+	if strings.Contains(m[1], "max-content") || strings.Contains(m[1], "auto") || strings.Contains(m[1], "fit-content") {
+		t.Errorf("grid-template-columns = %q, want declared widths rather than content sizing", m[1])
+	}
+
+	// The phone drops the two .col-secondary columns, so it must declare
+	// three tracks — five would leave two empty ones eating the width.
+	phone := regexp.MustCompile(`(?s)@media \(max-width: 600px\) \{.*?\.spend-grid \{ grid-template-columns: ([^;]+);`).FindStringSubmatch(string(css))
+	if phone == nil {
+		t.Fatal("the phone layout does not re-declare the grid, so it keeps five tracks with two empty")
+	}
+	if n := countTracks(phone[1]); n != 3 {
+		t.Errorf("phone grid-template-columns = %q, want three tracks", phone[1])
+	}
+	if strings.Contains(phone[1], "max-content") || strings.Contains(phone[1], "auto") {
+		t.Errorf("phone grid-template-columns = %q, want declared widths", phone[1])
+	}
+	if !strings.Contains(string(css), ".spend-grid > .sg-row { display: contents; }") {
+		t.Error("rows are not display:contents, so each one makes its own columns")
+	}
+}

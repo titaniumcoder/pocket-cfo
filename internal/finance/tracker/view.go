@@ -88,6 +88,7 @@ type Figures struct {
 	NextDisabled bool
 	Years        []int
 	Months       []MonthOption
+	NavMonth     int    // the month the "Month" toggle lands on; a real month even in year view
 	MonthViewURL string // target of the "Month" toggle
 	YearViewURL  string // target of the "Year" toggle
 	TodayURL     string // jumps to the actual current month, regardless of Mode/viewed period
@@ -178,10 +179,10 @@ type Figures struct {
 	ActualsErr            string
 	SpendingDetailURL     string // filled by cmd/pocketcfo, admin sessions only
 
-	// SpendingURL is the menu entry's target, so it must be a valid month
-	// even in year view, where SpendingDetailURL is deliberately empty
-	// because no single month's transactions explain a year's figures.
-	SpendingURL string
+	// ShowSpendingLink is the menu entry, which exists in year view too —
+	// unlike SpendingDetailURL, which is deliberately empty there because no
+	// single month's transactions explain a year's figures.
+	ShowSpendingLink bool
 
 	// The same cascade for the period that funds the viewed one: shifted back
 	// two months, since money earned in M is paid end of M+1 and spendable from
@@ -216,10 +217,10 @@ func (f Figures) Header() webui.Header {
 		Login:         f.Login,
 		Active:        webui.PageFinance,
 		ShowFinance:   true,
-		ShowSpending:  f.SpendingURL != "",
-		SpendingURL:   f.SpendingURL,
+		ShowSpending:  f.ShowSpendingLink,
 		ShowInvoicing: f.ShowInvoicingLink,
 		ShowInfo:      f.ShowInfoLink,
+		Period:        webui.Period{Year: f.Year, Month: f.NavMonth, YearView: f.Mode == "year"},
 	}
 }
 
@@ -730,7 +731,7 @@ func monthNav(now, start time.Time, url func(int, time.Month) string) MonthNav {
 func (f *Figures) fillMonthNav(now, start time.Time) {
 	nav := monthNav(now, start, monthURL)
 	f.Mode = "month"
-	f.Year, f.MonthNum = nav.Year, nav.MonthNum
+	f.Year, f.MonthNum, f.NavMonth = nav.Year, nav.MonthNum, nav.MonthNum
 	f.Years, f.Months = nav.Years, nav.Months
 	f.PrevURL, f.PrevDisabled = nav.PrevURL, nav.PrevDisabled
 	f.NextURL, f.NextDisabled = nav.NextURL, nav.NextDisabled
@@ -763,7 +764,8 @@ func (f *Figures) fillYearNav(now, start time.Time) {
 	if start.Year() == now.Year() {
 		month = now.Month()
 	}
-	f.MonthViewURL = fmt.Sprintf("/%d/%d", start.Year(), int(month))
+	f.NavMonth = int(month)
+	f.MonthViewURL = monthURL(start.Year(), month)
 	f.TodayURL = fmt.Sprintf("/%d/%d", now.Year(), int(now.Month()))
 	f.RefreshURL = f.YearViewURL + "?refresh=1"
 }

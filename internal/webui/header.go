@@ -11,8 +11,11 @@ package webui
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Page identifiers for Header.Active — which nav entry renders as current.
@@ -40,11 +43,83 @@ type Header struct {
 	ShowInvoicing bool
 	ShowInfo      bool
 
-	// SpendingURL is per-page rather than fixed, because spending is a
-	// month at a time: the menu keeps you in the month you are reading
-	// and lands on the current one from everywhere else.
-	SpendingURL string
+	// Period is the month this page is showing, and every menu link is built
+	// from it: changing page should not also change the month you are
+	// looking at.
+	Period Period
 }
+
+// Period is the month a page is currently showing. Pages that have no month
+// of their own carry the one they were reached with, in the query string, so
+// a round trip through them loses nothing either.
+//
+// Month is always a real month, even in YearView, because the spending page
+// reads one month at a time and needs somewhere to land. YearView records
+// that the dashboard was showing a whole year, which is the one case where
+// only the year survives the jump.
+type Period struct {
+	Year     int
+	Month    int
+	YearView bool
+}
+
+// ParsePeriod reads a period back out of a query string. Out-of-range values
+// produce a zero Period rather than an error: the finance routes validate the
+// year and month they are actually given and redirect if they don't like
+// them, so the only job here is to not invent one.
+func ParsePeriod(year, month string) Period {
+	y, err := strconv.Atoi(year)
+	if err != nil || y < 1970 || y > 9999 {
+		return Period{}
+	}
+	m, err := strconv.Atoi(month)
+	if err != nil || m < 1 || m > 12 {
+		return Period{Year: y, Month: int(time.January), YearView: true}
+	}
+	return Period{Year: y, Month: m}
+}
+
+// Query renders the period for a page that has no route of its own to put it
+// in. Empty for a zero Period, so those links stay bare.
+func (p Period) Query() string {
+	switch {
+	case p.Year == 0:
+		return ""
+	case p.YearView:
+		return fmt.Sprintf("?year=%d", p.Year)
+	default:
+		return fmt.Sprintf("?year=%d&month=%d", p.Year, p.Month)
+	}
+}
+
+// FinanceHref is the dashboard showing what the current page is showing.
+func (p Period) FinanceHref() string {
+	switch {
+	case p.Year == 0:
+		return "/"
+	case p.YearView || p.Month == 0:
+		return fmt.Sprintf("/%d", p.Year)
+	default:
+		return fmt.Sprintf("/%d/%d", p.Year, p.Month)
+	}
+}
+
+// SpendingHref is a month even when the period is a year: a year of statement
+// lines is not a page anyone reads.
+func (p Period) SpendingHref() string {
+	if p.Year == 0 || p.Month == 0 {
+		return ""
+	}
+	return fmt.Sprintf("/%d/%d/spending", p.Year, p.Month)
+}
+
+// InvoicingHref filters to the year in view. Invoicing has no month of its
+// own, so it carries the month through untouched rather than dropping it —
+// otherwise every trip through invoicing would cost you your month.
+func (p Period) InvoicingHref() string { return "/invoicing" + p.Query() }
+
+// InfoHref carries the whole period, since info has no period at all.
+func (p Period) InfoHref() string { return "/info" + p.Query() }
 
 // AvatarURL is the user's picture: Gravatar for an email login, GitHub's for a
 // GitHub one. These are the only external requests any page makes, and the
@@ -115,10 +190,10 @@ const HeaderTemplate = `
   <h1>PocketCFO</h1>
   {{if .HasNav}}
   <nav class="topnav">
-    {{if .ShowFinance}}<a{{if .IsActive "finance"}} class="active"{{end}} href="/">Finance</a>{{end}}
-    {{if .ShowSpending}}<a{{if .IsActive "spending"}} class="active"{{end}} href="{{.SpendingURL}}">Spending</a>{{end}}
-    {{if .ShowInvoicing}}<a{{if .IsActive "invoicing"}} class="active"{{end}} href="/invoicing">Invoicing</a>{{end}}
-    {{if .ShowInfo}}<a{{if .IsActive "info"}} class="active"{{end}} href="/info">Info</a>{{end}}
+    {{if .ShowFinance}}<a{{if .IsActive "finance"}} class="active"{{end}} href="{{.Period.FinanceHref}}">Finance</a>{{end}}
+    {{if .ShowSpending}}<a{{if .IsActive "spending"}} class="active"{{end}} href="{{.Period.SpendingHref}}">Spending</a>{{end}}
+    {{if .ShowInvoicing}}<a{{if .IsActive "invoicing"}} class="active"{{end}} href="{{.Period.InvoicingHref}}">Invoicing</a>{{end}}
+    {{if .ShowInfo}}<a{{if .IsActive "info"}} class="active"{{end}} href="{{.Period.InfoHref}}">Info</a>{{end}}
   </nav>
   {{end}}
   <div class="hdr-right">

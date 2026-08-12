@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -63,16 +62,30 @@ func (s *server) authenticated(sess auth.Session) bool {
 // invoicing by users.json part, info by the stricter authorized() tier — so
 // the menu can never offer a link to a page the session would be bounced
 // from. active is the page currently being viewed (see webui.Page*).
-func (s *server) header(sess auth.Session, active string) webui.Header {
+func (s *server) header(sess auth.Session, active string, period webui.Period) webui.Header {
+	if period.Year == 0 {
+		period = s.currentPeriod()
+	}
 	return webui.Header{
 		Login:         sess.Login,
 		Active:        active,
 		ShowFinance:   sess.HasPart(users.PartFinance),
 		ShowSpending:  s.showSpending(sess),
-		SpendingURL:   s.spendingURL(time.Now()),
 		ShowInvoicing: sess.HasPart(users.PartInvoicing),
 		ShowInfo:      s.authorized(sess),
+		Period:        period,
 	}
+}
+
+// currentPeriod is the fallback for a page reached without one: today, in the
+// tracker's own zone, which is what every menu link pointed at before periods
+// were carried at all.
+func (s *server) currentPeriod() webui.Period {
+	now := time.Now()
+	if s.tracker != nil && s.tracker.Loc != nil {
+		now = now.In(s.tracker.Loc)
+	}
+	return webui.Period{Year: now.Year(), Month: int(now.Month())}
 }
 
 // showSpending mirrors financeSpending's own gate. It carries statement
@@ -81,16 +94,6 @@ func (s *server) header(sess auth.Session, active string) webui.Header {
 // leading to a permanently empty page.
 func (s *server) showSpending(sess auth.Session) bool {
 	return s.authorized(sess) && s.tracker != nil && s.tracker.Actuals.Configured()
-}
-
-// spendingURL addresses one month, since that is what the page renders. Pages
-// that know which month you are reading override it with that one; from
-// everywhere else the menu lands on the current month.
-func (s *server) spendingURL(t time.Time) string {
-	if s.tracker != nil && s.tracker.Loc != nil {
-		t = t.In(s.tracker.Loc)
-	}
-	return fmt.Sprintf("/%d/%d/spending", t.Year(), int(t.Month()))
 }
 
 func (s *server) secureCookies() bool {

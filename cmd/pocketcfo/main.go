@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -232,6 +233,17 @@ func (s *server) loadInvoicingView(r *http.Request, sess auth.Session) (any, err
 	if err != nil {
 		return nil, err
 	}
+	// The menu carries the year you were reading, which may be a year with no
+	// invoices in it. Showing everything beats an empty table under a year
+	// selector with nothing highlighted; years is unfiltered, so this is the
+	// whole list to check against.
+	if selectedYear != nil && !slices.Contains(years, *selectedYear) {
+		selectedYear = nil
+		_, recipientRows, invoiceRows, err = stats.Aggregate(invoices, recipients, paid, nil, time.Now())
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	// Portal links are bearer secrets, so only the authorized() tier sees
 	// them; readOnly gets everything else on the dashboard.
@@ -249,7 +261,7 @@ func (s *server) loadInvoicingView(r *http.Request, sess auth.Session) (any, err
 		PortalLinks  map[int]string
 		PDFCurrent   map[string]bool
 	}{
-		Header:       s.header(sess, webui.PageInvoicing),
+		Header:       s.header(sess, webui.PageInvoicing, webui.ParsePeriod(r.URL.Query().Get("year"), r.URL.Query().Get("month"))),
 		Years:        years,
 		SelectedYear: selectedYear,
 		Recipients:   recipientRows,

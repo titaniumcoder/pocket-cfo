@@ -145,9 +145,9 @@ func (s *server) renderFinancePage(w http.ResponseWriter, sess auth.Session, f t
 	// follows the month being viewed; the per-row links need actuals to
 	// point at, and a month rather than a year.
 	if s.showSpending(sess) {
-		f.SpendingURL = f.MonthViewURL + "/spending"
+		f.ShowSpendingLink = true
 		if f.ShowActuals && f.Mode == "month" {
-			f.SpendingDetailURL = f.SpendingURL
+			f.SpendingDetailURL = f.MonthViewURL + "/spending"
 		}
 	}
 	fillInvoiceLinks(f.Invoiced, f.ShowInvoicingLink)
@@ -303,7 +303,6 @@ func (s *server) financeSpending(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	v := trk.ComputeSpending(ctx, year, time.Month(month))
-	v.Header = s.header(sess, webui.PageSpending)
-	v.Header.SpendingURL = v.SpendingURL
+	v.Header = s.header(sess, webui.PageSpending, webui.Period{Year: year, Month: month})
 	tracker.RenderSpending(w, v)
 }

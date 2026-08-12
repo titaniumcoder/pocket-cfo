@@ -453,7 +453,7 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
   .row.colhead { display: none; }
   /* .col-secondary cells vanish here as they do in every table, so the grid
      loses those tracks rather than leaving them empty. */
-  .spend-grid { grid-template-columns: minmax(0, 1fr) max-content max-content; column-gap: .75rem; }
+  .spend-grid { grid-template-columns: minmax(0, 1fr) 5rem 1.5rem; column-gap: .75rem; }
   .cov-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -463,9 +463,13 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
    every row is display:contents, so all of them share one set of tracks and
    the columns cannot drift.
 
-   Description takes the slack; everything else is content-width, which is why
-   the amounts line up down the whole page rather than per section. */
-.spend-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content max-content max-content; column-gap: 1.5rem; align-items: baseline; }
+   The tracks are declared sizes, not max-content. The third column holds an
+   account name, a raw category id and a free-text ignore reason in different
+   sections of the same grid — content sizing takes the longest of all of them
+   and hands that width to every row, so one 36-character id would squeeze
+   Description down the entire page. Fixed widths make the columns useful as
+   well as identical; only Description flexes. */
+.spend-grid { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) 11rem 5.5rem 1.75rem; column-gap: 1.5rem; align-items: baseline; }
 .spend-grid > .sg-row { display: contents; }
 .spend-grid > * { padding: .6rem 0; border-bottom: 1px solid var(--panel-border); }
 .spend-grid > .sg-row > * { padding: .6rem 0; border-bottom: 1px solid var(--panel-border); min-width: 0; }
@@ -474,7 +478,9 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
 .spend-grid > h4.sg-cat { margin: 1.2rem 0 0; font-size: 1rem; border-bottom: 0; padding-bottom: 0; }
 .spend-grid > p.sg-span { margin: 0; border-bottom: 0; }
 .sg-head { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; opacity: .55; font-weight: 600; }
-.sg-desc { overflow-wrap: anywhere; }
+/* Both variable-length columns wrap rather than overflow: a fixed track and
+   an unbreakable 36-character id would otherwise push the amount off. */
+.sg-desc, .spend-grid .sg-row > .col-secondary { overflow-wrap: anywhere; }
 .spend-grid .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .spend-grid .copy-col { text-align: right; }
 /* The total sits under the amounts it sums, with no rule under it: the
@@ -483,7 +489,7 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
 
 /* Coverage keeps its own grid — different columns entirely — but the same
    idea, so its four columns are stable however long an account name is. */
-.cov-grid { display: grid; grid-template-columns: minmax(0, 1fr) max-content max-content max-content; column-gap: 1.5rem; align-items: baseline; }
+.cov-grid { display: grid; grid-template-columns: minmax(0, 1fr) 7rem 7rem 7rem; column-gap: 1.5rem; align-items: baseline; }
 .cov-grid > * { padding: .5rem 0; border-bottom: 1px solid var(--panel-border); }
 .cov-head { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; opacity: .55; font-weight: 600; }
 

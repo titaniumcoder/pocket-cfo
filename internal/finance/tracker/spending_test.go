@@ -430,6 +430,28 @@ func TestSpendingIsOneGrid(t *testing.T) {
 	}
 }
 
+// countTracks splits a grid-template-columns value into tracks, treating a
+// parenthesised function as one — strings.Fields sees minmax(0, 1fr) as two.
+func countTracks(value string) int {
+	depth, tracks, inTrack := 0, 0, false
+	for _, r := range value {
+		switch {
+		case r == '(':
+			depth++
+		case r == ')':
+			depth--
+		case r == ' ' && depth == 0:
+			inTrack = false
+			continue
+		}
+		if !inTrack {
+			tracks++
+			inTrack = true
+		}
+	}
+	return tracks
+}
+
 // TestGridTracksAreDeclaredNotComputed: the columns are the same everywhere
 // because the stylesheet says so once, not because the contents happen to
 // agree. Only Description flexes; the rest are content-width, which is what
@@ -446,11 +468,18 @@ func TestGridTracksAreDeclaredNotComputed(t *testing.T) {
 	if m == nil {
 		t.Fatal("the spending grid declares no columns")
 	}
-	if n := strings.Count(m[1], "max-content") + strings.Count(m[1], "minmax"); n != 5 {
-		t.Errorf("grid-template-columns = %q, want five declared tracks", m[1])
+	if n := countTracks(m[1]); n != 5 {
+		t.Errorf("grid-template-columns = %q, want five tracks", m[1])
 	}
 	if strings.Count(m[1], "1fr") != 1 {
 		t.Errorf("grid-template-columns = %q, want exactly one flexible track so the amounts share a right edge", m[1])
+	}
+	// The third column holds an account, a category id and an ignore reason in
+	// different sections of this one grid. Content sizing takes the longest of
+	// them and gives it to every row, so a 36-character id would squeeze
+	// Description down the whole page — identical columns, useless ones.
+	if strings.Contains(m[1], "max-content") || strings.Contains(m[1], "auto") || strings.Contains(m[1], "fit-content") {
+		t.Errorf("grid-template-columns = %q, want declared widths rather than content sizing", m[1])
 	}
 
 	// The phone drops the two .col-secondary columns, so it must declare
@@ -459,8 +488,11 @@ func TestGridTracksAreDeclaredNotComputed(t *testing.T) {
 	if phone == nil {
 		t.Fatal("the phone layout does not re-declare the grid, so it keeps five tracks with two empty")
 	}
-	if n := strings.Count(phone[1], "max-content") + strings.Count(phone[1], "minmax"); n != 3 {
+	if n := countTracks(phone[1]); n != 3 {
 		t.Errorf("phone grid-template-columns = %q, want three tracks", phone[1])
+	}
+	if strings.Contains(phone[1], "max-content") || strings.Contains(phone[1], "auto") {
+		t.Errorf("phone grid-template-columns = %q, want declared widths", phone[1])
 	}
 	if !strings.Contains(string(css), ".spend-grid > .sg-row { display: contents; }") {
 		t.Error("rows are not display:contents, so each one makes its own columns")

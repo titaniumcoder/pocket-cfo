@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
@@ -94,6 +95,17 @@ type FileConfig struct {
 	Salary []tracker.SalaryEntry `json:"salary"`
 
 	salary tracker.SalaryPlan
+
+	// StartMonth is the first month budgeting covers, "2026-04". Before it
+	// there is no plan, no statement and no balance, so the app does not offer
+	// those months at all rather than rendering pages of structural zeroes and
+	// counting them into the year they fall in.
+	//
+	// Absent means no floor, which is what every deployment did before this
+	// existed. It never widens the range: the ±2-year window still applies.
+	StartMonth *string `json:"startMonth"`
+
+	startMonth time.Time
 }
 
 // LoadFileConfig reads config.json from path. A missing file is fine and
@@ -130,6 +142,9 @@ func LoadFileConfig(path string) (FileConfig, error) {
 	if err := tracker.ValidateSalaryAgainstLegislation(fc.salary, fc.legislation); err != nil {
 		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
 	}
+	if fc.startMonth, err = tracker.ParseStartMonth(strOr(fc.StartMonth, "")); err != nil {
+		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
+	}
 	return fc, nil
 }
 
@@ -155,6 +170,9 @@ type Config struct {
 	AnnualVacationDays int
 	Legislation        tracker.Legislation
 	Salary             tracker.SalaryPlan
+
+	// StartMonth is the first budgeted month; zero means no floor.
+	StartMonth time.Time
 }
 
 // Load merges fc (already loaded via LoadFileConfig) with the
@@ -180,6 +198,7 @@ func Load(fc FileConfig) Config {
 		// legislation: it then charges nothing, which is what it says.
 		Legislation: fc.legislation,
 		Salary:      fc.salary,
+		StartMonth:  fc.startMonth,
 	}
 }
 

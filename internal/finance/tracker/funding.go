@@ -64,8 +64,8 @@ func fundingRangeForMonth(year int, month time.Month) (start, end yearMonth) {
 // for private expenses, so the two can never drift apart. The end never crosses
 // a year boundary; the start does when the expense range begins in January or
 // February.
-func fundingRangeForYear(year int, now time.Time) (start, end yearMonth) {
-	expenseStart := yearMonth{year, privateExpenseStartMonth(year, now)}
+func fundingRangeForYear(year int, now time.Time, floor yearMonth) (start, end yearMonth) {
+	expenseStart := yearMonth{year, privateExpenseStartMonth(year, now, floor)}
 	expenseEnd := yearMonth{year, time.December}
 	return expenseStart.addMonths(fundingShiftMonths), expenseEnd.addMonths(fundingShiftMonths)
 }

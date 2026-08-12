@@ -122,7 +122,7 @@ func TestBudgetForMonthDatedCategoryCountsOnlyWhenDue(t *testing.T) {
 // coming, same spirit as a past one-time category being hidden in month view.
 func TestBudgetForYearCurrentYearOnlyCountsRemainingMonths(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
-	view, err := b.ForYear(context.Background(), 2026, testNow)
+	view, err := b.ForYear(context.Background(), 2026, testNow, time.Time{})
 	if err != nil {
 		t.Fatalf("ForYear: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestBudgetForYearCurrentYearOnlyCountsRemainingMonths(t *testing.T) {
 func TestBudgetForYearOtherYearsCountAllTwelveMonths(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
 	for _, year := range []int{2025, 2027} {
-		view, err := b.ForYear(context.Background(), year, testNow)
+		view, err := b.ForYear(context.Background(), year, testNow, time.Time{})
 		if err != nil {
 			t.Fatalf("ForYear(%d): %v", year, err)
 		}
@@ -163,7 +163,7 @@ func TestBudgetForYearDatedCategoryBeforeNowInCurrentYearContributesNothing(t *t
 			]}
 		]
 	}`})
-	view, err := b.ForYear(context.Background(), 2026, testNow) // testNow is July 2026
+	view, err := b.ForYear(context.Background(), 2026, testNow, time.Time{}) // testNow is July 2026
 	if err != nil {
 		t.Fatalf("ForYear: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestBudgetForYearDatedCategoryBeforeNowInCurrentYearContributesNothing(t *t
 
 func TestBudgetForYearDatedCategoryOutsideYearContributesNothing(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
-	view, err := b.ForYear(context.Background(), 2027, testNow)
+	view, err := b.ForYear(context.Background(), 2027, testNow, time.Time{})
 	if err != nil {
 		t.Fatalf("ForYear: %v", err)
 	}
@@ -458,7 +458,7 @@ func TestBudgetForMonthRowVisibilityFollowsViewedMonthNotRealNow(t *testing.T) {
 // span the same full year to stay consistent.
 func TestBudgetForYearCompanyAlwaysCountsAllTwelveMonths(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithCompany})
-	view, err := b.ForYear(context.Background(), 2026, testNow) // testNow is July 2026
+	view, err := b.ForYear(context.Background(), 2026, testNow, time.Time{}) // testNow is July 2026
 	if err != nil {
 		t.Fatalf("ForYear: %v", err)
 	}
@@ -472,7 +472,7 @@ func TestBudgetForYearCompanyAlwaysCountsAllTwelveMonths(t *testing.T) {
 
 func TestBudgetCompanyExpensesByMonth(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithCompany})
-	byMonth, err := b.CompanyExpensesByMonth(context.Background(), 2026)
+	byMonth, err := b.CompanyExpensesByMonth(context.Background(), 2026, time.Time{})
 	if err != nil {
 		t.Fatalf("CompanyExpensesByMonth: %v", err)
 	}
@@ -644,7 +644,7 @@ func TestBudgetForYearIgnoresMinimalMode(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithMinimal})
 	b.ToggleMinimal()
 
-	view, err := b.ForYear(context.Background(), 2027, testNow) // entirely future relative to testNow -> all 12 months count
+	view, err := b.ForYear(context.Background(), 2027, testNow, time.Time{}) // entirely future relative to testNow -> all 12 months count
 	if err != nil {
 		t.Fatalf("ForYear: %v", err)
 	}
@@ -804,7 +804,7 @@ func TestBudgetForMonthMultipleZeroOverridesZeroEach(t *testing.T) {
 // so 2 zero-overridden months should mean 10 months' worth, not 12.
 func TestBudgetForYearZeroOverridesReduceContribution(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithOverrides})
-	view, err := b.ForYear(context.Background(), 2026, testNow)
+	view, err := b.ForYear(context.Background(), 2026, testNow, time.Time{})
 	if err != nil {
 		t.Fatalf("ForYear: %v", err)
 	}
@@ -821,7 +821,7 @@ func TestBudgetForYearZeroOverridesReduceContribution(t *testing.T) {
 // is 0 for zero-overridden months.
 func TestBudgetCompanyExpensesByMonthRespectsOverrides(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithOverrides})
-	byMonth, err := b.CompanyExpensesByMonth(context.Background(), 2026)
+	byMonth, err := b.CompanyExpensesByMonth(context.Background(), 2026, time.Time{})
 	if err != nil {
 		t.Fatalf("CompanyExpensesByMonth: %v", err)
 	}
@@ -954,7 +954,7 @@ func TestBudgetOverrideWinsOverMinimalMode(t *testing.T) {
 // override — a marker only makes sense for a single viewed month.
 func TestBudgetOverriddenNeverSetInYearView(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithNonZeroOverride})
-	view, err := b.ForYear(context.Background(), 2026, testNow)
+	view, err := b.ForYear(context.Background(), 2026, testNow, time.Time{})
 	if err != nil {
 		t.Fatalf("ForYear: %v", err)
 	}

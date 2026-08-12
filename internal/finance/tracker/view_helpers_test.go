@@ -79,7 +79,7 @@ func TestAggHours(t *testing.T) {
 
 func TestNavYears(t *testing.T) {
 	now := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
-	got := navYears(now)
+	got := navYears(now, yearMonth{})
 	if len(got) != 5 || got[0] != 2024 || got[2] != 2026 || got[4] != 2028 {
 		t.Errorf("navYears = %v, want [2024 2025 2026 2027 2028]", got)
 	}

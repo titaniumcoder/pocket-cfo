@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 // SalaryMode is what a month does about paying a salary at all.
@@ -133,6 +134,19 @@ func (p SalaryPeriod) String() string {
 		when += "–" + p.To.configForm()
 	}
 	return when + ": " + string(p.Mode)
+}
+
+// ParseStartMonth reads a budgeting start month, as config.json writes it. The
+// returned time is the first of that month; a blank string is no floor at all.
+func ParseStartMonth(s string) (time.Time, error) {
+	if strings.TrimSpace(s) == "" {
+		return time.Time{}, nil
+	}
+	ym, err := parseMonthOrDay(s)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("startMonth %q is not a month (2026-04) or a date (2026-04-01)", s)
+	}
+	return time.Date(ym.Year, ym.Month, 1, 0, 0, 0, 0, time.UTC), nil
 }
 
 // ValidateSalaryAgainstLegislation refuses a month set to the minimum when no

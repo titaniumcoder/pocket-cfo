@@ -3,6 +3,7 @@ package main
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
@@ -111,6 +112,7 @@ func (s *server) configGroups() []configGroup {
 			{Name: "annualVacationDays", Value: strconv.Itoa(f.AnnualVacationDays)},
 			{Name: "legislation", Value: legislationSummary(f.Legislation)},
 			{Name: "salary", Value: salarySummary(f.Salary)},
+			{Name: "startMonth", Value: startMonthSummary(f.StartMonth)},
 		}},
 	}
 }
@@ -142,6 +144,15 @@ func salarySummary(plan tracker.SalaryPlan) string {
 		parts = append(parts, p.String())
 	}
 	return strings.Join(parts, " · ")
+}
+
+// startMonthSummary says where budgeting begins, or that it does not begin
+// anywhere — which is a real setting, not a missing one.
+func startMonthSummary(t time.Time) string {
+	if t.IsZero() {
+		return "unset — every month in the ±2 year window is offered"
+	}
+	return t.Format("2006-01")
 }
 
 // enabledIf renders a derived, non-secret on/off row.

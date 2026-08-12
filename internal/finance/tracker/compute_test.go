@@ -13,7 +13,7 @@ func TestFillMonthNav(t *testing.T) {
 	now := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
 	start := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 	var f Figures
-	f.fillMonthNav(now, start)
+	f.fillMonthNav(now, start, yearMonth{})
 
 	if f.Mode != "month" || f.Year != 2026 || f.MonthNum != 3 {
 		t.Errorf("mode/year/month = %q/%d/%d", f.Mode, f.Year, f.MonthNum)
@@ -40,7 +40,7 @@ func TestFillYearNav(t *testing.T) {
 
 	// Current year: switching to month view lands on the current month.
 	var cur Figures
-	cur.fillYearNav(now, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	cur.fillYearNav(now, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), yearMonth{})
 	if cur.Mode != "year" || cur.PrevURL != "/2025" || cur.NextURL != "/2027" {
 		t.Errorf("year nav = %q %q %q", cur.Mode, cur.PrevURL, cur.NextURL)
 	}
@@ -48,19 +48,19 @@ func TestFillYearNav(t *testing.T) {
 		t.Errorf("current-year month-view url = %q, want /2026/6", cur.MonthViewURL)
 	}
 	var min Figures
-	min.fillYearNav(now, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+	min.fillYearNav(now, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), yearMonth{})
 	if !min.PrevDisabled || min.PrevURL != "" || min.NextDisabled {
 		t.Errorf("min-year arrows = prevDisabled:%v prev:%q nextDisabled:%v", min.PrevDisabled, min.PrevURL, min.NextDisabled)
 	}
 	var max Figures
-	max.fillYearNav(now, time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC))
+	max.fillYearNav(now, time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC), yearMonth{})
 	if !max.NextDisabled || max.NextURL != "" || max.PrevDisabled {
 		t.Errorf("max-year arrows = nextDisabled:%v next:%q prevDisabled:%v", max.NextDisabled, max.NextURL, max.PrevDisabled)
 	}
 
 	// Other year: month view lands on January.
 	var other Figures
-	other.fillYearNav(now, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
+	other.fillYearNav(now, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), yearMonth{})
 	if other.MonthViewURL != "/2025/1" {
 		t.Errorf("other-year month-view url = %q, want /2025/1", other.MonthViewURL)
 	}
@@ -279,7 +279,7 @@ func TestRenderPageDisablesBoundaryYearArrows(t *testing.T) {
 	var f Figures
 	f.Month = "2028"
 	f.Currency = "€"
-	f.fillYearNav(now, time.Date(2028, time.January, 1, 0, 0, 0, 0, time.UTC))
+	f.fillYearNav(now, time.Date(2028, time.January, 1, 0, 0, 0, 0, time.UTC), yearMonth{})
 
 	rec := httptest.NewRecorder()
 	RenderPage(rec, f)

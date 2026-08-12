@@ -94,6 +94,7 @@ func (s *server) apiService() *api.Service {
 	svc := &api.Service{}
 	if s.tracker != nil {
 		svc.Budget, svc.Accounts, svc.Actuals = s.tracker.Budget, s.tracker.Accounts, s.tracker.Actuals
+		svc.Start = s.tracker.Start
 	}
 	if s.cfg.githubDataToken != "" {
 		svc.Store = &api.ContentsClient{

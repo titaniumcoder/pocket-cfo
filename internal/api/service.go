@@ -30,6 +30,11 @@ type Service struct {
 
 	// Now is injected by tests; nil means time.Now.
 	Now func() time.Time
+
+	// Start is the first month budgeting covers, zero for none. The tracker
+	// uses it to bound a year's aggregation; the reconciliation report follows,
+	// so it does not list months the app itself refuses to show.
+	Start time.Time
 }
 
 var monthRE = regexp.MustCompile(`^\d{4}-(0[1-9]|1[0-2])$`)
@@ -480,7 +485,7 @@ func (s *Service) Reconciliation(ctx context.Context, year int) ([]MonthStatus, 
 	if err != nil {
 		return nil, errorf(CodeInternal, "reading budget.json: %v", err)
 	}
-	charged, err := s.Actuals.ChargedMonths(ctx, year)
+	charged, err := s.Actuals.ChargedMonths(ctx, year, s.Start)
 	if err != nil {
 		return nil, errorf(CodeInternal, "scanning actuals: %v", err)
 	}

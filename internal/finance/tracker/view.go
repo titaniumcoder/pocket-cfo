@@ -157,6 +157,8 @@ type Figures struct {
 	OpeningBalanceLabel string
 	AvailableCents      int
 	PrivateAccounts     []AccountRow
+	CompanyAccounts     []AccountRow
+	CompanyBalanceLabel string
 	AccountsStaleNote   string
 
 	AccountsErr string
@@ -253,11 +255,15 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 
 	result.computeActuals(t, ctx, year, start, now, months, &bv)
 
-	result.computePersonal(t, ctx, year, months, yearMonth{year, start.Month()}, monthlyCompanyCents, bv)
+	viewed := yearMonth{year, start.Month()}
+	carried, snap, opened, accountsErr := t.carriedBalances(ctx, viewed, now, months, rateCents)
+	result.AccountsErr = accountsErr
+
+	result.computePersonal(t, ctx, year, months, viewed, monthlyCompanyCents, bv, carried.Company)
 
 	result.computeSpendable(months, year, start, trackedHours > 0 || expectedNetHours > 0)
 
-	result.computeFundingBalance(t, ctx, year, start, now, months, rateCents, bv)
+	result.computeFundingBalance(t, ctx, year, start, now, months, rateCents, bv, carried, snap, opened)
 
 	if at, stale := t.Toggl.YearStatus(year); !at.IsZero() {
 		result.LastUpdated = at.In(t.Loc).Format("02 Jan 15:04")
@@ -432,7 +438,7 @@ func (f *Figures) computeBudget(t *Tracker, ctx context.Context, year int, start
 	return bv
 }
 
-func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months int, viewed yearMonth, monthlyCompanyCents map[time.Month]int, bv BudgetView) {
+func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months int, viewed yearMonth, monthlyCompanyCents map[time.Month]int, bv BudgetView, company companyStock) {
 	if f.TotalErr != "" {
 		f.Personal = PersonalView{Err: "company income unavailable"}
 		return
@@ -453,10 +459,11 @@ func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months 
 			monthlyIncomeEUR(start, end, monthlyCompanyCents),
 			monthlyIncomeEUR(start, end, monthlyCompanyExpenseCents),
 			yearMonth{year, first},
+			companyStock{},
 		)
 	} else {
 		f.Personal = t.Personal.breakdown(float64(f.TotalCents)/100, float64(bv.CompanyTotalPlannedCents)/100, 1,
-			t.Personal.rulesFor(viewed), t.Personal.Salary.decisionFor(viewed))
+			t.Personal.rulesFor(viewed), t.Personal.Salary.decisionFor(viewed), company)
 	}
 	f.Personal.CompanyGroups = bv.CompanyGroups
 }
@@ -475,14 +482,14 @@ func (f *Figures) computeSpendable(months, year int, start time.Time, hasHours b
 	f.SpendableURL = linkForRange(spendStart, spendEnd, spendStart.Year)
 }
 
-func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year int, start, now time.Time, months, rateCents int, bv BudgetView) {
+func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year int, start, now time.Time, months, rateCents int, bv BudgetView, carried openings, snap AccountSnapshot, opened bool) {
 	var fundingStart, fundingEnd yearMonth
 	if months > 1 {
 		fundingStart, fundingEnd = fundingRangeForYear(year, now, t.startMonth())
 	} else {
 		fundingStart, fundingEnd = fundingRangeForMonth(year, start.Month())
 	}
-	f.FundingPersonal = t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(bv.CompanyTotalPlannedCents)/100, bv.CompanyGroups)
+	f.FundingPersonal = t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(bv.CompanyTotalPlannedCents)/100, bv.CompanyGroups, carried.Company)
 
 	if t.Budget == nil {
 		return
@@ -492,8 +499,8 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 		f.PrivateTotalPlannedCents = bv.TotalPlannedCents
 	}
 
-	if months == 1 {
-		f.computeAccountBalances(t, ctx, yearMonth{year, start.Month()}, now, rateCents)
+	if opened {
+		f.publishAccountBalances(snap, carried, yearMonth{year, start.Month()}, now)
 	}
 
 	if f.BudgetErr == "" && f.FundingPersonal.Err == "" {
@@ -502,25 +509,37 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 	}
 }
 
-func (f *Figures) computeAccountBalances(t *Tracker, ctx context.Context, viewed yearMonth, now time.Time, rateCents int) {
-	if t.Accounts == nil || f.BudgetErr != "" || f.FundingPersonal.Err != "" {
-		return
+// carriedBalances rolls both pots up to the month being looked at. It runs
+// before the cascade rather than after it, because the company balance is one
+// of the cascade's inputs now — what a full salary can afford includes what the
+// company is already holding.
+func (t *Tracker) carriedBalances(ctx context.Context, viewed yearMonth, now time.Time, months, rateCents int) (openings, AccountSnapshot, bool, string) {
+	if t.Accounts == nil || months != 1 {
+		return openings{}, AccountSnapshot{}, false, ""
 	}
 	snap, ok := t.Accounts.Snapshot(ctx)
 	if !ok || viewed.ordinal() < snap.OpensMonth.ordinal() {
-		return
+		return openings{}, AccountSnapshot{}, false, ""
 	}
-	opening, err := t.privateOpeningCents(ctx, snap, viewed, now, rateCents)
+	carried, err := t.rollForward(ctx, snap, viewed, now, rateCents)
 	if err != nil {
-		f.AccountsErr = err.Error()
+		return openings{}, AccountSnapshot{}, false, err.Error()
+	}
+	return carried, snap, true, ""
+}
+
+func (f *Figures) publishAccountBalances(snap AccountSnapshot, carried openings, viewed yearMonth, now time.Time) {
+	if f.BudgetErr != "" || f.FundingPersonal.Err != "" {
 		return
 	}
 	f.ShowOpeningBalance = true
-	f.OpeningBalanceCents = opening
-	f.AvailableCents = opening + f.FundingPersonal.NetIncomeCents
+	f.OpeningBalanceCents = carried.PrivateCents
+	f.AvailableCents = carried.PrivateCents + f.FundingPersonal.NetIncomeCents
 	f.OpeningBalanceLabel = openingBalanceLabel(snap, viewed)
+	f.CompanyBalanceLabel = openingBalanceLabel(snap, viewed)
 	if viewed == snap.OpensMonth {
 		f.PrivateAccounts = snap.rowsOfKind(accountsdata.AccountKindPrivate)
+		f.CompanyAccounts = snap.rowsOfKind(accountsdata.AccountKindCompany)
 	}
 	if days, stale := snap.StaleDays(now); stale {
 		f.AccountsStaleNote = fmt.Sprintf(

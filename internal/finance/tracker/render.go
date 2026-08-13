@@ -432,6 +432,10 @@ var templates = `
       {{else}}
       <div class="row net{{if not $.Invoiced}} gap-below{{end}}"><span class="label">Company income{{if and .FundingLabel (not $.Invoiced)}} <small>(from {{if .FundingURL}}<a class="period-link" href="{{.FundingURL}}">{{.FundingLabel}}</a>{{else}}{{.FundingLabel}}{{end}})</small>{{end}}</span><span class="mid"></span><span class="amt goodamt">{{eur .CompanyIncomeCents}}</span></div>
       {{range $.Invoiced}}<div class="row acct"><span class="label">{{if .URL}}<a href="{{.URL}}">{{.Number}}</a>{{else}}{{.Number}}{{end}} <span class="note">invoiced, usable this month</span></span><span class="mid"></span><span class="amt">{{eur .AmountCents}}</span></div>{{end}}
+      {{if .ShowCompanyBalance}}
+      <div class="row{{if lt .CompanyOpeningCents 0}} neg{{end}}"><span class="label">In the company{{if $.CompanyBalanceLabel}} <small>({{$.CompanyBalanceLabel}})</small>{{end}}</span><span class="mid"></span><span class="amt{{if lt .CompanyOpeningCents 0}} neg{{else}} goodamt{{end}}">{{eur .CompanyOpeningCents}}</span></div>
+      {{range $.CompanyAccounts}}<div class="row acct"><span class="label">{{.Name}} <span class="note">as of {{.AsOf}}{{if .Note}} &middot; {{.Note}}{{end}}</span></span><span class="mid"></span><span class="amt">{{eur .Cents}}</span></div>{{end}}
+      {{end}}
       {{if $.Invoiced}}<div class="row gap-below"></div>{{end}}
       {{if $.ShowActuals}}<div class="row colhead"><span class="label"></span><span class="mid">Planned</span><span class="amt">Actual</span></div>{{end}}
       {{template "categoryGroups" $.CompanyLedger}}
@@ -445,11 +449,13 @@ var templates = `
       <div class="row"><span class="label">Income tax</span><span class="mid rate">{{template "rateMid" .IncomeTaxRate}}</span><span class="amt neg">{{if .IncomeTaxCents}}&minus;{{end}}{{eur .IncomeTaxCents}}{{template "rateNarrow" .IncomeTaxRate}}</span></div>
       <div class="row net neg"><span class="label">Total company expenses</span>{{if $.ShowActuals}}<span class="mid{{outClass .CompanyExpensesCents}}">{{out .CompanyExpensesCents}}</span><span class="amt{{outClass $.CompanyActualCents}}">{{out $.CompanyActualCents}}<span class="stack-m">of {{out .CompanyExpensesCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .CompanyExpensesCents}}</span>{{end}}</div>
       <div class="row net{{if lt .NetIncomeCents 0}} neg{{end}}"><span class="label">Net income</span><span class="mid"></span><span class="amt netamt">{{eur .NetIncomeCents}}</span></div>
+      {{if .ShowCompanyBalance}}<div class="row{{if lt .CompanyClosingCents 0}} neg{{end}}"><span class="label">Left in the company</span><span class="mid"></span><span class="amt{{if lt .CompanyClosingCents 0}} neg{{end}}">{{eur .CompanyClosingCents}}</span></div>{{end}}
+      {{if .CompanyOverdrawnNote}}<div class="row"><span class="stale-note">{{.CompanyOverdrawnNote}}</span></div>{{end}}
       {{end}}
       {{end}}
       {{if .AccountsErr}}<div class="row"><span class="error">{{.AccountsErr}}</span></div>{{end}}
       {{if .ShowOpeningBalance}}
-      <div class="row net{{if lt .OpeningBalanceCents 0}} neg{{end}}"><span class="label">Opening balance <small>({{.OpeningBalanceLabel}})</small></span><span class="mid"></span><span class="amt netamt">{{eur .OpeningBalanceCents}}</span></div>
+      <div class="row net{{if lt .OpeningBalanceCents 0}} neg{{end}}"><span class="label">Private opening balance <small>({{.OpeningBalanceLabel}})</small></span><span class="mid"></span><span class="amt netamt">{{eur .OpeningBalanceCents}}</span></div>
       {{range .PrivateAccounts}}<div class="row acct"><span class="label">{{.Name}} <span class="note">as of {{.AsOf}}{{if .Note}} &middot; {{.Note}}{{end}}</span></span><span class="mid"></span><span class="amt">{{eur .Cents}}</span></div>{{end}}
       {{if .AccountsStaleNote}}<div class="row"><span class="stale-note">{{.AccountsStaleNote}}</span></div>{{end}}
       <div class="row net gap-above{{if lt .AvailableCents 0}} neg{{end}}"><span class="label">Available to spend</span><span class="mid"></span><span class="amt netamt">{{eur .AvailableCents}}</span></div>

@@ -167,7 +167,7 @@ func TestFundingIncomeDegradesOnTogglError(t *testing.T) {
 		HoursPerDay: 8,
 		Personal:    testParams(),
 	}
-	pv := trk.fundingIncome(context.Background(), yearMonth{2026, time.January}, yearMonth{2026, time.January}, mar(15), 7500, 0, nil)
+	pv := trk.fundingIncome(context.Background(), yearMonth{2026, time.January}, yearMonth{2026, time.January}, mar(15), 7500, 0, nil, companyStock{})
 	if pv.Err == "" {
 		t.Fatal("expected Err to be set when the Toggl fetch fails")
 	}

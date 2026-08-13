@@ -13,6 +13,18 @@ type PersonalParams struct {
 	Salary SalaryPlan
 }
 
+type companyStock struct {
+	Known        bool
+	OpeningCents int
+}
+
+func (s companyStock) spendableEUR() float64 {
+	if !s.Known {
+		return 0
+	}
+	return float64(s.OpeningCents) / 100
+}
+
 type PersonalView struct {
 	Err string
 
@@ -23,6 +35,10 @@ type PersonalView struct {
 	EmployeeContribCents int
 	IncomeTaxCents       int
 	NetIncomeCents       int
+
+	ShowCompanyBalance  bool
+	CompanyOpeningCents int
+	CompanyClosingCents int
 
 	MinimumWageCents int
 	MinimumEnforced  bool
@@ -51,6 +67,19 @@ type RateLine struct {
 }
 
 func toCent(v float64) float64 { return math.Round(v*100) / 100 }
+
+// CompanyOverdrawnNote exists because a negative closing balance is otherwise
+// just a red figure. It is the expected outcome of a fixed salary the company
+// cannot afford — a deliberate choice — and unremarked it reads as a bug.
+func (v PersonalView) CompanyOverdrawnNote() string {
+	if !v.ShowCompanyBalance || v.CompanyClosingCents >= 0 {
+		return ""
+	}
+	if v.Mode == SalaryFixed {
+		return "The fixed salary is more than the company earned, so it ends the month overdrawn. That is what fixing a salary means: it is paid whether or not the money is there."
+	}
+	return "The company ends the month overdrawn — it paid out more than it took in."
+}
 
 func (v PersonalView) MixedMonthsNote() string {
 	if v.Mode != "" {
@@ -135,14 +164,14 @@ func oneRate(base, minBase float64, b Bands) []RateLine {
 	return []RateLine{{Rate: rate}}
 }
 
-func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, months int, r Rules, d SalaryDecision) PersonalView {
+func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, months int, r Rules, d SalaryDecision, stock companyStock) PersonalView {
 	if months <= 0 {
 		months = 1
 	}
 	mode := d.Mode
 	monthlyRawIncome := totalIncomeEUR / float64(months)
 	monthlyCompanyExpenses := companyExpensesEUR / float64(months)
-	availableForPayroll := toCent(monthlyRawIncome - monthlyCompanyExpenses)
+	availableForPayroll := toCent(monthlyRawIncome - monthlyCompanyExpenses + stock.spendableEUR())
 
 	gross, minimumEnforced := grossSalaryFor(d, r, availableForPayroll)
 	employerContrib := toCent(r.Employer.on(gross))
@@ -156,7 +185,7 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 
 	m := float64(months)
 	cents := func(x float64) int { return round(x * 100 * m) }
-	return PersonalView{
+	v := PersonalView{
 		NoLegislation:        r.nothingInForce(),
 		Mode:                 mode,
 		MinimumEnforced:      minimumEnforced,
@@ -173,6 +202,37 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 		IncomeTaxCents:       cents(incomeTax),
 		NetIncomeCents:       cents(net),
 	}
+	v.closeCompanyOver(stock)
+	return v
+}
+
+// carryCompanyStock is where a balance parts company with every other figure
+// here: the flows above it are summed across the months, while a balance opens
+// where the first month opened and closes where the last one closed.
+func (v *PersonalView) carryCompanyStock(m PersonalView, first bool) {
+	if !m.ShowCompanyBalance {
+		return
+	}
+	v.ShowCompanyBalance = true
+	if first {
+		v.CompanyOpeningCents = m.CompanyOpeningCents
+	}
+	v.CompanyClosingCents = m.CompanyClosingCents
+}
+
+// closeCompanyOver settles the company balance from the rounded cent fields
+// rather than from the floats they came from. The closing figure seeds the
+// next month, so a half-cent here compounds down the year — and the rows on
+// the page have to add up to it, because that is the first thing a reader
+// checks.
+func (v *PersonalView) closeCompanyOver(stock companyStock) {
+	if !stock.Known {
+		return
+	}
+	v.ShowCompanyBalance = true
+	v.CompanyOpeningCents = stock.OpeningCents
+	v.CompanyClosingCents = stock.OpeningCents + v.CompanyIncomeCents -
+		v.CompanyExpensesCents - v.EmployerContribCents - v.GrossSalaryCents
 }
 
 func grossSalaryFor(d SalaryDecision, r Rules, availableForPayroll float64) (gross float64, minimumEnforced bool) {
@@ -209,9 +269,10 @@ func taxableAfter(gross, employeeContrib float64) float64 {
 	return 0
 }
 
-func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpensesEUR []float64, start yearMonth) PersonalView {
+func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpensesEUR []float64, start yearMonth, opening companyStock) PersonalView {
 	var result PersonalView
 	var one PersonalView
+	stock := opening
 	for i, income := range monthlyIncomeEUR {
 		var companyExpenses float64
 		if i < len(monthlyCompanyExpensesEUR) {
@@ -220,7 +281,7 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 		ym := start.addMonths(i)
 		d := p.Salary.decisionFor(ym)
 		mode := d.Mode
-		m := p.breakdown(income, companyExpenses, 1, p.rulesFor(ym), d)
+		m := p.breakdown(income, companyExpenses, 1, p.rulesFor(ym), d, stock)
 		one = m
 		switch mode {
 		case SalaryMinimum:
@@ -254,6 +315,8 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 		result.EmployeeContribCents += m.EmployeeContribCents
 		result.IncomeTaxCents += m.IncomeTaxCents
 		result.NetIncomeCents += m.NetIncomeCents
+		result.carryCompanyStock(m, i == 0)
+		stock.OpeningCents = m.CompanyClosingCents
 	}
 	months := len(monthlyIncomeEUR)
 	if months == 1 {

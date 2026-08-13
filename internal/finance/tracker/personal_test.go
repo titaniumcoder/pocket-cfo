@@ -38,7 +38,7 @@ func TestBreakdownCappedSalary(t *testing.T) {
 	p := params()
 
 	// €10,000/month company income, no company expenses, one month.
-	v := p.breakdown(10000, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
+	v := p.breakdown(10000, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
 
 	// salary above cap so employer contrib is flat.
 	// gross = 10000 - 0.1892*2112 = 9600.41
@@ -79,8 +79,8 @@ func TestBreakdownCappedSalary(t *testing.T) {
 func TestBreakdownYearScalesByTwelve(t *testing.T) {
 	p := params()
 
-	month := p.breakdown(10000, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
-	year := p.breakdown(120000, 0, 12, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}) // same €10,000/month smoothed over a year
+	month := p.breakdown(10000, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
+	year := p.breakdown(120000, 0, 12, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{}) // same €10,000/month smoothed over a year
 
 	// Year figures are the per-month figures times twelve, give or take a couple
 	// of cents of rounding (the annual total is rounded once, not summed).
@@ -97,7 +97,7 @@ func TestBreakdownBelowCap(t *testing.T) {
 	p := params()
 
 	// Salary stays under the cap, so employer contrib is a real percentage of gross.
-	v := p.breakdown(1000, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
+	v := p.breakdown(1000, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
 	// gross = 1000 / 1.1892 = 840.90; under cap.
 	if v.GrossSalaryCents != 84090 {
 		t.Errorf("gross = %d, want 84090", v.GrossSalaryCents)
@@ -110,7 +110,7 @@ func TestBreakdownBelowCap(t *testing.T) {
 func TestBreakdownZeroIncome(t *testing.T) {
 	p := params()
 
-	v := p.breakdown(0, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
+	v := p.breakdown(0, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
 	if v.GrossSalaryCents != 0 || v.EmployerContribCents != 0 || v.NetIncomeCents != 0 {
 		t.Errorf("salary should be zero for zero company income: %+v", v)
 	}
@@ -126,8 +126,8 @@ func TestBreakdownCompanyExpensesDeductedFirst(t *testing.T) {
 
 	// €1,000 company income, €200 company expenses -> same cascade as €800
 	// company income with no expenses.
-	withExpenses := p.breakdown(1000, 200, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
-	equivalent := p.breakdown(800, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
+	withExpenses := p.breakdown(1000, 200, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
+	equivalent := p.breakdown(800, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
 
 	if withExpenses.GrossSalaryCents != equivalent.GrossSalaryCents {
 		t.Errorf("GrossSalaryCents = %d, want %d (same as €800 income, no expenses)", withExpenses.GrossSalaryCents, equivalent.GrossSalaryCents)
@@ -148,7 +148,7 @@ func TestBreakdownCompanyExpensesDeductedFirst(t *testing.T) {
 // expenses larger than company income don't produce a negative salary.
 func TestBreakdownCompanyExpensesExceedingIncomeFloorsAtZero(t *testing.T) {
 	p := params()
-	v := p.breakdown(500, 2000, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
+	v := p.breakdown(500, 2000, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
 	if v.GrossSalaryCents != 0 || v.EmployerContribCents != 0 || v.NetIncomeCents != 0 {
 		t.Errorf("expected a zero salary when company expenses exceed company income: %+v", v)
 	}
@@ -164,10 +164,10 @@ func TestBreakdownMonthsHandlesMixedYear(t *testing.T) {
 		10000, // above social max insurable: capped contributions
 	}, nil)
 
-	empty := p.breakdown(0, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
-	low := p.breakdown(1000, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
-	belowCap := p.breakdown(3000, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
-	aboveCap := p.breakdown(10000, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
+	empty := p.breakdown(0, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
+	low := p.breakdown(1000, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
+	belowCap := p.breakdown(3000, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
+	aboveCap := p.breakdown(10000, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
 
 	wantGross := empty.GrossSalaryCents + low.GrossSalaryCents + belowCap.GrossSalaryCents + aboveCap.GrossSalaryCents
 	wantNet := empty.NetIncomeCents + low.NetIncomeCents + belowCap.NetIncomeCents + aboveCap.NetIncomeCents
@@ -195,9 +195,9 @@ func TestBreakdownMonthsAppliesPerMonthCompanyExpenses(t *testing.T) {
 		[]float64{200, 0}, // third month gets zero (slice too short)
 	)
 
-	m1 := p.breakdown(1000, 200, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
-	m2 := p.breakdown(1000, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
-	m3 := p.breakdown(1000, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
+	m1 := p.breakdown(1000, 200, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
+	m2 := p.breakdown(1000, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
+	m3 := p.breakdown(1000, 0, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
 
 	wantNet := m1.NetIncomeCents + m2.NetIncomeCents + m3.NetIncomeCents
 	if year.NetIncomeCents != wantNet {
@@ -214,7 +214,7 @@ func TestBreakdownMonthsAppliesPerMonthCompanyExpenses(t *testing.T) {
 // those tests still say what they meant rather than growing an argument that
 // is always the same.
 func (p PersonalParams) breakdownMonthsNoFloor(monthlyIncomeEUR, monthlyCompanyExpensesEUR []float64) PersonalView {
-	return p.breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpensesEUR, yearMonth{2026, time.January})
+	return p.breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpensesEUR, yearMonth{2026, time.January}, companyStock{})
 }
 
 // testMonth is a month no fixture legislates for, so rulesFor returns the

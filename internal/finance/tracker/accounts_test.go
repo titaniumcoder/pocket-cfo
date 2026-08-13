@@ -289,6 +289,169 @@ func TestPrivateBalanceRollsForwardAndCompounds(t *testing.T) {
 	}
 }
 
+// TestTheCompanyBalanceFundsPayroll: the balance is not a note beside the
+// cascade, it is one of its inputs — a company holding money can afford a
+// larger salary than its income alone would buy.
+func TestTheCompanyBalanceFundsPayroll(t *testing.T) {
+	p := bulgariaBands()
+	r := p.rulesFor(yearMonth{2026, time.July})
+	full := SalaryDecision{Mode: SalaryFull}
+
+	broke := p.breakdown(1000, 0, 1, r, full, companyStock{Known: true})
+	holding := p.breakdown(1000, 0, 1, r, full, companyStock{Known: true, OpeningCents: 300000})
+
+	if holding.GrossSalaryCents <= broke.GrossSalaryCents {
+		t.Errorf("gross = %d holding 3,000, %d holding nothing — the balance bought no salary",
+			holding.GrossSalaryCents, broke.GrossSalaryCents)
+	}
+	// A full salary spends the balance down to nothing: that is what "full"
+	// has always meant, and it is why the company had no stock to model until
+	// the other modes came back.
+	if holding.CompanyClosingCents != 0 {
+		t.Errorf("closing = %d, want 0 — a full salary leaves nothing behind", holding.CompanyClosingCents)
+	}
+	// And an overdrawn company shrinks payroll instead of being ignored.
+	overdrawn := p.breakdown(1000, 0, 1, r, full, companyStock{Known: true, OpeningCents: -50000})
+	if overdrawn.GrossSalaryCents >= broke.GrossSalaryCents {
+		t.Errorf("gross = %d while 500 overdrawn, %d level — the debt cost nothing",
+			overdrawn.GrossSalaryCents, broke.GrossSalaryCents)
+	}
+}
+
+// TestTheClosingBalanceIsTheRowsAboveIt: the page shows the opening, the
+// income, the expenses, the employer contribution and the gross, then the
+// closing figure. A reader adds those up, so the closing figure has to be
+// exactly their sum rather than a separately-rounded near-miss.
+func TestTheClosingBalanceIsTheRowsAboveIt(t *testing.T) {
+	p := bulgariaBands()
+	r := p.rulesFor(yearMonth{2026, time.July})
+
+	for _, d := range []SalaryDecision{
+		{Mode: SalaryMinimum},
+		{Mode: SalaryNone},
+		{Mode: SalaryFixed, FixedEUR: 1234.56},
+		{Mode: SalaryFull},
+	} {
+		v := p.breakdown(3333.33, 111.11, 1, r, d, companyStock{Known: true, OpeningCents: 777777})
+		want := v.CompanyOpeningCents + v.CompanyIncomeCents - v.CompanyExpensesCents -
+			v.EmployerContribCents - v.GrossSalaryCents
+		if v.CompanyClosingCents != want {
+			t.Errorf("%s: closing = %d, want %d — the rows on the page do not add up to it",
+				d.Mode, v.CompanyClosingCents, want)
+		}
+	}
+}
+
+// TestAnUnknownCompanyBalanceChangesNothing is the compatibility fence: a
+// config with no company account must produce the figures it produced before
+// the pot existed, so "unknown" cannot be modelled as "holds zero".
+func TestAnUnknownCompanyBalanceChangesNothing(t *testing.T) {
+	p := bulgariaBands()
+	r := p.rulesFor(yearMonth{2026, time.July})
+	d := SalaryDecision{Mode: SalaryFull}
+
+	unknown := p.breakdown(4000, 250, 1, r, d, companyStock{})
+	zero := p.breakdown(4000, 250, 1, r, d, companyStock{Known: true})
+
+	if unknown.GrossSalaryCents != zero.GrossSalaryCents {
+		t.Errorf("gross = %d unknown, %d known-zero — they must agree on the money",
+			unknown.GrossSalaryCents, zero.GrossSalaryCents)
+	}
+	// They differ only in whether the page has a balance to show.
+	if unknown.ShowCompanyBalance {
+		t.Error("an unknown balance produced a company balance row")
+	}
+	if !zero.ShowCompanyBalance {
+		t.Error("a known balance of zero produced no company balance row — zero is a figure")
+	}
+}
+
+// TestTheCompanyBalanceRollsForwardAndCompounds is the company sibling of the
+// private roll-forward: a month at the statutory minimum leaves the rest
+// behind, and the next month opens on it rather than on the read figure.
+func TestTheCompanyBalanceRollsForwardAndCompounds(t *testing.T) {
+	trk := accountsTracker(t, `{"accounts":[
+		{"name":"Private","kind":"private","balance":2000,"as_of":"2026-07-31"},
+		{"name":"Company","kind":"company","balance":5000,"as_of":"2026-07-31"}
+	]}`)
+	trk.Personal = bulgariaBands()
+	plan, err := ParseSalaryPlan([]SalaryEntry{{From: "2026-01", Mode: "minimum"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trk.Personal.Salary = plan
+
+	// The minimum wage and its contribution are the only company outflow, so
+	// each month closes a fixed amount below where it opened.
+	aug := trk.ComputeMonth(context.Background(), 2026, time.August)
+	if aug.AccountsErr != "" {
+		t.Fatalf("AccountsErr = %q", aug.AccountsErr)
+	}
+	if !aug.FundingPersonal.ShowCompanyBalance {
+		t.Fatal("no company balance in the month the snapshot opens")
+	}
+	if aug.FundingPersonal.CompanyOpeningCents != 500000 {
+		t.Errorf("August opening = %d, want the 5,000 read at the end of July", aug.FundingPersonal.CompanyOpeningCents)
+	}
+	augClose := aug.FundingPersonal.CompanyClosingCents
+	if augClose >= 500000 {
+		t.Fatalf("August closed at %d without paying a salary out of 5,000", augClose)
+	}
+
+	sep := trk.ComputeMonth(context.Background(), 2026, time.September)
+	if sep.FundingPersonal.CompanyOpeningCents != augClose {
+		t.Errorf("September opened at %d, want August's close of %d — the balance reset instead of carrying",
+			sep.FundingPersonal.CompanyOpeningCents, augClose)
+	}
+
+	// And months before the read date do not see it at all.
+	jul := trk.ComputeMonth(context.Background(), 2026, time.July)
+	if jul.FundingPersonal.ShowCompanyBalance {
+		t.Error("July saw a balance that was only read at the end of July")
+	}
+}
+
+// TestTheCompanyBalanceIsVisibleOnBothSidesOfTheCascade: the balance goes in
+// before payroll and what survives comes out after it, so the page has to show
+// both ends — one figure without the other is unreadable.
+func TestTheCompanyBalanceIsVisibleOnBothSidesOfTheCascade(t *testing.T) {
+	trk := accountsTracker(t, `{"accounts":[
+		{"name":"Private Checking","kind":"private","balance":2000,"as_of":"2026-07-31"},
+		{"name":"Company Checking","kind":"company","balance":5000,"as_of":"2026-07-31"}
+	]}`)
+	trk.Personal = bulgariaBands()
+	plan, err := ParseSalaryPlan([]SalaryEntry{{From: "2026-01", Mode: "minimum"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trk.Personal.Salary = plan
+
+	f := trk.ComputeMonth(context.Background(), 2026, time.August)
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	body := rec.Body.String()
+
+	for _, want := range []string{
+		`class="label">In the company`,
+		`class="label">Left in the company`,
+		"Company Checking",
+		// The private figure has to say which pot it is now that there are two.
+		`class="label">Private opening balance`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page never says %q", want)
+		}
+	}
+	// The company opening is read before payroll, so it belongs above the
+	// gross salary it paid for, and the closing below it.
+	opening := strings.Index(body, `class="label">In the company`)
+	gross := strings.Index(body, `class="label">Gross salary`)
+	closing := strings.Index(body, `class="label">Left in the company`)
+	if !(opening < gross && gross < closing) {
+		t.Errorf("rows are out of order: opening at %d, gross at %d, closing at %d", opening, gross, closing)
+	}
+}
+
 // TestAvailableIsOpeningPlusNetIncome pins the middle line of the budget
 // ledger and its relationship to the two around it: Available is what there
 // is before private expenses come off, and Balance is what's left after.
@@ -325,7 +488,7 @@ func TestNegativeBalancesRenderRed(t *testing.T) {
 	}
 	recPos := httptest.NewRecorder()
 	RenderPage(recPos, positive)
-	if strings.Contains(recPos.Body.String(), `class="row net neg"><span class="label">Opening balance`) {
+	if strings.Contains(recPos.Body.String(), `class="row net neg"><span class="label">Private opening balance`) {
 		t.Error("a positive opening balance must not render as negative")
 	}
 
@@ -336,7 +499,7 @@ func TestNegativeBalancesRenderRed(t *testing.T) {
 	rec := httptest.NewRecorder()
 	RenderPage(rec, negative)
 	body := rec.Body.String()
-	if !strings.Contains(body, `class="row net neg"><span class="label">Opening balance`) {
+	if !strings.Contains(body, `class="row net neg"><span class="label">Private opening balance`) {
 		t.Errorf("a negative opening balance should carry the neg class, got: %s", body)
 	}
 	if negative.AvailableCents < 0 && !strings.Contains(body, `neg"><span class="label">Available to spend`) {

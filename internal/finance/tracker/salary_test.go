@@ -128,8 +128,8 @@ func TestMinimumIsPaidEvenWhenMoreWasAffordable(t *testing.T) {
 	p := bulgariaBands()
 	r := p.rulesFor(yearMonth{2026, time.July}) // minimum wage 620.20 in force
 
-	full := p.breakdown(6000, 0, 1, r, SalaryDecision{Mode: SalaryFull})
-	minimum := p.breakdown(6000, 0, 1, r, SalaryDecision{Mode: SalaryMinimum})
+	full := p.breakdown(6000, 0, 1, r, SalaryDecision{Mode: SalaryFull}, companyStock{})
+	minimum := p.breakdown(6000, 0, 1, r, SalaryDecision{Mode: SalaryMinimum}, companyStock{})
 
 	if full.GrossSalaryCents <= 62020 {
 		t.Fatalf("full gross = %d, which is not above the minimum — this test would prove nothing", full.GrossSalaryCents)
@@ -162,7 +162,7 @@ func TestAFixedSalaryIsPaidWhateverTheCompanyCanAfford(t *testing.T) {
 	p := bulgariaBands()
 	r := p.rulesFor(yearMonth{2026, time.July})
 
-	poor := p.breakdown(800, 0, 1, r, SalaryDecision{Mode: SalaryFixed, FixedEUR: 2500})
+	poor := p.breakdown(800, 0, 1, r, SalaryDecision{Mode: SalaryFixed, FixedEUR: 2500}, companyStock{})
 	if poor.GrossSalaryCents != 250000 {
 		t.Errorf("gross = %d, want exactly the 2,500 named", poor.GrossSalaryCents)
 	}
@@ -178,11 +178,11 @@ func TestAFixedSalaryIsPaidWhateverTheCompanyCanAfford(t *testing.T) {
 	}
 	// And it is not topped up when the company could have paid more, which is
 	// the half of "fixed" that `full` would get wrong.
-	rich := p.breakdown(9000, 0, 1, r, SalaryDecision{Mode: SalaryFixed, FixedEUR: 2500})
+	rich := p.breakdown(9000, 0, 1, r, SalaryDecision{Mode: SalaryFixed, FixedEUR: 2500}, companyStock{})
 	if rich.GrossSalaryCents != 250000 {
 		t.Errorf("gross = %d on plentiful income, want the same 2,500", rich.GrossSalaryCents)
 	}
-	if full := p.breakdown(9000, 0, 1, r, SalaryDecision{Mode: SalaryFull}); full.GrossSalaryCents <= 250000 {
+	if full := p.breakdown(9000, 0, 1, r, SalaryDecision{Mode: SalaryFull}, companyStock{}); full.GrossSalaryCents <= 250000 {
 		t.Fatalf("full gross = %d, not above the fixed figure — this test would prove nothing", full.GrossSalaryCents)
 	}
 }
@@ -228,7 +228,7 @@ func TestNoSalaryChargesNothing(t *testing.T) {
 	r := p.rulesFor(yearMonth{2026, time.July})
 	r.Employer.MinBase = 933 // the case that could invent a payroll
 
-	got := p.breakdown(6000, 0, 1, r, SalaryDecision{Mode: SalaryNone})
+	got := p.breakdown(6000, 0, 1, r, SalaryDecision{Mode: SalaryNone}, companyStock{})
 
 	if got.GrossSalaryCents != 0 {
 		t.Errorf("gross = %d, want 0", got.GrossSalaryCents)
@@ -266,7 +266,7 @@ func TestARangeCountsTheMonthsThatDiffer(t *testing.T) {
 	}
 	p.Salary = plan
 
-	year := p.breakdownMonths(repeat(3000, 12), nil, yearMonth{2026, time.January})
+	year := p.breakdownMonths(repeat(3000, 12), nil, yearMonth{2026, time.January}, companyStock{})
 	if year.MonthsAtMinimum != 2 {
 		t.Errorf("MonthsAtMinimum = %d, want 2", year.MonthsAtMinimum)
 	}
@@ -283,7 +283,7 @@ func TestARangeCountsTheMonthsThatDiffer(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.Salary = all
-	quiet := p.breakdownMonths(repeat(3000, 12), nil, yearMonth{2026, time.January})
+	quiet := p.breakdownMonths(repeat(3000, 12), nil, yearMonth{2026, time.January}, companyStock{})
 	if quiet.Mode != SalaryNone || quiet.MonthsWithoutSalary != 12 {
 		t.Errorf("Mode = %q, without = %d, want none/12", quiet.Mode, quiet.MonthsWithoutSalary)
 	}
@@ -307,7 +307,7 @@ func TestAYearOfThreeSalaryShapesReadsAsASentence(t *testing.T) {
 	}
 	p.Salary = plan
 
-	year := p.breakdownMonths(repeat(3000, 12), nil, yearMonth{2026, time.January})
+	year := p.breakdownMonths(repeat(3000, 12), nil, yearMonth{2026, time.January}, companyStock{})
 	if year.MonthsAtFixed != 1 {
 		t.Errorf("MonthsAtFixed = %d, want 1", year.MonthsAtFixed)
 	}
@@ -318,7 +318,7 @@ func TestAYearOfThreeSalaryShapesReadsAsASentence(t *testing.T) {
 
 	// A year that agrees on one shape has nothing to explain.
 	p.Salary = nil
-	if got := p.breakdownMonths(repeat(3000, 12), nil, yearMonth{2026, time.January}).MixedMonthsNote(); got != "" {
+	if got := p.breakdownMonths(repeat(3000, 12), nil, yearMonth{2026, time.January}, companyStock{}).MixedMonthsNote(); got != "" {
 		t.Errorf("note = %q on a year of full salaries, want none", got)
 	}
 }

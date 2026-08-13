@@ -475,14 +475,25 @@ func TestListAccountsCarriesTheKind(t *testing.T) {
 		t.Fatalf("accounts = %v, want both", sc["accounts"])
 	}
 	got := map[string]string{}
+	asOf := map[string]string{}
 	for _, raw := range accounts {
 		a := raw.(map[string]any)
 		kind, _ := a["kind"].(string)
 		got[a["name"].(string)] = kind
+		date, _ := a["as_of"].(string)
+		asOf[a["name"].(string)] = date
 	}
 	for name, want := range map[string]string{"Company Checking": "company", "Private Checking": "private"} {
 		if got[name] != want {
 			t.Errorf("%s kind = %q, want %q", name, got[name], want)
+		}
+	}
+	// An account holds a series of readings now, so the one date reported has
+	// to be the newest of them — an older one would understate how current the
+	// balances are, which is the only thing this field is for.
+	for name, want := range map[string]string{"Company Checking": "2026-07-31", "Private Checking": "2026-07-31"} {
+		if asOf[name] != want {
+			t.Errorf("%s as_of = %q, want %q — the newest reading", name, asOf[name], want)
 		}
 	}
 
@@ -494,9 +505,9 @@ func TestListAccountsCarriesTheKind(t *testing.T) {
 			continue
 		}
 		desc, _ := tool["description"].(string)
-		for _, want := range []string{"kind", "company", "private"} {
+		for _, want := range []string{"kind", "company", "private", "as_of"} {
 			if !strings.Contains(desc, want) {
-				t.Errorf("list_accounts never mentions %q, so the kind arrives unexplained:\n%s", want, desc)
+				t.Errorf("list_accounts never mentions %q, so the field arrives unexplained:\n%s", want, desc)
 			}
 		}
 	}

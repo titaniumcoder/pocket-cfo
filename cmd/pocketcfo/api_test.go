@@ -49,8 +49,14 @@ func apiServer(t *testing.T, token, env string) *server {
 	t.Helper()
 	budgetFS := fstest.MapFS{
 		"budget.json": &fstest.MapFile{Data: []byte(apiBudgetJSON)},
+		// Private Checking carries a series, with the newest reading listed
+		// first, so that anything reporting the last or the first entry rather
+		// than the newest one is caught rather than accidentally right.
 		"accounts.json": &fstest.MapFile{Data: []byte(`{"accounts":[
-			{"name":"Private Checking","kind":"private","balances":[{"as_of":"2026-07-31","balance":100}]},
+			{"name":"Private Checking","kind":"private","balances":[
+				{"as_of":"2026-07-31","balance":100},
+				{"as_of":"2026-02-28","balance":40}
+			]},
 			{"name":"Company Checking","kind":"company","balances":[{"as_of":"2026-07-31","balance":250}]}
 		]}`)},
 	}

@@ -53,7 +53,7 @@ enforced by a schema. Keep the layout: the app's defaults point at these exact p
 | `data/users.json` | who may read which part, by email | `schemas/users.json` |
 | `data/budget.json` | planned expenses; every category has a stable UUID | `internal/finance/data/budget.schema.json` |
 | `data/actuals/YYYY-MM.json` | what was actually spent, per month | `internal/finance/data/actuals.schema.json` |
-| `data/accounts.json` | real account balances, read at month end; each declares `kind` — `company` or `private` | `internal/finance/data/accounts.schema.json` |
+| `data/accounts.json` | real account balances, read at month end; every reading is kept, and each account declares `kind` — `company` or `private` | `internal/finance/data/accounts.schema.json` |
 | `config.json` | non-secret tunables and payroll law | `internal/finance/config` |
 
 Payment lives in `data/paid-invoices.json` rather than in the invoice because an issued invoice

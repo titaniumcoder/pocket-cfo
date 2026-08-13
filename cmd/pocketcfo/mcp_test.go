@@ -458,6 +458,50 @@ func TestMCPListsNameTheirCollection(t *testing.T) {
 	}
 }
 
+// TestListAccountsCarriesTheKind: an agent picking an account for a statement
+// line cannot infer from a name which pot the money is in, and that decides
+// which side of the payroll cascade the line lands on. Both halves are checked
+// because either alone is useless — a described field that is absent, or a
+// present field nothing explains.
+func TestListAccountsCarriesTheKind(t *testing.T) {
+	s := apiServer(t, apiTestToken, "prod")
+
+	w := mcpCall(t, s, apiTestToken,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_accounts","arguments":{}}}`)
+	resp := decodeRPC(t, w.Body.String())
+	sc := resp["result"].(map[string]any)["structuredContent"].(map[string]any)
+	accounts, ok := sc["accounts"].([]any)
+	if !ok || len(accounts) != 2 {
+		t.Fatalf("accounts = %v, want both", sc["accounts"])
+	}
+	got := map[string]string{}
+	for _, raw := range accounts {
+		a := raw.(map[string]any)
+		kind, _ := a["kind"].(string)
+		got[a["name"].(string)] = kind
+	}
+	for name, want := range map[string]string{"Company Checking": "company", "Private Checking": "private"} {
+		if got[name] != want {
+			t.Errorf("%s kind = %q, want %q", name, got[name], want)
+		}
+	}
+
+	list := mcpCall(t, s, apiTestToken, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	tools := decodeRPC(t, list.Body.String())["result"].(map[string]any)["tools"].([]any)
+	for _, raw := range tools {
+		tool := raw.(map[string]any)
+		if tool["name"] != "list_accounts" {
+			continue
+		}
+		desc, _ := tool["description"].(string)
+		for _, want := range []string{"kind", "company", "private"} {
+			if !strings.Contains(desc, want) {
+				t.Errorf("list_accounts never mentions %q, so the kind arrives unexplained:\n%s", want, desc)
+			}
+		}
+	}
+}
+
 func keysOf(m map[string]any) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

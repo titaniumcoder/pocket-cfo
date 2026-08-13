@@ -217,57 +217,6 @@ func TestAPotIsUnknownUntilItsFirstReading(t *testing.T) {
 	}
 }
 
-// TestARowSaysWhenItsReadingTrailsTheAnchor: both pots are anchored at one
-// date, so an account nobody re-read is carried as if its old figure were the
-// anchor's. That is the same drag the single-reading file had, but with a
-// history there is no excuse for it being silent.
-func TestARowSaysWhenItsReadingTrailsTheAnchor(t *testing.T) {
-	a := newTestAccounts(t, `{"accounts":[
-		{"name":"Fresh","kind":"private","balances":[{"as_of":"2026-07-31","balance":100}]},
-		{"name":"Neglected","kind":"private","balances":[{"as_of":"2026-01-31","balance":250}]}
-	]}`)
-	snap, ok := snapshotAt(t, a, yearMonth{2026, time.August})
-	if !ok {
-		t.Fatal("expected a snapshot")
-	}
-	byName := map[string]AccountRow{}
-	for _, r := range snap.AccountRow {
-		byName[r.Name] = r
-	}
-	if byName["Fresh"].Behind {
-		t.Error("the account read at the anchor date is not behind it")
-	}
-	if !byName["Neglected"].Behind {
-		t.Error("an account last read six months before the anchor is carried as if it were current, and nothing says so")
-	}
-}
-
-// TestStalenessIsMeasuredFromTheNewestReadingInTheFile: the nag asks "when did
-// you last check your bank", which is a fact about the file and the calendar.
-// Viewing an old month anchors on an old reading, but that is navigation, not
-// neglect, and it must not make a freshly read file look stale.
-func TestStalenessIsMeasuredFromTheNewestReadingInTheFile(t *testing.T) {
-	a := newTestAccounts(t, `{"accounts":[
-		{"name":"P","kind":"private","balances":[
-			{"as_of":"2026-01-31","balance":500},
-			{"as_of":"2026-07-31","balance":2000}
-		]}
-	]}`)
-	snap, ok := snapshotAt(t, a, yearMonth{2026, time.March})
-	if !ok {
-		t.Fatal("expected a snapshot")
-	}
-	if want := (yearMonth{2026, time.February}); snap.OpensMonth != want {
-		t.Fatalf("OpensMonth = %+v, want %+v — March anchors on the January read", snap.OpensMonth, want)
-	}
-	if got, want := snap.NewestAsOf.Format("2006-01-02"), "2026-07-31"; got != want {
-		t.Errorf("NewestAsOf = %s, want %s — the July read exists whatever month is on screen", got, want)
-	}
-	if _, stale := snap.StaleDays(time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)); stale {
-		t.Error("a file read ten days ago nagged because the viewed month anchors on an older reading")
-	}
-}
-
 // TestAnAccountReadTwiceInOneMonthIsRefused: two figures closing one month are
 // two candidate openings for the next, with nothing to choose between them.
 func TestAnAccountReadTwiceInOneMonthIsRefused(t *testing.T) {
@@ -774,64 +723,10 @@ func TestAvailableHiddenWithoutAnOpeningBalance(t *testing.T) {
 	}
 }
 
-// TestStaleDaysThreshold covers the nag's boundary in both directions,
-// measured against real current time rather than the month being viewed.
-func TestStaleDaysThreshold(t *testing.T) {
-	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
-	tests := []struct {
-		name      string
-		asOf      time.Time
-		wantDays  int
-		wantStale bool
-	}{
-		{"read today", now, 0, false},
-		{"just inside the threshold", now.AddDate(0, 0, -staleAfterDays), staleAfterDays, false},
-		{"one day past", now.AddDate(0, 0, -(staleAfterDays + 1)), staleAfterDays + 1, true},
-		{"badly overdue", now.AddDate(0, 0, -120), 120, true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			days, stale := AccountSnapshot{NewestAsOf: tt.asOf}.StaleDays(now)
-			if days != tt.wantDays || stale != tt.wantStale {
-				t.Errorf("StaleDays = %d, %v; want %d, %v", days, stale, tt.wantDays, tt.wantStale)
-			}
-		})
-	}
-}
-
-// TestStaleNoteAppearsOnlyWhenOverdue wires the nag through a real compute:
-// a balance read moments ago says nothing, a long-stale one speaks up. The
-// snapshot dates are relative to real now, since staleness is measured
-// against the calendar rather than the viewed month.
-func TestStaleNoteAppearsOnlyWhenOverdue(t *testing.T) {
-	now := time.Now()
-	viewed := yearMonth{now.Year(), now.Month()}
-	// Anchor each snapshot to the end of the month before the viewed one,
-	// so the balance opens the month under test either way.
-	opensPrev := viewed.addMonths(-1)
-
-	fresh := time.Date(opensPrev.Year, opensPrev.Month, 28, 0, 0, 0, 0, time.UTC)
-	if now.Sub(fresh).Hours()/24 > staleAfterDays {
-		t.Skip("running late enough in the month that even last month's read is already stale")
-	}
-	trkFresh := accountsTracker(t, `{"accounts":[{"name":"P","kind":"private","balances":[{"as_of":"`+fresh.Format("2006-01-02")+`","balance":2000}]}]}`)
-	f := trkFresh.ComputeMonth(context.Background(), viewed.Year, viewed.Month)
-	if f.AccountsStaleNote != "" {
-		t.Errorf("a recently read balance should not nag, got %q", f.AccountsStaleNote)
-	}
-
-	old := now.AddDate(0, 0, -100)
-	trkOld := accountsTracker(t, `{"accounts":[{"name":"P","kind":"private","balances":[{"as_of":"`+old.Format("2006-01-02")+`","balance":2000}]}]}`)
-	fOld := trkOld.ComputeMonth(context.Background(), viewed.Year, viewed.Month)
-	if fOld.AccountsStaleNote == "" {
-		t.Error("a balance read 100 days ago should nag")
-	}
-}
-
 // TestVeryStaleBalanceStillComputes is the point of the whole layer: going
 // a long time without reading your bank makes the figure *nag*, never makes
 // it disappear. A balance last read years ago is still carried forward and
-// still shown — with the note attached.
+// still shown.
 func TestVeryStaleBalanceStillComputes(t *testing.T) {
 	trk := accountsTracker(t, `{"accounts":[
 		{"name":"Neglected","kind":"private","balances":[{"as_of":"2024-01-31","balance":2000}]}
@@ -844,8 +739,60 @@ func TestVeryStaleBalanceStillComputes(t *testing.T) {
 	if !f.ShowOpeningBalance {
 		t.Error("expected the opening balance to still render for a long-stale snapshot")
 	}
-	if f.AccountsStaleNote == "" {
-		t.Error("expected the staleness note on a years-old balance")
+}
+
+// TestTheDashboardAccountRowsAreNameAndFigureOnly pins what the ledger
+// deliberately does not say. An account row is a part of the figure above it,
+// and every extra clause — when it was read, what the note in accounts.json
+// says, why the company is overdrawn, how long since the bank was checked —
+// was prose on a page whose job is arithmetic. The read date moved to the
+// spending page, which is where it is acted on; the rest is in the file.
+func TestTheDashboardAccountRowsAreNameAndFigureOnly(t *testing.T) {
+	trk := accountsTracker(t, `{"accounts":[
+		{"name":"Revolut Private","kind":"private","balances":[
+			{"as_of":"2026-07-31","balance":2000,"note":"Not yet funded — placeholder until the main part lands"}
+		]},
+		{"name":"Revolut Business","kind":"company","balances":[
+			{"as_of":"2026-07-31","balance":-10,"note":"Overdrawn by the June Revolut Business Fee"}
+		]}
+	]}`)
+	trk.Personal = bulgariaBands()
+	fixed := 2500.0
+	plan, err := ParseSalaryPlan([]SalaryEntry{{From: "2026-01", Mode: "fixed", Amount: &fixed}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trk.Personal.Salary = plan
+
+	f := trk.ComputeMonth(context.Background(), 2026, time.August)
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	body := rec.Body.String()
+
+	// The fixed salary overdraws the company, which is what used to earn a
+	// paragraph of explanation underneath it.
+	if f.FundingPersonal.CompanyClosingCents >= 0 {
+		t.Fatal("the company is not overdrawn, so the note this guards would not have fired anyway")
+	}
+	for _, unwanted := range []string{
+		"as of ",
+		"as read end of",
+		"carried from",
+		"Not yet funded",
+		"Overdrawn by the June",
+		"overdrawn — it paid out",
+		"go check your bank",
+		`class="basis"`,
+	} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("the dashboard still says %q", unwanted)
+		}
+	}
+	// The figures themselves stay, with their names.
+	for _, want := range []string{"Revolut Private", "Revolut Business", "Private opening balance", "In the company"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the dashboard lost %q", want)
+		}
 	}
 }
 

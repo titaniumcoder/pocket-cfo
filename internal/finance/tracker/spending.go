@@ -20,6 +20,7 @@ type SpendingView struct {
 	RefreshURL  string
 
 	Present  bool
+	Balances []AccountRow
 	Coverage []CoverageRow
 
 	Groups    []SpendingGroup
@@ -83,6 +84,10 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 		SpendingURL: spendingURL(year, month),
 		RefreshURL:  spendingURL(year, month) + "?refresh=1",
 	}
+	if snap, ok, serr := t.Accounts.Snapshot(ctx, yearMonth{year, month}); serr == nil && ok {
+		v.Balances = snap.AccountRow
+	}
+
 	if t.Actuals == nil {
 		return v
 	}

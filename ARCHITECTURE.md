@@ -766,15 +766,23 @@ number read a year later.
 
 Both pots are still anchored at one date, because they are walked together, so an account
 nobody re-read is carried as if its older figure were the anchor's. That drag is unchanged
-from the single-reading file; what is new is that the row says so instead of hiding it.
+from the single-reading file, and it is visible in the read dates on the spending page.
 
 Two rules the schema cannot state are refused rather than guessed: two accounts sharing a
 name — now two histories for one account, with nothing to merge them by, where the old file
 silently summed them — and two readings in one month, which would be two candidate openings
 for the next. A rejected file also says so on the page; switching the balance layer off in
-silence is indistinguishable from having no `accounts.json` at all. Staleness is measured
-from the newest reading anywhere in the file rather than the one anchoring the month on
-screen: the nag asks when the bank was last checked, so navigating to March is not neglect.
+silence is indistinguishable from having no `accounts.json` at all.
+
+**Where a balance is explained, and where it is not.** The dashboard shows an account as a
+name and a figure, nothing else. It is a page of arithmetic, and every clause that
+accumulated around those rows — the read date, the free-text note, why the company is
+overdrawn, how long since the bank was checked — was prose competing with the numbers it
+annotated. The read date is real context, so it lives on the **spending page**, next to
+Coverage: that is the page you are on while reconciling against a statement, and so the
+page where learning the bank was last read six weeks ago actually changes what you do.
+The `note` on a reading is documentation for whoever edits `accounts.json` and renders
+nowhere.
 
 **`targetBalance`** is a figure the company saves towards: while it is under, the month pays
 the statutory minimum; at or above, full salary resumes. It is a **floor, not a high-water
@@ -818,13 +826,12 @@ credits are `ignored` lines and actuals have nothing to say about it. Untracked 
 counts as unspent, so an actuals close is optimistic by exactly the figure the untracked
 marker already reports.
 
-**Three ways to a balance, and the page says which.** A figure is read off the bank,
-carried on statements, or carried on the plan, and the number alone gives away none of it —
-which matters most when it looks wrong, because whether to re-read the bank, import a
-missing month or fix the budget depends entirely on which one produced it. The roll records
-what each month it walked closed on and the date it started from, and the result is a
-tooltip on the opening figure rather than a row: provenance is wanted when a figure is
-being questioned and is noise the rest of the time.
+A figure can therefore be read off the bank, carried on statements, or carried on the plan,
+and the dashboard does not distinguish them. It briefly did, as a tooltip on the opening
+figure. The distinction is real but it is diagnostic: wanted when a figure is being argued
+with, noise on every other visit, and not worth the machinery of threading a provenance
+record through the roll to render it. What the reader has instead is the read date on the
+spending page, which answers the question that actually prompts the doubt.
 
 **The running month has two balances.** The plan charges the whole month on the first, so
 mid-month the projection and the statements answer different questions — where this will

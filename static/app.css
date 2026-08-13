@@ -165,8 +165,6 @@ main h2.panel-title { font-size: 1.05rem; text-transform: none; letter-spacing: 
 .group.open .group-rows { display: contents; }
 .group-rows .row .label { padding-left: 2rem; opacity: .7; font-weight: 400; }
 .note { margin-left: .5em; font-size: .85em; }
-.basis { display: inline-flex; vertical-align: -.15em; margin-left: .35em; opacity: .45; cursor: help; }
-.basis:hover { opacity: .8; }
 .note a { color: inherit; text-decoration: underline; }
 .note a:hover { opacity: .7; }
 .link-icon { vertical-align: -1px; margin-left: .1em; }
@@ -519,6 +517,9 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
 .cov-grid { display: grid; grid-template-columns: minmax(0, 1fr) 7rem 7rem 7rem; column-gap: 1.5rem; align-items: stretch; }
 .cov-grid > * { padding: .5rem 0; border-bottom: 1px solid var(--panel-border); }
 .cov-head { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; opacity: .55; font-weight: 600; }
+/* Balances has three columns to Coverage's four, and the last one is money. */
+.bal-grid { grid-template-columns: minmax(0, 1fr) 7rem 7rem; }
+.bal-amt { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* The phone rules live here, immediately after the declarations they narrow,
    and not in the media block further up: media queries add no specificity, so

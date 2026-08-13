@@ -163,9 +163,6 @@ type Figures struct {
 	AvailableCents      int
 	PrivateAccounts     []AccountRow
 	CompanyAccounts     []AccountRow
-	CompanyBalanceLabel string
-	BalanceBasisNote    string
-	AccountsStaleNote   string
 
 	TargetNeedsBalanceNote string
 
@@ -511,7 +508,7 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 	}
 
 	if opened {
-		f.publishAccountBalances(snap, carried, yearMonth{year, start.Month()}, now)
+		f.publishAccountBalances(snap, carried, yearMonth{year, start.Month()})
 	}
 
 	if f.BudgetErr == "" && f.FundingPersonal.Err == "" {
@@ -590,32 +587,17 @@ func (t *Tracker) carriedBalances(ctx context.Context, viewed yearMonth, now tim
 	return carried, snap, true, ""
 }
 
-func (f *Figures) publishAccountBalances(snap AccountSnapshot, carried openings, viewed yearMonth, now time.Time) {
+func (f *Figures) publishAccountBalances(snap AccountSnapshot, carried openings, viewed yearMonth) {
 	if f.BudgetErr != "" || f.FundingPersonal.Err != "" {
 		return
 	}
 	f.ShowOpeningBalance = true
 	f.OpeningBalanceCents = carried.PrivateCents
 	f.AvailableCents = carried.PrivateCents + f.FundingPersonal.NetIncomeCents
-	f.OpeningBalanceLabel = openingBalanceLabel(snap, viewed)
-	f.CompanyBalanceLabel = openingBalanceLabel(snap, viewed)
-	f.BalanceBasisNote = carried.Basis.Note()
 	if viewed == snap.OpensMonth {
 		f.PrivateAccounts = snap.rowsOfKind(accountsdata.AccountKindPrivate)
 		f.CompanyAccounts = snap.rowsOfKind(accountsdata.AccountKindCompany)
 	}
-	if days, stale := snap.StaleDays(now); stale {
-		f.AccountsStaleNote = fmt.Sprintf(
-			"Last read %d days ago (%s). Everything below it is extrapolated from that one figure — go check your bank and update accounts.json.",
-			days, snap.LatestAsOf.Format("2 January 2006"))
-	}
-}
-
-func openingBalanceLabel(snap AccountSnapshot, viewed yearMonth) string {
-	if viewed == snap.OpensMonth {
-		return "as read end of " + snap.OpensMonth.addMonths(-1).String()
-	}
-	return "carried from " + snap.OpensMonth.String()
 }
 
 func (t *Tracker) EvictMonth(year int, month time.Month) {

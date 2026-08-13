@@ -136,19 +136,6 @@ func (v PersonalView) TargetNote() string {
 	return ""
 }
 
-// CompanyOverdrawnNote exists because a negative closing balance is otherwise
-// just a red figure. It is the expected outcome of a fixed salary the company
-// cannot afford — a deliberate choice — and unremarked it reads as a bug.
-func (v PersonalView) CompanyOverdrawnNote() string {
-	if !v.ShowCompanyBalance || v.CompanyClosingCents >= 0 {
-		return ""
-	}
-	if v.Mode == SalaryFixed {
-		return "The fixed salary is more than the company earned, so it ends the month overdrawn. That is what fixing a salary means: it is paid whether or not the money is there."
-	}
-	return "The company ends the month overdrawn — it paid out more than it took in."
-}
-
 func (v PersonalView) MixedMonthsNote() string {
 	if v.Mode != "" {
 		return ""

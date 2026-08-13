@@ -208,6 +208,14 @@ var templates = `
 
     {{if .Err}}<p class="error">{{.Err}}</p>{{end}}
 
+    {{if .Balances}}
+    <h3>Balances</h3>
+    <div class="cov-grid bal-grid">
+      <span class="cov-head">Account</span><span class="cov-head col-secondary">Read</span><span class="cov-head bal-amt">Balance</span>
+      {{range .Balances}}<span>{{.Name}}</span><span class="col-secondary">{{.AsOf}}</span><span class="bal-amt">{{eur .Cents}}</span>{{end}}
+    </div>
+    {{end}}
+
     {{if not .Present}}
     <p class="muted">No bank statement has been reconciled for {{.Month}} yet.</p>
     {{else}}
@@ -433,8 +441,8 @@ var templates = `
       <div class="row net{{if not $.Invoiced}} gap-below{{end}}"><span class="label">Company income{{if and .FundingLabel (not $.Invoiced)}} <small>(from {{if .FundingURL}}<a class="period-link" href="{{.FundingURL}}">{{.FundingLabel}}</a>{{else}}{{.FundingLabel}}{{end}})</small>{{end}}</span><span class="mid"></span><span class="amt goodamt">{{eur .CompanyIncomeCents}}</span></div>
       {{range $.Invoiced}}<div class="row acct"><span class="label">{{if .URL}}<a href="{{.URL}}">{{.Number}}</a>{{else}}{{.Number}}{{end}} <span class="note">invoiced, usable this month</span></span><span class="mid"></span><span class="amt">{{eur .AmountCents}}</span></div>{{end}}
       {{if .ShowCompanyBalance}}
-      <div class="row{{if lt .CompanyOpeningCents 0}} neg{{end}}"><span class="label">In the company{{if $.CompanyBalanceLabel}} <small>({{$.CompanyBalanceLabel}})</small>{{end}}{{if $.BalanceBasisNote}} <span class="basis" title="{{$.BalanceBasisNote}}">` + infoIcon + `</span>{{end}}</span><span class="mid"></span><span class="amt{{if lt .CompanyOpeningCents 0}} neg{{else}} goodamt{{end}}">{{eur .CompanyOpeningCents}}</span></div>
-      {{range $.CompanyAccounts}}<div class="row acct"><span class="label">{{.Name}} <span class="note">as of {{.AsOf}}{{if .Note}} &middot; {{.Note}}{{end}}</span></span><span class="mid"></span><span class="amt">{{eur .Cents}}</span></div>{{end}}
+      <div class="row{{if lt .CompanyOpeningCents 0}} neg{{end}}"><span class="label">In the company</span><span class="mid"></span><span class="amt{{if lt .CompanyOpeningCents 0}} neg{{else}} goodamt{{end}}">{{eur .CompanyOpeningCents}}</span></div>
+      {{range $.CompanyAccounts}}<div class="row acct"><span class="label">{{.Name}}</span><span class="mid"></span><span class="amt">{{eur .Cents}}</span></div>{{end}}
       {{end}}
       {{if $.Invoiced}}<div class="row gap-below"></div>{{end}}
       {{if $.ShowActuals}}<div class="row colhead"><span class="label"></span><span class="mid">Planned</span><span class="amt">Actual</span></div>{{end}}
@@ -452,14 +460,12 @@ var templates = `
       {{if .ShowCompanyBalance}}<div class="row{{if lt $.HeadlineCompanyClosingCents 0}} neg{{end}}"><span class="label">Left in the company{{if .CompanyTargetCents}} <small>(target {{eur .CompanyTargetCents}})</small>{{end}}</span>{{if $.ShowActualBalance}}<span class="mid">{{eur .CompanyClosingCents}}</span><span class="amt{{if lt $.ActualCompanyClosingCents 0}} neg{{end}}">{{eur $.ActualCompanyClosingCents}}<span class="stack-m">projected {{eur .CompanyClosingCents}}</span></span>{{else}}<span class="mid"></span><span class="amt{{if lt .CompanyClosingCents 0}} neg{{end}}">{{eur .CompanyClosingCents}}</span>{{end}}</div>{{end}}
       {{if .TargetNote}}<div class="row"><span class="stale-note">{{.TargetNote}}</span></div>{{end}}
       {{if $.TargetNeedsBalanceNote}}<div class="row"><span class="stale-note">{{$.TargetNeedsBalanceNote}}</span></div>{{end}}
-      {{if .CompanyOverdrawnNote}}<div class="row"><span class="stale-note">{{.CompanyOverdrawnNote}}</span></div>{{end}}
       {{end}}
       {{end}}
       {{if .AccountsErr}}<div class="row"><span class="error">{{.AccountsErr}}</span></div>{{end}}
       {{if .ShowOpeningBalance}}
-      <div class="row net{{if lt .OpeningBalanceCents 0}} neg{{end}}"><span class="label">Private opening balance <small>({{.OpeningBalanceLabel}})</small>{{if .BalanceBasisNote}} <span class="basis" title="{{.BalanceBasisNote}}">` + infoIcon + `</span>{{end}}</span><span class="mid"></span><span class="amt netamt">{{eur .OpeningBalanceCents}}</span></div>
-      {{range .PrivateAccounts}}<div class="row acct"><span class="label">{{.Name}} <span class="note">as of {{.AsOf}}{{if .Note}} &middot; {{.Note}}{{end}}</span></span><span class="mid"></span><span class="amt">{{eur .Cents}}</span></div>{{end}}
-      {{if .AccountsStaleNote}}<div class="row"><span class="stale-note">{{.AccountsStaleNote}}</span></div>{{end}}
+      <div class="row net{{if lt .OpeningBalanceCents 0}} neg{{end}}"><span class="label">Private opening balance</span><span class="mid"></span><span class="amt netamt">{{eur .OpeningBalanceCents}}</span></div>
+      {{range .PrivateAccounts}}<div class="row acct"><span class="label">{{.Name}}</span><span class="mid"></span><span class="amt">{{eur .Cents}}</span></div>{{end}}
       <div class="row net gap-above{{if lt .AvailableCents 0}} neg{{end}}"><span class="label">Available to spend</span><span class="mid"></span><span class="amt netamt">{{eur .AvailableCents}}</span></div>
       {{end}}
     </div>
@@ -517,8 +523,6 @@ const markOver = `<svg class="mark" viewBox="0 0 24 24" width="13" height="13" f
 const copyIcon = `<svg class="i-copy" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`
 
 const copiedIcon = `<svg class="i-done" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>`
-
-const infoIcon = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>`
 
 const chevronLeft = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>`
 

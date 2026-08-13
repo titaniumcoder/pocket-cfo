@@ -584,18 +584,76 @@ func TestDatesReadDayFirst(t *testing.T) {
 	}
 }
 
-// TestAccountAsOfReadsDayFirst: the same date, in the same house format, on
-// the dashboard.
+// TestAccountAsOfReadsDayFirst: the same date, in the same house format, in
+// the one place a read date is now shown.
 func TestAccountAsOfReadsDayFirst(t *testing.T) {
-	trk := accountsTracker(t, testAccountsJSON)
-	f := trk.ComputeMonth(context.Background(), 2026, time.August)
-	if len(f.PrivateAccounts) == 0 {
-		t.Skip("the fixture has no accounts")
+	v := actualsTracker(t, nil).ComputeSpending(context.Background(), 2026, time.August)
+	if len(v.Balances) == 0 {
+		t.Fatal("the fixture has no balances")
 	}
-	for _, a := range f.PrivateAccounts {
+	for _, a := range v.Balances {
 		if strings.Contains(a.AsOf, "-") {
 			t.Errorf("account %q is as of %q, still ISO", a.Name, a.AsOf)
 		}
+	}
+}
+
+// TestSpendingShowsTheBalanceAndWhenItWasRead: the dashboard is a page of
+// figures and says only what each account holds. The read date is the context
+// for that figure, and this is where it goes — the page you are on when you
+// are reconciling against a statement, and so the page where knowing the bank
+// was last read six weeks ago actually changes what you do next.
+func TestSpendingShowsTheBalanceAndWhenItWasRead(t *testing.T) {
+	trk := accountsTracker(t, `{"accounts":[
+		{"name":"Revolut Private","kind":"private","balances":[
+			{"as_of":"2026-04-30","balance":3950},
+			{"as_of":"2026-07-31","balance":4200}
+		]},
+		{"name":"Revolut Business","kind":"company","balances":[{"as_of":"2026-07-31","balance":-10}]}
+	]}`)
+	v := trk.ComputeSpending(context.Background(), 2026, time.August)
+
+	if len(v.Balances) != 2 {
+		t.Fatalf("balances = %+v, want both accounts", v.Balances)
+	}
+	byName := map[string]AccountRow{}
+	for _, b := range v.Balances {
+		byName[b.Name] = b
+	}
+	if got := byName["Revolut Private"]; got.Cents != 420000 || got.AsOf != "31.07.2026" {
+		t.Errorf("Revolut Private = %+v, want the 31.07.2026 reading of 4 200", got)
+	}
+	if got := byName["Revolut Business"]; got.Cents != -1000 {
+		t.Errorf("Revolut Business = %+v, want the overdrawn figure carried as-is", got)
+	}
+
+	rec := httptest.NewRecorder()
+	RenderSpending(rec, v)
+	body := rec.Body.String()
+	for _, want := range []string{"Balances", "Revolut Private", "31.07.2026", "4,200"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the spending page never says %q", want)
+		}
+	}
+}
+
+// TestSpendingBalancesFollowTheViewedMonth: the figure shown is the one that
+// was true for the month on screen, not the newest one in the file. Paging
+// back to May must not report a balance read at the end of July.
+func TestSpendingBalancesFollowTheViewedMonth(t *testing.T) {
+	trk := accountsTracker(t, `{"accounts":[
+		{"name":"P","kind":"private","balances":[
+			{"as_of":"2026-04-30","balance":3950},
+			{"as_of":"2026-07-31","balance":4200}
+		]}
+	]}`)
+	may := trk.ComputeSpending(context.Background(), 2026, time.May)
+	if len(may.Balances) != 1 || may.Balances[0].AsOf != "30.04.2026" || may.Balances[0].Cents != 395000 {
+		t.Errorf("May balances = %+v, want the 30.04.2026 reading", may.Balances)
+	}
+	april := trk.ComputeSpending(context.Background(), 2026, time.April)
+	if len(april.Balances) != 0 {
+		t.Errorf("April balances = %+v, want none — the 30 April read closes April", april.Balances)
 	}
 }
 

@@ -667,6 +667,52 @@ func TestSpendingPageShowsUntrackedCash(t *testing.T) {
 	}
 }
 
+// TestUntrackedCashLeadsThePage: it is the one section on the page that asks
+// to be acted on, so it is read before the categories rather than found after
+// scrolling past them.
+func TestUntrackedCashLeadsThePage(t *testing.T) {
+	trk := actualsTracker(t, map[string]string{"actuals/2026-08.json": untrackedActualsJSON})
+	v := trk.ComputeSpending(context.Background(), 2026, time.August)
+
+	rec := httptest.NewRecorder()
+	RenderSpending(rec, v)
+	body := rec.Body.String()
+
+	untracked := strings.Index(body, "Untracked cash")
+	if untracked < 0 {
+		t.Fatal("the page never says Untracked cash")
+	}
+	grid := strings.Index(body, `<div class="spend-grid">`)
+	if grid < 0 || untracked < grid {
+		t.Error("untracked cash escaped the one transaction grid, so its columns no longer line up with the rest of the page")
+	}
+	for _, after := range []string{`<span class="sg-head col-secondary">Account</span>`, "Not in this month", "Not budget expenses"} {
+		at := strings.Index(body, after)
+		if at < 0 {
+			t.Errorf("the page never says %q", after)
+			continue
+		}
+		if untracked > at {
+			t.Errorf("untracked cash comes after %q", after)
+		}
+	}
+}
+
+// TestUntrackedCashIsSetInWeight guards the half of the change the template
+// test cannot see: the rows themselves, not just their heading, are bold.
+func TestUntrackedCashIsSetInWeight(t *testing.T) {
+	css := appCSS(t)
+	for _, want := range []string{
+		".spend-grid > h3.sg-untracked { font-weight: 700; }",
+		".spend-grid > .sg-untracked-row > * { font-weight: 700; }",
+		".spend-grid > h3.sg-untracked:first-child { margin-top: 0; }",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("the stylesheet no longer carries %q", want)
+		}
+	}
+}
+
 // TestUntrackedCashReachesNoFinanceFigure is the promise the whole feature
 // rests on: it is visible on the spending page and nowhere in the money.
 func TestUntrackedCashReachesNoFinanceFigure(t *testing.T) {

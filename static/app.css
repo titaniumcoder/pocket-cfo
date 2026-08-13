@@ -554,6 +554,11 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
    given a colour of its own: colour here means the sign of an amount. */
 .untracked-mark { font-weight: 700; font-size: .82rem; white-space: nowrap; }
 .spend-grid > h3.sg-untracked { font-weight: 700; }
+/* It sits first on the page because it is the one section that asks to be
+   acted on, and the whole block is set in weight so it cannot be skimmed
+   past. First in the grid means no heading gap above it. */
+.spend-grid > h3.sg-untracked:first-child { margin-top: 0; }
+.spend-grid > .sg-untracked-row > * { font-weight: 700; }
 .muted { opacity: .6; font-size: .88rem; }
 .budget-of { text-align: right; opacity: .55; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* A part of a split says what it is a part of: 50 under Restaurant against a

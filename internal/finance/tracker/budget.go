@@ -26,6 +26,15 @@ type Budget struct {
 	mu        sync.Mutex
 	cache     *budgetResult
 	minimalOn bool
+	justWrote committed
+}
+
+func (b *Budget) Publish(body []byte) {
+	if b == nil {
+		return
+	}
+	b.justWrote.publish(budgetPath, body)
+	b.Evict()
 }
 
 func (b *Budget) ToggleMinimal() bool {
@@ -77,6 +86,9 @@ func (b *Budget) File(ctx context.Context) (budgetdata.BudgetFile, error) {
 
 func (b *Budget) fetch() (budgetdata.BudgetFile, error) {
 	content, err := fs.ReadFile(b.fsys(), budgetPath)
+	if body, ok := b.justWrote.supersedes(budgetPath, content, err); ok {
+		content, err = body, nil
+	}
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return budgetdata.BudgetFile{}, fmt.Errorf("budget: %s not found", budgetPath)

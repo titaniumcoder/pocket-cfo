@@ -109,6 +109,7 @@ func (s *Service) EditTransactions(ctx context.Context, req EditRequest) (*EditR
 		if cerr != nil {
 			return nil, editCommitError(cerr, p.month, out.Months)
 		}
+		s.Actuals.Publish(p.month, p.body)
 		out.Months = append(out.Months, MonthEdit{Month: p.month, SHA: sha, Edited: p.edited})
 	}
 	out.DeployPending = len(out.Months) > 0

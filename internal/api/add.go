@@ -80,6 +80,7 @@ func (s *Service) AddTransactions(ctx context.Context, req AddRequest) (*AddResu
 		if cerr != nil {
 			return nil, commitError(cerr, p.month, out.Months)
 		}
+		s.Actuals.Publish(p.month, p.body)
 		out.Months = append(out.Months, MonthWrite{Month: p.month, SHA: sha, Added: p.added})
 	}
 	out.DeployPending = len(out.Months) > 0

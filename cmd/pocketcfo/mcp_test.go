@@ -465,3 +465,34 @@ func keysOf(m map[string]any) []string {
 	}
 	return out
 }
+
+// TestReadToolsStateTheirConsistency: a read that can lag is only safe if the
+// caller is told so. Every read tool over data this API can write has to say
+// what it guarantees, or an agent treats "not found" as "not there" and redoes
+// work it already did.
+func TestReadToolsStateTheirConsistency(t *testing.T) {
+	s := apiServer(t, apiTestToken, "prod")
+	w := mcpCall(t, s, apiTestToken, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	resp := decodeRPC(t, w.Body.String())
+
+	desc := map[string]string{}
+	for _, raw := range resp["result"].(map[string]any)["tools"].([]any) {
+		tool := raw.(map[string]any)
+		desc[tool["name"].(string)], _ = tool["description"].(string)
+	}
+
+	// Reads over data add_transactions, edit_transactions or
+	// move_planned_expense can change.
+	for _, name := range []string{"get_actuals", "get_budget", "search_transactions", "get_reconciliation_status"} {
+		if !strings.Contains(desc[name], "deployed") {
+			t.Errorf("%s never says when a change becomes visible:\n%s", name, desc[name])
+		}
+	}
+	// The two that read data nothing here writes should not claim a caveat
+	// they do not have.
+	for _, name := range []string{"list_budget_categories", "list_accounts"} {
+		if strings.Contains(desc[name], "EVENTUALLY CONSISTENT") {
+			t.Errorf("%s claims to lag, but nothing in this API writes what it reads", name)
+		}
+	}
+}

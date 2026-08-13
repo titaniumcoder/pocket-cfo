@@ -108,6 +108,19 @@ reads work and writes return `write_not_configured`.
    charge, **`move_planned_expense`** shifts the plan to match — it changes that category's
    date and nothing else, and needs a reason.
 
+## When a write becomes visible
+
+Every accepted write is a commit, and the running app is rebuilt from that commit — which
+takes a few minutes. In between, the app serves what you just committed from memory, so
+**a month you have written reads back immediately**: `get_actuals`,
+`get_reconciliation_status` and `search_transactions` all reflect it, and so does the
+spending page. Call `get_reconciliation_status` straight after a write to check it landed.
+
+Two limits worth knowing. A change made somewhere other than this app — a hand edit in the
+data repo, or another instance — appears only once it has deployed. And the app never
+writes to its own copy on disk: the memory is dropped when the deploy replaces the file, so
+git remains the only thing that is true.
+
 ## There is no removal
 
 Nothing in this API deletes a recorded transaction. `add_transactions` only appends,

@@ -21,8 +21,19 @@ func actualsPath(year int, month time.Month) string {
 type Actuals struct {
 	FS fs.FS
 
-	mu    sync.Mutex
-	cache map[string]*actualsResult
+	mu        sync.Mutex
+	cache     map[string]*actualsResult
+	justWrote committed
+}
+
+func (a *Actuals) Publish(monthKey string, body []byte) {
+	if a == nil {
+		return
+	}
+	a.justWrote.publish(monthKey, body)
+	a.mu.Lock()
+	delete(a.cache, monthKey)
+	a.mu.Unlock()
 }
 
 type actualsResult struct {
@@ -175,7 +186,11 @@ func (a *Actuals) month(ctx context.Context, year int, month time.Month) actuals
 
 func (a *Actuals) fetch(year int, month time.Month) actualsResult {
 	path := actualsPath(year, month)
+	key := monthKey(year, month)
 	content, err := fs.ReadFile(a.FS, path)
+	if body, ok := a.justWrote.supersedes(key, content, err); ok {
+		content, err = body, nil
+	}
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return actualsResult{}

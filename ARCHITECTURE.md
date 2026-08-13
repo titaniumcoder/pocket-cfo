@@ -754,6 +754,28 @@ The balance being an *input* to the cascade is why the roll-forward runs before 
 than after, and why both pots are walked in one pass — the company balance feeds payroll,
 and the private balance is fed by what payroll pays out.
 
+**An account keeps every reading, not just the last.** `accounts.json` used to hold one
+`balance` and one `as_of` per account, so re-reading the bank wrote over the previous
+figure — lossy in the one direction that matters, since the reason to read again is that
+the carried figure has drifted. Readings live in a `balances` array now, and the one in
+force for a month is the newest dated before it. A month before every reading still has no
+balance; a month after a later reading opens on **that** reading rather than on a chain
+extrapolated past it. So a yearly sync corrects everything from that point on without
+rewriting the months before it, and paging back shows what was true then rather than a
+number read a year later.
+
+Both pots are still anchored at one date, because they are walked together, so an account
+nobody re-read is carried as if its older figure were the anchor's. That drag is unchanged
+from the single-reading file; what is new is that the row says so instead of hiding it.
+
+Two rules the schema cannot state are refused rather than guessed: two accounts sharing a
+name — now two histories for one account, with nothing to merge them by, where the old file
+silently summed them — and two readings in one month, which would be two candidate openings
+for the next. A rejected file also says so on the page; switching the balance layer off in
+silence is indistinguishable from having no `accounts.json` at all. Staleness is measured
+from the newest reading anywhere in the file rather than the one anchoring the month on
+screen: the nag asks when the bank was last checked, so navigating to March is not neglect.
+
 **`targetBalance`** is a figure the company saves towards: while it is under, the month pays
 the statutory minimum; at or above, full salary resumes. It is a **floor, not a high-water
 mark**, and that distinction is the whole design. The target is subtracted from what payroll
@@ -776,10 +798,43 @@ harmlessly but would reorder a balance, so a twelve-month range would close the 
 somewhere the twelve month views never do.
 
 **Planned versus actual.** `budget.json` is what was planned; `actuals/YYYY-MM.json` is
-what the bank statement said. The actuals layer is **display only**: it is shown beside the
-plan and feeds no figure the plan produces — not Balance, not Available to spend, not the
-account roll-forward. A test asserts every planned figure is unchanged with and without it,
-because that invariant is easy to break by accident and invisible when broken.
+what the bank statement said. Actuals move the **roll-forward and nothing else**. A month
+is closed on its statements rather than its plan, so a balance carried from an old read
+spends what was actually spent; but no planned figure of the month on screen changes, and
+a test still asserts that, because it is easy to break by accident and invisible when
+broken.
+
+This used to be stricter — actuals were display-only and fed no figure at all. That made
+every carried balance a statement of intent: the further from the read, the more the
+number described the budget rather than the account. The drift was systematic and
+compounded, and the evidence to correct it was already imported and being ignored.
+
+A month is closed on its statements only when `coverage` spans the whole month. A
+half-imported month closed on its transactions reads as a frugal one, and the surplus it
+invents is carried forward for good with nothing on the page saying so; falling back to the
+plan is the conservative answer, and `coverageComplete` already computed the test. Income
+is untouched either way and stays predicted from Toggl and invoices, because statement
+credits are `ignored` lines and actuals have nothing to say about it. Untracked money
+counts as unspent, so an actuals close is optimistic by exactly the figure the untracked
+marker already reports.
+
+**Three ways to a balance, and the page says which.** A figure is read off the bank,
+carried on statements, or carried on the plan, and the number alone gives away none of it —
+which matters most when it looks wrong, because whether to re-read the bank, import a
+missing month or fix the budget depends entirely on which one produced it. The roll records
+what each month it walked closed on and the date it started from, and the result is a
+tooltip on the opening figure rather than a row: provenance is wanted when a figure is
+being questioned and is noise the rest of the time.
+
+**The running month has two balances.** The plan charges the whole month on the first, so
+mid-month the projection and the statements answer different questions — where this will
+end up, and where it stands today. Both are shown, in the Planned-against-Actual columns
+the ledger already uses. Neither replaces the other: the live figure is optimistic by
+whatever has not been imported or assigned yet, and only the projection beside it makes
+that legible. The company row gets the same pair, with the expense figure substituted but
+the cascade left alone — re-deriving affordability from a half-imported month would invent
+a bigger salary purely because the statements had not caught up, and would break the rule
+that the closing figure equals the rows above it.
 
 Every statement line carries exactly one disposition: a budget category, an `ignored`
 reason, an `untracked` note for money not yet decided, or `splits` when one line paid for

@@ -184,7 +184,7 @@ func (s *Service) registerTools(server *mcp.Server) {
 	})
 
 	mcp.AddTool(server, tool("get_budget",
-		"The plan for a period, with overrides already applied. period is YYYY-MM for one month or YYYY for twelve month buckets. A category with a date is a one-off counted only in that month.",
+		"The plan for a period, with overrides already applied. period is YYYY-MM for one month or YYYY for twelve month buckets. A category with a date is a one-off counted only in that month. A move_planned_expense you made is reflected at once; a budget.json edited directly appears only after that commit has deployed.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, a periodArgs) (*mcp.CallToolResult, any, error) {
 		if len(a.Period) == 4 {
 			return result(s.BudgetForYear(ctx, a.Period))
@@ -193,13 +193,13 @@ func (s *Service) registerTools(server *mcp.Server) {
 	})
 
 	mcp.AddTool(server, tool("get_actuals",
-		"The committed document for one month. This file is the source of truth: where it disagrees with your own recollection, it wins — read it before adding lines, so you send only what is missing. Returns not_found when the month has never been reconciled. Writes take no sha, so nothing here has to be passed back; the id and month beside each line are what add_transactions and edit_transactions work from. A month you have just written reads back immediately.",
+		"The committed document for one month. This file is the source of truth: where it disagrees with your own recollection, it wins — read it before adding lines, so you send only what is missing. Returns not_found when the month has never been reconciled. Writes take no sha, so nothing here has to be passed back; the id and month beside each line are what add_transactions and edit_transactions work from. A month you wrote through this API reads back immediately; a change made directly in the data repo appears only after that commit has deployed.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, a monthArgs) (*mcp.CallToolResult, any, error) {
 		return result(s.ActualsFor(ctx, a.Month))
 	})
 
 	mcp.AddTool(server, tool("search_transactions",
-		"Search committed history by statement description, returning the category each line was assigned to, with the month and id needed to edit it. Use this before asking the user about a line you cannot place: a past match is a strong answer, no match means ask — or record it as untracked and come back to it. only_untracked lists everything still waiting on a decision. Months you have written in this session are included; a change made elsewhere appears once it has deployed.",
+		"Search committed history by statement description, returning the category each line was assigned to, with the month and id needed to edit it. Use this before asking the user about a line you cannot place: a past match is a strong answer, no match means ask — or record it as untracked and come back to it. only_untracked lists everything still waiting on a decision. EVENTUALLY CONSISTENT: anything you wrote through this API is searchable at once, but a month edited directly in the data repo, or by another running instance, only appears after that commit has deployed — so a search that finds nothing is not proof that nothing is there.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, a searchArgs) (*mcp.CallToolResult, any, error) {
 		return result(s.Search(ctx, SearchQuery{
 			Query: a.Query, From: a.From, To: a.To, Category: a.Category, Account: a.Account,
@@ -208,7 +208,7 @@ func (s *Service) registerTools(server *mcp.Server) {
 	})
 
 	mcp.AddTool(server, tool("get_reconciliation_status",
-		"Per month for a year, under a months key: coverage, transaction counts, planned versus actual, how much is still untracked, and any one-off charged in a month other than the one it is budgeted for. Tells you where you left off — a month with untracked money is not finished, and untracked_cents is never part of actual_cents. Safe to call straight after a write to check it landed: months you have just written are reflected immediately.",
+		"Per month for a year, under a months key: coverage, transaction counts, planned versus actual, how much is still untracked, and any one-off charged in a month other than the one it is budgeted for. Tells you where you left off — a month with untracked money is not finished, and untracked_cents is never part of actual_cents. Safe to call straight after a write to check it landed: a month you wrote through this API is reflected at once. EVENTUALLY CONSISTENT for everything else — a change made directly in the data repo, or by another running instance, appears only after that commit has deployed.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, a reconciliationArgs) (*mcp.CallToolResult, any, error) {
 		year := a.Year
 		if year == 0 {

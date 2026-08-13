@@ -496,6 +496,40 @@ func apiWrite(t *testing.T, s *server, path, body, token string) *httptest.Respo
 const addBody = `{"transactions":[{"id":"x","date":"2026-08-01","description":"X","amount":1,"account":"A","category":"` +
 	apiRentCategory + `"}],"coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}]}`
 
+func postBalance(t *testing.T, s *server, body, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	r := httptest.NewRequest(http.MethodPost, "/api/accounts/balance", strings.NewReader(body))
+	if token != "" {
+		r.Header.Set("Authorization", "Bearer "+token)
+	}
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.routes().ServeHTTP(w, r)
+	return w
+}
+
+// TestTheBalanceRouteIsGatedLikeEveryOtherWrite: the bearer check is per
+// handler rather than inherited, so a route added later gets no gate for free
+// — and without GITHUB_DATA_TOKEN the honest answer is that the surface exists
+// but cannot commit.
+func TestTheBalanceRouteIsGatedLikeEveryOtherWrite(t *testing.T) {
+	const body = `{"account":"Private Checking","as_of":"2026-06-30","balance":100}`
+
+	if w := postBalance(t, putServer(t), body, ""); w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d without a bearer, want 401", w.Code)
+	}
+	if w := postBalance(t, putServer(t), body, "nope"); w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d with the wrong bearer, want 401", w.Code)
+	}
+	w := postBalance(t, apiServer(t, apiTestToken, "prod"), body, apiTestToken) // no githubDataToken
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d with no write token, want 503, body %s", w.Code, w.Body)
+	}
+	if !strings.Contains(w.Body.String(), "write_not_configured") {
+		t.Errorf("body = %s, want write_not_configured", w.Body)
+	}
+}
+
 func TestAPIWritesRequireABearer(t *testing.T) {
 	s := putServer(t)
 	for _, path := range []string{"add", "edit"} {

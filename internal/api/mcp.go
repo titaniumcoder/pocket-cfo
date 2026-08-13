@@ -147,6 +147,13 @@ func (a editArgs) request() EditRequest {
 	return req
 }
 
+type balanceArgs struct {
+	Account string  `json:"account" jsonschema:"which account was read, spelled exactly as list_accounts spells it. An account is never created here"`
+	AsOf    string  `json:"as_of" jsonschema:"the MONTH-END date the balance was read, YYYY-MM-DD. It must be the LAST day of the month — 2026-07-31, 2026-06-30, 2026-02-28 — because this is the closing balance of that month. A mid-month date is refused"`
+	Balance float64 `json:"balance" jsonschema:"euros in the account at the end of that day, as the bank shows it. Decimals allowed, and negative for an overdrawn account"`
+	Note    string  `json:"note,omitempty" jsonschema:"optional free text about this one reading, shown beside the account in the month it anchors. Not used in any computation"`
+}
+
 type moveArgs struct {
 	CategoryID string `json:"category_id" jsonschema:"the budget category to move"`
 	FromMonth  string `json:"from_month" jsonschema:"the month it is currently planned for, YYYY-MM"`
@@ -221,7 +228,9 @@ func (s *Service) registerTools(server *mcp.Server) {
 	mcp.AddTool(server, tool("list_accounts",
 		"The account names the rest of the system uses, under an accounts key, each with the kind of money it holds — company or private — and as_of, the date it was last read off the bank. "+
 			"Spell a transaction's account field exactly as listed here. "+
-			"as_of is the newest of however many readings that account has; it says how current the balance figures are, and it is not the set of accounts a statement line may arrive on.",
+			"as_of is the newest of however many readings that account has; it says how current the balance figures are, and it is not the set of accounts a statement line may arrive on. "+
+			"An as_of older than the month that just closed means that account is due a fresh reading — record_account_balance is how you give it one. "+
+			"A balance you recorded through this API is reflected here at once; an account added or edited directly in the data repo appears only after that commit has deployed.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
 		out, err := s.AccountsList(ctx)
 		return result(accountsResult{Accounts: out}, err)
@@ -247,6 +256,21 @@ func (s *Service) registerTools(server *mcp.Server) {
 			"If any id does not exist, nothing in that month is written and the missing ids come back. reason lands in the commit message.",
 		false), func(ctx context.Context, _ *mcp.CallToolRequest, a editArgs) (*mcp.CallToolResult, any, error) {
 		return result(s.EditTransactions(ctx, a.request()))
+	})
+
+	mcp.AddTool(server, tool("record_account_balance",
+		"Record what an account really held when a month closed — the figure read off the bank. This is how an account's balance is brought up to date, and it re-anchors every month after it: the projection is replaced by the fact, rather than reconciled against it. "+
+			"as_of IS AN END-OF-MONTH, END-OF-DAY DATE AND NOTHING ELSE. It is the CLOSING balance of that month: 2026-07-31 is the money left when July ended, so it is what AUGUST OPENS WITH and is usable in August immediately. It changes nothing about July itself. "+
+			"MID-MONTH BALANCES ARE NOT ALLOWED and are refused — as_of must be the last day of its month (31, 30, or 28/29 in February). Half a month is not a closing balance: the rest of that month's spending has not happened yet, so filing it as the month's figure would open the next month with money that is already gone. If the user gives you a balance read on the 12th, do not round it to a month end — ask them to read it again when the month closes. "+
+			"A month that has not ended yet is refused for the same reason: a balance is read, never projected. "+
+			"The reading is APPENDED to that account's history and nothing is written over. A month that already has a reading is refused rather than replaced, because one month closes on one figure and a past month must keep the number that was true then; a wrong figure is repaired by a human in the data repo. "+
+			"account must be spelled exactly as list_accounts spells it. This never creates an account: which pot it belongs to — company or private — decides which side of the payroll cascade the money sits on, and that is a decision, not a guess. "+
+			"balance is euros at the end of that day, decimals allowed, negative for an overdrawn account. There is no base_sha: the reading is appended, so someone else's change merges rather than being lost. "+
+			"Each accepted call is a git commit that redeploys the app, and the new figure is in force at once.",
+		false), func(ctx context.Context, _ *mcp.CallToolRequest, a balanceArgs) (*mcp.CallToolResult, any, error) {
+		return result(s.RecordAccountBalance(ctx, RecordBalanceRequest{
+			Account: a.Account, AsOf: a.AsOf, Balance: a.Balance, Note: a.Note,
+		}))
 	})
 
 	mcp.AddTool(server, tool("move_planned_expense",

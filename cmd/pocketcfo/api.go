@@ -15,7 +15,7 @@ import (
 
 const apiRequestTimeout = 30 * time.Second
 
-const mcpServerVersion = "2"
+const mcpServerVersion = "3"
 
 func (s *server) registerAPI(mux *http.ServeMux) {
 	if s.cfg.hermesAPIToken == "" {
@@ -29,6 +29,7 @@ func (s *server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/reconciliation", s.apiReconciliation)
 	mux.HandleFunc("POST /api/actuals/add", s.apiAddActuals)
 	mux.HandleFunc("POST /api/actuals/edit", s.apiEditActuals)
+	mux.HandleFunc("POST /api/accounts/balance", s.apiRecordAccountBalance)
 	mux.HandleFunc("POST /api/budget/move-planned-expense", s.apiMovePlannedExpense)
 
 	mcpHandler := s.requireBearer(capBody(maxMCPBody, s.apiService().MCPHandler(mcpServerVersion)))
@@ -299,6 +300,26 @@ func writeAPIJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
+}
+
+func (s *server) apiRecordAccountBalance(w http.ResponseWriter, r *http.Request) {
+	if !s.apiAuthorized(w, r) {
+		return
+	}
+	var req api.RecordBalanceRequest
+	if !decodeAPIBody(w, r, &req) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
+	defer cancel()
+
+	out, err := s.apiService().RecordAccountBalance(ctx, req)
+	if err != nil {
+		writeAPIError(w, err, apiStatus(err))
+		return
+	}
+	writeAPIJSON(w, http.StatusOK, out)
 }
 
 func (s *server) apiMovePlannedExpense(w http.ResponseWriter, r *http.Request) {

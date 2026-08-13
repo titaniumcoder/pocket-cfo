@@ -23,6 +23,7 @@ type Service struct {
 	Store         Store
 	ActualsPrefix string
 	BudgetPath    string
+	AccountsPath  string
 
 	Now func() time.Time
 

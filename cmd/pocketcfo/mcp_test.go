@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"go/parser"
 	"go/token"
@@ -112,7 +113,7 @@ func TestMCPToolsList(t *testing.T) {
 		"list_budget_categories": true, "get_budget": true, "get_actuals": true,
 		"search_transactions": true, "get_reconciliation_status": true,
 		"list_accounts": true, "add_transactions": true, "edit_transactions": true,
-		"move_planned_expense": true,
+		"move_planned_expense": true, "record_account_balance": true,
 	}
 	got := map[string]bool{}
 	for _, raw := range tools {
@@ -153,6 +154,13 @@ func TestMCPWriteToolsDescribeTheirContract(t *testing.T) {
 		// That a disposition is replaced wholesale, that the statement facts
 		// and other lines are off limits, and that there is no lock to pass.
 		"edit_transactions": {"replaces", "cannot", "left alone", "no base_sha", "month"},
+		// That the date is a month end and mid-month is refused, which month
+		// the figure opens, that it is appended rather than written over, and
+		// that an account is never invented.
+		"record_account_balance": {
+			"mid-month balances are not allowed", "last day of its month",
+			"closing balance", "opens", "appended", "never creates an account",
+		},
 	}
 	desc := map[string]string{}
 	for _, raw := range tools {
@@ -536,18 +544,145 @@ func TestReadToolsStateTheirConsistency(t *testing.T) {
 		desc[tool["name"].(string)], _ = tool["description"].(string)
 	}
 
-	// Reads over data add_transactions, edit_transactions or
-	// move_planned_expense can change.
-	for _, name := range []string{"get_actuals", "get_budget", "search_transactions", "get_reconciliation_status"} {
+	// Reads over data add_transactions, edit_transactions,
+	// move_planned_expense or record_account_balance can change.
+	for _, name := range []string{"get_actuals", "get_budget", "search_transactions", "get_reconciliation_status", "list_accounts"} {
 		if !strings.Contains(desc[name], "deployed") {
 			t.Errorf("%s never says when a change becomes visible:\n%s", name, desc[name])
 		}
 	}
-	// The two that read data nothing here writes should not claim a caveat
-	// they do not have.
-	for _, name := range []string{"list_budget_categories", "list_accounts"} {
-		if strings.Contains(desc[name], "EVENTUALLY CONSISTENT") {
-			t.Errorf("%s claims to lag, but nothing in this API writes what it reads", name)
+	// The one that reads data nothing here writes should not claim a caveat it
+	// does not have: no tool creates, renames or removes a category.
+	if strings.Contains(desc["list_budget_categories"], "EVENTUALLY CONSISTENT") {
+		t.Error("list_budget_categories claims to lag, but nothing in this API writes what it reads")
+	}
+}
+
+// TestMCPAndRESTAgreeOnRefusingAMidMonthBalance: the month-end rule is the
+// whole contract of record_account_balance, so it has to be the service that
+// holds it — in our words, on both surfaces. If the SDK's schema layer refused
+// it first, MCP would answer with a validation error nobody can act on, and
+// the rule would be untested on the path Hermes actually takes.
+func TestMCPAndRESTAgreeOnRefusingAMidMonthBalance(t *testing.T) {
+	body := `{"account":"Private Checking","as_of":"2026-08-14","balance":1200}`
+
+	s := putServer(t)
+	r := httptest.NewRequest(http.MethodPost, "/api/accounts/balance", strings.NewReader(body))
+	r.Header.Set("Authorization", "Bearer "+apiTestToken)
+	r.Header.Set("Content-Type", "application/json")
+	rest := httptest.NewRecorder()
+	s.routes().ServeHTTP(rest, r)
+
+	if rest.Code != http.StatusBadRequest {
+		t.Errorf("REST status = %d, want 400", rest.Code)
+	}
+	w := mcpCall(t, s, apiTestToken,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"record_account_balance","arguments":`+body+`}}`)
+
+	const reason = "mid-month"
+	if !strings.Contains(rest.Body.String(), reason) {
+		t.Errorf("REST said %s, want the mid-month refusal", rest.Body)
+	}
+	if !strings.Contains(w.Body.String(), reason) {
+		t.Errorf("MCP said %s, want the mid-month refusal — a schema error means the SDK refused it first", w.Body)
+	}
+}
+
+// fakeContents is a GitHub Contents API just good enough to commit through:
+// the accepted write path is proved in internal/api, and what this pins is
+// that the whole stack in between — SDK decoding, the service, the store —
+// carries a real call from JSON-RPC to a commit.
+type fakeContents struct {
+	files map[string][]byte
+}
+
+func (f *fakeContents) serve(t *testing.T) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/{owner}/{repo}/contents/{path...}", func(w http.ResponseWriter, r *http.Request) {
+		path := r.PathValue("path")
+		switch r.Method {
+		case http.MethodGet:
+			body, ok := f.files[path]
+			if !ok {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]string{
+				"content": base64.StdEncoding.EncodeToString(body),
+				"sha":     "sha-" + path,
+			})
+		case http.MethodPut:
+			var req struct{ Content string }
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("PUT body is not JSON: %v", err)
+			}
+			decoded, err := base64.StdEncoding.DecodeString(req.Content)
+			if err != nil {
+				t.Fatalf("PUT content is not base64: %v", err)
+			}
+			f.files[path] = decoded
+			json.NewEncoder(w).Encode(map[string]any{"content": map[string]string{"sha": "sha-written"}})
+		default:
+			t.Fatalf("unexpected method %s", r.Method)
 		}
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func writingServer(t *testing.T, files map[string]string) (*server, *fakeContents) {
+	t.Helper()
+	gh := &fakeContents{files: map[string][]byte{}}
+	for k, v := range files {
+		gh.files[k] = []byte(v)
+	}
+	srv := gh.serve(t)
+	s := putServer(t)
+	s.cfg.githubAPIURL = srv.URL
+	s.httpClient = srv.Client()
+	return s, gh
+}
+
+// TestMCPRecordsABalanceThroughTheWholeStack drives the accepted path over the
+// wire: the tool is reachable, the arguments survive the SDK's decoding, and
+// what comes back names the month the figure opens rather than the one it
+// closed — the distinction the whole rule exists for.
+func TestMCPRecordsABalanceThroughTheWholeStack(t *testing.T) {
+	s, gh := writingServer(t, map[string]string{
+		"data/accounts.json": `{"accounts":[
+  {"name":"Private Checking","kind":"private","balances":[{"as_of":"2026-07-31","balance":100}]}
+]}`,
+	})
+
+	w := mcpCall(t, s, apiTestToken,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"record_account_balance",`+
+			`"arguments":{"account":"Private Checking","as_of":"2026-07-31","balance":90}}}`)
+	if !strings.Contains(w.Body.String(), "conflict") {
+		t.Errorf("July was already read, so a second reading must conflict: %s", w.Body)
+	}
+
+	w = mcpCall(t, s, apiTestToken,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"record_account_balance",`+
+			`"arguments":{"account":"Private Checking","as_of":"2026-06-30","balance":90.5,"note":"read late"}}}`)
+	resp := decodeRPC(t, w.Body.String())
+	result, ok := resp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("no result: %s", w.Body)
+	}
+	sc, ok := result["structuredContent"].(map[string]any)
+	if !ok {
+		t.Fatalf("structuredContent is %T, want an object", result["structuredContent"])
+	}
+	if sc["opens"] != "2026-07" || sc["closes"] != "2026-06" {
+		t.Errorf("closes/opens = %v/%v, want 2026-06/2026-07", sc["closes"], sc["opens"])
+	}
+	if sc["kind"] != "private" {
+		t.Errorf("kind = %v, want private", sc["kind"])
+	}
+	written := string(gh.files["data/accounts.json"])
+	if !strings.Contains(written, `{ "as_of": "2026-06-30", "balance": 90.5, "note": "read late" }`) {
+		t.Errorf("the reading was not committed as written:\n%s", written)
 	}
 }

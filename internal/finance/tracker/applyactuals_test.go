@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"context"
+	"fmt"
 	"net/http/httptest"
 	"regexp"
 	"strings"
@@ -311,6 +312,136 @@ func TestTheCompanySideClosesOnItsActualsToo(t *testing.T) {
 	gap := with.FundingPersonal.CompanyOpeningCents - without.FundingPersonal.CompanyOpeningCents
 	if gap != 70000 {
 		t.Errorf("company opening moved by %d, want 70000 — August planned 800 of company spend and the bank saw 100", gap)
+	}
+}
+
+// monthTracker builds a tracker whose balance opens the month `offset` months
+// from now, with the first few days of that month imported. Everything is
+// derived from the real calendar because "is this the current month" is
+// answered against it, not against the month under test — so the only way to
+// test a past month is to ask for one relative to today.
+func monthTracker(t *testing.T, offset, privateSpendEUR int, withCompany bool) (*Tracker, yearMonth) {
+	t.Helper()
+	now := time.Now()
+	viewed := yearMonth{now.Year(), now.Month()}.addMonths(offset)
+	prev := viewed.addMonths(-1)
+
+	asOf := time.Date(prev.Year, prev.Month, 28, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+	key := fmt.Sprintf("%04d-%02d", viewed.Year, int(viewed.Month))
+
+	accounts := fmt.Sprintf(`{"accounts":[{"name":"P","kind":"private","balances":[{"as_of":%q,"balance":2000}]}`, asOf)
+	if withCompany {
+		accounts += fmt.Sprintf(`,{"name":"C","kind":"company","balances":[{"as_of":%q,"balance":5000}]}`, asOf)
+	}
+	trk := accountsTracker(t, accounts+`]}`)
+
+	if withCompany {
+		trk.Budget = newTestBudget(t, map[string]string{"budget.json": `{"groups":[
+			{"name":"Housing","kind":"private","categories":[{"id":"00000000-0000-4000-8000-000000000001","name":"Rent","amount":1000}]},
+			{"name":"Office","kind":"company","categories":[{"id":"00000000-0000-4000-8000-000000000002","name":"Desk","amount":800}]}
+		]}`})
+	}
+	trk.Actuals = newTestActuals(t, map[string]string{
+		"actuals/" + key + ".json": fmt.Sprintf(
+			`{"month":%q,"coverage":[{"account":"A","from":"%s-01","to":"%s-05","imported_at":"%s-05"}],
+			"transactions":[{"id":"x1","date":"%s-03","description":"LIDL","amount":%d,"account":"A","category":"00000000-0000-4000-8000-000000000001"}]}`,
+			key, key, key, key, key, privateSpendEUR),
+	})
+	return trk, viewed
+}
+
+// TestTheCurrentMonthShowsSpentAndProjectedTogether: mid-month the plan has
+// already charged the whole month while the statements have only reached the
+// day they were imported, so the two figures answer different questions —
+// "where will this end up" and "where does it stand today". Neither replaces
+// the other, and the gap between them is exactly the spending the plan has
+// booked and the bank has not seen yet.
+func TestTheCurrentMonthShowsSpentAndProjectedTogether(t *testing.T) {
+	trk, viewed := monthTracker(t, 0, 400, false)
+	f := trk.ComputeMonth(context.Background(), viewed.Year, viewed.Month)
+
+	if !f.ShowActualBalance {
+		t.Fatal("the current month showed only one balance")
+	}
+	if want := f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents - f.PrivateActualCents; f.ActualBalanceCents != want {
+		t.Errorf("ActualBalanceCents = %d, want %d (opening + net income - what the bank has seen)", f.ActualBalanceCents, want)
+	}
+	if want := f.PrivateTotalPlannedCents - f.PrivateActualCents; f.ActualBalanceCents-f.BalanceCents != want {
+		t.Errorf("the two balances differ by %d, want %d — the gap is the planned spending not yet on a statement",
+			f.ActualBalanceCents-f.BalanceCents, want)
+	}
+	if f.BalanceCents != f.OpeningBalanceCents+f.FundingPersonal.NetIncomeCents-f.PrivateTotalPlannedCents {
+		t.Error("the projected balance stopped being the plan")
+	}
+}
+
+// TestOnlyTheCurrentMonthShowsBoth: a month that has closed has one answer,
+// not two — its statements are the whole story and the plan is history. A
+// month with nothing imported has nothing to show beside the plan either.
+func TestOnlyTheCurrentMonthShowsBoth(t *testing.T) {
+	ctx := context.Background()
+
+	trkPast, past := monthTracker(t, -3, 400, false)
+	if f := trkPast.ComputeMonth(ctx, past.Year, past.Month); f.ShowActualBalance {
+		t.Error("a month in the past showed a live balance beside its projection")
+	}
+
+	trk, viewed := monthTracker(t, 0, 400, false)
+	trk.Actuals = nil
+	if f := trk.ComputeMonth(ctx, viewed.Year, viewed.Month); f.ShowActualBalance {
+		t.Error("the current month with no statements at all showed a second figure")
+	}
+}
+
+// TestTheLiveCompanyClosingIsTheRowsAboveIt is the company sibling, and it
+// carries the same obligation the projected one does: a reader adds up the
+// rows on the page, so the figure at the bottom has to be exactly their sum.
+// Only the expense row differs between the two — the salary decision is a
+// plan either way and is not re-derived from a half-imported month.
+func TestTheLiveCompanyClosingIsTheRowsAboveIt(t *testing.T) {
+	trk, viewed := monthTracker(t, 0, 400, true)
+	trk.Personal = bulgariaBands()
+	plan, err := ParseSalaryPlan([]SalaryEntry{{From: "2020-01", Mode: "minimum"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trk.Personal.Salary = plan
+
+	f := trk.ComputeMonth(context.Background(), viewed.Year, viewed.Month)
+	if !f.ShowActualBalance || !f.FundingPersonal.ShowCompanyBalance {
+		t.Fatal("no live company closing to check")
+	}
+	pv := f.FundingPersonal
+	want := pv.CompanyOpeningCents + pv.CompanyIncomeCents - f.CompanyActualCents -
+		pv.EmployerContribCents - pv.GrossSalaryCents
+	if f.ActualCompanyClosingCents != want {
+		t.Errorf("live closing = %d, want %d — the rows on the page do not add up to it", f.ActualCompanyClosingCents, want)
+	}
+	if f.ActualCompanyClosingCents == pv.CompanyClosingCents {
+		t.Error("the live and projected company closings are identical, so the actual expenses never reached it")
+	}
+}
+
+// TestBothFiguresReachThePage: the pair is only useful side by side, in the
+// column grammar the ledger already uses for planned against actual.
+func TestBothFiguresReachThePage(t *testing.T) {
+	trk, viewed := monthTracker(t, 0, 400, false)
+	f := trk.ComputeMonth(context.Background(), viewed.Year, viewed.Month)
+	if !f.ShowActualBalance {
+		t.Fatal("nothing to render")
+	}
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	body := rec.Body.String()
+
+	row := regexp.MustCompile(`<div class="row net balance[^"]*"><span class="label">Balance</span>(.*?)</div>`).FindStringSubmatch(body)
+	if row == nil {
+		t.Fatalf("no Balance row on the page:\n%s", body)
+	}
+	for _, want := range []string{formatEuro(f.BalanceCents), formatEuro(f.ActualBalanceCents)} {
+		if !strings.Contains(row[1], want) {
+			t.Errorf("the Balance row %q is missing %q", row[1], want)
+		}
 	}
 }
 

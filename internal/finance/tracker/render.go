@@ -449,7 +449,7 @@ var templates = `
       <div class="row"><span class="label">Income tax</span><span class="mid rate">{{template "rateMid" .IncomeTaxRate}}</span><span class="amt neg">{{if .IncomeTaxCents}}&minus;{{end}}{{eur .IncomeTaxCents}}{{template "rateNarrow" .IncomeTaxRate}}</span></div>
       <div class="row net neg"><span class="label">Total company expenses</span>{{if $.ShowActuals}}<span class="mid{{outClass .CompanyExpensesCents}}">{{out .CompanyExpensesCents}}</span><span class="amt{{outClass $.CompanyActualCents}}">{{out $.CompanyActualCents}}<span class="stack-m">of {{out .CompanyExpensesCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .CompanyExpensesCents}}</span>{{end}}</div>
       <div class="row net{{if lt .NetIncomeCents 0}} neg{{end}}"><span class="label">Net income</span><span class="mid"></span><span class="amt netamt">{{eur .NetIncomeCents}}</span></div>
-      {{if .ShowCompanyBalance}}<div class="row{{if lt .CompanyClosingCents 0}} neg{{end}}"><span class="label">Left in the company{{if .CompanyTargetCents}} <small>(target {{eur .CompanyTargetCents}})</small>{{end}}</span><span class="mid"></span><span class="amt{{if lt .CompanyClosingCents 0}} neg{{end}}">{{eur .CompanyClosingCents}}</span></div>{{end}}
+      {{if .ShowCompanyBalance}}<div class="row{{if lt $.HeadlineCompanyClosingCents 0}} neg{{end}}"><span class="label">Left in the company{{if .CompanyTargetCents}} <small>(target {{eur .CompanyTargetCents}})</small>{{end}}</span>{{if $.ShowActualBalance}}<span class="mid">{{eur .CompanyClosingCents}}</span><span class="amt{{if lt $.ActualCompanyClosingCents 0}} neg{{end}}">{{eur $.ActualCompanyClosingCents}}<span class="stack-m">projected {{eur .CompanyClosingCents}}</span></span>{{else}}<span class="mid"></span><span class="amt{{if lt .CompanyClosingCents 0}} neg{{end}}">{{eur .CompanyClosingCents}}</span>{{end}}</div>{{end}}
       {{if .TargetNote}}<div class="row"><span class="stale-note">{{.TargetNote}}</span></div>{{end}}
       {{if $.TargetNeedsBalanceNote}}<div class="row"><span class="stale-note">{{$.TargetNeedsBalanceNote}}</span></div>{{end}}
       {{if .CompanyOverdrawnNote}}<div class="row"><span class="stale-note">{{.CompanyOverdrawnNote}}</span></div>{{end}}
@@ -485,7 +485,7 @@ var templates = `
     {{if .ShowBalance}}
     <div class="ledger">
       <div class="row net neg"><span class="label">Total private expenses</span>{{if .ShowActuals}}<span class="mid{{outClass .PrivateTotalPlannedCents}}">{{out .PrivateTotalPlannedCents}}</span><span class="amt{{outClass .PrivateActualCents}}">{{out .PrivateActualCents}}<span class="stack-m">of {{out .PrivateTotalPlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .PrivateTotalPlannedCents}}</span>{{end}}</div>
-      <div class="row net balance{{if lt .BalanceCents 0}} neg{{end}}"><span class="label">Balance</span><span class="mid"></span><span class="amt netamt">{{eur .BalanceCents}}</span></div>
+      <div class="row net balance{{if lt .HeadlineBalanceCents 0}} neg{{end}}"><span class="label">Balance</span>{{if .ShowActualBalance}}<span class="mid">{{eur .BalanceCents}}</span><span class="amt netamt">{{eur .ActualBalanceCents}}<span class="stack-m">projected {{eur .BalanceCents}}</span></span>{{else}}<span class="mid"></span><span class="amt netamt">{{eur .BalanceCents}}</span>{{end}}</div>
     </div>
     {{end}}
   </section>

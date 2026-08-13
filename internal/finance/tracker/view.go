@@ -152,6 +152,11 @@ type Figures struct {
 	ShowBalance  bool
 	BalanceCents int
 
+	IsCurrentMonth            bool
+	ShowActualBalance         bool
+	ActualBalanceCents        int
+	ActualCompanyClosingCents int
+
 	ShowOpeningBalance  bool
 	OpeningBalanceCents int
 	OpeningBalanceLabel string
@@ -204,6 +209,7 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	result := Figures{Month: label, Currency: "€"}
 
 	isCurrentPeriod := !today.Before(start) && !today.After(end)
+	result.IsCurrentMonth = isCurrentPeriod && months == 1
 
 	togglCtx, cancelToggl := waitBudget(ctx)
 	defer cancelToggl()
@@ -511,7 +517,39 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 	if f.BudgetErr == "" && f.FundingPersonal.Err == "" {
 		f.ShowBalance = true
 		f.BalanceCents = f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents - f.PrivateTotalPlannedCents
+		f.publishSpentSoFar()
 	}
+}
+
+// publishSpentSoFar answers "where does this actually stand today", which the
+// projected figure cannot: mid-month the plan has already charged the whole
+// month while the statements have only reached as far as they were imported.
+// Both are shown rather than one replacing the other, because the actual one
+// is optimistic by whatever has not been imported or assigned yet, and only
+// the pair says so.
+func (f *Figures) publishSpentSoFar() {
+	if !f.IsCurrentMonth || !f.ShowActuals {
+		return
+	}
+	f.ShowActualBalance = true
+	f.ActualBalanceCents = f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents - f.PrivateActualCents
+	pv := f.FundingPersonal
+	f.ActualCompanyClosingCents = pv.CompanyOpeningCents + pv.CompanyIncomeCents -
+		f.CompanyActualCents - pv.EmployerContribCents - pv.GrossSalaryCents
+}
+
+func (f Figures) HeadlineBalanceCents() int {
+	if f.ShowActualBalance {
+		return f.ActualBalanceCents
+	}
+	return f.BalanceCents
+}
+
+func (f Figures) HeadlineCompanyClosingCents() int {
+	if f.ShowActualBalance {
+		return f.ActualCompanyClosingCents
+	}
+	return f.FundingPersonal.CompanyClosingCents
 }
 
 // targetNeedsBalanceNote covers the one way a target can be set and still do

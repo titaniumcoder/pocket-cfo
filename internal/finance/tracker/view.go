@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/titaniumcoder/pocket-cfo/internal/finance/accountsdata"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/budgetdata"
 	"github.com/titaniumcoder/pocket-cfo/internal/webui"
 )
@@ -519,7 +520,7 @@ func (f *Figures) computeAccountBalances(t *Tracker, ctx context.Context, viewed
 	f.AvailableCents = opening + f.FundingPersonal.NetIncomeCents
 	f.OpeningBalanceLabel = openingBalanceLabel(snap, viewed)
 	if viewed == snap.OpensMonth {
-		f.PrivateAccounts = snap.AccountRow
+		f.PrivateAccounts = snap.rowsOfKind(accountsdata.AccountKindPrivate)
 	}
 	if days, stale := snap.StaleDays(now); stale {
 		f.AccountsStaleNote = fmt.Sprintf(

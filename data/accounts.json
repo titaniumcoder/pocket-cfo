@@ -3,9 +3,17 @@
   "accounts": [
     {
       "name": "Private Checking",
+      "kind": "private",
       "balance": 4200,
       "as_of": "2026-07-31",
       "note": "Read at month end; opens August"
+    },
+    {
+      "name": "Company Checking",
+      "kind": "company",
+      "balance": 6800,
+      "as_of": "2026-07-31",
+      "note": "What the company kept while salary was at the minimum"
     }
   ]
 }

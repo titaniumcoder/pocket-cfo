@@ -124,6 +124,7 @@ func monthBudgetOf(month string, planned []tracker.PlannedCategory) *MonthBudget
 
 type Account struct {
 	Name string `json:"name"`
+	Kind string `json:"kind,omitempty"`
 	AsOf string `json:"as_of,omitempty"`
 }
 
@@ -134,7 +135,7 @@ func (s *Service) AccountsList(ctx context.Context) ([]Account, error) {
 	}
 	out := make([]Account, 0, len(af.Accounts))
 	for _, a := range af.Accounts {
-		out = append(out, Account{Name: a.Name, AsOf: a.AsOf})
+		out = append(out, Account{Name: a.Name, Kind: string(a.Kind), AsOf: a.AsOf})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil

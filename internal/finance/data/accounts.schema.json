@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/titaniumcoder/pocket-cfo/internal/finance/data/accounts.schema.json",
   "title": "Accounts",
-  "description": "Real personal bank-account balances, hand-read off the bank at the end of a month. Not bookkeeping: there are no transactions here, just \"this is what was actually in the account when the month closed\". A balance read at the end of month M opens month M+1's rolling budget, and from there it is carried forward month by month (opening + net income - private expenses), so it genuinely depletes. Months at or before M ignore it entirely — a past balance isn't known and isn't guessed. Business accounts are deliberately not modelled: company money is spent down rather than accumulated, so there is no business balance to carry. Hand-edited and committed via git.",
+  "description": "Real bank-account balances, hand-read off the bank at the end of a month. Not bookkeeping: there are no transactions here, just \"this is what was actually in the account when the month closed\". A balance read at the end of month M opens month M+1's rolling budget, and from there it is carried forward month by month, so it genuinely depletes. Months at or before M ignore it entirely — a past balance isn't known and isn't guessed. Both pots are modelled, and each rolls forward by its own arithmetic: a private balance by opening + net income - private expenses, a company balance by opening + company income - company expenses - employer social - gross salary. The company one used to be left out, on the grounds that company money is spent down rather than accumulated — that only held while every month drew a full salary, which empties it by construction. A month at the statutory minimum or on a fixed salary leaves money behind, so the company is a balance that carries like any other. Hand-edited and committed via git.",
   "type": "object",
   "required": ["accounts"],
   "additionalProperties": false,
@@ -16,10 +16,15 @@
   "$defs": {
     "account": {
       "type": "object",
-      "required": ["name", "balance", "as_of"],
+      "required": ["name", "kind", "balance", "as_of"],
       "additionalProperties": false,
       "properties": {
         "name": { "type": "string", "minLength": 1 },
+        "kind": {
+          "type": "string",
+          "enum": ["company", "private"],
+          "description": "Which pot the money is in, spelled the same way budget.json's groups spell it. company: the money the company holds. It enters the ledger straight after Company income and before the employer-social/gross-salary/employee-social/income-tax cascade, so it raises what a full salary can afford — and a negative one lowers it. What the cascade leaves behind is the next month's opening. private: money already drawn. It opens the rolling budget under Net income, as it always has, and is spent down by private expenses. Every account must declare one explicitly; there is no default, because guessing wrong moves real money from one side of the payroll cascade to the other."
+        },
         "balance": {
           "type": "number",
           "description": "Euros, decimals allowed (e.g. 1427.42). May be negative for an overdrawn account."
@@ -27,7 +32,7 @@
         "as_of": {
           "type": "string",
           "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
-          "description": "The month-end date this balance was read, e.g. \"2026-07-31\". It is the CLOSING balance of that month, so it becomes the OPENING balance of the next one: a balance dated 2026-07-31 is August's starting figure and has no effect on July. Only the month matters; the day is informational. All accounts are combined into one balance anchored at the latest as_of among them, so read them together — a stale entry silently drags the whole figure."
+          "description": "The month-end date this balance was read, e.g. \"2026-07-31\". It is the CLOSING balance of that month, so it becomes the OPENING balance of the next one: a balance dated 2026-07-31 is August's starting figure and has no effect on July. Only the month matters; the day is informational. Accounts are summed per kind, but both sums are anchored at the single latest as_of among all of them, so read every account together — one stale entry silently drags the whole figure, whichever pot it is in."
         },
         "note": {
           "type": "string",

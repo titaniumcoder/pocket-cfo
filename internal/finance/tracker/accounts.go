@@ -28,10 +28,12 @@ type accountsResult struct {
 }
 
 type AccountSnapshot struct {
-	OpensMonth yearMonth
-	Cents      int
-	AccountRow []AccountRow
-	LatestAsOf time.Time
+	OpensMonth   yearMonth
+	PrivateCents int
+	CompanyCents int
+	HasCompany   bool
+	AccountRow   []AccountRow
+	LatestAsOf   time.Time
 }
 
 const staleAfterDays = 40
@@ -43,9 +45,20 @@ func (s AccountSnapshot) StaleDays(now time.Time) (int, bool) {
 
 type AccountRow struct {
 	Name  string
+	Kind  accountsdata.AccountKind
 	Cents int
 	Note  string
 	AsOf  string
+}
+
+func (s AccountSnapshot) rowsOfKind(kind accountsdata.AccountKind) []AccountRow {
+	var out []AccountRow
+	for _, row := range s.AccountRow {
+		if row.Kind == kind {
+			out = append(out, row)
+		}
+	}
+	return out
 }
 
 func (a *Accounts) File(ctx context.Context) (accountsdata.AccountsFile, error) {
@@ -98,6 +111,15 @@ func (a *Accounts) Evict() {
 	a.cache = nil
 }
 
+func (s *AccountSnapshot) addBalance(kind accountsdata.AccountKind, cents int) {
+	if kind == accountsdata.AccountKindCompany {
+		s.CompanyCents += cents
+		s.HasCompany = true
+		return
+	}
+	s.PrivateCents += cents
+}
+
 func snapshotFor(af accountsdata.AccountsFile) (AccountSnapshot, bool) {
 	var snap AccountSnapshot
 	found := false
@@ -108,9 +130,10 @@ func snapshotFor(af accountsdata.AccountsFile) (AccountSnapshot, bool) {
 		}
 		opens := yearMonth{d.Year(), d.Month()}.addMonths(1)
 		cents := round(acc.Balance * 100)
-		snap.Cents += cents
+		snap.addBalance(acc.Kind, cents)
 		snap.AccountRow = append(snap.AccountRow, AccountRow{
 			Name:  acc.Name,
+			Kind:  acc.Kind,
 			Cents: cents,
 			Note:  derefStr(acc.Note),
 			AsOf:  formatDay(acc.AsOf),
@@ -143,7 +166,7 @@ func (t *Tracker) privateOpeningCents(ctx context.Context, snap AccountSnapshot,
 			elapsed, snap.LatestAsOf.Format("2006-01-02"))
 	}
 
-	opening := snap.Cents
+	opening := snap.PrivateCents
 	for m := snap.OpensMonth; m.ordinal() < viewed.ordinal(); m = m.addMonths(1) {
 		delta, err := t.monthBalanceDelta(ctx, m, now, rateCents)
 		if err != nil {

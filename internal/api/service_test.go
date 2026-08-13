@@ -34,8 +34,8 @@ const budgetJSON = `{
 }`
 
 const accountsJSON = `{"accounts":[
-  {"name":"Private Checking","balance":4200,"as_of":"2026-07-31"},
-  {"name":"Company Checking","balance":8000,"as_of":"2026-07-31"}
+  {"name":"Private Checking","kind":"private","balance":4200,"as_of":"2026-07-31"},
+  {"name":"Company Checking","kind":"company","balance":8000,"as_of":"2026-07-31"}
 ]}`
 
 // August: partial coverage, a laptop budgeted for October but bought now, an
@@ -238,6 +238,11 @@ func TestAccountsList(t *testing.T) {
 	}
 	if len(got) != 2 || got[0].Name != "Company Checking" || got[1].Name != "Private Checking" {
 		t.Errorf("accounts = %+v, want both, sorted", got)
+	}
+	// Which pot a card belongs to is the thing an agent cannot infer from the
+	// name, and it decides which side of the payroll cascade a line lands on.
+	if got[0].Kind != "company" || got[1].Kind != "private" {
+		t.Errorf("kinds = %q/%q, want company/private", got[0].Kind, got[1].Kind)
 	}
 }
 

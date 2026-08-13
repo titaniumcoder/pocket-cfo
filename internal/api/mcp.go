@@ -219,7 +219,7 @@ func (s *Service) registerTools(server *mcp.Server) {
 	})
 
 	mcp.AddTool(server, tool("list_accounts",
-		"The account names the rest of the system uses, under an accounts key. Spell a transaction's account field exactly as listed here.",
+		"The account names the rest of the system uses, under an accounts key, each with the kind of money it holds — company or private. Spell a transaction's account field exactly as listed here.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
 		out, err := s.AccountsList(ctx)
 		return result(accountsResult{Accounts: out}, err)

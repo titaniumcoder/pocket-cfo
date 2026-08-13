@@ -49,7 +49,7 @@ func apiServer(t *testing.T, token, env string) *server {
 	t.Helper()
 	budgetFS := fstest.MapFS{
 		"budget.json":   &fstest.MapFile{Data: []byte(apiBudgetJSON)},
-		"accounts.json": &fstest.MapFile{Data: []byte(`{"accounts":[{"name":"Private Checking","balance":100,"as_of":"2026-07-31"}]}`)},
+		"accounts.json": &fstest.MapFile{Data: []byte(`{"accounts":[{"name":"Private Checking","kind": "private", "balance":100,"as_of":"2026-07-31"}]}`)},
 	}
 	actualsFS := fstest.MapFS{
 		"actuals/2026-08.json": &fstest.MapFile{Data: []byte(apiActualsJSON)},

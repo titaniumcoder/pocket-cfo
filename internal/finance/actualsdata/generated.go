@@ -166,8 +166,10 @@ func (j *Split) UnmarshalJSON(value []byte) error {
 }
 
 type Transaction struct {
-	// Which account it was charged to. Free text: accounts.json models private
-	// accounts only, so a company card has nowhere to be declared.
+	// Which account it was charged to. Free text, and deliberately not checked
+	// against accounts.json: that file lists the accounts whose balance is carried,
+	// which is not the same set as the cards and accounts a statement line can arrive
+	// on.
 	Account string `json:"account" yaml:"account" mapstructure:"account"`
 
 	// Euros, decimals allowed. Positive = money out, matching budget.json's

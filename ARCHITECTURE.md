@@ -861,12 +861,24 @@ history, and a reconciliation status per month. The search is deliberately the s
 for a rules file: an agent asks how a merchant was treated last time and gets the answer
 from what was actually recorded, rather than from a list that drifts out of sync with it.
 
-Writes are narrow by construction. Transactions can be **added** and **re-attributed**,
-and a planned one-off can be **moved** to the month it was really charged in. Nothing can
-be removed — there is no flag, no override and no reason that unlocks it, and each write
-path checks its own output before committing rather than trusting itself to stay
-append-only. A line recorded in error is repaired by a human editing the data repo, where
-the change is reviewed like any other.
+Writes are narrow by construction. Transactions can be **added** and **re-attributed**, a
+planned one-off can be **moved** to the month it was really charged in, and an account
+balance can be **recorded** for a month that has closed. Nothing can be removed — there is
+no flag, no override and no reason that unlocks it, and each write path checks its own
+output before committing rather than trusting itself to stay append-only. A line recorded
+in error is repaired by a human editing the data repo, where the change is reviewed like
+any other.
+
+**A balance closes a month, so `as_of` is a month end and the API refuses anything else.**
+The reading is that month's closing figure and therefore the next month's opening one, and
+only the month is ever read off it. A date in the middle of a month would be filed as that
+month's figure while the rest of the month's spending had not happened yet, opening the
+next month with money already gone — so it is refused outright rather than silently
+rounded, as is a month that has not ended, since a balance is read off the bank and never
+projected. Readings are appended and a month that already has one is a conflict: the
+history is what lets a past month keep the figure that was true then. Accounts themselves
+are not created here, because an account declares which pot it belongs to and that decides
+which side of the payroll cascade the money sits on.
 
 Every accepted write is a **commit to the data repo through the GitHub Contents API**,
 which redeploys the app. Nothing is written to the running container's own data directory:
@@ -876,9 +888,10 @@ it is audited, and every change can be read in `git log` and reverted.
 
 **Read-after-write.** A commit takes minutes to become a running image, so between the two
 the app serves the bytes it just committed from memory, keyed by month. The overlay sits in
-the tracker's loaders rather than in this package, because `Actuals.month()` and
-`Budget.File()` are the single funnels every read passes through — one insertion point
-makes the API and the web pages agree, where four call sites would eventually disagree. An
+the tracker's loaders rather than in this package, because `Actuals.month()`,
+`Budget.File()` and `Accounts.File()` are the single funnels every read passes through —
+one insertion point makes the API and the web pages agree, where four call sites would
+eventually disagree. An
 entry is dropped as soon as the file on disk says the same thing, so nothing has to guess
 at a deploy's duration.
 

@@ -11,8 +11,8 @@ A freelancer's finance tracker and invoicing tool in one Go binary, MIT licensed
 - **Invoicing** (`/invoicing`) — one JSON file per invoice, PDFs rendered by CI, a
   read-only viewer, and per-client portal links.
 - **An agent-facing write API** (`/api`, `/mcp`) — so a reconciliation agent can record
-  and correct transactions without a shell. Every accepted write is a git commit; see
-  [`docs/HERMES.md`](docs/HERMES.md).
+  and correct transactions, and bring an account's balance up to date, without a shell.
+  Every accepted write is a git commit; see [`docs/HERMES.md`](docs/HERMES.md).
 
 Clone it, `make generate`, `go run ./cmd/pocketcfo`, and it serves the fabricated sample
 data in `data/`. That is enough to look around, and not enough to run a business — for
@@ -53,7 +53,7 @@ enforced by a schema. Keep the layout: the app's defaults point at these exact p
 | `data/users.json` | who may read which part, by email | `schemas/users.json` |
 | `data/budget.json` | planned expenses; every category has a stable UUID | `internal/finance/data/budget.schema.json` |
 | `data/actuals/YYYY-MM.json` | what was actually spent, per month | `internal/finance/data/actuals.schema.json` |
-| `data/accounts.json` | real account balances, read at month end; every reading is kept, and each account declares `kind` — `company` or `private` | `internal/finance/data/accounts.schema.json` |
+| `data/accounts.json` | real account balances, read at month end — `as_of` is always the last day of a month, and mid-month readings are refused; every reading is kept, and each account declares `kind` — `company` or `private` | `internal/finance/data/accounts.schema.json` |
 | `config.json` | non-secret tunables and payroll law | `internal/finance/config` |
 
 Payment lives in `data/paid-invoices.json` rather than in the invoice because an issued invoice

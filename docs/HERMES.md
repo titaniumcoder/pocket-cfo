@@ -108,6 +108,42 @@ reads work and writes return `write_not_configured`.
    charge, **`move_planned_expense`** shifts the plan to match — it changes that category's
    date and nothing else, and needs a reason.
 
+10. When a month closes, **`record_account_balance`** for each account the user reads off
+    the bank. `list_accounts` shows the `as_of` of the newest reading each one has, so an
+    account still sitting on an older month is one to ask about. See below — the date rule
+    is not negotiable.
+
+## Balances close a month, and never sit in the middle of one
+
+`as_of` **is the last day of a month, and nothing else.** It is that month's *closing*
+balance, read at the end of that day, so it is what the **next** month opens with:
+`2026-07-31` is the money left when July ended, it is August's starting figure and usable
+in August immediately, and it changes nothing about July.
+
+**A mid-month balance is refused.** Not filed under the month anyway, not rounded to the
+nearest month end — refused, with the date it should have carried. Half a month is not a
+closing figure: the rest of that month's spending has not happened yet, so recording the
+balance on the 15th as the month's figure would open the next month with money that is
+already gone. If the user gives you a figure they read mid-month, ask them to read it
+again when the month closes rather than sending it. A month that has not ended yet is
+refused for the same reason: a balance is read off the bank, never projected.
+
+The reading is **appended** to that account's history — like every other write here,
+nothing is written over. Every figure ever read is kept, which is what lets a past month
+keep the number that was true then instead of being re-explained by a reading from a year
+later. A month that already has a figure comes back as a conflict, with the figure that is
+already there; correcting it is a human editing the data repo.
+
+`account` must be spelled exactly as `list_accounts` spells it, and **an account is never
+created** by this call. Which pot it belongs to — `company` or `private` — decides which
+side of the payroll cascade the money sits on, and that is a decision to be made by a
+person, not inferred from a name. An unknown name comes back with the names that do exist.
+
+There is no `base_sha`: the reading is appended, so a change to another account merges
+rather than being lost. `balance` is euros at the end of that day, decimals allowed and
+negative for an overdrawn account. `note` is optional free text shown beside the account
+in the month it anchors.
+
 ## When a write becomes visible
 
 Every accepted write is a commit, and the running app is rebuilt from that commit — which
@@ -115,6 +151,8 @@ takes a few minutes. In between, the app serves what you just committed from mem
 **a month you have written reads back immediately**: `get_actuals`,
 `get_reconciliation_status` and `search_transactions` all reflect it, and so does the
 spending page. Call `get_reconciliation_status` straight after a write to check it landed.
+A balance you recorded is in force the same way — `list_accounts` reports the new `as_of`
+at once, and the dashboard opens the next month on the new figure.
 
 Two limits worth knowing. A change made somewhere other than this app — a hand edit in the
 data repo, or another instance — appears only once it has deployed. And the app never
@@ -126,7 +164,9 @@ git remains the only thing that is true.
 Nothing in this API deletes a recorded transaction. `add_transactions` only appends,
 `edit_transactions` only re-attributes lines it was given by id, and both check their own
 output before committing rather than trusting themselves not to. There is no flag, no
-override and no reason that unlocks it.
+override and no reason that unlocks it. `record_account_balance` follows the same rule
+from the other direction: it appends a reading and refuses a month that already has one,
+so no balance ever written is written over.
 
 So a line recorded by mistake is not your problem to undo. Say so, and leave it: a wrong
 line that is visible is worth more than a clean file that quietly lost something. A real
@@ -146,11 +186,15 @@ stopped withholding judgement on.
 - Every `date` must be a real date and fall inside the month it is filed under.
 - A `category` that doesn't resolve is refused before anything is read or committed.
 - No line may be left undecided. `untracked` counts as decided; blank does not.
+- A balance's `as_of` is the **last day of its month**. Any other day is refused, as is a
+  month that has not ended yet, and a month that already has a reading.
+- An account is never created by a write. An unrecognised name is refused with the names
+  that do exist.
 
 ## What a write actually does
 
-Each accepted `add_transactions`, `edit_transactions` or `move_planned_expense` is a **git
-commit** to the data repo, which redeploys the app — one commit per month touched. That is
+Each accepted `add_transactions`, `edit_transactions`, `move_planned_expense` or
+`record_account_balance` is a **git commit** to the data repo, which redeploys the app — one commit per month touched. That is
 what makes handing an agent an API tolerable: it isn't trusted, it's audited. Every change
 is one you can read in `git log` and revert.
 

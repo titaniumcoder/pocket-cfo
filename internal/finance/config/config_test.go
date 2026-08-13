@@ -116,11 +116,11 @@ func TestLoad_TogglFromEnv(t *testing.T) {
 	}
 }
 
-// TestLoadFileConfigRefusesMalformedLegislation: every other setting here
-// degrades quietly to a default, and this one must not. These are legal
+// TestLoadFileConfigRefusesMalformedPayrollRules: every other setting here
+// degrades quietly to a default, and these must not. They are legal
 // obligations, so a typo in a date silently disabling one is the single
-// failure the setting exists to prevent.
-func TestLoadFileConfigRefusesMalformedLegislation(t *testing.T) {
+// failure the settings exist to prevent.
+func TestLoadFileConfigRefusesMalformedPayrollRules(t *testing.T) {
 	bad := map[string]string{
 		"a date that is not one":    `{"legislation":[{"from":"July 2026","minimumWage":1077}]}`,
 		"no date at all":            `{"legislation":[{"minimumWage":1077}]}`,
@@ -134,6 +134,11 @@ func TestLoadFileConfigRefusesMalformedLegislation(t *testing.T) {
 		// numbers, which is worse than refusing.
 		"the retired flat rates": `{"legislation":[{"from":"2026-07","socialEmployerRate":0.1892,"socialMaxInsurableMonthly":2112}]}`,
 		"the retired tax rate":   `{"legislation":[{"from":"2026-07","incomeTaxRate":0.10}]}`,
+		// A fixed salary is the one figure the app pays without checking it
+		// can, so a typo in it is not caught by anything downstream.
+		"a fixed salary with no amount":    `{"salary":[{"from":"2026-04","mode":"fixed"}]}`,
+		"an amount on a mode that ignores": `{"salary":[{"from":"2026-04","mode":"full","amount":2500}]}`,
+		"a fixed salary below the wage":    `{"legislation":[{"from":"2026-01","minimumWage":1077}],"salary":[{"from":"2026-04","to":"2026-05","mode":"fixed","amount":800}]}`,
 	}
 	for name, body := range bad {
 		t.Run(name, func(t *testing.T) {

@@ -1,8 +1,10 @@
 package tracker
 
 import (
+	"fmt"
 	"math"
 	"reflect"
+	"strings"
 )
 
 type PersonalParams struct {
@@ -26,7 +28,9 @@ type PersonalView struct {
 	MinimumEnforced  bool
 
 	Mode                SalaryMode
+	FixedSalaryCents    int
 	MonthsAtMinimum     int
+	MonthsAtFixed       int
 	MonthsWithoutSalary int
 
 	NoLegislation bool
@@ -47,6 +51,36 @@ type RateLine struct {
 }
 
 func toCent(v float64) float64 { return math.Round(v*100) / 100 }
+
+func (v PersonalView) MixedMonthsNote() string {
+	if v.Mode != "" {
+		return ""
+	}
+	var parts []string
+	if v.MonthsAtMinimum > 0 {
+		parts = append(parts, fmt.Sprintf("%d month(s) pay only the statutory minimum", v.MonthsAtMinimum))
+	}
+	if v.MonthsAtFixed > 0 {
+		parts = append(parts, fmt.Sprintf("%d month(s) pay a fixed salary", v.MonthsAtFixed))
+	}
+	if v.MonthsWithoutSalary > 0 {
+		parts = append(parts, fmt.Sprintf("%d month(s) draw no salary at all", v.MonthsWithoutSalary))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return joinClauses(parts) + " — so this total is not twelve full months."
+}
+
+func joinClauses(parts []string) string {
+	switch len(parts) {
+	case 1:
+		return parts[0]
+	case 2:
+		return parts[0] + ", and " + parts[1]
+	}
+	return strings.Join(parts[:len(parts)-1], ", ") + ", and " + parts[len(parts)-1]
+}
 
 func (r PartyRules) on(gross float64) float64 {
 	if gross <= 0 {
@@ -101,15 +135,16 @@ func oneRate(base, minBase float64, b Bands) []RateLine {
 	return []RateLine{{Rate: rate}}
 }
 
-func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, months int, r Rules, mode SalaryMode) PersonalView {
+func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, months int, r Rules, d SalaryDecision) PersonalView {
 	if months <= 0 {
 		months = 1
 	}
+	mode := d.Mode
 	monthlyRawIncome := totalIncomeEUR / float64(months)
 	monthlyCompanyExpenses := companyExpensesEUR / float64(months)
 	availableForPayroll := toCent(monthlyRawIncome - monthlyCompanyExpenses)
 
-	gross, minimumEnforced := grossSalaryFor(mode, r, availableForPayroll)
+	gross, minimumEnforced := grossSalaryFor(d, r, availableForPayroll)
 	employerContrib := toCent(r.Employer.on(gross))
 	if mode == SalaryFull && !minimumEnforced {
 		gross = wholeRemainderAfter(employerContrib, availableForPayroll, gross)
@@ -126,6 +161,7 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 		Mode:                 mode,
 		MinimumEnforced:      minimumEnforced,
 		MinimumWageCents:     round(r.MinimumEUR * 100),
+		FixedSalaryCents:     round(d.FixedEUR * 100),
 		EmployerRate:         oneRate(gross, r.Employer.MinBase, r.Employer.Bands),
 		EmployeeRate:         oneRate(gross, r.Employee.MinBase, r.Employee.Bands),
 		IncomeTaxRate:        oneRate(taxable, 0, r.IncomeTax),
@@ -139,12 +175,14 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 	}
 }
 
-func grossSalaryFor(mode SalaryMode, r Rules, availableForPayroll float64) (gross float64, minimumEnforced bool) {
-	switch mode {
+func grossSalaryFor(d SalaryDecision, r Rules, availableForPayroll float64) (gross float64, minimumEnforced bool) {
+	switch d.Mode {
 	case SalaryNone:
 		return 0, false
 	case SalaryMinimum:
 		return toCent(r.MinimumEUR), false
+	case SalaryFixed:
+		return toCent(d.FixedEUR), false
 	}
 	gross = toCent(r.Employer.grossAffordable(availableForPayroll))
 	if gross < 0 {
@@ -180,14 +218,17 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 			companyExpenses = monthlyCompanyExpensesEUR[i]
 		}
 		ym := start.addMonths(i)
-		mode := p.Salary.modeFor(ym)
-		m := p.breakdown(income, companyExpenses, 1, p.rulesFor(ym), mode)
+		d := p.Salary.decisionFor(ym)
+		mode := d.Mode
+		m := p.breakdown(income, companyExpenses, 1, p.rulesFor(ym), d)
 		one = m
 		switch mode {
 		case SalaryMinimum:
 			result.MonthsAtMinimum++
 		case SalaryNone:
 			result.MonthsWithoutSalary++
+		case SalaryFixed:
+			result.MonthsAtFixed++
 		}
 		if i == 0 {
 			result.Mode = mode
@@ -202,6 +243,9 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 		}
 		if m.MinimumWageCents > result.MinimumWageCents {
 			result.MinimumWageCents = m.MinimumWageCents
+		}
+		if m.FixedSalaryCents > result.FixedSalaryCents {
+			result.FixedSalaryCents = m.FixedSalaryCents
 		}
 		result.CompanyIncomeCents += m.CompanyIncomeCents
 		result.CompanyExpensesCents += m.CompanyExpensesCents

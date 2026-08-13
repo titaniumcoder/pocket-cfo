@@ -72,8 +72,8 @@ func TestARateChangeReachesTheArithmetic(t *testing.T) {
 	p := bulgaria()
 	income := 5000.0
 
-	before := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2026, time.December}), SalaryFull)
-	after := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2027, time.January}), SalaryFull)
+	before := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2026, time.December}), SalaryDecision{Mode: SalaryFull})
+	after := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2027, time.January}), SalaryDecision{Mode: SalaryFull})
 
 	if before.GrossSalaryCents <= after.GrossSalaryCents {
 		t.Errorf("gross was %d before the rate rise and %d after — a higher employer rate must buy less salary",
@@ -91,8 +91,8 @@ func TestInsurableCapIsDatedToo(t *testing.T) {
 	p := bulgaria()
 	income := 20000.0 // comfortably past either cap
 
-	before := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2026, time.December}), SalaryFull)
-	after := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2027, time.January}), SalaryFull)
+	before := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2026, time.December}), SalaryDecision{Mode: SalaryFull})
+	after := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2027, time.January}), SalaryDecision{Mode: SalaryFull})
 
 	if after.EmployeeContribCents <= before.EmployeeContribCents {
 		t.Errorf("employee contribution %d before the cap rise, %d after — a higher ceiling means a bigger base",
@@ -123,7 +123,7 @@ func TestOneAlwaysInForcePeriodAppliesToEveryMonth(t *testing.T) {
 // appears whether or not the month produced it.
 func TestMinimumWageIsEnforcedWhateverTheCompanyEarned(t *testing.T) {
 	p := bulgaria()
-	lean := p.breakdown(0, 0, 1, p.rulesFor(yearMonth{2026, time.July}), SalaryFull)
+	lean := p.breakdown(0, 0, 1, p.rulesFor(yearMonth{2026, time.July}), SalaryDecision{Mode: SalaryFull})
 
 	if lean.GrossSalaryCents != 107700 {
 		t.Errorf("gross = %d, want the 1077 minimum even on no income", lean.GrossSalaryCents)
@@ -138,8 +138,8 @@ func TestMinimumWageIsEnforcedWhateverTheCompanyEarned(t *testing.T) {
 
 func TestMinimumWageDoesNotCapAGoodMonth(t *testing.T) {
 	p := bulgaria()
-	rich := p.breakdown(10000, 0, 1, p.rulesFor(yearMonth{2026, time.July}), SalaryFull)
-	unfloored := params().breakdown(10000, 0, 1, params().rulesFor(testMonth), SalaryFull)
+	rich := p.breakdown(10000, 0, 1, p.rulesFor(yearMonth{2026, time.July}), SalaryDecision{Mode: SalaryFull})
+	unfloored := params().breakdown(10000, 0, 1, params().rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
 
 	if rich.GrossSalaryCents != unfloored.GrossSalaryCents {
 		t.Errorf("gross = %d with a floor, %d without — a floor must not change an affordable salary",
@@ -152,8 +152,8 @@ func TestMinimumWageDoesNotCapAGoodMonth(t *testing.T) {
 
 func TestMinimumWageBeforeEmploymentChangesNothing(t *testing.T) {
 	before := yearMonth{2026, time.May}
-	with := bulgaria().breakdown(500, 0, 1, bulgaria().rulesFor(before), SalaryFull)
-	without := params().breakdown(500, 0, 1, params().rulesFor(testMonth), SalaryFull)
+	with := bulgaria().breakdown(500, 0, 1, bulgaria().rulesFor(before), SalaryDecision{Mode: SalaryFull})
+	without := params().breakdown(500, 0, 1, params().rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
 
 	if !reflect.DeepEqual(with, without) {
 		t.Errorf("May 2026 differs with legislation configured:\n with = %+v\n want = %+v", with, without)
@@ -206,7 +206,7 @@ func TestFloorFollowsThePayrollMonthNotTheIncomeMonth(t *testing.T) {
 // the contributions and tax below it.
 func TestAMonthThatCannotPayPaysNothing(t *testing.T) {
 	p := params()
-	underwater := p.breakdown(500, 2000, 1, p.rulesFor(testMonth), SalaryFull)
+	underwater := p.breakdown(500, 2000, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
 	if underwater.GrossSalaryCents != 0 {
 		t.Fatalf("gross = %d, want 0 on a month that cannot pay", underwater.GrossSalaryCents)
 	}
@@ -218,7 +218,7 @@ func TestAMonthThatCannotPayPaysNothing(t *testing.T) {
 	// month funded it or not, so it is paid and charged for.
 	floored := p.rulesFor(testMonth)
 	floored.MinimumEUR = 1077
-	got := p.breakdown(500, 2000, 1, floored, SalaryFull)
+	got := p.breakdown(500, 2000, 1, floored, SalaryDecision{Mode: SalaryFull})
 	if !got.MinimumEnforced || got.GrossSalaryCents != 107700 {
 		t.Errorf("with a floor the month cannot fund, gross = %d, enforced = %v; want the minimum paid anyway",
 			got.GrossSalaryCents, got.MinimumEnforced)
@@ -326,7 +326,7 @@ func TestNothingAppliesBeforeTheEarliestEntry(t *testing.T) {
 
 	// A salary computed there is charged nothing, and says so rather than
 	// looking like an ordinary payslip that happens to owe zero.
-	v := p.breakdown(5000, 0, 1, past, SalaryFull)
+	v := p.breakdown(5000, 0, 1, past, SalaryDecision{Mode: SalaryFull})
 	if v.EmployerContribCents != 0 || v.EmployeeContribCents != 0 || v.IncomeTaxCents != 0 {
 		t.Errorf("a month before the earliest entry was charged something: %+v", v)
 	}

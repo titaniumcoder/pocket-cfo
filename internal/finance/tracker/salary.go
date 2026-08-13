@@ -13,19 +13,27 @@ const (
 	SalaryFull    SalaryMode = "full"
 	SalaryMinimum SalaryMode = "minimum"
 	SalaryNone    SalaryMode = "none"
+	SalaryFixed   SalaryMode = "fixed"
 )
 
 type SalaryEntry struct {
-	From string `json:"from"`
-	To   string `json:"to"`
-	Mode string `json:"mode"`
+	From   string   `json:"from"`
+	To     string   `json:"to"`
+	Mode   string   `json:"mode"`
+	Amount *float64 `json:"amount"`
 }
 
 type SalaryPeriod struct {
-	From  yearMonth
-	To    yearMonth
-	ToSet bool
-	Mode  SalaryMode
+	From      yearMonth
+	To        yearMonth
+	ToSet     bool
+	Mode      SalaryMode
+	AmountEUR float64
+}
+
+type SalaryDecision struct {
+	Mode     SalaryMode
+	FixedEUR float64
 }
 
 type SalaryPlan []SalaryPeriod
@@ -52,18 +60,22 @@ func ParseSalaryPlan(entries []SalaryEntry) (SalaryPlan, error) {
 func parseSalaryEntry(i int, e SalaryEntry) (SalaryPeriod, error) {
 	mode := SalaryMode(strings.TrimSpace(e.Mode))
 	switch mode {
-	case SalaryFull, SalaryMinimum, SalaryNone:
+	case SalaryFull, SalaryMinimum, SalaryNone, SalaryFixed:
 	case "":
-		return SalaryPeriod{}, fmt.Errorf("salary[%d] has no mode — say full, minimum or none", i)
+		return SalaryPeriod{}, fmt.Errorf("salary[%d] has no mode — say full, minimum, fixed or none", i)
 	default:
-		return SalaryPeriod{}, fmt.Errorf("salary[%d] has mode %q, which is not full, minimum or none", i, e.Mode)
+		return SalaryPeriod{}, fmt.Errorf("salary[%d] has mode %q, which is not full, minimum, fixed or none", i, e.Mode)
+	}
+	amount, err := parseSalaryAmount(i, mode, e.Amount)
+	if err != nil {
+		return SalaryPeriod{}, err
 	}
 
 	from, err := parseMonthOrDay(e.From)
 	if err != nil {
 		return SalaryPeriod{}, fmt.Errorf("salary[%d]: from %q is not a month (2026-04) or a date (2026-04-01)", i, e.From)
 	}
-	p := SalaryPeriod{From: from, Mode: mode}
+	p := SalaryPeriod{From: from, Mode: mode, AmountEUR: amount}
 	if strings.TrimSpace(e.To) == "" {
 		return p, nil
 	}
@@ -76,6 +88,22 @@ func parseSalaryEntry(i int, e SalaryEntry) (SalaryPeriod, error) {
 	}
 	p.To, p.ToSet = to, true
 	return p, nil
+}
+
+func parseSalaryAmount(i int, mode SalaryMode, amount *float64) (float64, error) {
+	if mode != SalaryFixed {
+		if amount != nil {
+			return 0, fmt.Errorf("salary[%d] states an amount with mode %q, which ignores it — only fixed pays a figure you name", i, mode)
+		}
+		return 0, nil
+	}
+	if amount == nil {
+		return 0, fmt.Errorf("salary[%d] has mode fixed but names no amount — fixed is the mode for a gross monthly figure you choose, so the figure is the whole of it", i)
+	}
+	if *amount <= 0 {
+		return 0, fmt.Errorf("salary[%d]: amount is %s, and a fixed salary of nothing is mode %q", i, formatNum(*amount), SalaryNone)
+	}
+	return *amount, nil
 }
 
 func rejectOverlaps(plan SalaryPlan) error {
@@ -91,16 +119,20 @@ func rejectOverlaps(plan SalaryPlan) error {
 	return nil
 }
 
-func (s SalaryPlan) modeFor(ym yearMonth) SalaryMode {
+func (s SalaryPlan) decisionFor(ym yearMonth) SalaryDecision {
 	for i, p := range s {
 		if ym.ordinal() < p.From.ordinal() {
 			break
 		}
 		if p.covers(ym) || p.runsOnThrough(ym, s.next(i)) {
-			return p.Mode
+			return SalaryDecision{Mode: p.Mode, FixedEUR: p.AmountEUR}
 		}
 	}
-	return SalaryFull
+	return SalaryDecision{Mode: SalaryFull}
+}
+
+func (s SalaryPlan) modeFor(ym yearMonth) SalaryMode {
+	return s.decisionFor(ym).Mode
 }
 
 func (s SalaryPlan) next(i int) *SalaryPeriod {
@@ -126,7 +158,11 @@ func (p SalaryPeriod) String() string {
 	if p.ToSet {
 		when += "–" + p.To.configForm()
 	}
-	return when + ": " + string(p.Mode)
+	what := string(p.Mode)
+	if p.Mode == SalaryFixed {
+		what += " " + groupThousands(round(p.AmountEUR))
+	}
+	return when + ": " + what
 }
 
 func ParseStartMonth(s string) (time.Time, error) {
@@ -142,24 +178,52 @@ func ParseStartMonth(s string) (time.Time, error) {
 
 func ValidateSalaryAgainstLegislation(plan SalaryPlan, l Legislation) error {
 	for _, p := range plan {
-		if p.Mode != SalaryMinimum {
-			continue
-		}
-		if err := requireMinimumWageThroughout(p, l); err != nil {
-			return err
+		switch p.Mode {
+		case SalaryMinimum:
+			if err := requireMinimumWageThroughout(p, l, minimumWageMissing); err != nil {
+				return err
+			}
+		case SalaryFixed:
+			if err := requireFixedClearsTheMinimumWage(p, l); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-func requireMinimumWageThroughout(p SalaryPeriod, l Legislation) error {
+func minimumWageMissing(ym yearMonth) error {
+	return fmt.Errorf("salary asks for the minimum in %s, but no minimumWage is in force then — that pays nothing, which is what mode %q is for", ym, SalaryNone)
+}
+
+func requireFixedClearsTheMinimumWage(p SalaryPeriod, l Legislation) error {
+	return eachMonthOf(p, func(ym yearMonth) error {
+		minimum := l.rulesAt(ym).MinimumEUR
+		if minimum > 0 && p.AmountEUR < minimum {
+			return fmt.Errorf("salary fixes %s for %s, below the %s minimum wage in force then. A fixed salary outranks what the company can afford, but not what the law sets — raise the amount, or say mode %q to track the minimum as it changes",
+				groupThousands(round(p.AmountEUR)), ym, groupThousands(round(minimum)), SalaryMinimum)
+		}
+		return nil
+	})
+}
+
+func requireMinimumWageThroughout(p SalaryPeriod, l Legislation, complain func(yearMonth) error) error {
+	return eachMonthOf(p, func(ym yearMonth) error {
+		if l.rulesAt(ym).MinimumEUR == 0 {
+			return complain(ym)
+		}
+		return nil
+	})
+}
+
+func eachMonthOf(p SalaryPeriod, check func(yearMonth) error) error {
 	last := p.From
 	if p.ToSet {
 		last = p.To
 	}
 	for ym := p.From; ym.ordinal() <= last.ordinal(); ym = ym.addMonths(1) {
-		if l.rulesAt(ym).MinimumEUR == 0 {
-			return fmt.Errorf("salary asks for the minimum in %s, but no minimumWage is in force then — that pays nothing, which is what mode %q is for", ym, SalaryNone)
+		if err := check(ym); err != nil {
+			return err
 		}
 	}
 	return nil

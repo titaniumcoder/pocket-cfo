@@ -17,5 +17,9 @@
       "incomeTax": { "bands": [ { "from": 0, "rate": 0.10 } ] }
     },
     { "from": "2026-07", "minimumWage": 1077 }
+  ],
+
+  "salary": [
+    { "from": "2026-09", "mode": "fixed", "amount": 2500 }
   ]
 }

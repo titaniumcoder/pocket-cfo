@@ -1,6 +1,8 @@
 package tracker
 
 import (
+	"context"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +19,12 @@ func TestParseSalaryPlan(t *testing.T) {
 		{"a full date is a month", []SalaryEntry{{From: "2026-04-01", To: "2026-06-30", Mode: "full"}}, ""},
 		{"no entries at all", nil, ""},
 		{"no mode", []SalaryEntry{{From: "2026-04"}}, "has no mode"},
-		{"a mode nobody defined", []SalaryEntry{{From: "2026-04", Mode: "half"}}, "not full, minimum or none"},
+		{"a mode nobody defined", []SalaryEntry{{From: "2026-04", Mode: "half"}}, "not full, minimum, fixed or none"},
+		{"a fixed amount", []SalaryEntry{{From: "2026-04", Mode: "fixed", Amount: f64(2500)}}, ""},
+		{"fixed without an amount", []SalaryEntry{{From: "2026-04", Mode: "fixed"}}, "names no amount"},
+		{"a fixed nothing", []SalaryEntry{{From: "2026-04", Mode: "fixed", Amount: f64(0)}}, "fixed salary of nothing"},
+		{"a negative fixed salary", []SalaryEntry{{From: "2026-04", Mode: "fixed", Amount: f64(-100)}}, "fixed salary of nothing"},
+		{"an amount the mode ignores", []SalaryEntry{{From: "2026-04", Mode: "minimum", Amount: f64(2500)}}, "which ignores it"},
 		{"unparseable from", []SalaryEntry{{From: "April", Mode: "none"}}, "is not a month"},
 		{"unparseable to", []SalaryEntry{{From: "2026-04", To: "later", Mode: "none"}}, "is not a month"},
 		{"to before from", []SalaryEntry{{From: "2026-06", To: "2026-04", Mode: "none"}}, "precedes"},
@@ -121,8 +128,8 @@ func TestMinimumIsPaidEvenWhenMoreWasAffordable(t *testing.T) {
 	p := bulgariaBands()
 	r := p.rulesFor(yearMonth{2026, time.July}) // minimum wage 620.20 in force
 
-	full := p.breakdown(6000, 0, 1, r, SalaryFull)
-	minimum := p.breakdown(6000, 0, 1, r, SalaryMinimum)
+	full := p.breakdown(6000, 0, 1, r, SalaryDecision{Mode: SalaryFull})
+	minimum := p.breakdown(6000, 0, 1, r, SalaryDecision{Mode: SalaryMinimum})
 
 	if full.GrossSalaryCents <= 62020 {
 		t.Fatalf("full gross = %d, which is not above the minimum — this test would prove nothing", full.GrossSalaryCents)
@@ -148,6 +155,71 @@ func TestMinimumIsPaidEvenWhenMoreWasAffordable(t *testing.T) {
 	}
 }
 
+// TestAFixedSalaryIsPaidWhateverTheCompanyCanAfford is the deliberate choice
+// the mode exists to express: the figure is a decision, not a result, so it
+// outranks affordability and overdraws the company rather than shrinking.
+func TestAFixedSalaryIsPaidWhateverTheCompanyCanAfford(t *testing.T) {
+	p := bulgariaBands()
+	r := p.rulesFor(yearMonth{2026, time.July})
+
+	poor := p.breakdown(800, 0, 1, r, SalaryDecision{Mode: SalaryFixed, FixedEUR: 2500})
+	if poor.GrossSalaryCents != 250000 {
+		t.Errorf("gross = %d, want exactly the 2,500 named", poor.GrossSalaryCents)
+	}
+	if poor.EmployerContribCents == 0 {
+		t.Error("a fixed salary owed no employer contribution")
+	}
+	// The floor did not bind: 2,500 clears the minimum on its own.
+	if poor.MinimumEnforced {
+		t.Error("MinimumEnforced on a fixed salary well above the minimum")
+	}
+	if poor.FixedSalaryCents != 250000 {
+		t.Errorf("FixedSalaryCents = %d, want the figure carried through for the page to name", poor.FixedSalaryCents)
+	}
+	// And it is not topped up when the company could have paid more, which is
+	// the half of "fixed" that `full` would get wrong.
+	rich := p.breakdown(9000, 0, 1, r, SalaryDecision{Mode: SalaryFixed, FixedEUR: 2500})
+	if rich.GrossSalaryCents != 250000 {
+		t.Errorf("gross = %d on plentiful income, want the same 2,500", rich.GrossSalaryCents)
+	}
+	if full := p.breakdown(9000, 0, 1, r, SalaryDecision{Mode: SalaryFull}); full.GrossSalaryCents <= 250000 {
+		t.Fatalf("full gross = %d, not above the fixed figure — this test would prove nothing", full.GrossSalaryCents)
+	}
+}
+
+// TestAFixedSalaryBelowTheMinimumWageIsRefused draws the line the mode does
+// not cross: it outranks what the company can afford, not what the law sets.
+func TestAFixedSalaryBelowTheMinimumWageIsRefused(t *testing.T) {
+	l, err := ParseLegislation([]LegislationEntry{{From: "2026-07", MinimumWage: f64(1077)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := ParseSalaryPlan([]SalaryEntry{{From: "2026-07", To: "2026-09", Mode: "fixed", Amount: f64(900)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ValidateSalaryAgainstLegislation(plan, l)
+	if err == nil {
+		t.Fatal("accepted a fixed salary below the minimum wage in force")
+	}
+	for _, want := range []string{"900", "1,077", "July 2026", `"minimum"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v, want it to mention %q", err, want)
+		}
+	}
+
+	// Clearing the wage is fine, and so is a month with no wage in force at
+	// all — there is then no legal floor to be under.
+	above, _ := ParseSalaryPlan([]SalaryEntry{{From: "2026-07", Mode: "fixed", Amount: f64(1200)}})
+	if err := ValidateSalaryAgainstLegislation(above, l); err != nil {
+		t.Errorf("rejected a fixed salary above the minimum: %v", err)
+	}
+	before, _ := ParseSalaryPlan([]SalaryEntry{{From: "2026-01", To: "2026-06", Mode: "fixed", Amount: f64(300)}})
+	if err := ValidateSalaryAgainstLegislation(before, l); err != nil {
+		t.Errorf("checked a fixed salary against a minimum wage that is not in force: %v", err)
+	}
+}
+
 // TestNoSalaryChargesNothing: nobody was on the payroll, so there is no base
 // for a contribution and no salary to tax — and crucially the minimum-base
 // rule must not invent one.
@@ -156,7 +228,7 @@ func TestNoSalaryChargesNothing(t *testing.T) {
 	r := p.rulesFor(yearMonth{2026, time.July})
 	r.Employer.MinBase = 933 // the case that could invent a payroll
 
-	got := p.breakdown(6000, 0, 1, r, SalaryNone)
+	got := p.breakdown(6000, 0, 1, r, SalaryDecision{Mode: SalaryNone})
 
 	if got.GrossSalaryCents != 0 {
 		t.Errorf("gross = %d, want 0", got.GrossSalaryCents)
@@ -217,6 +289,58 @@ func TestARangeCountsTheMonthsThatDiffer(t *testing.T) {
 	}
 	if quiet.GrossSalaryCents != 0 {
 		t.Errorf("a year drawing no salary paid %d", quiet.GrossSalaryCents)
+	}
+}
+
+// TestAYearOfThreeSalaryShapesReadsAsASentence: the note under a mixed year
+// lists every shape that made the total not twelve full months, and reads as
+// prose rather than as clauses jammed together.
+func TestAYearOfThreeSalaryShapesReadsAsASentence(t *testing.T) {
+	p := bulgariaBands()
+	plan, err := ParseSalaryPlan([]SalaryEntry{
+		{From: "2026-02", To: "2026-03", Mode: "minimum"},
+		{From: "2026-05", To: "2026-05", Mode: "fixed", Amount: f64(2500)},
+		{From: "2026-08", To: "2026-09", Mode: "none"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Salary = plan
+
+	year := p.breakdownMonths(repeat(3000, 12), nil, yearMonth{2026, time.January})
+	if year.MonthsAtFixed != 1 {
+		t.Errorf("MonthsAtFixed = %d, want 1", year.MonthsAtFixed)
+	}
+	want := "2 month(s) pay only the statutory minimum, 1 month(s) pay a fixed salary, and 2 month(s) draw no salary at all — so this total is not twelve full months."
+	if got := year.MixedMonthsNote(); got != want {
+		t.Errorf("note = %q,\nwant       %q", got, want)
+	}
+
+	// A year that agrees on one shape has nothing to explain.
+	p.Salary = nil
+	if got := p.breakdownMonths(repeat(3000, 12), nil, yearMonth{2026, time.January}).MixedMonthsNote(); got != "" {
+		t.Errorf("note = %q on a year of full salaries, want none", got)
+	}
+}
+
+// TestAFixedMonthSaysSoOnThePage: a gross that matches neither affordability
+// nor the minimum wage is unreadable unless the page names the choice.
+func TestAFixedMonthSaysSoOnThePage(t *testing.T) {
+	trk := accountsTracker(t, testAccountsJSON)
+	plan, err := ParseSalaryPlan([]SalaryEntry{{From: "2026-01", Mode: "fixed", Amount: f64(2500)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trk.Personal.Salary = plan
+
+	f := trk.ComputeMonth(context.Background(), 2026, time.August)
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	body := rec.Body.String()
+	for _, want := range []string{"fixed by choice", "2,500/month"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page never says %q", want)
+		}
 	}
 }
 

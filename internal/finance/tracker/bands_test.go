@@ -47,7 +47,7 @@ func bulgariaBands() PersonalParams {
 // tax base, the tax, the net — is computed on precisely the salary named.
 func atGross(p PersonalParams, r Rules, gross float64) PersonalView {
 	r.MinimumEUR = gross
-	return p.breakdown(0, 0, 1, r, SalaryFull)
+	return p.breakdown(0, 0, 1, r, SalaryDecision{Mode: SalaryFull})
 }
 
 func checkCents(t *testing.T, v PersonalView, want map[string]int) {
@@ -169,7 +169,7 @@ func TestVectorAboveTheCeiling(t *testing.T) {
 // being handed its gross.
 func TestVectorTheMinimumWageBinding(t *testing.T) {
 	p := bulgariaBands()
-	v := p.breakdown(300, 0, 1, p.rulesFor(yearMonth{2026, time.July}), SalaryFull)
+	v := p.breakdown(300, 0, 1, p.rulesFor(yearMonth{2026, time.July}), SalaryDecision{Mode: SalaryFull})
 
 	if !v.MinimumEnforced {
 		t.Fatal("the floor bound and the view does not say so")
@@ -227,7 +227,7 @@ func TestVectorZeroedPeriod(t *testing.T) {
 	}
 
 	p := PersonalParams{Legislation: zeroed}
-	v := p.breakdown(5000, 0, 1, p.rulesFor(yearMonth{2026, time.March}), SalaryFull)
+	v := p.breakdown(5000, 0, 1, p.rulesFor(yearMonth{2026, time.March}), SalaryDecision{Mode: SalaryFull})
 	if v.EmployerContribCents != 0 || v.EmployeeContribCents != 0 || v.IncomeTaxCents != 0 {
 		t.Errorf("a zeroed period charged something: %+v", v)
 	}
@@ -300,7 +300,7 @@ func TestTheLedgerColumnSubtractsExactly(t *testing.T) {
 	p := bulgariaBands()
 	r := p.rulesFor(yearMonth{2026, time.July})
 	for _, income := range []float64{800, 1000, 1234.56, 2000, 2511.16, 5000, 10000} {
-		v := p.breakdown(income, 0, 1, r, SalaryFull)
+		v := p.breakdown(income, 0, 1, r, SalaryDecision{Mode: SalaryFull})
 		if v.MinimumEnforced {
 			continue // the floor deliberately breaks the identity; that is what the gap says
 		}
@@ -537,7 +537,7 @@ func TestARangeShowsALinePerSchedule(t *testing.T) {
 	}
 
 	// A single month names no span either.
-	month := p.breakdown(1000, 0, 1, p.rulesFor(yearMonth{2026, time.June}), SalaryFull)
+	month := p.breakdown(1000, 0, 1, p.rulesFor(yearMonth{2026, time.June}), SalaryDecision{Mode: SalaryFull})
 	if got := rateOf(month.EmployerRate); got != "20%" {
 		t.Errorf("June = %q, want the bare rate a 1000 salary was charged", got)
 	}

@@ -159,6 +159,7 @@ type Figures struct {
 	PrivateAccounts     []AccountRow
 	CompanyAccounts     []AccountRow
 	CompanyBalanceLabel string
+	BalanceBasisNote    string
 	AccountsStaleNote   string
 
 	TargetNeedsBalanceNote string
@@ -560,6 +561,7 @@ func (f *Figures) publishAccountBalances(snap AccountSnapshot, carried openings,
 	f.AvailableCents = carried.PrivateCents + f.FundingPersonal.NetIncomeCents
 	f.OpeningBalanceLabel = openingBalanceLabel(snap, viewed)
 	f.CompanyBalanceLabel = openingBalanceLabel(snap, viewed)
+	f.BalanceBasisNote = carried.Basis.Note()
 	if viewed == snap.OpensMonth {
 		f.PrivateAccounts = snap.rowsOfKind(accountsdata.AccountKindPrivate)
 		f.CompanyAccounts = snap.rowsOfKind(accountsdata.AccountKindCompany)

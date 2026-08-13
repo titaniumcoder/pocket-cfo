@@ -209,6 +209,38 @@ const maxRollForwardMonths = 120
 type openings struct {
 	PrivateCents int
 	Company      companyStock
+	Basis        balanceBasis
+}
+
+type balanceBasis struct {
+	ReadOn       string
+	ActualMonths int
+	PlanMonths   int
+}
+
+func (b balanceBasis) Note() string {
+	if b.ReadOn == "" {
+		return ""
+	}
+	read := "Read off the bank on " + b.ReadOn
+	carried := b.ActualMonths + b.PlanMonths
+	switch {
+	case carried == 0:
+		return read + "."
+	case b.PlanMonths == 0:
+		return fmt.Sprintf("%s, then carried %s, each closed on the imported statements.", read, monthCount(carried))
+	case b.ActualMonths == 0:
+		return fmt.Sprintf("%s, then carried %s, each closed on the budget.", read, monthCount(carried))
+	}
+	return fmt.Sprintf("%s, then carried %s — %d closed on the imported statements, %d on the budget.",
+		read, monthCount(carried), b.ActualMonths, b.PlanMonths)
+}
+
+func monthCount(n int) string {
+	if n == 1 {
+		return "1 month"
+	}
+	return fmt.Sprintf("%d months", n)
 }
 
 // rollForward walks the months between the read date and the one being looked
@@ -225,6 +257,7 @@ func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, viewed 
 	open := openings{
 		PrivateCents: snap.PrivateCents,
 		Company:      companyStock{Known: snap.HasCompany, OpeningCents: snap.CompanyCents},
+		Basis:        balanceBasis{ReadOn: snap.LatestAsOf.Format("2 January 2006")},
 	}
 	for m := snap.OpensMonth; m.ordinal() < viewed.ordinal(); m = m.addMonths(1) {
 		closed, err := t.monthClose(ctx, m, now, rateCents, open.Company)
@@ -233,6 +266,11 @@ func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, viewed 
 		}
 		open.PrivateCents += closed.PrivateDeltaCents
 		open.Company.OpeningCents = closed.CompanyClosingCents
+		if closed.FromActuals {
+			open.Basis.ActualMonths++
+		} else {
+			open.Basis.PlanMonths++
+		}
 	}
 	return open, nil
 }
@@ -240,6 +278,7 @@ func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, viewed 
 type monthClosing struct {
 	PrivateDeltaCents   int
 	CompanyClosingCents int
+	FromActuals         bool
 }
 
 func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, rateCents int, company companyStock) (monthClosing, error) {
@@ -247,7 +286,7 @@ func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, ra
 	if err != nil {
 		return monthClosing{}, fmt.Errorf("accounts: budget for %s: %w", m, err)
 	}
-	privateCents, companyCents := t.closingExpenses(ctx, m, bv)
+	privateCents, companyCents, fromActuals := t.closingExpenses(ctx, m, bv)
 	fundingStart, fundingEnd := fundingRangeForMonth(m.Year, m.Month)
 	pv := t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(companyCents)/100, bv.CompanyGroups, company)
 	if pv.Err != "" {
@@ -256,15 +295,17 @@ func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, ra
 	return monthClosing{
 		PrivateDeltaCents:   pv.NetIncomeCents - privateCents,
 		CompanyClosingCents: pv.CompanyClosingCents,
+		FromActuals:         fromActuals,
 	}, nil
 }
 
-func (t *Tracker) closingExpenses(ctx context.Context, m yearMonth, bv BudgetView) (private, company int) {
+func (t *Tracker) closingExpenses(ctx context.Context, m yearMonth, bv BudgetView) (private, company int, fromActuals bool) {
 	av, err := t.Actuals.ForMonth(ctx, m.Year, m.Month)
 	if err != nil || !av.Present || !av.Complete {
-		return bv.TotalPlannedCents, bv.CompanyTotalPlannedCents
+		return bv.TotalPlannedCents, bv.CompanyTotalPlannedCents, false
 	}
-	return ActualTotals(av, t.companyCategoryIDs(ctx))
+	p, c := ActualTotals(av, t.companyCategoryIDs(ctx))
+	return p, c, true
 }
 
 func derefStr(p *string) string {

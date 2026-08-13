@@ -165,6 +165,8 @@ main h2.panel-title { font-size: 1.05rem; text-transform: none; letter-spacing: 
 .group.open .group-rows { display: contents; }
 .group-rows .row .label { padding-left: 2rem; opacity: .7; font-weight: 400; }
 .note { margin-left: .5em; font-size: .85em; }
+.basis { display: inline-flex; vertical-align: -.15em; margin-left: .35em; opacity: .45; cursor: help; }
+.basis:hover { opacity: .8; }
 .note a { color: inherit; text-decoration: underline; }
 .note a:hover { opacity: .7; }
 .link-icon { vertical-align: -1px; margin-left: .1em; }

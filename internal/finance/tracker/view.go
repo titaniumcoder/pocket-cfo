@@ -152,7 +152,6 @@ type Figures struct {
 	ShowBalance  bool
 	BalanceCents int
 
-	IsCurrentMonth            bool
 	ShowActualBalance         bool
 	ActualBalanceCents        int
 	ActualCompanyClosingCents int
@@ -206,7 +205,6 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	result := Figures{Month: label, Currency: "€"}
 
 	isCurrentPeriod := !today.Before(start) && !today.After(end)
-	result.IsCurrentMonth = isCurrentPeriod && months == 1
 
 	togglCtx, cancelToggl := waitBudget(ctx)
 	defer cancelToggl()
@@ -514,18 +512,20 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 	if f.BudgetErr == "" && f.FundingPersonal.Err == "" {
 		f.ShowBalance = true
 		f.BalanceCents = f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents - f.PrivateTotalPlannedCents
-		f.publishSpentSoFar()
+		f.publishBalanceTheBankSaw(months)
 	}
 }
 
-// publishSpentSoFar answers "where does this actually stand today", which the
-// projected figure cannot: mid-month the plan has already charged the whole
-// month while the statements have only reached as far as they were imported.
-// Both are shown rather than one replacing the other, because the actual one
-// is optimistic by whatever has not been imported or assigned yet, and only
-// the pair says so.
-func (f *Figures) publishSpentSoFar() {
-	if !f.IsCurrentMonth || !f.ShowActuals {
+// publishBalanceTheBankSaw answers "what does the account actually hold",
+// which the planned figure cannot: the plan charges the whole month on the
+// first, while the statements say what was really spent. Every month that has
+// been imported can answer it — mid-month it is where today stands, and in a
+// closed month it is what the month really ended on, which is the figure the
+// next month opens with. Both are shown rather than one replacing the other,
+// because the actual one is optimistic by whatever has not been imported or
+// assigned yet, and only the pair says so.
+func (f *Figures) publishBalanceTheBankSaw(months int) {
+	if months != 1 || !f.ShowActuals {
 		return
 	}
 	f.ShowActualBalance = true

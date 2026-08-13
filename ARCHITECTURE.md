@@ -833,12 +833,16 @@ with, noise on every other visit, and not worth the machinery of threading a pro
 record through the roll to render it. What the reader has instead is the read date on the
 spending page, which answers the question that actually prompts the doubt.
 
-**The running month has two balances.** The plan charges the whole month on the first, so
-mid-month the projection and the statements answer different questions — where this will
-end up, and where it stands today. Both are shown, in the Planned-against-Actual columns
-the ledger already uses. Neither replaces the other: the live figure is optimistic by
-whatever has not been imported or assigned yet, and only the projection beside it makes
-that legible. The company row gets the same pair, with the expense figure substituted but
+**An imported month has two balances.** The plan charges the whole month on the first, so
+the plan and the statements answer different questions — where the month was meant to end
+up, and what the account actually holds. Both are shown, in the Planned-against-Actual
+columns the ledger already uses. Neither replaces the other: the bank figure is optimistic
+by whatever has not been imported or assigned yet, and only the planned one beside it makes
+that legible. Mid-month that gap is most of the month; in a closed month it is the
+overspend or the underspend, and the bank figure is then not an estimate at all — it is
+what the month ended on, and what the next month opens with. A month nobody has imported
+has only the plan to show, and a year view has no opening balance to build the second
+figure from. The company row gets the same pair, with the expense figure substituted but
 the cascade left alone — re-deriving affordability from a half-imported month would invent
 a bigger salary purely because the statements had not caught up, and would break the rule
 that the closing figure equals the rows above it.

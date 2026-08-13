@@ -376,21 +376,46 @@ func TestTheCurrentMonthShowsSpentAndProjectedTogether(t *testing.T) {
 	}
 }
 
-// TestOnlyTheCurrentMonthShowsBoth: a month that has closed has one answer,
-// not two — its statements are the whole story and the plan is history. A
-// month with nothing imported has nothing to show beside the plan either.
-func TestOnlyTheCurrentMonthShowsBoth(t *testing.T) {
-	ctx := context.Background()
+// TestAClosedMonthAlsoShowsWhatTheBankSaw: a month that has been imported can
+// say exactly what the account held, and a closed month is the case where it
+// is not even an estimate — the statements are the whole story, and that
+// figure is what the next month opens with. It used to show the plan alone,
+// so a month that overspent its budget still displayed the balance it had
+// been meant to end on.
+func TestAClosedMonthAlsoShowsWhatTheBankSaw(t *testing.T) {
+	trk, past := monthTracker(t, -3, 400, false)
+	f := trk.ComputeMonth(context.Background(), past.Year, past.Month)
 
-	trkPast, past := monthTracker(t, -3, 400, false)
-	if f := trkPast.ComputeMonth(ctx, past.Year, past.Month); f.ShowActualBalance {
-		t.Error("a month in the past showed a live balance beside its projection")
+	if !f.ShowActualBalance {
+		t.Fatal("a closed month with statements showed the plan alone")
 	}
+	if want := f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents - f.PrivateActualCents; f.ActualBalanceCents != want {
+		t.Errorf("ActualBalanceCents = %d, want %d (opening + net income - what the bank saw)", f.ActualBalanceCents, want)
+	}
+	if f.BalanceCents != f.OpeningBalanceCents+f.FundingPersonal.NetIncomeCents-f.PrivateTotalPlannedCents {
+		t.Error("the planned balance stopped being the plan")
+	}
+	if f.ActualBalanceCents == f.BalanceCents {
+		t.Error("the two figures are identical, so this month proves nothing about showing both")
+	}
+}
+
+// TestNothingImportedShowsOneFigure: the second figure is read off the
+// statements, so with no statements there is nothing to read and the plan
+// stands alone rather than being restated as fact. A year view is the same
+// case for a different reason — it has no opening balance to add to.
+func TestNothingImportedShowsOneFigure(t *testing.T) {
+	ctx := context.Background()
 
 	trk, viewed := monthTracker(t, 0, 400, false)
 	trk.Actuals = nil
 	if f := trk.ComputeMonth(ctx, viewed.Year, viewed.Month); f.ShowActualBalance {
-		t.Error("the current month with no statements at all showed a second figure")
+		t.Error("a month with no statements at all showed a second figure")
+	}
+
+	trk, viewed = monthTracker(t, -3, 400, false)
+	if f := trk.ComputeYear(ctx, viewed.Year); f.ShowActualBalance {
+		t.Error("a year view showed a balance the bank saw; it has no opening balance to build one from")
 	}
 }
 

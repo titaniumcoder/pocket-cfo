@@ -19,14 +19,6 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/stats"
 )
 
-// runValidate checks every data file PocketCFO reads at runtime — recipients,
-// invoices, users.json, budget.json — against its schema-generated type
-// (structural + required-field + enum validation, the same checks every
-// runtime loader already applies implicitly via json.Unmarshal) plus
-// budget.json's extra business-rule validation (ValidateBudget) that JSON
-// Schema can't express. Meant to run in CI against a real data checkout
-// (see the private pocket-cfo-data repo) before it's ever deployed — see
-// PocketCFO's plan §3.2.
 func runValidate(args []string) int {
 	dataDir := "data"
 	if len(args) > 0 {
@@ -68,9 +60,6 @@ func runValidate(args []string) int {
 	return 0
 }
 
-// validateActuals checks every data/actuals/*.json against its schema and
-// budget.json's category ids. Like validatePaidInvoices it can't go through
-// validateFile, which sees one file at a time.
 func validateActuals(dataDir string) int {
 	dir := filepath.Join(dataDir, "actuals")
 	entries, err := os.ReadDir(dir)
@@ -110,15 +99,12 @@ func validateActuals(dataDir string) int {
 	return problems
 }
 
-// validatePaidInvoices checks paid-invoices.json structurally and then against
-// the invoices it references. The cross-file rules need the whole invoice set,
-// so this can't go through validateFile's one-file-at-a-time check.
 func validatePaidInvoices(dataDir string) int {
 	path := filepath.Join(dataDir, "paid-invoices.json")
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return 0 // nothing paid yet — see stats.LoadPaid
+			return 0
 		}
 		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: read %s: %v\n", path, err)
 		return 1
@@ -130,8 +116,6 @@ func validatePaidInvoices(dataDir string) int {
 		return 1
 	}
 
-	// A missing invoices dir reads as "no invoices", so each payment fails
-	// with its own "no such invoice" rather than one opaque read error.
 	invoices, err := stats.LoadInvoices(filepath.Join(dataDir, "invoices"))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: %s: %v\n", path, err)
@@ -145,9 +129,6 @@ func validatePaidInvoices(dataDir string) int {
 	return 0
 }
 
-// validateDir runs check against every *.json file directly under dir. A
-// missing directory is fine (0 problems) — not every data checkout has
-// every category of data (e.g. a fresh recipient list with no invoices yet).
 func validateDir(dir string, check func([]byte) error) int {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -167,8 +148,6 @@ func validateDir(dir string, check func([]byte) error) int {
 	return problems
 }
 
-// validateFile runs check against path's contents. A missing file is fine
-// (0 problems) — same reasoning as validateDir.
 func validateFile(path string, check func([]byte) error) int {
 	b, err := os.ReadFile(path)
 	if err != nil {

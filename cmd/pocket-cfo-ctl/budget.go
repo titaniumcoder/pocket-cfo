@@ -13,7 +13,6 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/budgetdata"
 )
 
-// runBudget dispatches `pocket-cfo-ctl budget <subcommand>`.
 func runBudget(args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "pocket-cfo-ctl budget: a subcommand is required (ids)")
@@ -28,12 +27,6 @@ func runBudget(args []string) int {
 	}
 }
 
-// runBudgetIDs implements `pocket-cfo-ctl budget ids [dataDir] [--dry-run]`,
-// filling a stable id into every category that lacks one. Idempotent.
-//
-// It reads raw JSON because `id` is required: the generated unmarshaller
-// rejects exactly the un-migrated file this exists to fix. The result is
-// checked against the generated type, which is the direction that works.
 func runBudgetIDs(args []string) int {
 	fs := flag.NewFlagSet("budget ids", flag.ContinueOnError)
 	dryRun := fs.Bool("dry-run", false, "print the ids that would be assigned, without writing")
@@ -101,13 +94,9 @@ type rawCat struct {
 	name  string
 	id    string
 	hadID bool
-	start int // byte offset just past the category object's opening brace
+	start int
 }
 
-// assignIDs gives every category without an id a fresh UUID, and never
-// regenerates one already present. A UUID rather than a slug of the name: a
-// slug looks derived from the category, so a rename invites someone to tidy
-// the id to match, orphaning every transaction matched to it.
 func assignIDs(cats []rawCat) error {
 	taken := map[string]bool{}
 	for _, c := range cats {
@@ -134,31 +123,23 @@ func assignIDs(cats []rawCat) error {
 	return nil
 }
 
-// newUUID returns a random (version 4) UUID.
 func newUUID() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", fmt.Errorf("generating an id: %w", err)
 	}
-	b[6] = (b[6] & 0x0f) | 0x40 // version 4
-	b[8] = (b[8] & 0x3f) | 0x80 // RFC 4122 variant
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
-// insertIDs splices `"id": "…",` into each category that needs one, leaving
-// every other byte as it was. budget.json is hand-maintained with one
-// category per line; MarshalIndent would reformat and reorder the whole file,
-// burying the ids in a diff that touches every line.
 func insertIDs(src []byte, cats []rawCat) []byte {
 	out := src
-	// Back to front, so each insertion leaves the earlier offsets valid.
 	for i := len(cats) - 1; i >= 0; i-- {
 		if cats[i].hadID {
 			continue
 		}
 		at := cats[i].start
-		// Reuse the whitespace after the brace, so a one-line category stays
-		// on one line and an indented one stays indented.
 		ins := leadingSpace(src[at:]) + `"id": "` + cats[i].id + `",`
 		out = append(out[:at:at], append([]byte(ins), out[at:]...)...)
 	}
@@ -174,8 +155,6 @@ func leadingSpace(b []byte) string {
 	return ""
 }
 
-// scanCategories returns every groups[].categories[] entry in file order,
-// with the byte offset just past its opening brace.
 func scanCategories(src []byte) ([]rawCat, error) {
 	dec := json.NewDecoder(bytes.NewReader(src))
 	if err := expectDelim(dec, '{'); err != nil {
@@ -197,12 +176,12 @@ func scanCategories(src []byte) ([]rawCat, error) {
 		if err := expectDelim(dec, '['); err != nil {
 			return nil, err
 		}
-		for dec.More() { // one group
+		for dec.More() {
 			if err := expectDelim(dec, '{'); err != nil {
 				return nil, err
 			}
 			groupName := ""
-			var mine []int // indices of this group's categories, for back-filling the name
+			var mine []int
 			for dec.More() {
 				gkey, err := objectKey(dec)
 				if err != nil {
@@ -237,7 +216,6 @@ func scanCategories(src []byte) ([]rawCat, error) {
 			if err := expectDelim(dec, '}'); err != nil {
 				return nil, err
 			}
-			// "name" may follow "categories", so back-fill it.
 			for _, i := range mine {
 				cats[i].group = groupName
 			}
@@ -322,8 +300,6 @@ func skipValue(dec *json.Decoder) error {
 	return dec.Decode(&raw)
 }
 
-// verifyOnlyIDsChanged proves the edit did exactly one thing before anything
-// is overwritten — byte surgery is only safe if it checks its own work.
 func verifyOnlyIDsChanged(before, after []byte) error {
 	var bf budgetdata.BudgetFile
 	if err := json.Unmarshal(after, &bf); err != nil {
@@ -333,8 +309,6 @@ func verifyOnlyIDsChanged(before, after []byte) error {
 		return fmt.Errorf("the result fails validation: %w", err)
 	}
 
-	// Both sides go through map[string]any: the before state can't be parsed
-	// by the generated type, and either may already carry ids.
 	var a, b any
 	if err := json.Unmarshal(before, &a); err != nil {
 		return err
@@ -350,8 +324,6 @@ func verifyOnlyIDsChanged(before, after []byte) error {
 	return nil
 }
 
-// stripCategoryIDs deletes every groups[].categories[].id from a decoded
-// document.
 func stripCategoryIDs(doc any) {
 	root, ok := doc.(map[string]any)
 	if !ok {

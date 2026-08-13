@@ -19,13 +19,6 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/stats"
 )
 
-// invoicesDir and buildDir default to the layout described in
-// ARCHITECTURE.md §2, overridable via DATA_DIR/BUILD_DIR — e.g. to point
-// this binary at a data checkout that lives outside its own repo.
-// renderManifestPath is duplicated as a separate var in cmd/pocketcfo/main.go
-// (a different `main` package) rather than shared, matching the existing
-// buildDir/invoicesDir precedent of independently declaring the same
-// repo-root-relative paths per binary.
 var (
 	dataDir            = getenv("DATA_DIR", "data")
 	invoicesDir        = dataDir + "/invoices"
@@ -41,8 +34,6 @@ func getenv(key, fallback string) string {
 	return fallback
 }
 
-// runRender implements `pocket-cfo-ctl render [NUMBER] [--force] [--dry-run]`.
-// See ARCHITECTURE.md §5.
 func runRender(args []string) int {
 	fs := flag.NewFlagSet("render", flag.ContinueOnError)
 	force := fs.Bool("force", false, "re-render even an already-issued PDF (requires a single invoice number)")
@@ -85,7 +76,7 @@ func runRender(args []string) int {
 			return 1
 		}
 		if !ok {
-			signer = nil // no SIGN_CERT_B64 configured — signing is a no-op, see internal/sign
+			signer = nil
 		}
 	}
 
@@ -131,12 +122,6 @@ func runRender(args []string) int {
 	return 0
 }
 
-// splitFlags separates args into flag tokens (leading "-") and positional
-// ones. flag.Parse stops at the first non-flag argument, so without this,
-// "render INV-... --force" (flag after the invoice number, as documented in
-// ARCHITECTURE.md §5.2 and README.md) would leave --force unparsed and
-// treated as a second invoice number. This makes flag/positional order not
-// matter.
 func splitFlags(args []string) (flagArgs, positional []string) {
 	for _, a := range args {
 		if strings.HasPrefix(a, "-") {
@@ -148,15 +133,10 @@ func splitFlags(args []string) (flagArgs, positional []string) {
 	return flagArgs, positional
 }
 
-// forceAllowed reports whether --force may be used with this invocation:
-// only against exactly one explicitly named invoice, never a bulk render —
-// issued PDFs are written once and kept, see ARCHITECTURE.md §3.
 func forceAllowed(force bool, explicit []string) bool {
 	return !force || len(explicit) == 1
 }
 
-// invoiceNumbers returns explicit if non-empty, otherwise every invoice
-// number found under data/invoices, sorted.
 func invoiceNumbers(explicit []string) ([]string, error) {
 	if len(explicit) > 0 {
 		return explicit, nil
@@ -254,14 +234,6 @@ func renderOne(ctx context.Context, renderer render.Renderer, signer *sign.PDFSi
 	return nil
 }
 
-// backfillManifestEntry records manifest[filename]'s hash from the current
-// JSON without touching the existing PDF, when a PDF predates the
-// integrity-manifest feature (or the manifest was lost) — so the
-// dashboard's staleness check has a baseline to compare future edits
-// against. Treats current JSON as authoritative at backfill time — true
-// today, since a write-once PDF's JSON hasn't changed since it was made.
-// Returns the possibly-just-computed totals/haveTotals so the caller's
-// lazy-compute-once bookkeeping carries forward to the rest of the loop.
 func backfillManifestEntry(inv *invoice.InvoiceJson, t target, filename string, manifest render.Manifest, totals money.Totals, haveTotals bool) (money.Totals, bool, error) {
 	if _, ok := manifest[filename]; ok {
 		return totals, haveTotals, nil
@@ -283,11 +255,6 @@ func backfillManifestEntry(inv *invoice.InvoiceJson, t target, filename string, 
 	return totals, haveTotals, nil
 }
 
-// removeStaleDraftPDF deletes build/{number}-DRAFT.pdf once an invoice is no
-// longer a draft. targetsFor only ever lists targets for an invoice's
-// *current* status, so nothing else cleans up the old draft PDF once status
-// flips to issued (real example: build/INV-0000000003-DRAFT.pdf, stale since
-// the invoice was issued in commit a2c4d03).
 func removeStaleDraftPDF(inv invoice.InvoiceJson, dryRun bool) error {
 	if inv.Status == invoice.InvoiceJsonStatusDraft {
 		return nil
@@ -307,19 +274,12 @@ func removeStaleDraftPDF(inv invoice.InvoiceJson, dryRun bool) error {
 	return nil
 }
 
-// target is one PDF artifact to (maybe) render for an invoice.
 type target struct {
 	path      string
-	overwrite bool                    // true: always re-render. false: write once, skip if it exists (unless --force).
-	paidOn    *types.SerializableDate // nil: render the original, as if unpaid
+	overwrite bool
+	paidOn    *types.SerializableDate
 }
 
-// targetsFor returns every PDF artifact inv should have. Drafts get exactly
-// one, always overwritten. Issued invoices get the original — written once,
-// kept forever, and always rendered as if unpaid — plus a second -paid.pdf,
-// with the paid badge/stamp, once paidOn is known. paidOn comes from
-// data/paid-invoices.json, not from the invoice document.
-// See ARCHITECTURE.md §5.1/§6.
 func targetsFor(inv invoice.InvoiceJson, paidOn *types.SerializableDate) []target {
 	if inv.Status == invoice.InvoiceJsonStatusDraft {
 		return []target{

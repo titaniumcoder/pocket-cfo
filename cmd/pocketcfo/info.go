@@ -39,19 +39,8 @@ type infoView struct {
 	Balance           render.BalanceInfo
 }
 
-// handleInfo serves the admin-only /info diagnostics page: whichever
-// external services are configured, showing IDs/reference values useful for
-// filling in a recipient's tracking_client_id, config.json's
-// holidayCountry/holidaySubdivision, and the api2pdf account status. Gated
-// stricter than the finance/invoicing parts (s.authorized only, no
-// email-OTP readOnly tier) since this can expose account/billing data.
 func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	sess, ok := s.currentSession(r)
-	// Not logged in at all is a different answer from logged in without
-	// the rights: send anonymous visitors to log in first (same as
-	// handleInvoicePDF), and only refuse outright once we know who they
-	// are and that it isn't enough. Otherwise a logged-out admin just
-	// gets a dead-end 403 on a page they're perfectly entitled to.
 	if !ok || !s.authenticated(sess) {
 		s.rememberDestination(w, r)
 		http.Redirect(w, r, "/auth/login", http.StatusFound)
@@ -69,10 +58,6 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		Header:       s.header(sess, webui.PageInfo, webui.ParsePeriod(r.URL.Query().Get("year"), r.URL.Query().Get("month"))),
 		ConfigGroups: s.configGroups(),
 	}
-	// The avatar is the one thing on any page fetched from a third party, so
-	// when it does not appear the useful question is which address failed —
-	// and the answer is not visible anywhere else. Appended as its own group
-	// because it describes this session rather than the process.
 	view.ConfigGroups = append(view.ConfigGroups, configGroup{
 		Name: "This session",
 		Rows: []configRow{
@@ -105,9 +90,6 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// loadTogglInfo lists every workspace the token can see and, nested under
-// each, its clients — specifically to help pick the right
-// tracking_client_id value per recipient (see schemas/recipient.json).
 func loadTogglInfo(ctx context.Context, tg *tracker.Toggl) ([]infoWorkspaceView, string) {
 	workspaces, err := tg.Workspaces(ctx)
 	if err != nil {
@@ -126,11 +108,6 @@ func loadTogglInfo(ctx context.Context, tg *tracker.Toggl) ([]infoWorkspaceView,
 	return out, ""
 }
 
-// loadHolidayInfo lists every country OpenHolidays knows about and, nested
-// under each, its subdivisions — a reference list for picking config.json's
-// holidayCountry/holidaySubdivision. One country's subdivision-fetch
-// failure only blanks that country's own list (best-effort), rather than
-// failing the whole reference page.
 func loadHolidayInfo(ctx context.Context, h *tracker.Holidays) ([]infoCountryView, string) {
 	countries, err := h.Countries(ctx)
 	if err != nil {

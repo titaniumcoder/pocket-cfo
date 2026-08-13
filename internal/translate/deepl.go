@@ -1,9 +1,3 @@
-// Package translate fills in missing Bulgarian text on draft invoices via
-// DeepL. It is deliberately narrow: ordinary content only (line
-// descriptions, discount labels) — never the tax note, which is
-// catalog-sourced and human-authored (see catalog/notes.json), and never an
-// issued invoice, which is immutable once sent. See cmd/pocket-cfo-ctl/translate.go
-// for the command that uses this.
 package translate
 
 import (
@@ -16,8 +10,6 @@ import (
 	"strings"
 )
 
-// Client calls the DeepL API. Free-tier keys (suffixed ":fx", DeepL's own
-// convention) use the free endpoint; anything else uses the paid one.
 type Client struct {
 	APIKey     string
 	HTTPClient *http.Client
@@ -36,9 +28,6 @@ type translateResponse struct {
 	} `json:"translations"`
 }
 
-// Translate returns text translated from sourceLang to targetLang (DeepL
-// language codes, e.g. "DE", "EN", "FR", "BG" — case-insensitive on the
-// wire, but DeepL's own docs use uppercase).
 func (c *Client) Translate(ctx context.Context, text, sourceLang, targetLang string) (string, error) {
 	body := url.Values{}
 	body.Set("text", text)

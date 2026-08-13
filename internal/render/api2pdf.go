@@ -12,7 +12,6 @@ import (
 	"time"
 )
 
-// Renderer turns HTML into a PDF. See ARCHITECTURE.md §6.
 type Renderer interface {
 	Render(ctx context.Context, html []byte) ([]byte, error)
 }
@@ -20,21 +19,15 @@ type Renderer interface {
 const api2pdfEndpoint = "https://v2.api2pdf.com/chrome/pdf/html"
 const api2pdfBalanceEndpoint = "https://v2.api2pdf.com/balance"
 
-// fontDelay gives the api2pdf Chrome container time to fetch the
-// Noto Sans webfont before it snapshots the page — their Chrome is a fresh
-// serverless container per call, so the font is fetched cold every time.
-// See ARCHITECTURE.md §6.
 const fontDelay = 1500 * time.Millisecond
 
 const maxRetries = 3
 
-// API2PDF renders HTML to PDF via api2pdf's Chrome endpoint.
 type API2PDF struct {
 	APIKey string
 	Client *http.Client
 }
 
-// NewAPI2PDF builds an API2PDF renderer. apiKey must be non-empty.
 func NewAPI2PDF(apiKey string) *API2PDF {
 	return &API2PDF{
 		APIKey: apiKey,
@@ -51,19 +44,12 @@ type api2pdfRequest struct {
 	Options api2pdfOptions `json:"options"`
 }
 
-// api2pdfResponse is what the REST endpoint actually returns: a JSON
-// envelope with a link to the rendered file, valid for 24 hours.
-// "outputBinary" only affects the official SDKs, which fetch FileUrl for
-// you — the raw HTTP API always responds with this envelope, never the PDF
-// bytes inline.
 type api2pdfResponse struct {
 	Success bool   `json:"Success"`
 	Error   string `json:"Error"`
 	FileUrl string `json:"FileUrl"`
 }
 
-// Render posts html to api2pdf's Chrome endpoint and returns the rendered
-// PDF bytes. Retries with backoff on 5xx per ARCHITECTURE.md §6.
 func (r *API2PDF) Render(ctx context.Context, html []byte) ([]byte, error) {
 	if r.APIKey == "" {
 		return nil, fmt.Errorf("api2pdf: API key is empty")
@@ -100,14 +86,6 @@ func (r *API2PDF) Render(ctx context.Context, html []byte) ([]byte, error) {
 	return nil, fmt.Errorf("api2pdf: giving up after %d attempts: %w", maxRetries, lastErr)
 }
 
-// BalanceInfo is api2pdf's GET /balance response, parsed defensively: the
-// exact field names aren't publicly documented — their own official Node
-// SDK just passes the raw JSON through, untyped (confirmed by reading its
-// source: utilityBalance() returns `Promise<string | Buffer | null>`, no
-// parsed shape at all). Raw holds every top-level field (stringified) so
-// the /info diagnostics page can always show *something* even if the field
-// names below turn out wrong for a given account; Balance/HasBalance is a
-// best-effort extraction of whichever field looks like the account balance.
 type BalanceInfo struct {
 	Balance    float64
 	HasBalance bool
@@ -115,9 +93,6 @@ type BalanceInfo struct {
 	Raw        map[string]string
 }
 
-// Balance fetches the account's api2pdf balance for the /info diagnostics
-// page — a read-only GET, same base URL/Authorization-header convention as
-// Render above.
 func (r *API2PDF) Balance(ctx context.Context) (BalanceInfo, error) {
 	if r.APIKey == "" {
 		return BalanceInfo{}, fmt.Errorf("api2pdf: API key is empty")
@@ -151,12 +126,6 @@ func (r *API2PDF) Balance(ctx context.Context) (BalanceInfo, error) {
 
 	info := BalanceInfo{Raw: make(map[string]string, len(raw))}
 	for k, v := range raw {
-		// Every numeric field is formatted here, not just the one we
-		// recognize as the balance: api2pdf's real field names aren't
-		// documented, so whichever key actually carries the money is very
-		// likely one we didn't anticipate — and printing it as a bare Go
-		// float ("12.5") next to properly formatted figures is exactly the
-		// inconsistency this avoids.
 		if f, ok := v.(float64); ok {
 			info.Raw[k] = FormatAmount(int64(math.Round(f * 100)))
 		} else {
@@ -214,8 +183,6 @@ func (r *API2PDF) attempt(ctx context.Context, body []byte) (pdf []byte, retryab
 	return r.fetch(ctx, parsed.FileUrl)
 }
 
-// fetch downloads the rendered PDF from the file URL api2pdf returns —
-// their REST API hands back a link, valid 24 hours, not the bytes inline.
 func (r *API2PDF) fetch(ctx context.Context, url string) (pdf []byte, retryable bool, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

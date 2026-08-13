@@ -1,11 +1,3 @@
-// Package users reads the private users.json access-control file and
-// answers "which part(s) of PocketCFO may this email reach". It is only
-// consulted for the email-OTP tier — GitHub repo collaborators are always
-// full-access admins (see internal/auth) and are never listed in
-// users.json at all. Read fresh from disk on every check, same convention
-// as internal/stats.LoadRecipients, so an edit takes effect without a
-// restart and re-checking at click time (not just request time) sees the
-// latest file.
 package users
 
 import (
@@ -18,13 +10,11 @@ import (
 	schemausers "github.com/titaniumcoder/pocket-cfo/internal/schema/users"
 )
 
-// Part names — must match the "parts" enum in schemas/users.json.
 const (
 	PartFinance   = "finance"
 	PartInvoicing = "invoicing"
 )
 
-// Load reads and parses the users.json file at path.
 func Load(path string) (schemausers.UsersJson, error) {
 	var u schemausers.UsersJson
 	b, err := os.ReadFile(path)
@@ -37,8 +27,6 @@ func Load(path string) (schemausers.UsersJson, error) {
 	return u, nil
 }
 
-// PartsFor returns the parts email (matched case-insensitively) is listed
-// for, and whether it was found in u at all.
 func PartsFor(u schemausers.UsersJson, email string) ([]string, bool) {
 	email = normalize(email)
 	for _, entry := range u.Users {
@@ -53,7 +41,6 @@ func PartsFor(u schemausers.UsersJson, email string) ([]string, bool) {
 	return nil, false
 }
 
-// HasPart reports whether email is listed in u with access to part.
 func HasPart(u schemausers.UsersJson, email, part string) bool {
 	parts, ok := PartsFor(u, email)
 	if !ok {

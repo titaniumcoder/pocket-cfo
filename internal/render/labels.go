@@ -2,11 +2,6 @@ package render
 
 import "github.com/titaniumcoder/pocket-cfo/internal/schema/invoice"
 
-// Labels are the static, language-dependent strings in the invoice
-// template. The invoice's own content (descriptions, notes) is bilingual —
-// primary language + Bulgarian, see bilingual.go — and so is this UI chrome:
-// CombinedLabels renders every field as "primary / bg" unless the invoice's
-// own language already IS Bulgarian, in which case it's Bulgarian alone.
 type Labels struct {
 	DocTitle        string
 	PaidBadge       string
@@ -152,7 +147,6 @@ var labelsFR = Labels{
 	VatIdLabel:      "N° TVA",
 }
 
-// LabelsFor picks the UI chrome language for lang, defaulting to German.
 func LabelsFor(lang invoice.InvoiceJsonLanguage) Labels {
 	switch lang {
 	case invoice.InvoiceJsonLanguageBg:
@@ -166,11 +160,6 @@ func LabelsFor(lang invoice.InvoiceJsonLanguage) Labels {
 	}
 }
 
-// CombinedLabels builds the chrome labels an invoice actually renders with:
-// every field as "primary / bg" for a non-Bulgarian invoice, or plain
-// Bulgarian alone when the invoice's own language already IS Bulgarian —
-// there's nothing to combine it with. Written out field-by-field rather
-// than via reflection, matching this codebase's plain, explicit style.
 func CombinedLabels(lang invoice.InvoiceJsonLanguage) Labels {
 	if lang == invoice.InvoiceJsonLanguageBg {
 		return labelsBG

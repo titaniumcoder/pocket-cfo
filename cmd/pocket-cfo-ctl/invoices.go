@@ -12,7 +12,6 @@ import (
 	"strings"
 )
 
-// runInvoices dispatches `pocket-cfo-ctl invoices <subcommand>`.
 func runInvoices(args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "pocket-cfo-ctl invoices: a subcommand is required (extract-paid)")
@@ -27,7 +26,6 @@ func runInvoices(args []string) int {
 	}
 }
 
-// extractedPayment is one row of the generated paid-invoices.json.
 type extractedPayment struct {
 	Invoice string `json:"invoice"`
 	Date    string `json:"date"`
@@ -38,18 +36,6 @@ type extractedPaidFile struct {
 	Paid   []extractedPayment `json:"paid"`
 }
 
-// runExtractPaid implements `pocket-cfo-ctl invoices extract-paid [dataDir]`:
-// the one-time migration off the era when payment and annulment lived inside
-// the invoice documents. It collects every non-null `paid` into
-// dataDir/paid-invoices.json, then strips `paid` and `annulment` from the
-// invoice files themselves.
-//
-// It refuses to run if paid-invoices.json already exists, so a second run
-// can't clobber a file that by then is the only record of those dates.
-//
-// The invoices are read as raw JSON rather than through the generated struct:
-// both fields are gone from it, so the struct literally cannot see the dates
-// this exists to rescue.
 func runExtractPaid(args []string) int {
 	dir := "data"
 	if len(args) > 0 {
@@ -113,9 +99,6 @@ func runExtractPaid(args []string) int {
 	return 0
 }
 
-// extractPaidFrom reads one invoice file, returns its payment if `paid` was
-// set, and rewrites the file without `paid`/`annulment` if either was
-// present. A file with neither is left completely untouched.
 func extractPaidFrom(path string) (*extractedPayment, bool, error) {
 	src, err := os.ReadFile(path)
 	if err != nil {
@@ -167,23 +150,12 @@ func extractPaidFrom(path string) (*extractedPayment, bool, error) {
 	return payment, true, nil
 }
 
-// member is one top-level key/value pair of a JSON object, carrying the exact
-// source text that produced it.
 type member struct {
 	key   string
 	value json.RawMessage
-	text  []byte // source text of the whole entry, including its leading whitespace
+	text  []byte
 }
 
-// splitTopLevel decomposes a JSON object into its top-level members in file
-// order, each keeping its original source text, plus the trailing text after
-// the last member (the closing brace and whatever follows it).
-//
-// This exists so removing a key can be a genuine two-line deletion.
-// Round-tripping through map[string]any and json.MarshalIndent would sort the
-// keys alphabetically and reindent every line, turning the migration into a
-// diff that touches all of an invoice — a document whose whole audit story is
-// `git log -p` on one file.
 func splitTopLevel(src []byte) (members []member, tail []byte, err error) {
 	dec := json.NewDecoder(bytes.NewReader(src))
 	tok, err := dec.Token()
@@ -194,7 +166,7 @@ func splitTopLevel(src []byte) (members []member, tail []byte, err error) {
 		return nil, nil, errors.New("top level is not a JSON object")
 	}
 
-	pos := dec.InputOffset() // just past '{', or past the comma after the previous member
+	pos := dec.InputOffset()
 	for dec.More() {
 		tok, err := dec.Token()
 		if err != nil {
@@ -213,8 +185,6 @@ func splitTopLevel(src []byte) (members []member, tail []byte, err error) {
 
 		members = append(members, member{key: key, value: value, text: src[pos:end]})
 
-		// Step past the separating comma so the next member's text starts
-		// with its own leading whitespace rather than that comma.
 		pos = end
 		for i := end; i < int64(len(src)); i++ {
 			switch src[i] {
@@ -229,8 +199,6 @@ func splitTopLevel(src []byte) (members []member, tail []byte, err error) {
 	return members, src[pos:], nil
 }
 
-// rebuildWithout reassembles the object from splitTopLevel's output, omitting
-// the named keys and leaving every kept byte exactly as it was.
 func rebuildWithout(members []member, tail []byte, drop ...string) []byte {
 	dropped := make(map[string]bool, len(drop))
 	for _, k := range drop {

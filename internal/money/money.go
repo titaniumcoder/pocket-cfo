@@ -1,8 +1,3 @@
-// Package money computes invoice totals in integer minor units. Nothing
-// here is stored on the invoice — see ARCHITECTURE.md §3.4/§3.5. All
-// intermediate arithmetic uses shopspring/decimal; rounding to minor units
-// happens only at the points described there (line amounts, discounts,
-// VAT), never on an intermediate sum.
 package money
 
 import (
@@ -13,7 +8,6 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/invoice"
 )
 
-// Line is one invoice line with its computed amount, in minor units.
 type Line struct {
 	Description invoice.LocalizedString
 	Quantity    *int
@@ -23,16 +17,12 @@ type Line struct {
 	Amount      int64
 }
 
-// Discount is one applied discount, with the amount it deducted from the
-// running total, in minor units.
 type Discount struct {
 	Label   invoice.LocalizedString
 	Percent *int
 	Amount  int64
 }
 
-// VATGroup is the taxable base and VAT amount for one vat_rate, in minor
-// units. Order matches first appearance of the rate among the lines.
 type VATGroup struct {
 	Rate           int
 	Base           int64
@@ -40,7 +30,6 @@ type VATGroup struct {
 	VAT            int64
 }
 
-// Totals is the full computed breakdown of an invoice.
 type Totals struct {
 	Lines      []Line
 	Subtotal   int64
@@ -51,11 +40,6 @@ type Totals struct {
 	GrandTotal int64
 }
 
-// Compute derives all totals for inv. Pure function, no I/O.
-//
-// quantity is stored scaled by 100 (like money), so a line's real quantity
-// is quantity/100 — quantity absent means a real quantity of 1. See
-// ARCHITECTURE.md §3.4.
 func Compute(inv *invoice.InvoiceJson) (Totals, error) {
 	lines := make([]Line, 0, len(inv.Lines))
 	var subtotal int64
@@ -121,8 +105,6 @@ func Compute(inv *invoice.InvoiceJson) (Totals, error) {
 	}, nil
 }
 
-// vatGroups sums line amounts per vat_rate, preserving first-appearance
-// order — the order they're shown in on the invoice.
 func vatGroups(lines []Line) []VATGroup {
 	var groups []VATGroup
 	index := map[int]int{}
@@ -138,9 +120,6 @@ func vatGroups(lines []Line) []VATGroup {
 	return groups
 }
 
-// allocateDiscount splits totalDiscount across groups proportionally to
-// each group's share of subtotal, so per-rate bases sum to net. The last
-// group absorbs the rounding remainder. See ARCHITECTURE.md §3.5.
 func allocateDiscount(groups []VATGroup, subtotal, totalDiscount, net int64) {
 	if len(groups) == 0 {
 		return
@@ -167,10 +146,6 @@ func roundHalfAwayFromZero(d decimal.Decimal) int64 {
 	return d.Round(0).IntPart()
 }
 
-// labelOf picks a display string for an error message — not a rendering
-// guarantee, so a simple de-then-bg-then-empty fallback is fine here even
-// though render.HTML enforces the full translation-completeness rule
-// (invoice.LocalizedString.Require) before actually rendering anything.
 func labelOf(l invoice.LocalizedString) string {
 	if s, ok := l.Get(invoice.InvoiceJsonLanguageDe); ok {
 		return s

@@ -10,13 +10,8 @@ import (
 	"strings"
 )
 
-// scope is the minimum GitHub OAuth scope needed: read the user's identity
-// and check their permission on the private repo. See ARCHITECTURE.md §8.
 const scope = "read:user repo"
 
-// AuthorizeURL builds the GitHub OAuth authorize link to redirect the user
-// to. state is an opaque CSRF token the caller must also stash (e.g. in a
-// short-lived cookie) and compare on callback.
 func AuthorizeURL(clientID, redirectURI, state string) string {
 	v := url.Values{}
 	v.Set("client_id", clientID)
@@ -32,7 +27,6 @@ type tokenResponse struct {
 	ErrorDescription string `json:"error_description"`
 }
 
-// ExchangeCode trades the OAuth callback's code for an access token.
 func ExchangeCode(ctx context.Context, client *http.Client, clientID, clientSecret, code string) (string, error) {
 	body := url.Values{}
 	body.Set("client_id", clientID)
@@ -77,7 +71,6 @@ type userResponse struct {
 	Login string `json:"login"`
 }
 
-// CurrentUser returns the login of the account accessToken belongs to.
 func CurrentUser(ctx context.Context, client *http.Client, accessToken string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/user", nil)
 	if err != nil {
@@ -113,11 +106,6 @@ type permissionResponse struct {
 	Permission string `json:"permission"`
 }
 
-// CollaboratorPermission checks login's permission level on repo
-// ("owner/name"), per ARCHITECTURE.md §8:
-// GET /repos/{repo}/collaborators/{login}/permission. Returns "" (not an
-// error) if login isn't a collaborator at all — the 404 case — so callers
-// can treat "not push/admin" uniformly regardless of which of those it was.
 func CollaboratorPermission(ctx context.Context, client *http.Client, accessToken, repo, login string) (string, error) {
 	u := fmt.Sprintf("https://api.github.com/repos/%s/collaborators/%s/permission", repo, login)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)

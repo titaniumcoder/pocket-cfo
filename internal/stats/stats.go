@@ -1,6 +1,3 @@
-// Package stats loads invoices/recipients from disk and aggregates them for
-// the read-only web app. See ARCHITECTURE.md §3.8 for the derived-state
-// definitions (outstanding, etc.) this reuses.
 package stats
 
 import (
@@ -20,7 +17,6 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/recipient"
 )
 
-// LoadRecipients reads every recipient JSON file under dir.
 func LoadRecipients(dir string) ([]recipient.RecipientJson, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -44,10 +40,6 @@ func LoadRecipients(dir string) ([]recipient.RecipientJson, error) {
 	return recipients, nil
 }
 
-// LoadInvoices reads every invoice JSON file under dir and returns all of
-// them. Drafts are included — the dashboard shows them, clearly marked,
-// rather than hiding unfinished work — but see Aggregate, which keeps them
-// out of the recipient ledger totals.
 func LoadInvoices(dir string) ([]*invoice.InvoiceJson, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -71,7 +63,6 @@ func LoadInvoices(dir string) ([]*invoice.InvoiceJson, error) {
 	return invoices, nil
 }
 
-// RecipientRow is one row of the recipient summary table.
 type RecipientRow struct {
 	Number       int
 	LegalName    string
@@ -81,7 +72,6 @@ type RecipientRow struct {
 	Outstanding  int64
 }
 
-// InvoiceRow is one row of the invoice list table.
 type InvoiceRow struct {
 	Number        string
 	Title         string
@@ -90,14 +80,9 @@ type InvoiceRow struct {
 	DueDate       types.SerializableDate
 	Paid          *types.SerializableDate
 	GrandTotal    int64
-	State         string // one of "draft", "issued", "overdue", "paid" — see deriveState
+	State         string
 }
 
-// deriveState computes the single ledger/lifecycle state a row is marked
-// with, given whether paid names this invoice. Draft wins over
-// paid/overdue/issued: a draft is a lifecycle state, not a ledger state, and
-// the template keys both its badge and its PDF link off this single value so
-// the two can never disagree.
 func deriveState(inv *invoice.InvoiceJson, paidOn *types.SerializableDate, today time.Time) string {
 	if inv.Status == invoice.InvoiceJsonStatusDraft {
 		return "draft"
@@ -111,17 +96,6 @@ func deriveState(inv *invoice.InvoiceJson, paidOn *types.SerializableDate, today
 	return "issued"
 }
 
-// Aggregate groups invoices (already loaded via LoadInvoices) by recipient
-// and computes the totals the dashboard shows. paid maps invoice number to
-// payment date (see LoadPaid); an invoice absent from it is unpaid.
-// year selects a single
-// issue-date year to scope TotalInFrame and the invoice rows to; nil means
-// "All". years is every distinct issue-date year present, for the nav,
-// always unfiltered. Outstanding is always computed across every year,
-// independent of the year filter — per ARCHITECTURE.md §3.8 and the user's
-// explicit requirement. now is the request-time clock used to derive
-// overdue/open state (ARCHITECTURE.md §3.8: computed at request time, never
-// stored) — callers pass time.Now(), tests pass a fixed clock.
 func Aggregate(invoices []*invoice.InvoiceJson, recipients []recipient.RecipientJson, paid map[string]types.SerializableDate, year *int, now time.Time) (years []int, recipientRows []RecipientRow, invoiceRows []InvoiceRow, err error) {
 	today := now.UTC()
 	today = time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC)
@@ -141,9 +115,6 @@ func Aggregate(invoices []*invoice.InvoiceJson, recipients []recipient.Recipient
 	return years, recipientRows, invoiceRows, nil
 }
 
-// computedInvoice pairs a loaded invoice with its computed total/ledger
-// state, computed once up front so both aggregateRecipientRows and
-// aggregateInvoiceRows can reuse it without recomputing money.Compute.
 type computedInvoice struct {
 	inv    *invoice.InvoiceJson
 	total  int64
@@ -151,10 +122,6 @@ type computedInvoice struct {
 	paidOn *types.SerializableDate
 }
 
-// computeAll computes each invoice's total/state and collects every
-// distinct issue-date year present, for the nav (always unfiltered by the
-// year selector). The paid lookup happens once here, so everything
-// downstream reads c.paidOn rather than repeating it.
 func computeAll(invoices []*invoice.InvoiceJson, paid map[string]types.SerializableDate, today time.Time) (all []computedInvoice, years []int, err error) {
 	all = make([]computedInvoice, 0, len(invoices))
 	yearSet := map[int]bool{}
@@ -179,12 +146,6 @@ func computeAll(invoices []*invoice.InvoiceJson, paid map[string]types.Serializa
 	return all, years, nil
 }
 
-// aggregateRecipientRows groups all by recipient and computes the ledger
-// totals the dashboard shows. A recipient appears when they have activity —
-// any invoice, draft included — inFrame (or ever, for "All"). A draft is
-// activity even though it isn't money yet; only the ledger totals
-// (TotalInFrame, Outstanding) stay restricted to issued invoices, since an
-// unsent, mutable draft isn't a receivable.
 func aggregateRecipientRows(recipients []recipient.RecipientJson, all []computedInvoice, inFrame func(computedInvoice) bool) []RecipientRow {
 	byRecipient := map[int][]computedInvoice{}
 	for _, c := range all {
@@ -196,7 +157,7 @@ func aggregateRecipientRows(recipients []recipient.RecipientJson, all []computed
 	for _, r := range recipients {
 		cs, ok := byRecipient[r.Number]
 		if !ok {
-			continue // no invoices at all, ever — not shown
+			continue
 		}
 
 		hasActivity := false
@@ -207,7 +168,7 @@ func aggregateRecipientRows(recipients []recipient.RecipientJson, all []computed
 			}
 		}
 		if !hasActivity {
-			continue // no activity (draft or issued) in the selected year
+			continue
 		}
 
 		row := RecipientRow{
@@ -218,7 +179,7 @@ func aggregateRecipientRows(recipients []recipient.RecipientJson, all []computed
 		}
 		for _, c := range cs {
 			if c.inv.Status != invoice.InvoiceJsonStatusIssued {
-				continue // drafts aren't a receivable — never in ledger totals
+				continue
 			}
 			if inFrame(c) {
 				row.TotalInFrame += c.total
@@ -235,9 +196,6 @@ func aggregateRecipientRows(recipients []recipient.RecipientJson, all []computed
 	return rows
 }
 
-// aggregateInvoiceRows builds the invoice list table for the invoices
-// inFrame, newest issue date first (ties broken by invoice number,
-// descending).
 func aggregateInvoiceRows(all []computedInvoice, inFrame func(computedInvoice) bool) []InvoiceRow {
 	var rows []InvoiceRow
 	for _, c := range all {

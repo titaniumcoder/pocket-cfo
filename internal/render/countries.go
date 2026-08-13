@@ -1,10 +1,5 @@
 package render
 
-// countryNamesMap maps ISO 3166-1 alpha-2 codes to English country names, for
-// the recipient address block — a postal address reads a country name, not
-// a code. Covers the EU27, EFTA, and a handful of other common trading
-// partners; anything missing falls back to the raw code (CountryName never
-// errors or blanks out).
 var countryNamesMap = map[string]string{
 	"AT": "Austria",
 	"BE": "Belgium",
@@ -45,8 +40,6 @@ var countryNamesMap = map[string]string{
 	"AU": "Australia",
 }
 
-// CountryName renders code as an English country name, or the raw code if
-// it's not in the map — display-only, never an error.
 func CountryName(code string) string {
 	if name, ok := countryNamesMap[code]; ok {
 		return name

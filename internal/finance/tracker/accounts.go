@@ -34,21 +34,23 @@ type AccountSnapshot struct {
 	HasCompany   bool
 	AccountRow   []AccountRow
 	LatestAsOf   time.Time
+	NewestAsOf   time.Time
 }
 
 const staleAfterDays = 40
 
 func (s AccountSnapshot) StaleDays(now time.Time) (int, bool) {
-	days := int(now.Sub(s.LatestAsOf).Hours() / 24)
+	days := int(now.Sub(s.NewestAsOf).Hours() / 24)
 	return days, days > staleAfterDays
 }
 
 type AccountRow struct {
-	Name  string
-	Kind  accountsdata.AccountKind
-	Cents int
-	Note  string
-	AsOf  string
+	Name   string
+	Kind   accountsdata.AccountKind
+	Cents  int
+	Note   string
+	AsOf   string
+	Behind bool
 }
 
 func (s AccountSnapshot) rowsOfKind(kind accountsdata.AccountKind) []AccountRow {
@@ -99,6 +101,9 @@ func (a *Accounts) fetch() (accountsdata.AccountsFile, error) {
 	if err := json.Unmarshal(content, &af); err != nil {
 		return accountsdata.AccountsFile{}, fmt.Errorf("accounts: parse %s: %w", accountsPath, err)
 	}
+	if err := accountsdata.ValidateAccounts(af); err != nil {
+		return accountsdata.AccountsFile{}, fmt.Errorf("accounts: %s: %w", accountsPath, err)
+	}
 	return af, nil
 }
 
@@ -120,24 +125,62 @@ func (s *AccountSnapshot) addBalance(kind accountsdata.AccountKind, cents int) {
 	s.PrivateCents += cents
 }
 
-func snapshotFor(af accountsdata.AccountsFile) (AccountSnapshot, bool) {
-	var snap AccountSnapshot
+func readingInForce(acc accountsdata.Account, viewed yearMonth) (accountsdata.Reading, time.Time, bool) {
+	var best accountsdata.Reading
+	var bestDate time.Time
 	found := false
-	for _, acc := range af.Accounts {
-		d, err := time.Parse("2006-01-02", acc.AsOf)
+	for _, r := range acc.Balances {
+		d, err := time.Parse("2006-01-02", r.AsOf)
 		if err != nil {
 			continue
 		}
 		opens := yearMonth{d.Year(), d.Month()}.addMonths(1)
-		cents := round(acc.Balance * 100)
+		if opens.ordinal() > viewed.ordinal() {
+			continue
+		}
+		if !found || d.After(bestDate) {
+			best, bestDate, found = r, d, true
+		}
+	}
+	return best, bestDate, found
+}
+
+func newestReading(af accountsdata.AccountsFile) time.Time {
+	var newest time.Time
+	for _, acc := range af.Accounts {
+		for _, r := range acc.Balances {
+			d, err := time.Parse("2006-01-02", r.AsOf)
+			if err != nil {
+				continue
+			}
+			if d.After(newest) {
+				newest = d
+			}
+		}
+	}
+	return newest
+}
+
+func snapshotFor(af accountsdata.AccountsFile, viewed yearMonth) (AccountSnapshot, bool) {
+	snap := AccountSnapshot{NewestAsOf: newestReading(af)}
+	var opensPerRow []int
+	found := false
+	for _, acc := range af.Accounts {
+		reading, d, ok := readingInForce(acc, viewed)
+		if !ok {
+			continue
+		}
+		opens := yearMonth{d.Year(), d.Month()}.addMonths(1)
+		cents := round(reading.Balance * 100)
 		snap.addBalance(acc.Kind, cents)
 		snap.AccountRow = append(snap.AccountRow, AccountRow{
 			Name:  acc.Name,
 			Kind:  acc.Kind,
 			Cents: cents,
-			Note:  derefStr(acc.Note),
-			AsOf:  formatDay(acc.AsOf),
+			Note:  derefStr(reading.Note),
+			AsOf:  formatDay(reading.AsOf),
 		})
+		opensPerRow = append(opensPerRow, opens.ordinal())
 		if !found || opens.ordinal() > snap.OpensMonth.ordinal() {
 			snap.OpensMonth = opens
 		}
@@ -146,15 +189,19 @@ func snapshotFor(af accountsdata.AccountsFile) (AccountSnapshot, bool) {
 		}
 		found = true
 	}
+	for i := range snap.AccountRow {
+		snap.AccountRow[i].Behind = opensPerRow[i] < snap.OpensMonth.ordinal()
+	}
 	return snap, found
 }
 
-func (a *Accounts) Snapshot(ctx context.Context) (AccountSnapshot, bool) {
+func (a *Accounts) Snapshot(ctx context.Context, viewed yearMonth) (AccountSnapshot, bool, error) {
 	af, err := a.File(ctx)
 	if err != nil {
-		return AccountSnapshot{}, false
+		return AccountSnapshot{}, false, err
 	}
-	return snapshotFor(af)
+	snap, ok := snapshotFor(af, viewed)
+	return snap, ok, nil
 }
 
 const maxRollForwardMonths = 120

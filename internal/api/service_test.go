@@ -34,8 +34,8 @@ const budgetJSON = `{
 }`
 
 const accountsJSON = `{"accounts":[
-  {"name":"Private Checking","kind":"private","balance":4200,"as_of":"2026-07-31"},
-  {"name":"Company Checking","kind":"company","balance":8000,"as_of":"2026-07-31"}
+  {"name":"Private Checking","kind":"private","balances":[{"as_of":"2026-07-31","balance":4200}]},
+  {"name":"Company Checking","kind":"company","balances":[{"as_of":"2026-07-31","balance":8000}]}
 ]}`
 
 // August: partial coverage, a laptop budgeted for October but bought now, an

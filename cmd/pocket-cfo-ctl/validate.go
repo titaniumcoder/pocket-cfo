@@ -47,7 +47,10 @@ func runValidate(args []string) int {
 	})
 	problems += validateFile(filepath.Join(dataDir, "accounts.json"), func(b []byte) error {
 		var af accountsdata.AccountsFile
-		return json.Unmarshal(b, &af)
+		if err := json.Unmarshal(b, &af); err != nil {
+			return err
+		}
+		return accountsdata.ValidateAccounts(af)
 	})
 	problems += validatePaidInvoices(dataDir)
 	problems += validateActuals(dataDir)

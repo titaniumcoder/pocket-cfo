@@ -342,8 +342,8 @@ func TestATargetWithNoCompanyAccountSaysSo(t *testing.T) {
 
 	// Declare the account and the note goes away.
 	withCompany := accountsTracker(t, `{"accounts":[
-		{"name":"Private","kind":"private","balance":2000,"as_of":"2026-07-31"},
-		{"name":"Company","kind":"company","balance":100,"as_of":"2026-07-31"}
+		{"name":"Private","kind":"private","balances":[{"as_of":"2026-07-31","balance":2000}]},
+		{"name":"Company","kind":"company","balances":[{"as_of":"2026-07-31","balance":100}]}
 	]}`)
 	withCompany.Personal = bulgariaBands()
 	withCompany.Personal.Target = target
@@ -357,8 +357,8 @@ func TestATargetWithNoCompanyAccountSaysSo(t *testing.T) {
 // the cause or the figure is unexplainable.
 func TestTheTargetSaysWhyOnThePage(t *testing.T) {
 	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Private","kind":"private","balance":2000,"as_of":"2026-07-31"},
-		{"name":"Company","kind":"company","balance":500,"as_of":"2026-07-31"}
+		{"name":"Private","kind":"private","balances":[{"as_of":"2026-07-31","balance":2000}]},
+		{"name":"Company","kind":"company","balances":[{"as_of":"2026-07-31","balance":500}]}
 	]}`)
 	trk.Personal = bulgariaBands()
 	target, err := ParseTargetPlan([]TargetEntry{{From: "2026-01", Amount: f64(9000)}})

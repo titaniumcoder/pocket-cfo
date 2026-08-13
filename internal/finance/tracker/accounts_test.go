@@ -13,7 +13,7 @@ import (
 
 const testAccountsJSON = `{
   "accounts": [
-    { "name": "Private Checking", "kind": "private", "balance": 2000, "as_of": "2026-07-31" }
+    {"name":"Private Checking","kind":"private","balances":[{"as_of":"2026-07-31","balance":2000}]}
   ]
 }`
 
@@ -22,13 +22,22 @@ func newTestAccounts(t *testing.T, body string) *Accounts {
 	return &Accounts{FS: fstest.MapFS{accountsPath: &fstest.MapFile{Data: []byte(body)}}}
 }
 
+func snapshotAt(t *testing.T, a *Accounts, viewed yearMonth) (AccountSnapshot, bool) {
+	t.Helper()
+	snap, ok, err := a.Snapshot(context.Background(), viewed)
+	if err != nil {
+		t.Fatalf("Snapshot(%v): %v", viewed, err)
+	}
+	return snap, ok
+}
+
 // TestSnapshotOpensTheMonthAfterAsOf is the timing rule the whole layer
 // hangs on: a balance read at the end of July is July's CLOSING figure, so
 // it opens August. July must not see it.
 func TestSnapshotOpensTheMonthAfterAsOf(t *testing.T) {
 	a := newTestAccounts(t, testAccountsJSON)
 
-	snap, ok := a.Snapshot(context.Background())
+	snap, ok := snapshotAt(t, a, yearMonth{2026, time.August})
 	if !ok {
 		t.Fatal("expected a snapshot")
 	}
@@ -44,9 +53,9 @@ func TestSnapshotOpensTheMonthAfterAsOf(t *testing.T) {
 // shift, where the opening month lands in the next calendar year.
 func TestSnapshotOpensAcrossYearBoundary(t *testing.T) {
 	a := newTestAccounts(t, `{"accounts":[
-		{"name":"Private","kind": "private", "balance":100,"as_of":"2026-12-31"}
+		{"name":"Private","kind":"private","balances":[{"as_of":"2026-12-31","balance":100}]}
 	]}`)
-	snap, ok := a.Snapshot(context.Background())
+	snap, ok := snapshotAt(t, a, yearMonth{2027, time.January})
 	if !ok {
 		t.Fatal("expected a snapshot")
 	}
@@ -67,7 +76,7 @@ func TestAccountsMissingFileIsNotAnError(t *testing.T) {
 	if len(af.Accounts) != 0 {
 		t.Errorf("accounts = %+v, want none", af.Accounts)
 	}
-	if _, ok := a.Snapshot(context.Background()); ok {
+	if _, ok := snapshotAt(t, a, yearMonth{2026, time.August}); ok {
 		t.Error("no file should mean no snapshot")
 	}
 }
@@ -77,10 +86,241 @@ func TestAccountsNilIsSafe(t *testing.T) {
 	if _, err := a.File(context.Background()); err != nil {
 		t.Errorf("nil Accounts should degrade quietly, got %v", err)
 	}
-	if _, ok := a.Snapshot(context.Background()); ok {
+	if _, ok := snapshotAt(t, a, yearMonth{2026, time.August}); ok {
 		t.Error("nil Accounts should have no snapshot")
 	}
 	a.Evict() // must not panic
+}
+
+// TestTheReadingInForceIsTheNewestOneBeforeTheMonth is the selection rule the
+// history hangs on. Three readings, and each month picks the one that was
+// true when it started — a reading dated after the month cannot reach back
+// into it, and an older one is not preferred just because it comes first in
+// the file.
+func TestTheReadingInForceIsTheNewestOneBeforeTheMonth(t *testing.T) {
+	a := newTestAccounts(t, `{"accounts":[
+		{"name":"P","kind":"private","balances":[
+			{"as_of":"2026-07-31","balance":2000},
+			{"as_of":"2026-01-31","balance":500},
+			{"as_of":"2026-04-30","balance":3000}
+		]}
+	]}`)
+	tests := []struct {
+		viewed    yearMonth
+		wantCents int
+		wantOpens yearMonth
+	}{
+		{yearMonth{2026, time.February}, 50000, yearMonth{2026, time.February}},
+		{yearMonth{2026, time.April}, 50000, yearMonth{2026, time.February}},
+		{yearMonth{2026, time.May}, 300000, yearMonth{2026, time.May}},
+		{yearMonth{2026, time.July}, 300000, yearMonth{2026, time.May}},
+		{yearMonth{2026, time.August}, 200000, yearMonth{2026, time.August}},
+		{yearMonth{2027, time.March}, 200000, yearMonth{2026, time.August}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.viewed.String(), func(t *testing.T) {
+			snap, ok := snapshotAt(t, a, tt.viewed)
+			if !ok {
+				t.Fatal("expected a snapshot")
+			}
+			if snap.PrivateCents != tt.wantCents {
+				t.Errorf("cents = %d, want %d", snap.PrivateCents, tt.wantCents)
+			}
+			if snap.OpensMonth != tt.wantOpens {
+				t.Errorf("OpensMonth = %+v, want %+v", snap.OpensMonth, tt.wantOpens)
+			}
+		})
+	}
+}
+
+// TestAMonthBeforeEveryReadingHasNoSnapshot keeps the other half of that rule:
+// history reaches backwards only as far as the earliest read. Before it there
+// is still nothing to know, and nothing is guessed.
+func TestAMonthBeforeEveryReadingHasNoSnapshot(t *testing.T) {
+	a := newTestAccounts(t, `{"accounts":[
+		{"name":"P","kind":"private","balances":[{"as_of":"2026-04-30","balance":3000}]}
+	]}`)
+	if _, ok := snapshotAt(t, a, yearMonth{2026, time.April}); ok {
+		t.Error("April closed on the read, so April itself must not see it")
+	}
+	if _, ok := snapshotAt(t, a, yearMonth{2026, time.May}); !ok {
+		t.Error("May opens on the 30 April read and should see it")
+	}
+}
+
+// TestALaterReadingReanchorsInsteadOfContinuingTheChain is the point of the
+// whole feature. Two reads, 3 000 at the end of April and 2 000 at the end of
+// July, against 1 000/month of expenses and no income:
+//
+//	May–July  carry the April read down, 3 000 → 2 000 → 1 000
+//	August    ignores all of that and opens on the July read, 2 000
+//
+// Without re-anchoring August would open at 0. The second read is not extra
+// evidence to reconcile against the projection; it replaces it.
+func TestALaterReadingReanchorsInsteadOfContinuingTheChain(t *testing.T) {
+	trk := accountsTracker(t, `{"accounts":[
+		{"name":"Private","kind":"private","balances":[
+			{"as_of":"2026-04-30","balance":3000},
+			{"as_of":"2026-07-31","balance":2000}
+		]}
+	]}`)
+	tests := []struct {
+		month       time.Month
+		wantOpening int
+	}{
+		{time.May, 300000},
+		{time.June, 200000},
+		{time.July, 100000},
+		{time.August, 200000},
+		{time.September, 100000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.month.String(), func(t *testing.T) {
+			f := trk.ComputeMonth(context.Background(), 2026, tt.month)
+			if f.AccountsErr != "" {
+				t.Fatalf("AccountsErr = %q", f.AccountsErr)
+			}
+			if !f.ShowOpeningBalance {
+				t.Fatal("expected an opening balance")
+			}
+			if f.OpeningBalanceCents != tt.wantOpening {
+				t.Errorf("opening = %d, want %d", f.OpeningBalanceCents, tt.wantOpening)
+			}
+		})
+	}
+}
+
+// TestAPotIsUnknownUntilItsFirstReading: an account read for the first time in
+// July says nothing about May. Unknown is not zero — a company nobody has read
+// yet must leave the whole company layer off, exactly as a file that declares
+// no company account does.
+func TestAPotIsUnknownUntilItsFirstReading(t *testing.T) {
+	a := newTestAccounts(t, `{"accounts":[
+		{"name":"Private","kind":"private","balances":[{"as_of":"2026-04-30","balance":3000}]},
+		{"name":"Company","kind":"company","balances":[{"as_of":"2026-07-31","balance":5000}]}
+	]}`)
+
+	may, ok := snapshotAt(t, a, yearMonth{2026, time.May})
+	if !ok {
+		t.Fatal("the private read alone should still produce a snapshot")
+	}
+	if may.HasCompany {
+		t.Error("the company was first read at the end of July — May cannot know it")
+	}
+	if may.CompanyCents != 0 || len(may.rowsOfKind(accountsdata.AccountKindCompany)) != 0 {
+		t.Errorf("May produced a company figure: %d, %+v", may.CompanyCents, may.rowsOfKind(accountsdata.AccountKindCompany))
+	}
+
+	aug, _ := snapshotAt(t, a, yearMonth{2026, time.August})
+	if !aug.HasCompany || aug.CompanyCents != 500000 {
+		t.Errorf("August HasCompany = %v, cents = %d — want the July read", aug.HasCompany, aug.CompanyCents)
+	}
+}
+
+// TestARowSaysWhenItsReadingTrailsTheAnchor: both pots are anchored at one
+// date, so an account nobody re-read is carried as if its old figure were the
+// anchor's. That is the same drag the single-reading file had, but with a
+// history there is no excuse for it being silent.
+func TestARowSaysWhenItsReadingTrailsTheAnchor(t *testing.T) {
+	a := newTestAccounts(t, `{"accounts":[
+		{"name":"Fresh","kind":"private","balances":[{"as_of":"2026-07-31","balance":100}]},
+		{"name":"Neglected","kind":"private","balances":[{"as_of":"2026-01-31","balance":250}]}
+	]}`)
+	snap, ok := snapshotAt(t, a, yearMonth{2026, time.August})
+	if !ok {
+		t.Fatal("expected a snapshot")
+	}
+	byName := map[string]AccountRow{}
+	for _, r := range snap.AccountRow {
+		byName[r.Name] = r
+	}
+	if byName["Fresh"].Behind {
+		t.Error("the account read at the anchor date is not behind it")
+	}
+	if !byName["Neglected"].Behind {
+		t.Error("an account last read six months before the anchor is carried as if it were current, and nothing says so")
+	}
+}
+
+// TestStalenessIsMeasuredFromTheNewestReadingInTheFile: the nag asks "when did
+// you last check your bank", which is a fact about the file and the calendar.
+// Viewing an old month anchors on an old reading, but that is navigation, not
+// neglect, and it must not make a freshly read file look stale.
+func TestStalenessIsMeasuredFromTheNewestReadingInTheFile(t *testing.T) {
+	a := newTestAccounts(t, `{"accounts":[
+		{"name":"P","kind":"private","balances":[
+			{"as_of":"2026-01-31","balance":500},
+			{"as_of":"2026-07-31","balance":2000}
+		]}
+	]}`)
+	snap, ok := snapshotAt(t, a, yearMonth{2026, time.March})
+	if !ok {
+		t.Fatal("expected a snapshot")
+	}
+	if want := (yearMonth{2026, time.February}); snap.OpensMonth != want {
+		t.Fatalf("OpensMonth = %+v, want %+v — March anchors on the January read", snap.OpensMonth, want)
+	}
+	if got, want := snap.NewestAsOf.Format("2006-01-02"), "2026-07-31"; got != want {
+		t.Errorf("NewestAsOf = %s, want %s — the July read exists whatever month is on screen", got, want)
+	}
+	if _, stale := snap.StaleDays(time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)); stale {
+		t.Error("a file read ten days ago nagged because the viewed month anchors on an older reading")
+	}
+}
+
+// TestAnAccountReadTwiceInOneMonthIsRefused: two figures closing one month are
+// two candidate openings for the next, with nothing to choose between them.
+func TestAnAccountReadTwiceInOneMonthIsRefused(t *testing.T) {
+	a := newTestAccounts(t, `{"accounts":[
+		{"name":"P","kind":"private","balances":[
+			{"as_of":"2026-07-15","balance":100},
+			{"as_of":"2026-07-31","balance":250}
+		]}
+	]}`)
+	_, err := a.File(context.Background())
+	if err == nil {
+		t.Fatal("two readings in one month were accepted")
+	}
+	for _, want := range []string{"2026-07", "P"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to name %q", err, want)
+		}
+	}
+}
+
+// TestTwoAccountsWithOneNameAreRefused: the single-reading file summed them,
+// which was already a trap. An account owns a history now, so the same name
+// twice is two histories for one account and there is no rule for merging.
+func TestTwoAccountsWithOneNameAreRefused(t *testing.T) {
+	a := newTestAccounts(t, `{"accounts":[
+		{"name":"Checking","kind":"private","balances":[{"as_of":"2026-06-30","balance":50}]},
+		{"name":"Checking","kind":"private","balances":[{"as_of":"2026-09-30","balance":250}]}
+	]}`)
+	_, err := a.File(context.Background())
+	if err == nil {
+		t.Fatal("a duplicate account name was accepted")
+	}
+	if !strings.Contains(err.Error(), "Checking") {
+		t.Errorf("error = %q, want it to name the account", err)
+	}
+}
+
+// TestABrokenAccountsFileIsSaidOutLoud: a file the loader refuses used to
+// switch the whole balance layer off in silence, which looks exactly like
+// having no accounts.json at all. A hand-edited file that is wrong has to say
+// so, or the figures quietly stop existing.
+func TestABrokenAccountsFileIsSaidOutLoud(t *testing.T) {
+	trk := accountsTracker(t, `{"accounts":[
+		{"name":"Checking","kind":"private","balances":[{"as_of":"2026-06-30","balance":50}]},
+		{"name":"Checking","kind":"private","balances":[{"as_of":"2026-07-31","balance":250}]}
+	]}`)
+	f := trk.ComputeMonth(context.Background(), 2026, time.August)
+	if f.AccountsErr == "" {
+		t.Error("a rejected accounts.json produced no error on the page")
+	}
+	if f.ShowOpeningBalance {
+		t.Error("a rejected accounts.json still rendered an opening balance")
+	}
 }
 
 // TestSnapshotForAnchorsAtLatestAsOf covers the documented combining rule:
@@ -88,10 +328,10 @@ func TestAccountsNilIsSafe(t *testing.T) {
 // them, so a single stale entry can't drag the effective date backwards.
 func TestSnapshotForAnchorsAtLatestAsOf(t *testing.T) {
 	a := newTestAccounts(t, `{"accounts":[
-		{"name":"Old","kind": "private", "balance":100,"as_of":"2026-03-31"},
-		{"name":"New","kind": "private", "balance":250,"as_of":"2026-09-30"}
+		{"name":"Old","kind":"private","balances":[{"as_of":"2026-03-31","balance":100}]},
+		{"name":"New","kind":"private","balances":[{"as_of":"2026-09-30","balance":250}]}
 	]}`)
-	snap, ok := a.Snapshot(context.Background())
+	snap, ok := snapshotAt(t, a, yearMonth{2026, time.October})
 	if !ok {
 		t.Fatal("expected a snapshot")
 	}
@@ -109,10 +349,10 @@ func TestSnapshotForAnchorsAtLatestAsOf(t *testing.T) {
 // the note that says so stays one note.
 func TestTheTwoKindsAreSummedApartButAnchoredTogether(t *testing.T) {
 	a := newTestAccounts(t, `{"accounts":[
-		{"name":"Private","kind":"private","balance":100,"as_of":"2026-03-31"},
-		{"name":"Company","kind":"company","balance":250,"as_of":"2026-09-30"}
+		{"name":"Private","kind":"private","balances":[{"as_of":"2026-03-31","balance":100}]},
+		{"name":"Company","kind":"company","balances":[{"as_of":"2026-09-30","balance":250}]}
 	]}`)
-	snap, ok := a.Snapshot(context.Background())
+	snap, ok := snapshotAt(t, a, yearMonth{2026, time.October})
 	if !ok {
 		t.Fatal("expected a snapshot")
 	}
@@ -141,7 +381,7 @@ func TestTheTwoKindsAreSummedApartButAnchoredTogether(t *testing.T) {
 // so a file that declares none behaves exactly as it did before the pot
 // existed rather than as a company holding zero.
 func TestAPrivateOnlyFileLeavesTheCompanyLayerOff(t *testing.T) {
-	snap, ok := newTestAccounts(t, testAccountsJSON).Snapshot(context.Background())
+	snap, ok := snapshotAt(t, newTestAccounts(t, testAccountsJSON), yearMonth{2026, time.August})
 	if !ok {
 		t.Fatal("expected a snapshot")
 	}
@@ -161,8 +401,8 @@ func TestAPrivateOnlyFileLeavesTheCompanyLayerOff(t *testing.T) {
 // opening that excludes it reads as arithmetic that does not add up.
 func TestThePrivateOpeningListsOnlyPrivateAccounts(t *testing.T) {
 	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Private","kind":"private","balance":2000,"as_of":"2026-07-31"},
-		{"name":"Company","kind":"company","balance":5000,"as_of":"2026-07-31"}
+		{"name":"Private","kind":"private","balances":[{"as_of":"2026-07-31","balance":2000}]},
+		{"name":"Company","kind":"company","balances":[{"as_of":"2026-07-31","balance":5000}]}
 	]}`)
 	f := trk.ComputeMonth(context.Background(), 2026, time.August)
 	if f.AccountsErr != "" {
@@ -181,7 +421,7 @@ func TestThePrivateOpeningListsOnlyPrivateAccounts(t *testing.T) {
 // silently. budget.json's groups take the same line.
 func TestAnAccountWithoutAKindIsRefused(t *testing.T) {
 	a := newTestAccounts(t, `{"accounts":[
-		{"name":"Nameless pot","balance":100,"as_of":"2026-07-31"}
+		{"name":"Nameless pot","balances":[{"as_of":"2026-07-31","balance":100}]}
 	]}`)
 	_, err := a.File(context.Background())
 	if err == nil {
@@ -192,17 +432,28 @@ func TestAnAccountWithoutAKindIsRefused(t *testing.T) {
 	}
 }
 
+// TestSnapshotForSkipsMalformedDate: a date nobody can parse drops that one
+// reading. An account whose only reading is malformed drops out entirely; an
+// account that also has a good one falls back to it rather than vanishing.
 func TestSnapshotForSkipsMalformedDate(t *testing.T) {
 	af := accountsdata.AccountsFile{Accounts: []accountsdata.Account{
-		{Name: "Bad", Kind: accountsdata.AccountKindPrivate, Balance: 100, AsOf: "not-a-date"},
-		{Name: "Good", Kind: accountsdata.AccountKindPrivate, Balance: 200, AsOf: "2026-05-31"},
+		{Name: "Bad", Kind: accountsdata.AccountKindPrivate, Balances: []accountsdata.Reading{
+			{AsOf: "not-a-date", Balance: 100},
+		}},
+		{Name: "Good", Kind: accountsdata.AccountKindPrivate, Balances: []accountsdata.Reading{
+			{AsOf: "2026-05-31", Balance: 200},
+			{AsOf: "also-not-a-date", Balance: 999},
+		}},
 	}}
-	snap, ok := snapshotFor(af)
+	snap, ok := snapshotFor(af, yearMonth{2026, time.June})
 	if !ok {
-		t.Fatal("a malformed date should drop that account, not the whole side")
+		t.Fatal("a malformed date should drop that reading, not the whole side")
 	}
 	if snap.PrivateCents != 20000 {
-		t.Errorf("cents = %d, want 20000 (malformed entry excluded)", snap.PrivateCents)
+		t.Errorf("cents = %d, want 20000 (malformed entries excluded)", snap.PrivateCents)
+	}
+	if len(snap.AccountRow) != 1 || snap.AccountRow[0].Name != "Good" {
+		t.Errorf("rows = %+v, want just the account with a readable date", snap.AccountRow)
 	}
 }
 
@@ -248,7 +499,7 @@ func accountsTracker(t *testing.T, accountsJSON string) *Tracker {
 // genuinely depletes instead of resetting to the snapshot every month.
 func TestPrivateBalanceRollsForwardAndCompounds(t *testing.T) {
 	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Private","kind": "private", "balance":2000,"as_of":"2026-07-31"}
+		{"name":"Private","kind":"private","balances":[{"as_of":"2026-07-31","balance":2000}]}
 	]}`)
 
 	for _, m := range []time.Month{time.June, time.July} {
@@ -371,8 +622,8 @@ func TestAnUnknownCompanyBalanceChangesNothing(t *testing.T) {
 // behind, and the next month opens on it rather than on the read figure.
 func TestTheCompanyBalanceRollsForwardAndCompounds(t *testing.T) {
 	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Private","kind":"private","balance":2000,"as_of":"2026-07-31"},
-		{"name":"Company","kind":"company","balance":5000,"as_of":"2026-07-31"}
+		{"name":"Private","kind":"private","balances":[{"as_of":"2026-07-31","balance":2000}]},
+		{"name":"Company","kind":"company","balances":[{"as_of":"2026-07-31","balance":5000}]}
 	]}`)
 	trk.Personal = bulgariaBands()
 	plan, err := ParseSalaryPlan([]SalaryEntry{{From: "2026-01", Mode: "minimum"}})
@@ -416,8 +667,8 @@ func TestTheCompanyBalanceRollsForwardAndCompounds(t *testing.T) {
 // both ends — one figure without the other is unreadable.
 func TestTheCompanyBalanceIsVisibleOnBothSidesOfTheCascade(t *testing.T) {
 	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Private Checking","kind":"private","balance":2000,"as_of":"2026-07-31"},
-		{"name":"Company Checking","kind":"company","balance":5000,"as_of":"2026-07-31"}
+		{"name":"Private Checking","kind":"private","balances":[{"as_of":"2026-07-31","balance":2000}]},
+		{"name":"Company Checking","kind":"company","balances":[{"as_of":"2026-07-31","balance":5000}]}
 	]}`)
 	trk.Personal = bulgariaBands()
 	plan, err := ParseSalaryPlan([]SalaryEntry{{From: "2026-01", Mode: "minimum"}})
@@ -457,7 +708,7 @@ func TestTheCompanyBalanceIsVisibleOnBothSidesOfTheCascade(t *testing.T) {
 // is before private expenses come off, and Balance is what's left after.
 func TestAvailableIsOpeningPlusNetIncome(t *testing.T) {
 	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Private","kind": "private", "balance":2000,"as_of":"2026-07-31"}
+		{"name":"Private","kind":"private","balances":[{"as_of":"2026-07-31","balance":2000}]}
 	]}`)
 	f := trk.ComputeMonth(context.Background(), 2026, time.August)
 
@@ -479,7 +730,7 @@ func TestNegativeBalancesRenderRed(t *testing.T) {
 	// Opening at 2 000 against 1 000/month of expenses and no income runs
 	// out during the third month, so October opens negative.
 	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Private","kind": "private", "balance":2000,"as_of":"2026-07-31"}
+		{"name":"Private","kind":"private","balances":[{"as_of":"2026-07-31","balance":2000}]}
 	]}`)
 
 	positive := trk.ComputeMonth(context.Background(), 2026, time.August)
@@ -540,7 +791,7 @@ func TestStaleDaysThreshold(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			days, stale := AccountSnapshot{LatestAsOf: tt.asOf}.StaleDays(now)
+			days, stale := AccountSnapshot{NewestAsOf: tt.asOf}.StaleDays(now)
 			if days != tt.wantDays || stale != tt.wantStale {
 				t.Errorf("StaleDays = %d, %v; want %d, %v", days, stale, tt.wantDays, tt.wantStale)
 			}
@@ -563,14 +814,14 @@ func TestStaleNoteAppearsOnlyWhenOverdue(t *testing.T) {
 	if now.Sub(fresh).Hours()/24 > staleAfterDays {
 		t.Skip("running late enough in the month that even last month's read is already stale")
 	}
-	trkFresh := accountsTracker(t, `{"accounts":[{"name":"P","kind": "private", "balance":2000,"as_of":"`+fresh.Format("2006-01-02")+`"}]}`)
+	trkFresh := accountsTracker(t, `{"accounts":[{"name":"P","kind":"private","balances":[{"as_of":"`+fresh.Format("2006-01-02")+`","balance":2000}]}]}`)
 	f := trkFresh.ComputeMonth(context.Background(), viewed.Year, viewed.Month)
 	if f.AccountsStaleNote != "" {
 		t.Errorf("a recently read balance should not nag, got %q", f.AccountsStaleNote)
 	}
 
 	old := now.AddDate(0, 0, -100)
-	trkOld := accountsTracker(t, `{"accounts":[{"name":"P","kind": "private", "balance":2000,"as_of":"`+old.Format("2006-01-02")+`"}]}`)
+	trkOld := accountsTracker(t, `{"accounts":[{"name":"P","kind":"private","balances":[{"as_of":"`+old.Format("2006-01-02")+`","balance":2000}]}]}`)
 	fOld := trkOld.ComputeMonth(context.Background(), viewed.Year, viewed.Month)
 	if fOld.AccountsStaleNote == "" {
 		t.Error("a balance read 100 days ago should nag")
@@ -583,7 +834,7 @@ func TestStaleNoteAppearsOnlyWhenOverdue(t *testing.T) {
 // still shown — with the note attached.
 func TestVeryStaleBalanceStillComputes(t *testing.T) {
 	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Neglected","kind": "private", "balance":2000,"as_of":"2024-01-31"}
+		{"name":"Neglected","kind":"private","balances":[{"as_of":"2024-01-31","balance":2000}]}
 	]}`)
 	f := trk.ComputeMonth(context.Background(), 2026, time.August)
 
@@ -603,7 +854,7 @@ func TestVeryStaleBalanceStillComputes(t *testing.T) {
 // per calendar year spanned.
 func TestImplausibleAsOfDateErrors(t *testing.T) {
 	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Typo","kind": "private", "balance":2000,"as_of":"1999-01-31"}
+		{"name":"Typo","kind":"private","balances":[{"as_of":"1999-01-31","balance":2000}]}
 	]}`)
 	f := trk.ComputeMonth(context.Background(), 2026, time.August)
 	if f.AccountsErr == "" {
@@ -654,9 +905,9 @@ func TestAPrivateOnlyPageShowsNoCompanyRows(t *testing.T) {
 
 func TestSnapshotForNegativeBalance(t *testing.T) {
 	a := newTestAccounts(t, `{"accounts":[
-		{"name":"Overdrawn","kind": "private", "balance":-150.5,"as_of":"2026-05-31"}
+		{"name":"Overdrawn","kind":"private","balances":[{"as_of":"2026-05-31","balance":-150.5}]}
 	]}`)
-	snap, ok := a.Snapshot(context.Background())
+	snap, ok := snapshotAt(t, a, yearMonth{2026, time.June})
 	if !ok {
 		t.Fatal("expected a snapshot")
 	}

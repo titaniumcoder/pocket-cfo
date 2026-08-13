@@ -537,8 +537,11 @@ func (t *Tracker) carriedBalances(ctx context.Context, viewed yearMonth, now tim
 	if t.Accounts == nil || months != 1 {
 		return openings{}, AccountSnapshot{}, false, ""
 	}
-	snap, ok := t.Accounts.Snapshot(ctx)
-	if !ok || viewed.ordinal() < snap.OpensMonth.ordinal() {
+	snap, ok, err := t.Accounts.Snapshot(ctx, viewed)
+	if err != nil {
+		return openings{}, AccountSnapshot{}, false, err.Error()
+	}
+	if !ok {
 		return openings{}, AccountSnapshot{}, false, ""
 	}
 	carried, err := t.rollForward(ctx, snap, viewed, now, rateCents)

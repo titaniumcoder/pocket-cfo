@@ -4,16 +4,18 @@
     {
       "name": "Private Checking",
       "kind": "private",
-      "balance": 4200,
-      "as_of": "2026-07-31",
-      "note": "Read at month end; opens August"
+      "balances": [
+        { "as_of": "2026-04-30", "balance": 3950, "note": "Read at month end; opens May" },
+        { "as_of": "2026-07-31", "balance": 4200, "note": "Read at month end; opens August" }
+      ]
     },
     {
       "name": "Company Checking",
       "kind": "company",
-      "balance": 6800,
-      "as_of": "2026-07-31",
-      "note": "What the company kept while salary was at the minimum"
+      "balances": [
+        { "as_of": "2026-04-30", "balance": 5100, "note": "Before the fixed-salary months began" },
+        { "as_of": "2026-07-31", "balance": 6800, "note": "What the company kept while salary was at the minimum" }
+      ]
     }
   ]
 }

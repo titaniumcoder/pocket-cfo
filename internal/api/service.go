@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/titaniumcoder/pocket-cfo/internal/finance/accountsdata"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/actualsdata"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
@@ -135,10 +136,20 @@ func (s *Service) AccountsList(ctx context.Context) ([]Account, error) {
 	}
 	out := make([]Account, 0, len(af.Accounts))
 	for _, a := range af.Accounts {
-		out = append(out, Account{Name: a.Name, Kind: string(a.Kind), AsOf: a.AsOf})
+		out = append(out, Account{Name: a.Name, Kind: string(a.Kind), AsOf: newestAsOf(a)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
+}
+
+func newestAsOf(a accountsdata.Account) string {
+	newest := ""
+	for _, r := range a.Balances {
+		if r.AsOf > newest {
+			newest = r.AsOf
+		}
+	}
+	return newest
 }
 
 type ActualsMonth struct {

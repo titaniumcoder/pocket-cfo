@@ -15,7 +15,6 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/money"
 	"github.com/titaniumcoder/pocket-cfo/internal/render"
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/invoice"
-	"github.com/titaniumcoder/pocket-cfo/internal/sign"
 	"github.com/titaniumcoder/pocket-cfo/internal/stats"
 )
 
@@ -59,7 +58,6 @@ func runRender(args []string) int {
 	}
 
 	var renderer render.Renderer
-	var signer *sign.PDFSigner
 	if !*dryRun {
 		apiKey := os.Getenv("API2PDF_KEY")
 		if apiKey == "" {
@@ -67,17 +65,6 @@ func runRender(args []string) int {
 			return 1
 		}
 		renderer = render.NewAPI2PDF(apiKey)
-
-		var ok bool
-		var err error
-		signer, ok, err = sign.NewFromEnv()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "pocket-cfo-ctl render:", err)
-			return 1
-		}
-		if !ok {
-			signer = nil
-		}
 	}
 
 	manifest := render.Manifest{}
@@ -102,7 +89,7 @@ func runRender(args []string) int {
 		if d, ok := paid[number]; ok {
 			paidOn = &d
 		}
-		if err := renderOne(context.Background(), renderer, signer, number, *force, *dryRun, manifest, paidOn); err != nil {
+		if err := renderOne(context.Background(), renderer, number, *force, *dryRun, manifest, paidOn); err != nil {
 			fmt.Fprintf(os.Stderr, "pocket-cfo-ctl render: %s: %v\n", number, err)
 			failed++
 		}
@@ -156,7 +143,7 @@ func invoiceNumbers(explicit []string) ([]string, error) {
 	return numbers, nil
 }
 
-func renderOne(ctx context.Context, renderer render.Renderer, signer *sign.PDFSigner, number string, force, dryRun bool, manifest render.Manifest, paidOn *types.SerializableDate) error {
+func renderOne(ctx context.Context, renderer render.Renderer, number string, force, dryRun bool, manifest render.Manifest, paidOn *types.SerializableDate) error {
 	path := filepath.Join(invoicesDir, number+".json")
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -215,12 +202,6 @@ func renderOne(ctx context.Context, renderer render.Renderer, signer *sign.PDFSi
 		pdf, err := renderer.Render(ctx, html)
 		if err != nil {
 			return fmt.Errorf("render pdf: %w", err)
-		}
-		if signer != nil {
-			pdf, err = signer.Sign(ctx, pdf)
-			if err != nil {
-				return fmt.Errorf("sign pdf: %w", err)
-			}
 		}
 		if err := os.MkdirAll(buildDir, 0o755); err != nil {
 			return fmt.Errorf("mkdir %s: %w", buildDir, err)

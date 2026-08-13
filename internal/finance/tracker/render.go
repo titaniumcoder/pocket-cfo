@@ -451,6 +451,7 @@ var templates = `
       <div class="row net{{if lt .NetIncomeCents 0}} neg{{end}}"><span class="label">Net income</span><span class="mid"></span><span class="amt netamt">{{eur .NetIncomeCents}}</span></div>
       {{if .ShowCompanyBalance}}<div class="row{{if lt .CompanyClosingCents 0}} neg{{end}}"><span class="label">Left in the company{{if .CompanyTargetCents}} <small>(target {{eur .CompanyTargetCents}})</small>{{end}}</span><span class="mid"></span><span class="amt{{if lt .CompanyClosingCents 0}} neg{{end}}">{{eur .CompanyClosingCents}}</span></div>{{end}}
       {{if .TargetNote}}<div class="row"><span class="stale-note">{{.TargetNote}}</span></div>{{end}}
+      {{if $.TargetNeedsBalanceNote}}<div class="row"><span class="stale-note">{{$.TargetNeedsBalanceNote}}</span></div>{{end}}
       {{if .CompanyOverdrawnNote}}<div class="row"><span class="stale-note">{{.CompanyOverdrawnNote}}</span></div>{{end}}
       {{end}}
       {{end}}

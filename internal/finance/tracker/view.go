@@ -161,6 +161,8 @@ type Figures struct {
 	CompanyBalanceLabel string
 	AccountsStaleNote   string
 
+	TargetNeedsBalanceNote string
+
 	AccountsErr string
 }
 
@@ -258,6 +260,7 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	viewed := yearMonth{year, start.Month()}
 	carried, snap, opened, accountsErr := t.carriedBalances(ctx, viewed, now, months, rateCents)
 	result.AccountsErr = accountsErr
+	result.TargetNeedsBalanceNote = t.targetNeedsBalanceNote(viewed, months, carried)
 
 	result.computePersonal(t, ctx, year, months, viewed, monthlyCompanyCents, bv, carried.Company)
 
@@ -508,6 +511,22 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 		f.ShowBalance = true
 		f.BalanceCents = f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents - f.PrivateTotalPlannedCents
 	}
+}
+
+// targetNeedsBalanceNote covers the one way a target can be set and still do
+// nothing without anybody being told: there is no company balance to measure
+// it against. The month then pays whatever the salary block says, and the
+// target reads as broken rather than as unfed.
+func (t *Tracker) targetNeedsBalanceNote(viewed yearMonth, months int, carried openings) string {
+	if months != 1 || carried.Company.Known {
+		return ""
+	}
+	amount, inForce := t.Personal.Target.at(viewed)
+	if !inForce {
+		return ""
+	}
+	return "A target balance of " + formatEuro(round(amount*100)) + " is set for this month, but no company account is declared in accounts.json — " +
+		"there is no balance to compare it against, so the target does nothing. Add the account with \"kind\": \"company\"."
 }
 
 // carriedBalances rolls both pots up to the month being looked at. It runs

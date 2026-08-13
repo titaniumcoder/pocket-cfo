@@ -628,6 +628,30 @@ func TestNoAccountsLayerLeavesBalanceUnchanged(t *testing.T) {
 	}
 }
 
+// TestAPrivateOnlyPageShowsNoCompanyRows is the page-level half of the
+// compatibility guard: someone who never declares a company account must not
+// find new rows on their ledger, however much machinery sits behind them.
+func TestAPrivateOnlyPageShowsNoCompanyRows(t *testing.T) {
+	trk := accountsTracker(t, testAccountsJSON)
+	f := trk.ComputeMonth(context.Background(), 2026, time.August)
+	if f.FundingPersonal.ShowCompanyBalance {
+		t.Error("a private-only file switched the company balance on")
+	}
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	body := rec.Body.String()
+	for _, unwanted := range []string{"In the company", "Left in the company", "target "} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("the page says %q without a company account", unwanted)
+		}
+	}
+	// The private figure keeps its name either way, so the label is not a
+	// surprise the first time a company account appears.
+	if !strings.Contains(body, "Private opening balance") {
+		t.Error("the private opening balance lost its label")
+	}
+}
+
 func TestSnapshotForNegativeBalance(t *testing.T) {
 	a := newTestAccounts(t, `{"accounts":[
 		{"name":"Overdrawn","kind": "private", "balance":-150.5,"as_of":"2026-05-31"}

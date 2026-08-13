@@ -311,6 +311,47 @@ func TestTheTargetWalksTheCompanyUpToItAndHoldsThere(t *testing.T) {
 	}
 }
 
+// TestATargetWithNoCompanyAccountSaysSo is the one way a target can be set and
+// still do nothing with nobody told: accounts.json declares no company
+// account, so there is no balance to measure it against.
+func TestATargetWithNoCompanyAccountSaysSo(t *testing.T) {
+	trk := accountsTracker(t, testAccountsJSON) // private only
+	trk.Personal = bulgariaBands()
+	target, err := ParseTargetPlan([]TargetEntry{{From: "2026-01", Amount: f64(9000)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trk.Personal.Target = target
+
+	f := trk.ComputeMonth(context.Background(), 2026, time.August)
+	if f.TargetNeedsBalanceNote == "" {
+		t.Fatal("a target with no company account to measure produced no note")
+	}
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	body := rec.Body.String()
+	for _, want := range []string{"no company account is declared", "&#34;kind&#34;: &#34;company&#34;", "9,000"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page never says %q", want)
+		}
+	}
+	// And the month is not quietly held at the minimum on no evidence.
+	if f.FundingPersonal.HeldForTarget {
+		t.Error("a month was held for a target that has no balance to compare against")
+	}
+
+	// Declare the account and the note goes away.
+	withCompany := accountsTracker(t, `{"accounts":[
+		{"name":"Private","kind":"private","balance":2000,"as_of":"2026-07-31"},
+		{"name":"Company","kind":"company","balance":100,"as_of":"2026-07-31"}
+	]}`)
+	withCompany.Personal = bulgariaBands()
+	withCompany.Personal.Target = target
+	if got := withCompany.ComputeMonth(context.Background(), 2026, time.August); got.TargetNeedsBalanceNote != "" {
+		t.Errorf("note = %q with a company account declared, want none", got.TargetNeedsBalanceNote)
+	}
+}
+
 // TestTheTargetSaysWhyOnThePage: the gross salary in a held month matches
 // neither affordability nor anything in config.json, so the page has to name
 // the cause or the figure is unexplainable.

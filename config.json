@@ -20,6 +20,10 @@
   ],
 
   "salary": [
-    { "from": "2026-09", "mode": "fixed", "amount": 2500 }
+    { "from": "2026-09", "to": "2026-10", "mode": "fixed", "amount": 2500 }
+  ],
+
+  "targetBalance": [
+    { "from": "2026-11", "amount": 15000 }
   ]
 }

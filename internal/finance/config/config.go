@@ -30,6 +30,11 @@ type FileConfig struct {
 
 	salary tracker.SalaryPlan
 
+	TargetBalance []tracker.TargetEntry `json:"targetBalance"`
+
+	targetBalance tracker.TargetPlan
+	targetIdle    []string
+
 	StartMonth *string `json:"startMonth"`
 
 	startMonth time.Time
@@ -56,6 +61,13 @@ func LoadFileConfig(path string) (FileConfig, error) {
 	if err := tracker.ValidateSalaryAgainstLegislation(fc.salary, fc.legislation); err != nil {
 		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
 	}
+	if fc.targetBalance, err = tracker.ParseTargetPlan(fc.TargetBalance); err != nil {
+		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	if err := tracker.RequireMinimumWageForTargets(fc.targetBalance, fc.legislation); err != nil {
+		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	fc.targetIdle = tracker.ValidateTargetAgainstSalary(fc.targetBalance, fc.salary)
 	if fc.startMonth, err = tracker.ParseStartMonth(strOr(fc.StartMonth, "")); err != nil {
 		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
 	}
@@ -76,6 +88,8 @@ type Config struct {
 	AnnualVacationDays int
 	Legislation        tracker.Legislation
 	Salary             tracker.SalaryPlan
+	TargetBalance      tracker.TargetPlan
+	TargetIdleMonths   []string
 
 	StartMonth time.Time
 }
@@ -95,6 +109,8 @@ func Load(fc FileConfig) Config {
 		AnnualVacationDays: intOr(fc.AnnualVacationDays, 25),
 		Legislation:        fc.legislation,
 		Salary:             fc.salary,
+		TargetBalance:      fc.targetBalance,
+		TargetIdleMonths:   fc.targetIdle,
 		StartMonth:         fc.startMonth,
 	}
 }

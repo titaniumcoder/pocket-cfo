@@ -462,8 +462,9 @@ func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months 
 			companyStock{},
 		)
 	} else {
+		stock := t.Personal.targetStock(viewed, company)
 		f.Personal = t.Personal.breakdown(float64(f.TotalCents)/100, float64(bv.CompanyTotalPlannedCents)/100, 1,
-			t.Personal.rulesFor(viewed), t.Personal.Salary.decisionFor(viewed), company)
+			t.Personal.rulesFor(viewed), t.Personal.decide(viewed, stock), stock)
 	}
 	f.Personal.CompanyGroups = bv.CompanyGroups
 }

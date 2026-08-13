@@ -32,8 +32,10 @@ type SalaryPeriod struct {
 }
 
 type SalaryDecision struct {
-	Mode     SalaryMode
-	FixedEUR float64
+	Mode          SalaryMode
+	FixedEUR      float64
+	HeldForTarget bool
+	TargetIdle    bool
 }
 
 type SalaryPlan []SalaryPeriod

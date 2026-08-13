@@ -90,6 +90,7 @@ func (s *server) configGroups() []configGroup {
 			{Name: "annualVacationDays", Value: strconv.Itoa(f.AnnualVacationDays)},
 			{Name: "legislation", Value: legislationSummary(f.Legislation)},
 			{Name: "salary", Value: salarySummary(f.Salary)},
+			{Name: "targetBalance", Value: targetBalanceSummary(f.TargetBalance, f.TargetIdleMonths)},
 			{Name: "startMonth", Value: startMonthSummary(f.StartMonth)},
 		}},
 	}
@@ -115,6 +116,21 @@ func salarySummary(plan tracker.SalaryPlan) string {
 		parts = append(parts, p.String())
 	}
 	return strings.Join(parts, " · ")
+}
+
+func targetBalanceSummary(plan tracker.TargetPlan, idle []string) string {
+	if len(plan) == 0 {
+		return "none — the company keeps whatever a month's salary leaves behind, with no figure it saves towards"
+	}
+	parts := make([]string, 0, len(plan))
+	for _, p := range plan {
+		parts = append(parts, p.String())
+	}
+	out := strings.Join(parts, " · ")
+	if len(idle) > 0 {
+		out += " — idle in " + strings.Join(idle, ", ") + ", because a target only holds back a month that would otherwise pay a full salary"
+	}
+	return out
 }
 
 func startMonthSummary(t time.Time) string {

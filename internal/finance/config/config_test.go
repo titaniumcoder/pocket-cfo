@@ -139,6 +139,11 @@ func TestLoadFileConfigRefusesMalformedPayrollRules(t *testing.T) {
 		"a fixed salary with no amount":    `{"salary":[{"from":"2026-04","mode":"fixed"}]}`,
 		"an amount on a mode that ignores": `{"salary":[{"from":"2026-04","mode":"full","amount":2500}]}`,
 		"a fixed salary below the wage":    `{"legislation":[{"from":"2026-01","minimumWage":1077}],"salary":[{"from":"2026-04","to":"2026-05","mode":"fixed","amount":800}]}`,
+		// A target holds months at the statutory minimum, so it needs one to
+		// hold them at; without it the month silently pays nothing.
+		"a target with no amount":       `{"targetBalance":[{"from":"2026-04"}]}`,
+		"overlapping targets":           `{"targetBalance":[{"from":"2026-04","to":"2026-08","amount":10000},{"from":"2026-06","amount":20000}]}`,
+		"a target with no minimum wage": `{"targetBalance":[{"from":"2026-04","to":"2026-05","amount":20000}]}`,
 	}
 	for name, body := range bad {
 		t.Run(name, func(t *testing.T) {

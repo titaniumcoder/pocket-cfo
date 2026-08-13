@@ -694,7 +694,8 @@ costs money and churns the repo without failing.
 Lives in `internal/finance`. Two ledgers, because a one-person company spends from two
 different pots: **company** expenses come out of company income before anything becomes
 salary, and **private** expenses come out of net income after payroll. A budget category
-declares which by the `kind` of the group it sits in.
+declares which by the `kind` of the group it sits in, and so does a bank account in
+`accounts.json` — the same two words, because it is the same two pots.
 
 **Income** is predicted from an hourly rate and, when Toggl is configured, from hours
 actually tracked. Once an invoice is issued for a linked client, the invoice supersedes
@@ -723,9 +724,56 @@ rate changing at a threshold, not the general rule. UK employee NI drops from 8%
 above the Upper Earnings Limit instead of stopping, and UK employer NI never stops at all;
 a ceiling field could express neither.
 
-A month also declares **whether a salary is drawn at all** — full, the statutory minimum,
-or none — because choosing the minimum to leave money in the company, and drawing nothing,
-are ordinary decisions that the affordability arithmetic cannot represent.
+A month also declares **what salary is drawn** — full, the statutory minimum, a fixed gross
+figure, or none — because choosing the minimum to leave money in the company, naming an
+amount, and drawing nothing are ordinary decisions that the affordability arithmetic cannot
+represent. `fixed` is the one mode that ignores affordability: it is paid whether or not
+the money is there, and overdraws the company rather than shrinking. It is not, however,
+allowed below the minimum wage in force — outranking what the company can afford is a
+choice, and outranking the law is not.
+
+**The company is a balance, not just a flow.** It used to be modelled as a pot that empties
+every month, and `accounts.json` said so on purpose. That was only true because a full
+salary hands the whole remainder to gross, which drains the company by construction. Once a
+month can pay the minimum or a fixed figure, the rest stays behind, so a company balance is
+carried like a private one: it enters the ledger straight after Company income and *before*
+the cascade, raising what a full salary can afford (and lowering it when overdrawn), and
+what the cascade leaves behind opens the next month:
+
+```
+company closing = opening + company income − company expenses − employer social − gross
+```
+
+Two things follow from that formula rather than from code written to produce them. A full
+salary still closes the company at zero. And the closing figure is derived from the
+**rounded cent fields**, not the floats behind them, for two reasons that both matter: it
+seeds the next month, so a half-cent compounds down the year; and the rows shown on the
+page have to add up to it, because that is the first thing a reader checks.
+
+The balance being an *input* to the cascade is why the roll-forward runs before it rather
+than after, and why both pots are walked in one pass — the company balance feeds payroll,
+and the private balance is fed by what payroll pays out.
+
+**`targetBalance`** is a figure the company saves towards: while it is under, the month pays
+the statutory minimum; at or above, full salary resumes. It is a **floor, not a high-water
+mark**, and that distinction is the whole design. The target is subtracted from what payroll
+may spend, so a full salary drains the company down to the target and stops. Switching only
+the mode would oscillate — reach the target, pay it all out, fall under, back to the
+minimum, forever — which is a reserve that is never actually reserved.
+
+A target can only ever hold a month back, never make it pay more, so an explicit `minimum`,
+`none` or `fixed` month wins over it. Writing a target over one is allowed rather than
+refused, because the salary block is the more explicit statement; but it does nothing there,
+so `/info` names every idle month and the page says so in the month itself. The same goes
+for a target with no company account to measure against.
+
+An **unknown** company balance is not a balance of zero. Treating the two alike would hold
+every month at the minimum on no evidence, so the distinction is carried explicitly and the
+target simply does not apply where nothing is known. The year view is the case that makes
+this load-bearing: it reads no balances at all, and it stays that way on purpose —
+`fundingIncome` spreads company expenses evenly across its range, which smooths a flow
+harmlessly but would reorder a balance, so a twelve-month range would close the company
+somewhere the twelve month views never do.
 
 **Planned versus actual.** `budget.json` is what was planned; `actuals/YYYY-MM.json` is
 what the bank statement said. The actuals layer is **display only**: it is shown beside the

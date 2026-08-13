@@ -53,8 +53,11 @@ export SES_FROM_EMAIL=
 export TOGGL_API_TOKEN=
 export TOGGL_WORKSPACE_ID=
 # Optional. Default to config.json — non-secret finance tunables
-# (hoursPerDay, togglProjectIds, hourlyRateCents, currency, social rates,
-# annualVacationDays). See internal/finance/config.FileConfig.
+# (hoursPerDay, togglProjectIds, holidayCountry, holidaySubdivision,
+# hourlyRateCents, currency, annualVacationDays) plus the four dated
+# blocks: legislation, salary, targetBalance, startMonth. See
+# internal/finance/config.FileConfig, which is the reference for every
+# field, and README.md's config.json section.
 # export CONFIG_FILE=
 
 # Local data/build/template layout — override to point cmd/pocketcfo/

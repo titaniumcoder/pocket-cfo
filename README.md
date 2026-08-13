@@ -53,7 +53,7 @@ enforced by a schema. Keep the layout: the app's defaults point at these exact p
 | `data/users.json` | who may read which part, by email | `schemas/users.json` |
 | `data/budget.json` | planned expenses; every category has a stable UUID | `internal/finance/data/budget.schema.json` |
 | `data/actuals/YYYY-MM.json` | what was actually spent, per month | `internal/finance/data/actuals.schema.json` |
-| `data/accounts.json` | real account balances, read at month end | `internal/finance/data/accounts.schema.json` |
+| `data/accounts.json` | real account balances, read at month end; each declares `kind` — `company` or `private` | `internal/finance/data/accounts.schema.json` |
 | `config.json` | non-secret tunables and payroll law | `internal/finance/config` |
 
 Payment lives in `data/paid-invoices.json` rather than in the invoice because an issued invoice
@@ -173,15 +173,27 @@ Secrets and deployment-specific paths come from the environment. Copy `.envrc.ex
 ### `config.json`
 
 Non-secret, and it lives in *your* data repo. Beyond the scalars — `hourlyRateCents`,
-`currency`, `hoursPerDay`, `annualVacationDays` — three settings are lists of dated
+`currency`, `hoursPerDay`, `annualVacationDays` — four settings are lists of dated
 entries, because what they describe changes on a date and last year's figures have to stay
 reproducible. Each entry states only what changed; anything it omits carries forward.
 
 | Block | Decides |
 |---|---|
 | `legislation` | every government-set payroll figure: both parties' contribution schedules as marginal bands, the income tax bands, the minimum wage |
-| `salary` | whether a month pays a full salary, only the statutory minimum, or none at all |
+| `salary` | what a month pays: a full salary, only the statutory minimum, a `fixed` gross `amount`, or none at all |
+| `targetBalance` | a figure the company saves towards: under it a month pays the minimum, at or above it full salary resumes |
 | `startMonth` | the first month budgeting covers; earlier months are not offered at all |
+
+`mode: "fixed"` takes an `amount` — a gross monthly figure — and is the one setting paid
+whether or not the company can afford it, so it will overdraw the company rather than
+shrink. It is still refused below the minimum wage in force.
+
+`targetBalance` is a **floor**: once reached, a full salary is drawn out of what sits *above*
+the target, so the reserve is not spent back down the following month. It only ever holds a
+month back, never makes one pay more, so it does nothing in a month whose `salary` entry
+already says `minimum`, `fixed` or `none` — that is allowed rather than refused, and `/info`
+names every month where it is idle. It also needs an account with `"kind": "company"` in
+`accounts.json`, since otherwise there is no balance to compare it against.
 
 Bands are marginal, so a contribution ceiling is an ordinary band with a rate of `0` rather
 than a concept of its own. There are no built-in defaults: a figure no entry states is

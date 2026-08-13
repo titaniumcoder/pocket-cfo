@@ -31,8 +31,9 @@ zero-VAT branches the system must handle.
    - `INV-0000000002-paid.pdf` — stamped paid. Re-rendered
      when the JSON changes.
    A third, `-ANUL.pdf`, returns with annulment (§3.7), which isn't built.
-4. **Tamper evidence is the digital signature**, not a hash field. For the JSON side,
-   `git log -p` on one file is the audit trail.
+4. **Tamper evidence is git history**, not a hash field. `git log -p` on one invoice's
+   JSON is the audit trail, and the PDF beside it in `build/` is written once and
+   committed, so altering either is a commit with an author and a date.
 5. **Money is integer minor units.** `1020000` = 10 200,00 €. No floats.
 6. **Legal text is accountant-authored, never machine-translated.**
 7. **Derived state is computed, not stored** — overdue, outstanding, days to pay.
@@ -57,7 +58,6 @@ internal/
   tax/               which VAT regime an invoice falls under (§4)
   money/             totals, discounts, VAT grouping — integer minor units (§3.4)
   render/            invoice HTML → api2pdf → PDF (§6)
-  sign/              PDF certification (§6)
   stats/             derived state: which invoices are draft, issued, overdue, paid
   translate/         DeepL, for the Bulgarian half of an invoice
   auth/              sessions, GitHub OAuth, the email login token (§8)
@@ -409,9 +409,9 @@ It should be paranoid.
   never goes negative.
 - **Translation complete**: every `de` string has a `bg` sibling.
 
-Note what is *not* checked: whether an issued invoice's content changed. The signature on
-the PDF is the tamper evidence, and `git log -p data/invoices/INV-….json` is the record.
-A check here would be redundant.
+Note what is *not* checked: whether an issued invoice's content changed.
+`git log -p data/invoices/INV-….json` is the record, and the PDF beside it was written
+once. A check here would be redundant.
 
 ---
 
@@ -483,8 +483,8 @@ already the simpler path.
 Failure isolation: one bad render must not block indexing the rest. Collect errors,
 publish what succeeded, fail the job at the end with a summary.
 
-Secrets: `API2PDF_KEY`, `DEEPL_API_KEY`, `SIGN_CERT_B64`, `SIGN_KEY_B64`,
-`SIGN_KEY_PASS`. Local runs use the same values from a `.env`; there is no CI-only step.
+Secrets: `API2PDF_KEY`, `DEEPL_API_KEY`. Local runs use the same values from a `.env`;
+there is no CI-only step.
 
 Translation stays a separate manual-dispatch workflow that opens a PR. Machine
 translation into a language you can't proofread shouldn't land unreviewed on a legal
@@ -492,11 +492,10 @@ document, and at this volume running it by hand costs nothing.
 
 ---
 
-## 6. Rendering & signing
+## 6. Rendering
 
 ```go
 type Renderer interface { Render(ctx context.Context, html []byte) ([]byte, error) }
-type Signer   interface { Sign(ctx context.Context, pdf []byte) ([]byte, error) }
 ```
 
 **HTML** — Go `html/template`, one canonical layout matching the reference PDFs.
@@ -535,34 +534,6 @@ The paid copy is a courtesy for clients who ask for confirmation — the payment
 what settles the invoice in your books, not a stamp on a PDF.
 
 In the app: original first, then the paid copy.
-
-**Signing — local, not api2pdf.** api2pdf's service groups (Chrome, wkhtmltopdf,
-LibreOffice, Markitdown, OpenDataLoader, PdfSharp, Zip, Zebra) cover merge, password,
-bookmarks and page extraction; there is no signing endpoint.
-
-- `digitorus/pdfsign`, pure Go library, runs inside the Action. Sign all three artifacts.
-- Org certificate → integrity and provenance. Enough unless a client demands qualified
-  status, which needs a QES cert from a Bulgarian QTSP (B-Trust / Evrotrust /
-  InfoNotary). Defer it.
-- Since the signature is now the *only* tamper evidence on the PDF side, move signing
-  earlier than you otherwise would — it's a small library, not a service.
-- **Let's Encrypt does not work for this.** It only issues domain-validated TLS server
-  certs (`serverAuth` EKU); its CA policy has no document-signing/S-MIME product, and
-  even a borrowed TLS cert would be rejected by viewers that check EKU before trusting a
-  PDF signature.
-
-**Status: implemented, inert.** `internal/sign.PDFSigner` wraps `digitorus/pdfsign`:
-`CertType: CertificationSignature` + `DocMDPPerm: DoNotAllowAnyChangesPerms` (any edit
-after signing breaks the signature in every conforming viewer — that's the
-"unchangeable" mechanism, not encryption or ACLs), plus an RFC3161 timestamp (default
-`https://freetsa.org/tsr`) so validity survives the signing cert's own expiry.
-`pocket-cfo-ctl render` signs every PDF it writes whenever `SIGN_CERT_B64` /
-`SIGN_KEY_B64` (+ optional `SIGN_KEY_PASS` for a password-encrypted key, all base64 PEM)
-are set — and is a complete no-op otherwise, same convention as `API2PDF_KEY`. No repo
-secrets are set today, so CI keeps rendering unsigned. `make dev-cert` prints a
-throwaway self-signed pair for local testing. The real cert is still a B-Trust QES,
-once a client actually requires a signed document — swapping it in is a secrets change,
-not a code change.
 
 **Number formatting** — the two references disagree (`1.000,00 €` vs `10 200,00`). Pick
 one per locale via `golang.org/x/text/message` and enforce it in the template.
@@ -800,9 +771,9 @@ where it actually reads it.
 
 Steps 1–8 of the original build order are done and released: schema and `money`,
 `tax.Resolve` and the §4.3 validators, the template against both reference invoices,
-`pocket-cfo-ctl render` through api2pdf, `build.yml`, signing, the index and the web
-app, and payment in `data/paid-invoices.json`. The finance tracker was added alongside
-them and has its own conventions inline in `internal/finance`.
+`pocket-cfo-ctl render` through api2pdf, `build.yml`, the index and the web app, and
+payment in `data/paid-invoices.json`. The finance tracker was added alongside them and
+has its own conventions inline in `internal/finance`.
 
 What remains is additive, and each item is deferred for a reason rather than pending:
 

@@ -8,8 +8,8 @@ A freelancer's finance tracker and invoicing tool in one Go binary, MIT licensed
   Toggl-tracked hours, superseded by real invoiced income once an invoice is issued; a
   planned expense budget; and the money actually spent, reconciled from bank statements
   and shown beside the plan.
-- **Invoicing** (`/invoicing`) — one JSON file per invoice, PDFs rendered and digitally
-  signed by CI, a read-only viewer, and per-client portal links.
+- **Invoicing** (`/invoicing`) — one JSON file per invoice, PDFs rendered by CI, a
+  read-only viewer, and per-client portal links.
 - **An agent-facing write API** (`/api`, `/mcp`) — so a reconciliation agent can record
   and correct transactions without a shell. Every accepted write is a git commit; see
   [`docs/HERMES.md`](docs/HERMES.md).
@@ -156,7 +156,6 @@ Secrets and deployment-specific paths come from the environment. Copy `.envrc.ex
 | `API2PDF_KEY` | `pocket-cfo-ctl render` | api2pdf API key |
 | `HERMES_API_TOKEN` | `cmd/pocketcfo` | optional — bearer token for the agent API. Unset means `/api/` and `/mcp` are never registered, so they do not exist rather than returning 401 |
 | `GITHUB_DATA_TOKEN` | `cmd/pocketcfo` | optional — fine-grained PAT with `contents: write` on the data repo only, for committing reconciled months |
-| `SIGN_CERT_B64` / `SIGN_KEY_B64` / `SIGN_KEY_PASS` | `pocket-cfo-ctl render` | base64 PEM cert/key each PDF is certified with; unset skips signing (see `make dev-cert`) |
 | `GITHUB_OAUTH_CLIENT_ID` / `_SECRET` | `cmd/pocketcfo`, prod | the GitHub OAuth App; its callback is `PUBLIC_BASE_URL` + `/auth/callback` |
 | `SESSION_SECRET` | `cmd/pocketcfo`, prod | any random string; encrypts the session cookie |
 | `PUBLIC_BASE_URL` | `cmd/pocketcfo`, prod | the deployed URL |
@@ -204,7 +203,6 @@ make build      # go build ./...
 make test       # go test ./...
 make vet        # go vet ./...
 make fmt        # gofmt -l -w .
-make dev-cert   # print a throwaway signing cert/key pair for local testing
 
 go run ./cmd/pocketcfo                                # the web app
 go run ./cmd/pocket-cfo-ctl render                    # render every invoice
@@ -220,8 +218,8 @@ Prebuilt binaries for Linux, macOS and Windows are attached to every
 
 ## Further reading
 
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — the design: data model, tax regimes, rendering and
-  signing, the finance tracker, the agent API.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — the design: data model, tax regimes, rendering,
+  the finance tracker, the agent API.
 - [`docs/HERMES.md`](docs/HERMES.md) — the contract a reconciliation agent works to.
 - [`AGENTS.md`](AGENTS.md) — conventions, and how releases are cut.
 

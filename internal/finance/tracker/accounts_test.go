@@ -862,3 +862,86 @@ func TestSnapshotForNegativeBalance(t *testing.T) {
 		t.Errorf("cents = %d, want -15050", snap.PrivateCents)
 	}
 }
+
+// TestAPublishedReadingIsInForceBeforeItDeploys: a balance recorded through the
+// API is a commit, and the image built from it is minutes away. Until then the
+// bytes just committed have to answer every read, or the agent records a
+// balance and is told the account still holds the old one.
+func TestAPublishedReadingIsInForceBeforeItDeploys(t *testing.T) {
+	a := newTestAccounts(t, testAccountsJSON)
+	if snap, _ := snapshotAt(t, a, yearMonth{2026, time.September}); snap.PrivateCents != 200000 {
+		t.Fatalf("cents = %d before the write, want the 31 July reading", snap.PrivateCents)
+	}
+
+	a.Publish([]byte(`{"accounts":[
+		{"name":"Private Checking","kind":"private","balances":[
+			{"as_of":"2026-07-31","balance":2000},
+			{"as_of":"2026-08-31","balance":1750}
+		]}
+	]}`))
+
+	snap, ok := snapshotAt(t, a, yearMonth{2026, time.September})
+	if !ok {
+		t.Fatal("expected a snapshot")
+	}
+	if snap.PrivateCents != 175000 {
+		t.Errorf("cents = %d, want 175000 — September opens on the reading just written", snap.PrivateCents)
+	}
+	if want := (yearMonth{2026, time.September}); snap.OpensMonth != want {
+		t.Errorf("OpensMonth = %+v, want %+v", snap.OpensMonth, want)
+	}
+}
+
+// TestThePublishedFileStepsAsideWhenTheDeployLands: the overlay is dropped as
+// soon as the file says the same thing, so nothing lingers in memory claiming
+// an authority it no longer has.
+func TestThePublishedFileStepsAsideWhenTheDeployLands(t *testing.T) {
+	const deployed = `{"accounts":[
+		{"name":"Private Checking","kind":"private","balances":[{"as_of":"2026-08-31","balance":1750}]}
+	]}`
+	a := newTestAccounts(t, testAccountsJSON)
+	a.Publish([]byte(deployed))
+
+	a.FS = fstest.MapFS{accountsPath: &fstest.MapFile{Data: []byte(deployed)}}
+	a.Evict()
+	if snap, _ := snapshotAt(t, a, yearMonth{2026, time.September}); snap.PrivateCents != 175000 {
+		t.Fatalf("cents = %d after the deploy, want 175000", snap.PrivateCents)
+	}
+
+	// The deploy has replaced the file, so the overlay is gone and the file
+	// alone decides — including when it moves on again.
+	a.FS = fstest.MapFS{accountsPath: &fstest.MapFile{Data: []byte(testAccountsJSON)}}
+	a.Evict()
+	if snap, _ := snapshotAt(t, a, yearMonth{2026, time.September}); snap.PrivateCents != 200000 {
+		t.Errorf("cents = %d, want 200000 — a forgotten overlay is still answering", snap.PrivateCents)
+	}
+}
+
+// TestAPublishedFileIsStillValidated: the overlay carries bytes through the
+// same parse and validation a file gets, so it can never surface a document
+// the loader would have refused from disk.
+func TestAPublishedFileIsStillValidated(t *testing.T) {
+	bad := []byte(`{"accounts":[
+		{"name":"P","kind":"private","balances":[
+			{"as_of":"2026-08-05","balance":10},
+			{"as_of":"2026-08-31","balance":20}
+		]}
+	]}`)
+
+	fromOverlay := &Accounts{FS: fstest.MapFS{}}
+	fromOverlay.Publish(bad)
+	_, overlayErr := fromOverlay.File(context.Background())
+
+	fromDisk := &Accounts{FS: fstest.MapFS{accountsPath: &fstest.MapFile{Data: bad}}}
+	_, diskErr := fromDisk.File(context.Background())
+
+	if overlayErr == nil {
+		t.Fatal("two readings in one month were accepted from the overlay")
+	}
+	if diskErr == nil {
+		t.Fatal("the same file was accepted from disk — this test proves nothing")
+	}
+	if overlayErr.Error() != diskErr.Error() {
+		t.Errorf("overlay refused with %q, disk with %q — the overlay must be judged by the same rules", overlayErr, diskErr)
+	}
+}

@@ -18,8 +18,17 @@ const accountsPath = "accounts.json"
 type Accounts struct {
 	FS fs.FS
 
-	mu    sync.Mutex
-	cache *accountsResult
+	mu        sync.Mutex
+	cache     *accountsResult
+	justWrote committed
+}
+
+func (a *Accounts) Publish(body []byte) {
+	if a == nil {
+		return
+	}
+	a.justWrote.publish(accountsPath, body)
+	a.Evict()
 }
 
 type accountsResult struct {
@@ -54,7 +63,7 @@ func (s AccountSnapshot) rowsOfKind(kind accountsdata.AccountKind) []AccountRow 
 }
 
 func (a *Accounts) File(ctx context.Context) (accountsdata.AccountsFile, error) {
-	if a == nil || a.FS == nil {
+	if a == nil {
 		return accountsdata.AccountsFile{}, nil
 	}
 	a.mu.Lock()
@@ -79,8 +88,18 @@ func (a *Accounts) File(ctx context.Context) (accountsdata.AccountsFile, error) 
 	return af, err
 }
 
+func (a *Accounts) readFile() ([]byte, error) {
+	if a.FS == nil {
+		return nil, fs.ErrNotExist
+	}
+	return fs.ReadFile(a.FS, accountsPath)
+}
+
 func (a *Accounts) fetch() (accountsdata.AccountsFile, error) {
-	content, err := fs.ReadFile(a.FS, accountsPath)
+	content, err := a.readFile()
+	if body, ok := a.justWrote.supersedes(accountsPath, content, err); ok {
+		content, err = body, nil
+	}
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return accountsdata.AccountsFile{}, nil

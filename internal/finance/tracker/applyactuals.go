@@ -146,6 +146,20 @@ func mistimedIn(groups []CategoryGroupView, company bool) []MistimedRow {
 	return out
 }
 
+func ActualTotals(av ActualsView, companyIDs map[string]bool) (private, company int) {
+	if !av.Present {
+		return 0, 0
+	}
+	for id, cents := range av.ByCategory {
+		if companyIDs[id] {
+			company += cents
+			continue
+		}
+		private += cents
+	}
+	return private, company
+}
+
 func UnmatchedCents(bv BudgetView, av ActualsView, companyIDs map[string]bool) (private, company int) {
 	if !av.Present {
 		return 0, 0

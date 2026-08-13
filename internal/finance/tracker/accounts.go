@@ -247,15 +247,24 @@ func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, ra
 	if err != nil {
 		return monthClosing{}, fmt.Errorf("accounts: budget for %s: %w", m, err)
 	}
+	privateCents, companyCents := t.closingExpenses(ctx, m, bv)
 	fundingStart, fundingEnd := fundingRangeForMonth(m.Year, m.Month)
-	pv := t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(bv.CompanyTotalPlannedCents)/100, bv.CompanyGroups, company)
+	pv := t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(companyCents)/100, bv.CompanyGroups, company)
 	if pv.Err != "" {
 		return monthClosing{}, fmt.Errorf("accounts: income for %s: %s", m, pv.Err)
 	}
 	return monthClosing{
-		PrivateDeltaCents:   pv.NetIncomeCents - bv.TotalPlannedCents,
+		PrivateDeltaCents:   pv.NetIncomeCents - privateCents,
 		CompanyClosingCents: pv.CompanyClosingCents,
 	}, nil
+}
+
+func (t *Tracker) closingExpenses(ctx context.Context, m yearMonth, bv BudgetView) (private, company int) {
+	av, err := t.Actuals.ForMonth(ctx, m.Year, m.Month)
+	if err != nil || !av.Present || !av.Complete {
+		return bv.TotalPlannedCents, bv.CompanyTotalPlannedCents
+	}
+	return ActualTotals(av, t.companyCategoryIDs(ctx))
 }
 
 func derefStr(p *string) string {

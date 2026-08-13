@@ -214,8 +214,112 @@ func actualsTracker(t *testing.T, actuals map[string]string) *Tracker {
 	return trk
 }
 
-// TestActualsChangeNoPlannedFigure: the layer is display-only, so every
-// planned-based figure must be bit-identical with and without it.
+// augustActuals is a month of imported statements totalling 400, against the
+// 1 000 the shared test budget plans. from/to decide whether the month counts
+// as covered, which is the whole question when closing a month on it.
+func augustActuals(from, to string) map[string]string {
+	return map[string]string{
+		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"` + from + `","to":"` + to + `","imported_at":"2026-09-01"}],
+			"transactions":[{"id":"x1","date":"2026-08-03","description":"LIDL","amount":400,"account":"A","category":"00000000-0000-4000-8000-000000000001"}]}`,
+	}
+}
+
+// TestAClosedMonthClosesOnItsActuals is the point of letting actuals reach the
+// roll-forward. The balance opens at 2 000 on the 31 July read; August plans
+// 1 000 of private spending but the bank says 400 was spent.
+//
+//	without actuals   Aug closes 1 000, Sept closes 0,   Oct opens at 0
+//	with actuals      Aug closes 1 600, Sept closes 600, Oct opens at 600
+//
+// The 600 is exactly the gap between what August planned and what it spent.
+// September has no imported file and still closes on its plan, so one month
+// switching to actuals must not drag the rest with it.
+func TestAClosedMonthClosesOnItsActuals(t *testing.T) {
+	ctx := context.Background()
+
+	without := actualsTracker(t, nil).ComputeMonth(ctx, 2026, time.October)
+	with := actualsTracker(t, augustActuals("2026-08-01", "2026-08-31")).ComputeMonth(ctx, 2026, time.October)
+
+	if without.OpeningBalanceCents != 0 {
+		t.Fatalf("October opening without actuals = %d, want 0 — the plan spends 1 000 a month out of 2 000", without.OpeningBalanceCents)
+	}
+	if with.OpeningBalanceCents != 60000 {
+		t.Errorf("October opening with actuals = %d, want 60000 — August should have closed on the 400 the bank saw, not the 1 000 it planned", with.OpeningBalanceCents)
+	}
+}
+
+// TestAPartlyImportedMonthStillClosesOnItsPlan is the guard on that. Coverage
+// running to the 15th means the rest of August was never read, so closing on
+// those transactions would treat a half-imported month as a frugal one and
+// carry the invented surplus forward for good, with nothing on the page
+// saying so. A month is closed on its statements only when they cover it.
+func TestAPartlyImportedMonthStillClosesOnItsPlan(t *testing.T) {
+	ctx := context.Background()
+
+	partial := actualsTracker(t, augustActuals("2026-08-01", "2026-08-15")).ComputeMonth(ctx, 2026, time.October)
+	if partial.OpeningBalanceCents != 0 {
+		t.Errorf("October opening = %d, want 0 — half a month of statements must not close August", partial.OpeningBalanceCents)
+	}
+
+	// And the same file, covering the whole month, does close it — otherwise
+	// this test would pass on any bug that ignored actuals entirely.
+	full := actualsTracker(t, augustActuals("2026-08-01", "2026-08-31")).ComputeMonth(ctx, 2026, time.October)
+	if full.OpeningBalanceCents == partial.OpeningBalanceCents {
+		t.Error("complete and partial coverage closed August identically, so coverage is not being consulted at all")
+	}
+}
+
+// TestTheCompanySideClosesOnItsActualsToo: the company total does not simply
+// subtract, it goes into the payroll cascade as what the company had to spend
+// before paying anyone. Swapping planned for actual there has to move the
+// closing balance, or the company pot would keep rolling on the plan while
+// the private one had already switched to the bank.
+func TestTheCompanySideClosesOnItsActualsToo(t *testing.T) {
+	ctx := context.Background()
+	const officeID = "00000000-0000-4000-8000-000000000002"
+
+	build := func(actuals map[string]string) *Tracker {
+		trk := accountsTracker(t, `{"accounts":[
+			{"name":"Private","kind":"private","balances":[{"as_of":"2026-07-31","balance":2000}]},
+			{"name":"Company","kind":"company","balances":[{"as_of":"2026-07-31","balance":5000}]}
+		]}`)
+		trk.Budget = newTestBudget(t, map[string]string{"budget.json": `{"groups":[
+			{"name":"Housing","kind":"private","categories":[{"id":"00000000-0000-4000-8000-000000000001","name":"Rent","amount":1000}]},
+			{"name":"Office","kind":"company","categories":[{"id":"` + officeID + `","name":"Desk","amount":800}]}
+		]}`})
+		trk.Personal = bulgariaBands()
+		plan, err := ParseSalaryPlan([]SalaryEntry{{From: "2026-01", Mode: "minimum"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		trk.Personal.Salary = plan
+		if actuals != nil {
+			trk.Actuals = newTestActuals(t, actuals)
+		}
+		return trk
+	}
+
+	without := build(nil).ComputeMonth(ctx, 2026, time.October)
+	with := build(map[string]string{
+		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+			"transactions":[{"id":"c1","date":"2026-08-04","description":"DESK","amount":100,"account":"A","category":"` + officeID + `"}]}`,
+	}).ComputeMonth(ctx, 2026, time.October)
+
+	if !without.FundingPersonal.ShowCompanyBalance || !with.FundingPersonal.ShowCompanyBalance {
+		t.Fatal("no company balance to compare — the rest of this test would prove nothing")
+	}
+	gap := with.FundingPersonal.CompanyOpeningCents - without.FundingPersonal.CompanyOpeningCents
+	if gap != 70000 {
+		t.Errorf("company opening moved by %d, want 70000 — August planned 800 of company spend and the bank saw 100", gap)
+	}
+}
+
+// TestActualsChangeNoPlannedFigure: actuals move the roll-forward and nothing
+// else, so every planned-based figure of the month on screen must still be
+// bit-identical with and without them. August is the month the test snapshot
+// opens, so nothing is carried into it and its Balance is pure plan — which
+// is what makes it the right month to pin this on.
+// TestAClosedMonthClosesOnItsActuals covers the other half.
 func TestActualsChangeNoPlannedFigure(t *testing.T) {
 	ctx := context.Background()
 	month := time.August

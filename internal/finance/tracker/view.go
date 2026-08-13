@@ -868,15 +868,9 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 
 	f.ShowActuals = true
 	f.Mistimed = MistimedRowsOf(*bv)
-	for _, g := range bv.Groups {
-		f.PrivateActualCents += g.ActualCents
-	}
-	for _, g := range bv.CompanyGroups {
-		f.CompanyActualCents += g.ActualCents
-	}
-	f.PrivateUnmatchedCents, f.CompanyUnmatchedCents = UnmatchedCents(*bv, av, t.companyCategoryIDs(ctx))
-	f.PrivateActualCents += f.PrivateUnmatchedCents
-	f.CompanyActualCents += f.CompanyUnmatchedCents
+	companyIDs := t.companyCategoryIDs(ctx)
+	f.PrivateUnmatchedCents, f.CompanyUnmatchedCents = UnmatchedCents(*bv, av, companyIDs)
+	f.PrivateActualCents, f.CompanyActualCents = ActualTotals(av, companyIDs)
 }
 
 func (t *Tracker) companyCategoryIDs(ctx context.Context) map[string]bool {

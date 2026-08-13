@@ -121,7 +121,9 @@ balance, read at the end of that day, so it is what the **next** month opens wit
 in August immediately, and it changes nothing about July.
 
 **A mid-month balance is refused.** Not filed under the month anyway, not rounded to the
-nearest month end — refused, with the date it should have carried. Half a month is not a
+nearest month end — refused, with the date it should have carried. The same rule holds for
+a hand edit: `accounts.json` fails to load if any reading in it does not close its month,
+so this is not a restriction on the API but the shape of the data. Half a month is not a
 closing figure: the rest of that month's spending has not happened yet, so recording the
 balance on the 15th as the month's figure would open the next month with money that is
 already gone. If the user gives you a figure they read mid-month, ask them to read it

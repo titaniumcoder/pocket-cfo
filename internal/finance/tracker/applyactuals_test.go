@@ -324,9 +324,10 @@ func monthTracker(t *testing.T, offset, privateSpendEUR int, withCompany bool) (
 	t.Helper()
 	now := time.Now()
 	viewed := yearMonth{now.Year(), now.Month()}.addMonths(offset)
-	prev := viewed.addMonths(-1)
 
-	asOf := time.Date(prev.Year, prev.Month, 28, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+	// The last day of the month before the one viewed: a reading closes its
+	// month, so the 28th is only a legal date in February.
+	asOf := time.Date(viewed.Year, viewed.Month, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, -1).Format("2006-01-02")
 	key := fmt.Sprintf("%04d-%02d", viewed.Year, int(viewed.Month))
 
 	accounts := fmt.Sprintf(`{"accounts":[{"name":"P","kind":"private","balances":[{"as_of":%q,"balance":2000}]}`, asOf)

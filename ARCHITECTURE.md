@@ -869,13 +869,15 @@ output before committing rather than trusting itself to stay append-only. A line
 in error is repaired by a human editing the data repo, where the change is reviewed like
 any other.
 
-**A balance closes a month, so `as_of` is a month end and the API refuses anything else.**
+**A balance closes a month, so `as_of` is a month end and anything else is refused.**
 The reading is that month's closing figure and therefore the next month's opening one, and
 only the month is ever read off it. A date in the middle of a month would be filed as that
 month's figure while the rest of the month's spending had not happened yet, opening the
 next month with money already gone — so it is refused outright rather than silently
 rounded, as is a month that has not ended, since a balance is read off the bank and never
-projected. Readings are appended and a month that already has one is a conflict: the
+projected. The rule belongs to the data rather than to the API: `ValidateAccounts` enforces
+it too, so a hand-edited `accounts.json` carrying a mid-month reading fails to load and
+says why, instead of anchoring every month after it on half a month's spending. Readings are appended and a month that already has one is a conflict: the
 history is what lets a past month keep the figure that was true then. Accounts themselves
 are not created here, because an account declares which pot it belongs to and that decides
 which side of the payroll cascade the money sits on.

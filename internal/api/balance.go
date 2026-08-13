@@ -116,10 +116,10 @@ func refuseAMidMonthReading(asOf string) error {
 	if err != nil {
 		return errorf(CodeInvalidRequest, "as_of %q is not a real date", asOf)
 	}
-	last := lastDayOf(d)
-	if d.Day() == last.Day() {
+	if accountsdata.ClosesItsMonth(d) {
 		return nil
 	}
+	last := accountsdata.LastDayOf(d)
 	return errorf(CodeInvalidRequest,
 		"as_of %s is mid-month, and there is no such thing as a mid-month balance here. "+
 			"A balance is the CLOSING figure of a month, read at the end of its last day: send %s, which is what %s closed on and what opens %s. "+
@@ -138,15 +138,11 @@ func refuseAReadingFromTheFuture(asOf string, now time.Time) error {
 }
 
 func lastClosedDay(now time.Time) string {
-	last := lastDayOf(now)
+	last := accountsdata.LastDayOf(now)
 	if !last.After(now) {
 		return last.Format("2006-01-02")
 	}
-	return lastDayOf(now.AddDate(0, 0, -now.Day())).Format("2006-01-02")
-}
-
-func lastDayOf(d time.Time) time.Time {
-	return time.Date(d.Year(), d.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, -1)
+	return accountsdata.LastDayOf(now.AddDate(0, 0, -now.Day())).Format("2006-01-02")
 }
 
 func monthAfter(day string) string {
@@ -154,7 +150,7 @@ func monthAfter(day string) string {
 	if err != nil {
 		return ""
 	}
-	return lastDayOf(d).AddDate(0, 0, 1).Format("2006-01")
+	return accountsdata.LastDayOf(d).AddDate(0, 0, 1).Format("2006-01")
 }
 
 func findAccount(f accountsdata.AccountsFile, name string) (accountsdata.Account, bool) {

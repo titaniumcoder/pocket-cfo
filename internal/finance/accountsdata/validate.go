@@ -19,6 +19,11 @@ func ValidateAccounts(f AccountsFile) error {
 			if err != nil {
 				return fmt.Errorf("account %q has a balance with an invalid as_of %q", a.Name, r.AsOf)
 			}
+			if !ClosesItsMonth(d) {
+				return fmt.Errorf("account %q has a balance dated %s, which is not the last day of its month — a balance is what a month CLOSED on, so that reading has to be dated %s or belong to another month. "+
+					"A mid-month figure is not a closing balance: the rest of the month has not been spent yet, and the month this one opens would start with money that is already gone",
+					a.Name, r.AsOf, LastDayOf(d).Format("2006-01-02"))
+			}
 			month := d.Format("2006-01")
 			if other, ok := seenMonth[month]; ok {
 				return fmt.Errorf("account %q was read twice in %s (%s and %s) — one month closes on one figure, and the day is ignored", a.Name, month, other, r.AsOf)

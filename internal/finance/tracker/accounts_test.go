@@ -219,10 +219,12 @@ func TestAPotIsUnknownUntilItsFirstReading(t *testing.T) {
 
 // TestAnAccountReadTwiceInOneMonthIsRefused: two figures closing one month are
 // two candidate openings for the next, with nothing to choose between them.
+// Since a reading must be dated the last day of its month, the only way to
+// write two is to date them identically — which is still two.
 func TestAnAccountReadTwiceInOneMonthIsRefused(t *testing.T) {
 	a := newTestAccounts(t, `{"accounts":[
 		{"name":"P","kind":"private","balances":[
-			{"as_of":"2026-07-15","balance":100},
+			{"as_of":"2026-07-31","balance":100},
 			{"as_of":"2026-07-31","balance":250}
 		]}
 	]}`)
@@ -269,6 +271,27 @@ func TestABrokenAccountsFileIsSaidOutLoud(t *testing.T) {
 	}
 	if f.ShowOpeningBalance {
 		t.Error("a rejected accounts.json still rendered an opening balance")
+	}
+}
+
+// TestAMidMonthReadingStopsThePageRatherThanBeingUsed: the balance layer is
+// the one place a wrong figure spreads — an anchor carries forward into every
+// month after it — so a reading that does not close its month takes the whole
+// layer down with a message instead of quietly anchoring the month on a
+// figure that was only half the month's spending.
+func TestAMidMonthReadingStopsThePageRatherThanBeingUsed(t *testing.T) {
+	trk := accountsTracker(t, `{"accounts":[
+		{"name":"Checking","kind":"private","balances":[{"as_of":"2026-07-14","balance":250}]}
+	]}`)
+	f := trk.ComputeMonth(context.Background(), 2026, time.August)
+	if f.AccountsErr == "" {
+		t.Fatal("a mid-month reading produced no error on the page")
+	}
+	if !strings.Contains(f.AccountsErr, "2026-07-31") {
+		t.Errorf("AccountsErr = %q, want the date the reading should have carried", f.AccountsErr)
+	}
+	if f.ShowOpeningBalance {
+		t.Error("the month still opened on a reading the loader refused")
 	}
 }
 
@@ -922,10 +945,7 @@ func TestThePublishedFileStepsAsideWhenTheDeployLands(t *testing.T) {
 // the loader would have refused from disk.
 func TestAPublishedFileIsStillValidated(t *testing.T) {
 	bad := []byte(`{"accounts":[
-		{"name":"P","kind":"private","balances":[
-			{"as_of":"2026-08-05","balance":10},
-			{"as_of":"2026-08-31","balance":20}
-		]}
+		{"name":"P","kind":"private","balances":[{"as_of":"2026-08-05","balance":10}]}
 	]}`)
 
 	fromOverlay := &Accounts{FS: fstest.MapFS{}}
@@ -936,7 +956,7 @@ func TestAPublishedFileIsStillValidated(t *testing.T) {
 	_, diskErr := fromDisk.File(context.Background())
 
 	if overlayErr == nil {
-		t.Fatal("two readings in one month were accepted from the overlay")
+		t.Fatal("a mid-month reading was accepted from the overlay")
 	}
 	if diskErr == nil {
 		t.Fatal("the same file was accepted from disk — this test proves nothing")

@@ -477,6 +477,8 @@ var templates = `
       {{if .ShowCompanyBalance}}
       <div class="row{{if lt .CompanyOpeningCents 0}} neg{{end}}"><span class="label">In the company</span><span class="mid"></span><span class="amt{{if lt .CompanyOpeningCents 0}} neg{{else}} goodamt{{end}}">{{eur .CompanyOpeningCents}}</span></div>
       {{range $.CompanyAccounts}}<div class="row acct"><span class="label">{{.Name}}</span><span class="mid"></span><span class="amt">{{eur .Cents}}</span></div>{{end}}
+      {{if $.ShowCompanyWorth}}<div class="row acct"><span class="label">{{$.OwedLabel}}</span><span class="mid"></span><span class="amt{{owed $.OwedToOwnerCents}}">{{eur $.OwedToOwnerCents}}</span></div>
+      <div class="row sub"><span class="label">The company is worth</span><span class="mid"></span><span class="amt total{{owed $.CompanyWorthCents}}">{{eur $.CompanyWorthCents}}</span></div>{{end}}
       {{end}}
       {{if $.Invoiced}}<div class="row gap-below"></div>{{end}}
       {{if $.ShowActuals}}<div class="row colhead"><span class="label"></span><span class="mid">Planned</span><span class="amt">Actual</span></div>{{end}}
@@ -499,6 +501,7 @@ var templates = `
       {{if .TargetNote}}<div class="row"><span class="stale-note">{{.TargetNote}}</span></div>{{end}}
       {{if $.TargetNeedsBalanceNote}}<div class="row"><span class="stale-note">{{$.TargetNeedsBalanceNote}}</span></div>{{end}}
       {{if $.DividendNeedsBalanceNote}}<div class="row"><span class="stale-note">{{$.DividendNeedsBalanceNote}}</span></div>{{end}}
+      {{if $.DividendSettlement}}<div class="row"><span class="stale-note">{{$.DividendSettlement}}</span></div>{{end}}
       {{end}}
       {{end}}
       {{if .AccountsErr}}<div class="row"><span class="error">{{.AccountsErr}}</span></div>{{end}}

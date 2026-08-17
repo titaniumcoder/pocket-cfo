@@ -375,3 +375,96 @@ func TestAHalfImportedMonthCarriesThePlanRatherThanHalfOfEach(t *testing.T) {
 			partial.FundingPersonal.CompanyOpeningCents, none.FundingPersonal.CompanyOpeningCents)
 	}
 }
+
+// TestTheCompanyIsWorthItsCashLessWhatItOwesTheOwner: a company holding
+// nothing in the bank and owed a fortune by its owner is not a poor company,
+// and the page has to be able to say both things at once.
+func TestTheCompanyIsWorthItsCashLessWhatItOwesTheOwner(t *testing.T) {
+	f := Figures{
+		FundingPersonal:  PersonalView{ShowCompanyBalance: true, CompanyOpeningCents: 20400},
+		LoanOpeningCents: -1700000, // the owner is overdrawn: he owes the company
+	}
+	f.publishCompanyWorth()
+
+	if !f.ShowCompanyWorth {
+		t.Fatal("a known cash figure and a known loan produce no worth")
+	}
+	if f.OwedToOwnerCents != 1700000 {
+		t.Errorf("the company's side of the loan = %d, want the owner-centric figure flipped", f.OwedToOwnerCents)
+	}
+	if f.CompanyWorthCents != 1720400 {
+		t.Errorf("worth = %d, want 204 in the bank plus the 17,000 owed to it", f.CompanyWorthCents)
+	}
+	if f.OwedLabel() != "Owed by the owner" {
+		t.Errorf("label = %q, want it to say which way the debt runs", f.OwedLabel())
+	}
+}
+
+// TestTheWorthRowFlipsTheLoansSignAndItsLabel: the loan is owner-centric, so
+// the company's side of it is its negative, and a label that did not turn over
+// with the sign would read as a lie half the time.
+func TestTheWorthRowFlipsTheLoansSignAndItsLabel(t *testing.T) {
+	owes := Figures{
+		FundingPersonal:  PersonalView{ShowCompanyBalance: true, CompanyOpeningCents: 500000},
+		LoanOpeningCents: 320000, // the company owes the owner
+	}
+	owes.publishCompanyWorth()
+
+	if owes.OwedToOwnerCents != -320000 {
+		t.Errorf("owed = %d, want a liability on the company's side", owes.OwedToOwnerCents)
+	}
+	if owes.CompanyWorthCents != 180000 {
+		t.Errorf("worth = %d, want the cash less what it owes", owes.CompanyWorthCents)
+	}
+	if owes.OwedLabel() != "Owed to the owner" {
+		t.Errorf("label = %q, want the other direction", owes.OwedLabel())
+	}
+}
+
+// TestNoWorthTotalWithoutBothACashFigureAndAKnownLoan: "not known" is not
+// zero, and a total made from one figure and a guess is worse than no total.
+func TestNoWorthTotalWithoutBothACashFigureAndAKnownLoan(t *testing.T) {
+	noCash := Figures{LoanOpeningCents: -1700000}
+	noCash.publishCompanyWorth()
+	if noCash.ShowCompanyWorth {
+		t.Error("a worth total with no company balance to build it from")
+	}
+
+	noLoan := Figures{
+		FundingPersonal:     PersonalView{ShowCompanyBalance: true, CompanyOpeningCents: 20400},
+		DirectorLoanUnknown: "nobody has said",
+	}
+	noLoan.publishCompanyWorth()
+	if noLoan.ShowCompanyWorth {
+		t.Error("a worth total built on a loan nobody has stated")
+	}
+}
+
+// TestTheWorthTotalIsShownInAMonthTheAccountRowsAreNot: the per-account rows
+// stop at the month after the newest bank reading, because after that they no
+// longer sum to the figure above them. The loan is walked to the viewed month
+// like the cash is, so it does not share that limit — and hiding it would hide
+// it in exactly the months where the confusion is worst.
+func TestTheWorthTotalIsShownInAMonthTheAccountRowsAreNot(t *testing.T) {
+	// The reading opens August, so September is a month past it.
+	f := loanTracker(t, "2026-07-31", -1700000/100, nil).ComputeMonth(context.Background(), 2026, time.September)
+
+	if len(f.CompanyAccounts) != 0 {
+		t.Fatalf("the fixture is wrong: September still lists account rows (%d)", len(f.CompanyAccounts))
+	}
+	if !f.ShowCompanyWorth {
+		t.Error("the worth total is hidden in a month whose account rows are, though the loan is walked to it")
+	}
+
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	body := rec.Body.String()
+	worth := strings.Index(body, "The company is worth")
+	cascade := strings.Index(body, `class="label">Employer social`)
+	if worth < 0 || cascade < 0 {
+		t.Fatalf("worth at %d, cascade at %d — one is missing", worth, cascade)
+	}
+	if worth > cascade {
+		t.Error("the worth total is rendered below the cascade it is not part of")
+	}
+}

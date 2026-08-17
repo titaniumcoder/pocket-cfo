@@ -167,6 +167,11 @@ type Figures struct {
 	TargetNeedsBalanceNote   string
 	DividendNeedsBalanceNote string
 
+	ShowCompanyWorth   bool
+	OwedToOwnerCents   int
+	CompanyWorthCents  int
+	DividendSettlement string
+
 	ShowDirectorLoan    bool
 	LoanOpeningCents    int
 	LoanNetIncomeCents  int
@@ -274,6 +279,7 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	result.AccountsErr = accountsErr
 	result.TargetNeedsBalanceNote = t.targetNeedsBalanceNote(viewed, months, carried)
 	result.DividendNeedsBalanceNote = t.dividendNeedsBalanceNote(viewed, months, carried, bv)
+	result.DividendSettlement = dividendSettlementNote(months, bv.Dividends.dueIn(viewed))
 
 	result.computePersonal(t, ctx, year, months, viewed, monthlyCompanyCents, bv, carried.Company)
 
@@ -590,6 +596,18 @@ func (t *Tracker) targetNeedsBalanceNote(viewed yearMonth, months int, carried o
 		"there is no balance to compare it against, so the target does nothing. Add the account with \"kind\": \"company\"."
 }
 
+// dividendSettlementNote is the sentence the whole correction is about: a
+// declared distribution hands the owner a claim rather than money, so the
+// company's bank figure does not fall by it. Said on the page because that is
+// where the arithmetic looked wrong.
+func dividendSettlementNote(months int, due dividendDue) string {
+	if months != 1 || due.none() {
+		return ""
+	}
+	return "The " + formatEuro(round(due.AmountEUR*100)) + " distribution is not money leaving the bank — it settles against the director's loan below. " +
+		"Only its two taxes are cash the company has to find."
+}
+
 // dividendNeedsBalanceNote covers the case where a distribution is charged
 // against a pot nobody declared: with no company balance the whole "Left in
 // the company" block disappears, so the money leaving it leaves no trace on
@@ -603,7 +621,7 @@ func (t *Tracker) dividendNeedsBalanceNote(viewed yearMonth, months int, carried
 		return ""
 	}
 	return "A dividend of " + formatEuro(round(due.AmountEUR*100)) + " is paid this month, but no company account is declared in accounts.json — " +
-		"there is no balance to take it out of, so the company's closing figure is not shown. It and its company profit tax still reduce what a full salary can afford. " +
+		"there is no balance to take it out of, so the company's closing figure is not shown. Its two taxes still reduce what a full salary can afford. " +
 		"Add the account with \"kind\": \"company\"."
 }
 
@@ -628,6 +646,34 @@ func (f *Figures) computeDirectorLoan(t *Tracker, ctx context.Context, viewed ye
 	f.LoanMovementCents = -t.crossedInMonth(ctx, viewed)
 	f.LoanClosingCents = f.LoanOpeningCents + f.LoanNetIncomeCents + f.LoanMovementCents
 	f.DirectorLoanNotes = t.directorLoanNotes(ctx, viewed, carried.Loan)
+	f.publishCompanyWorth()
+}
+
+// publishCompanyWorth puts the loan beside the company's accounts, which is
+// where it belongs: a company holding nothing in the bank and owed a fortune by
+// its owner is not a poor company. The loan is owner-centric — positive means
+// the company owes him — so the company's side of the same figure is its
+// negative, and the label turns over with it.
+//
+// Deliberately not folded into "In the company". That figure is what the
+// cascade pays a salary from, and a salary cannot be paid out of money the
+// owner has not given back.
+func (f *Figures) publishCompanyWorth() {
+	if !f.FundingPersonal.ShowCompanyBalance || f.DirectorLoanUnknown != "" {
+		return
+	}
+	f.ShowCompanyWorth = true
+	f.OwedToOwnerCents = -f.LoanOpeningCents
+	f.CompanyWorthCents = f.FundingPersonal.CompanyOpeningCents + f.OwedToOwnerCents
+}
+
+// OwedLabel turns over with the direction, because "owed" alone does not say
+// which way and the figure beside it is a bare number.
+func (f Figures) OwedLabel() string {
+	if f.OwedToOwnerCents < 0 {
+		return "Owed to the owner"
+	}
+	return "Owed by the owner"
 }
 
 // directorLoanNotes says the two things that make the figure less than final,

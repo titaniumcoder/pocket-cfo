@@ -33,6 +33,15 @@ func (s *server) currentSession(r *http.Request) (auth.Session, bool) {
 	if err != nil {
 		return auth.Session{}, false
 	}
+	if s.readOnly(sess) {
+		if u, err := users.Load(usersFile); err == nil {
+			parts, allowed := users.PartsFor(u, sess.Login)
+			if !allowed {
+				return auth.Session{}, false
+			}
+			sess.Parts = parts
+		}
+	}
 	return sess, true
 }
 

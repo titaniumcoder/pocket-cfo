@@ -122,6 +122,7 @@ type DividendReport struct {
 	CostToCompanyCents    int    `json:"cost_to_company_cents"`
 	CashNeededCents       int    `json:"cash_needed_cents"`
 	Note                  string `json:"note,omitempty"`
+	Unrated               string `json:"unrated,omitempty"`
 }
 
 // DividendsIn reports the distributions a month holds, charged at the rates in
@@ -134,6 +135,17 @@ func (p PersonalParams) DividendsIn(d Dividends, year int, month time.Month) []D
 		if entry.On != ym {
 			continue
 		}
+		if r.CompanyProfitTax == nil || r.DividendTax == nil {
+			out = append(out, DividendReport{
+				Date:       entry.Day,
+				GrossCents: round(toCent(entry.AmountEUR) * 100),
+				Note:       entry.Note,
+				Unrated: fmt.Sprintf("no company profit tax or dividend tax is in force in %s — config.json's legislation states no rate, so these taxes are unknown rather than zero",
+					ym),
+			})
+			continue
+		}
+
 		gross := toCent(entry.AmountEUR)
 		profitTax := round(toCent(r.CompanyProfitTax.on(gross)) * 100)
 		dividendTax := round(toCent(r.DividendTax.on(gross)) * 100)

@@ -143,6 +143,58 @@ func TestCompute_StackedDiscounts(t *testing.T) {
 	}
 }
 
+func TestCompute_TwoStackedTenPercentDiscountsTakeNineteen(t *testing.T) {
+	first, second := 1000, 1000
+	inv := &invoice.InvoiceJson{
+		Lines: []invoice.Line{line("work", nil, 100000, 0)},
+		Discounts: []invoice.Discount{
+			{Label: invoice.LocalizedString{De: strp("Erst"), Bg: strp("Първа")}, Percent: &first},
+			{Label: invoice.LocalizedString{De: strp("Zweit"), Bg: strp("Втора")}, Percent: &second},
+		},
+	}
+	got, err := Compute(inv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Discounts[0].Amount != 10000 {
+		t.Errorf("first discount = %d, want 10000 (10%% of 1 000,00)", got.Discounts[0].Amount)
+	}
+	if got.Discounts[1].Amount != 9000 {
+		t.Errorf("second discount = %d, want 9000 (10%% of the running 900,00, not 10000)", got.Discounts[1].Amount)
+	}
+	if got.Net != 81000 {
+		t.Errorf("net = %d, want 81000 — two stacked 10%% discounts take 19%%, not 20%%", got.Net)
+	}
+	if taken := got.Subtotal - got.Net; taken != 19000 {
+		t.Errorf("discount taken = %d of %d, want 19000 (19%%)", taken, got.Subtotal)
+	}
+}
+
+func TestCompute_VATRoundsOncePerGroupNotPerLine(t *testing.T) {
+	inv := &invoice.InvoiceJson{
+		Lines: []invoice.Line{
+			line("a", nil, 3, 20),
+			line("b", nil, 3, 20),
+		},
+	}
+	got, err := Compute(inv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.VATGroups) != 1 {
+		t.Fatalf("len(vat groups) = %d, want 1 — both lines share a rate", len(got.VATGroups))
+	}
+	if got.VATGroups[0].Base != 6 {
+		t.Fatalf("group base = %d, want 6", got.VATGroups[0].Base)
+	}
+	if got.VAT != 1 {
+		t.Errorf("vat = %d, want 1 — rounded once over the group's 6, not once per 3-unit line", got.VAT)
+	}
+	if got.GrandTotal != 7 {
+		t.Errorf("grand total = %d, want 7", got.GrandTotal)
+	}
+}
+
 // TestCompute_MultiRateProportionalDiscount covers a mixed-rate invoice
 // where a sum discount must split proportionally across rate groups
 // before VAT is computed, and VAT rounds once per group.

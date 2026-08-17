@@ -144,6 +144,10 @@ main h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; op
 main h2.panel-title { font-size: 1.05rem; text-transform: none; letter-spacing: normal; opacity: .85; margin: 0 0 .75rem; font-weight: 700; }
 .panel-title-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; margin: 0 0 .75rem; }
 .panel-title-row .panel-title { margin: 0; }
+.inline-form { display: inline; margin: 0; }
+/* The toggle and Reload change server state, so they are buttons in forms
+   rather than links — styled to look exactly as they did. */
+button.minimal-toggle { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
 .minimal-toggle { display: inline-flex; align-items: center; gap: .5rem; text-decoration: none; color: inherit; font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; opacity: .6; }
 .minimal-toggle:hover { opacity: 1; }
 .minimal-toggle-track { position: relative; width: 2.2rem; height: 1.2rem; border-radius: 999px; background: var(--input-border); transition: background .15s ease; flex-shrink: 0; }

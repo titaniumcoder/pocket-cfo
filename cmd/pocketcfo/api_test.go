@@ -374,7 +374,7 @@ func TestAPIBudgetMatchesTheDashboard(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	view, err := s.tracker.Budget.ForMonth(t.Context(), 2026, time.August, time.Now())
+	view, err := s.tracker.Budget.ForMonth(t.Context(), 2026, time.August, time.Now(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -648,5 +648,30 @@ func TestAPIStatusMapping(t *testing.T) {
 	}
 	if got := apiStatus(errors.New("plain")); got != http.StatusInternalServerError {
 		t.Errorf("a non-api error = %d, want 500", got)
+	}
+}
+
+func TestRESTHonoursTheSearchFiltersHERMESRelieson(t *testing.T) {
+	s := apiServer(t, apiTestToken, "prod")
+
+	all := apiGet(t, s, "/api/transactions?include_ignored=true", apiTestToken)
+	if all.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", all.Code, all.Body)
+	}
+	if !strings.Contains(all.Body.String(), "LIDL") {
+		t.Fatal("the unfiltered search returned nothing to filter")
+	}
+
+	movements := apiGet(t, s, "/api/transactions?include_ignored=true&only_movements=true", apiTestToken)
+	if movements.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", movements.Code, movements.Body)
+	}
+	if strings.Contains(movements.Body.String(), "LIDL") {
+		t.Error("only_movements was ignored: an unmarked line came back")
+	}
+
+	untracked := apiGet(t, s, "/api/transactions?include_ignored=true&only_untracked=true", apiTestToken)
+	if strings.Contains(untracked.Body.String(), "LIDL") {
+		t.Error("only_untracked was ignored: a line with no untracked note came back")
 	}
 }

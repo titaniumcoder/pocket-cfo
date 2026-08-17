@@ -257,3 +257,79 @@ func equalInts(a, b []int) bool {
 	}
 	return true
 }
+
+func TestAggregateSkipsADraftThatDoesNotCompute(t *testing.T) {
+	recipients := []recipient.RecipientJson{
+		{Number: 1, LegalName: "Alice Ltd", Email: "alice@example.com", Address: recipient.Address{
+			Line1: "Street 1", PostalCode: "1000", City: "Sofia", CountryCode: "BG",
+		}},
+	}
+	oversized := 999999999
+	invoices := []*invoice.InvoiceJson{
+		{
+			Number: "INV-A1", Title: "A1", Status: invoice.InvoiceJsonStatusIssued,
+			IssueDate: mustDate("2026-02-01"), DueDate: mustDate("2026-02-08"),
+			Recipient: invoice.RecipientSnapshot{Number: 1, LegalName: "Alice Ltd"},
+			Lines:     []invoice.Line{line(100000)},
+		},
+		{
+			Number: "INV-A2", Title: "work in progress", Status: invoice.InvoiceJsonStatusDraft,
+			IssueDate: mustDate("2026-06-01"), DueDate: mustDate("2026-06-08"),
+			Recipient: invoice.RecipientSnapshot{Number: 1, LegalName: "Alice Ltd"},
+			Lines:     []invoice.Line{line(1000)},
+			Discounts: []invoice.Discount{{Amount: &oversized}},
+		},
+	}
+
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	_, recipientRows, invoiceRows, err := Aggregate(invoices, recipients, nil, nil, now)
+	if err != nil {
+		t.Fatalf("a broken draft must not fail the whole aggregation: %v", err)
+	}
+	if len(invoiceRows) != 1 || invoiceRows[0].Number != "INV-A1" {
+		t.Errorf("invoice rows = %+v, want only the issued invoice", invoiceRows)
+	}
+	if len(recipientRows) != 1 || recipientRows[0].TotalInFrame != 100000 {
+		t.Errorf("recipient rows = %+v, want Alice with the issued total intact", recipientRows)
+	}
+}
+
+func TestAggregateStillFailsOnABrokenIssuedInvoice(t *testing.T) {
+	oversized := 999999999
+	invoices := []*invoice.InvoiceJson{{
+		Number: "INV-A1", Title: "A1", Status: invoice.InvoiceJsonStatusIssued,
+		IssueDate: mustDate("2026-02-01"), DueDate: mustDate("2026-02-08"),
+		Recipient: invoice.RecipientSnapshot{Number: 1},
+		Lines:     []invoice.Line{line(1000)},
+		Discounts: []invoice.Discount{{Amount: &oversized}},
+	}}
+	if _, _, _, err := Aggregate(invoices, nil, nil, nil, time.Now()); err == nil {
+		t.Error("want an error for an issued invoice whose total does not compute")
+	}
+}
+
+func TestOverdueTurnsOverAtTheIssuersMidnight(t *testing.T) {
+	sofia := time.FixedZone("EEST", 3*60*60)
+	invoices := []*invoice.InvoiceJson{{
+		Number: "INV-A1", Title: "due today", Status: invoice.InvoiceJsonStatusIssued,
+		IssueDate: mustDate("2026-06-01"), DueDate: mustDate("2026-06-15"),
+		Recipient: invoice.RecipientSnapshot{Number: 1},
+		Lines:     []invoice.Line{line(1000)},
+	}}
+
+	_, _, rows, err := Aggregate(invoices, nil, nil, nil, time.Date(2026, 6, 15, 0, 30, 0, 0, sofia))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows[0].State != "issued" {
+		t.Errorf("state = %q at 00:30 on the due date, want issued", rows[0].State)
+	}
+
+	_, _, rows, err = Aggregate(invoices, nil, nil, nil, time.Date(2026, 6, 16, 0, 30, 0, 0, sofia))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows[0].State != "overdue" {
+		t.Errorf("state = %q the day after the due date, want overdue", rows[0].State)
+	}
+}

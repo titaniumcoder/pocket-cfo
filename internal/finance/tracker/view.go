@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net/url"
 	"sort"
 	"time"
 
@@ -25,6 +26,7 @@ type Tracker struct {
 	RateCents    int
 	RateCurrency string
 	Invoiced     map[int]InvoicedClient
+	Minimal      bool
 
 	Start time.Time
 }
@@ -456,8 +458,8 @@ func (f *Figures) computeBudget(t *Tracker, ctx context.Context, year int, start
 	if months > 1 {
 		bv, berr = t.Budget.ForYear(ctx, year, now, t.Start)
 	} else {
-		f.MinimalMode = t.Budget.IsMinimal()
-		bv, berr = t.Budget.ForMonth(ctx, year, start.Month(), now)
+		f.MinimalMode = t.Minimal
+		bv, berr = t.Budget.ForMonth(ctx, year, start.Month(), now, t.Minimal)
 	}
 	if berr != nil {
 		f.BudgetErr = berr.Error()
@@ -644,6 +646,11 @@ func (f *Figures) computeDirectorLoan(t *Tracker, ctx context.Context, viewed ye
 	if !carried.Loan.Known {
 		f.DirectorLoanUnknown = "No opening figure is stated before this month, so what the company owes is not known — which is not the same as nothing. " +
 			"Add a reading to director_loan in accounts.json."
+		f.ShowDirectorLoan = t.hasDirectorLoanBlock(ctx)
+		return
+	}
+	if f.FundingPersonal.Err != "" {
+		f.DirectorLoanUnknown = "The month's net income could not be worked out, so what the company owes cannot be closed off either — see the error above."
 		f.ShowDirectorLoan = t.hasDirectorLoanBlock(ctx)
 		return
 	}
@@ -853,8 +860,9 @@ func (f *Figures) fillMonthNav(now, start time.Time, floor yearMonth) {
 	f.TodayURL = nav.TodayURL
 	f.MonthViewURL = monthURL(start.Year(), start.Month())
 	f.YearViewURL = fmt.Sprintf("/%d", start.Year())
-	f.RefreshURL = f.MonthViewURL + "?refresh=1"
-	f.MinimalToggleURL = f.MonthViewURL + "?minimal=toggle"
+	f.RefreshURL = "/refresh?return=" + url.QueryEscape(f.MonthViewURL) +
+		fmt.Sprintf("&year=%d&month=%d", f.Year, f.NavMonth)
+	f.MinimalToggleURL = "/minimal?return=" + url.QueryEscape(f.MonthViewURL)
 }
 
 func (f *Figures) fillYearNav(now, start time.Time, floor yearMonth) {
@@ -882,7 +890,8 @@ func (f *Figures) fillYearNav(now, start time.Time, floor yearMonth) {
 	f.NavMonth = int(month)
 	f.MonthViewURL = monthURL(start.Year(), month)
 	f.TodayURL = fmt.Sprintf("/%d/%d", now.Year(), int(now.Month()))
-	f.RefreshURL = f.YearViewURL + "?refresh=1"
+	f.RefreshURL = "/refresh?return=" + url.QueryEscape(f.YearViewURL) +
+		fmt.Sprintf("&year=%d", f.Year)
 }
 
 func navYears(now time.Time, start yearMonth) []int {
@@ -1053,7 +1062,7 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 		}
 	}
 
-	ApplyActuals(bv, av, start.Month(), charged)
+	ApplyActuals(bv, av, year, start.Month(), charged)
 
 	f.ShowActuals = true
 	f.Mistimed = MistimedRowsOf(*bv)

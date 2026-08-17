@@ -8,6 +8,7 @@ import (
 
 	"github.com/atombender/go-jsonschema/pkg/types"
 
+	"github.com/titaniumcoder/pocket-cfo/internal/render"
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/invoice"
 )
 
@@ -150,7 +151,8 @@ func TestTargetsFor(t *testing.T) {
 		got := targetsFor(inv, &paidDate)
 		want := []target{
 			{path: built("INV-0000000009.pdf"), overwrite: false},
-			{path: built("INV-0000000009-paid.pdf"), overwrite: false, paidOn: &paidDate},
+			{path: built("INV-0000000009-paid.pdf"), overwrite: false, paidOn: &paidDate,
+				staleSources: []string{paidInvoicesPath}},
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("targetsFor(issued, paid) = %+v, want %+v", got, want)
@@ -171,11 +173,15 @@ func TestRemoveStaleDraftPDF(t *testing.T) {
 		}
 
 		inv := invoice.InvoiceJson{Number: "INV-0000000009", Status: invoice.InvoiceJsonStatusIssued}
-		if err := removeStaleDraftPDF(inv, false); err != nil {
+		manifest := render.Manifest{"INV-0000000009-DRAFT.pdf": "somehash"}
+		if err := removeStaleDraftPDF(inv, manifest, false); err != nil {
 			t.Fatalf("removeStaleDraftPDF: %v", err)
 		}
 		if _, err := os.Stat(stale); !os.IsNotExist(err) {
 			t.Errorf("stale draft PDF still present after removeStaleDraftPDF: err = %v", err)
+		}
+		if _, ok := manifest["INV-0000000009-DRAFT.pdf"]; ok {
+			t.Error("the manifest still has an entry for a PDF that no longer exists")
 		}
 	})
 
@@ -188,7 +194,8 @@ func TestRemoveStaleDraftPDF(t *testing.T) {
 		}
 
 		inv := invoice.InvoiceJson{Number: "INV-0000000009", Status: invoice.InvoiceJsonStatusIssued}
-		if err := removeStaleDraftPDF(inv, true); err != nil {
+		manifest := render.Manifest{}
+		if err := removeStaleDraftPDF(inv, manifest, true); err != nil {
 			t.Fatalf("removeStaleDraftPDF: %v", err)
 		}
 		if _, err := os.Stat(stale); err != nil {
@@ -205,7 +212,8 @@ func TestRemoveStaleDraftPDF(t *testing.T) {
 		}
 
 		inv := invoice.InvoiceJson{Number: "INV-0000000009", Status: invoice.InvoiceJsonStatusDraft}
-		if err := removeStaleDraftPDF(inv, false); err != nil {
+		manifest := render.Manifest{}
+		if err := removeStaleDraftPDF(inv, manifest, false); err != nil {
 			t.Fatalf("removeStaleDraftPDF: %v", err)
 		}
 		if _, err := os.Stat(stale); err != nil {
@@ -216,7 +224,7 @@ func TestRemoveStaleDraftPDF(t *testing.T) {
 	t.Run("no file present is a no-op, not an error", func(t *testing.T) {
 		t.Chdir(t.TempDir())
 		inv := invoice.InvoiceJson{Number: "INV-0000000009", Status: invoice.InvoiceJsonStatusIssued}
-		if err := removeStaleDraftPDF(inv, false); err != nil {
+		if err := removeStaleDraftPDF(inv, render.Manifest{}, false); err != nil {
 			t.Fatalf("removeStaleDraftPDF: %v", err)
 		}
 	})

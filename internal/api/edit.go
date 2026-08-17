@@ -131,9 +131,12 @@ type plannedEdit struct {
 }
 
 func (s *Service) planEdit(ctx context.Context, month string, edits []Edit, knownIDs map[string]bool) (plannedEdit, error) {
-	doc, _, sha, err := s.loadMonth(ctx, month)
+	doc, raw, sha, err := s.loadMonth(ctx, month)
 	if err != nil {
 		return plannedEdit{}, err
+	}
+	if uerr := refuseUnknownFields(raw, month); uerr != nil {
+		return plannedEdit{}, uerr
 	}
 	before := doc
 
@@ -269,8 +272,9 @@ func (s *Service) groupEditsByMonth(ctx context.Context, edits []Edit) (map[stri
 			if !ok {
 				return nil, &Error{
 					Code: CodeNotFound,
-					Message: fmt.Sprintf("no transaction %s in the months on disk — pass month with the edit "+
-						"(get_actuals and search_transactions return it), since a line recorded in the last few minutes is not deployed yet", e.ID),
+					Message: fmt.Sprintf("no transaction %s in %d..%d, which is the window searched when month is omitted — "+
+						"pass month with the edit (get_actuals and search_transactions return it beside the id)",
+						e.ID, s.now().Year()-1, s.now().Year()+1),
 					Details: map[string]string{"id": e.ID},
 				}
 			}

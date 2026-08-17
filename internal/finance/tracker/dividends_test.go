@@ -19,7 +19,7 @@ func TestADividendIsFoundByItsMonthAndNotItsDay(t *testing.T) {
 		{"name":"Housing","kind":"private","categories":[{"id":"00000000-0000-4000-8000-000000000001","name":"Rent","amount":1000}]}
 	],"dividends":[{"date":"2026-09-30","amount":10000,"note":"2025 profit"}]}`})
 
-	bv, err := trk.Budget.ForMonth(context.Background(), 2026, time.September, time.Now())
+	bv, err := trk.Budget.ForMonth(context.Background(), 2026, time.September, time.Now(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestADividendIsFoundByItsMonthAndNotItsDay(t *testing.T) {
 	}
 	// The plan travels whole, not pre-filtered: the roll-forward walks other
 	// months with this same view and each one picks its own out.
-	bvAugust, err := trk.Budget.ForMonth(context.Background(), 2026, time.August, time.Now())
+	bvAugust, err := trk.Budget.ForMonth(context.Background(), 2026, time.August, time.Now(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestTwoDividendsInOneMonthAreSummed(t *testing.T) {
 		{"name":"Housing","kind":"private","categories":[{"id":"00000000-0000-4000-8000-000000000001","name":"Rent","amount":1000}]}
 	],"dividends":[{"date":"2026-09-30","amount":4000},{"date":"2026-09-15","amount":6000}]}`})
 
-	bv, err := trk.Budget.ForMonth(context.Background(), 2026, time.September, time.Now())
+	bv, err := trk.Budget.ForMonth(context.Background(), 2026, time.September, time.Now(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,5 +398,37 @@ func TestTheDividendRatesSurviveTheMonthAggregation(t *testing.T) {
 	quiet := withDividendRates(params()).breakdownMonths(make([]float64, 12), make([]float64, 12), testMonth, companyStock{Known: true})
 	if len(quiet.DividendTaxRate) != 0 || len(quiet.CompanyProfitTaxRate) != 0 {
 		t.Error("a year with no distribution still labels the dividend rates")
+	}
+}
+
+func TestAnUnratedMonthReportsNoTaxRatherThanZeroTax(t *testing.T) {
+	unrated := params()
+	d := Dividends{{On: testMonth, Day: "2026-01-31", AmountEUR: 10000}}
+
+	got := unrated.DividendsIn(d, testMonth.Year, testMonth.Month)
+	if len(got) != 1 {
+		t.Fatalf("got %d reports, want 1", len(got))
+	}
+	r := got[0]
+	if r.Unrated == "" {
+		t.Error("the report charged a dividend in a month with no rate in force and said nothing about it")
+	}
+	if r.CompanyProfitTaxCents != 0 || r.DividendTaxCents != 0 {
+		t.Errorf("taxes = %d and %d, want them left at zero beside the note rather than computed",
+			r.CompanyProfitTaxCents, r.DividendTaxCents)
+	}
+	if r.GrossCents != 1000000 {
+		t.Errorf("gross = %d, want the stated 10 000", r.GrossCents)
+	}
+	if r.NetToOwnerCents != 0 || r.CashNeededCents != 0 {
+		t.Error("net to owner and cash needed were derived from taxes that do not exist")
+	}
+
+	rated := withDividendRates(params()).DividendsIn(d, testMonth.Year, testMonth.Month)
+	if len(rated) != 1 || rated[0].Unrated != "" {
+		t.Fatalf("a legislated month reported unrated: %+v", rated)
+	}
+	if rated[0].DividendTaxCents == 0 {
+		t.Error("a legislated month charged no dividend tax")
 	}
 }

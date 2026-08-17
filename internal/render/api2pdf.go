@@ -40,8 +40,9 @@ type api2pdfOptions struct {
 }
 
 type api2pdfRequest struct {
-	HTML    string         `json:"html"`
-	Options api2pdfOptions `json:"options"`
+	HTML         string         `json:"html"`
+	OutputBinary bool           `json:"outputBinary"`
+	Options      api2pdfOptions `json:"options"`
 }
 
 type api2pdfResponse struct {
@@ -56,8 +57,9 @@ func (r *API2PDF) Render(ctx context.Context, html []byte) ([]byte, error) {
 	}
 
 	body, err := json.Marshal(api2pdfRequest{
-		HTML:    string(html),
-		Options: api2pdfOptions{Delay: fontDelay.Milliseconds()},
+		HTML:         string(html),
+		OutputBinary: true,
+		Options:      api2pdfOptions{Delay: fontDelay.Milliseconds()},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("api2pdf: encode request: %w", err)
@@ -168,46 +170,25 @@ func (r *API2PDF) attempt(ctx context.Context, body []byte) (pdf []byte, retryab
 	if resp.StatusCode >= 500 {
 		return nil, true, fmt.Errorf("api2pdf: server error %d: %s", resp.StatusCode, truncate(respBody, 500))
 	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, true, fmt.Errorf("api2pdf: throttled: %s", truncate(respBody, 500))
+	}
 	if resp.StatusCode >= 400 {
 		return nil, false, fmt.Errorf("api2pdf: request rejected %d: %s", resp.StatusCode, truncate(respBody, 500))
 	}
 
+	if bytes.HasPrefix(respBody, []byte("%PDF-")) {
+		return respBody, false, nil
+	}
+
 	var parsed api2pdfResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return nil, false, fmt.Errorf("api2pdf: unexpected response: %s", truncate(respBody, 500))
+		return nil, false, fmt.Errorf("api2pdf: response is neither a PDF nor JSON: %s", truncate(respBody, 500))
 	}
-	if !parsed.Success || parsed.FileUrl == "" {
+	if parsed.Error != "" {
 		return nil, false, fmt.Errorf("api2pdf: %s", parsed.Error)
 	}
-
-	return r.fetch(ctx, parsed.FileUrl)
-}
-
-func (r *API2PDF) fetch(ctx context.Context, url string) (pdf []byte, retryable bool, err error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, false, fmt.Errorf("api2pdf: build download request: %w", err)
-	}
-	resp, err := r.Client.Do(req)
-	if err != nil {
-		return nil, true, fmt.Errorf("api2pdf: download failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, true, fmt.Errorf("api2pdf: read download: %w", err)
-	}
-	if resp.StatusCode >= 500 {
-		return nil, true, fmt.Errorf("api2pdf: download server error %d", resp.StatusCode)
-	}
-	if resp.StatusCode >= 400 {
-		return nil, false, fmt.Errorf("api2pdf: download rejected %d", resp.StatusCode)
-	}
-	if !bytes.HasPrefix(respBody, []byte("%PDF-")) {
-		return nil, false, fmt.Errorf("api2pdf: downloaded file is not a PDF")
-	}
-	return respBody, false, nil
+	return nil, false, fmt.Errorf("api2pdf: no PDF in the response: %s", truncate(respBody, 500))
 }
 
 func truncate(b []byte, n int) string {

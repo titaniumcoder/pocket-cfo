@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
@@ -66,6 +67,12 @@ func (s *server) trackerForRequest() (tracker.Tracker, error) {
 	return trk, nil
 }
 
+func (s *server) trackerForView(r *http.Request) (tracker.Tracker, error) {
+	trk, err := s.trackerForRequest()
+	trk.Minimal = minimalFor(r)
+	return trk, err
+}
+
 func (s *server) authenticatedForPart(sess auth.Session, part string) bool {
 	return s.authenticated(sess) && sess.HasPart(part)
 }
@@ -119,22 +126,12 @@ func (s *server) financeCurrentMonth(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	trk, err := s.trackerForRequest()
+	trk, err := s.trackerForView(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, "loading data", err)
 		return
 	}
 	now := time.Now().In(trk.Loc)
-	if isRefresh(r) {
-		trk.EvictMonth(now.Year(), now.Month())
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
-	if isMinimalToggle(r) && trk.Budget != nil {
-		trk.Budget.ToggleMinimal()
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
 	s.renderFinancePage(w, sess, trk.ComputeMonth(ctx, now.Year(), now.Month()))
@@ -145,18 +142,13 @@ func (s *server) financeYear(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	trk, err := s.trackerForRequest()
+	trk, err := s.trackerForView(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, "loading data", err)
 		return
 	}
 	year, ok := s.parseYear(w, r, trk.Loc)
 	if !ok {
-		return
-	}
-	if isRefresh(r) {
-		trk.EvictYear(year)
-		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
@@ -169,23 +161,13 @@ func (s *server) financeMonth(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	trk, err := s.trackerForRequest()
+	trk, err := s.trackerForView(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, "loading data", err)
 		return
 	}
 	year, month, ok := s.parseYearMonth(w, r, trk.Loc)
 	if !ok {
-		return
-	}
-	if isRefresh(r) {
-		trk.EvictMonth(year, time.Month(month))
-		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
-		return
-	}
-	if isMinimalToggle(r) && trk.Budget != nil {
-		trk.Budget.ToggleMinimal()
-		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
@@ -217,12 +199,61 @@ func (s *server) parseYearMonth(w http.ResponseWriter, r *http.Request, loc *tim
 
 func (s *server) budgetStart() time.Time { return s.cfg.finance.StartMonth }
 
-func isRefresh(r *http.Request) bool {
-	return r.URL.Query().Get("refresh") != ""
+const minimalCookie = "pocketcfo_minimal"
+
+func minimalFor(r *http.Request) bool {
+	c, err := r.Cookie(minimalCookie)
+	return err == nil && c.Value == "1"
 }
 
-func isMinimalToggle(r *http.Request) bool {
-	return r.URL.Query().Get("minimal") == "toggle"
+func (s *server) handleMinimalToggle(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.financeSession(w, r); !ok {
+		return
+	}
+	value := "1"
+	if minimalFor(r) {
+		value = ""
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: minimalCookie, Value: value, Path: "/",
+		HttpOnly: true, Secure: s.secureCookies(), SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, backTo(r), http.StatusSeeOther)
+}
+
+func (s *server) handleRefresh(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.financeSession(w, r)
+	if !ok {
+		return
+	}
+	_ = sess
+	trk, err := s.trackerForView(r)
+	if err != nil {
+		serverError(w, r, "loading data", err)
+		return
+	}
+	now := time.Now().In(trk.Loc)
+	year, month := now.Year(), now.Month()
+	if y, err := strconv.Atoi(r.FormValue("year")); err == nil {
+		year = y
+	}
+	if m, err := strconv.Atoi(r.FormValue("month")); err == nil && m >= 1 && m <= 12 {
+		month = time.Month(m)
+	}
+	if r.FormValue("year") != "" && r.FormValue("month") == "" {
+		trk.EvictYear(year)
+	} else {
+		trk.EvictMonth(year, month)
+	}
+	http.Redirect(w, r, backTo(r), http.StatusSeeOther)
+}
+
+func backTo(r *http.Request) string {
+	to := r.FormValue("return")
+	if strings.HasPrefix(to, "/") && !strings.HasPrefix(to, "//") {
+		return to
+	}
+	return "/"
 }
 
 func (s *server) financeSpending(w http.ResponseWriter, r *http.Request) {
@@ -237,21 +268,15 @@ func (s *server) financeSpending(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	trk, err := s.trackerForRequest()
+	trk, err := s.trackerForView(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, "loading data", err)
 		return
 	}
 	year, month, ok := s.parseYearMonth(w, r, trk.Loc)
 	if !ok {
 		return
 	}
-	if isRefresh(r) {
-		trk.EvictMonth(year, time.Month(month))
-		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
-		return
-	}
-
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
 

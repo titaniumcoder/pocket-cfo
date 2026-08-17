@@ -126,6 +126,27 @@ func TestActualStatus(t *testing.T) {
 			wantStatus: "",
 		},
 		{
+			name:       "a one-off planned for next October, charged this one",
+			row:        CategoryRow{CategoryID: "laptop", PlannedDate: "2027-10-01", PlannedCents: 180000, ActualCents: 180000, HasActual: true},
+			viewed:     time.October,
+			charged:    map[string][]time.Month{"laptop": {time.October}},
+			wantStatus: ActualMistimed,
+		},
+		{
+			name:       "a one-off planned for a past October is mistimed too",
+			row:        CategoryRow{CategoryID: "laptop", PlannedDate: "2025-10-01", PlannedCents: 180000, ActualCents: 180000, HasActual: true},
+			viewed:     time.October,
+			charged:    map[string][]time.Month{"laptop": {time.October}},
+			wantStatus: ActualMistimed,
+		},
+		{
+			name:       "a one-off planned for another year is not due here",
+			row:        CategoryRow{CategoryID: "laptop", PlannedDate: "2027-10-01", PlannedCents: 180000},
+			viewed:     time.October,
+			charged:    map[string][]time.Month{"laptop": {time.August}},
+			wantStatus: "",
+		},
+		{
 			name:       "year view passes no charged map, so nothing is mistimed",
 			row:        CategoryRow{CategoryID: "laptop", PlannedDate: "2026-10-01", PlannedCents: 0, ActualCents: 180000, HasActual: true},
 			viewed:     time.August,
@@ -135,7 +156,7 @@ func TestActualStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, _ := actualStatus(tt.row, tt.complete, tt.viewed, tt.charged)
+			got, _ := actualStatus(tt.row, tt.complete, 2026, tt.viewed, tt.charged)
 			if got != tt.wantStatus {
 				t.Errorf("actualStatus = %q, want %q", got, tt.wantStatus)
 			}
@@ -157,7 +178,7 @@ func TestApplyActualsFillsWithoutTouchingThePlan(t *testing.T) {
 	}
 	av := ActualsView{Present: true, Complete: true, ByCategory: map[string]int{"food.groceries": 36600}, TotalCents: 36600}
 
-	ApplyActuals(&bv, av, time.August, nil)
+	ApplyActuals(&bv, av, 2026, time.August, nil)
 
 	if bv.TotalPlannedCents != 55000 || bv.Groups[0].PlannedCents != 55000 {
 		t.Error("ApplyActuals changed a planned total — actuals must be display-only")
@@ -178,7 +199,7 @@ func TestApplyActualsFillsWithoutTouchingThePlan(t *testing.T) {
 
 func TestApplyActualsDoesNothingWithoutAFile(t *testing.T) {
 	bv := BudgetView{Groups: []CategoryGroupView{{Rows: []CategoryRow{{CategoryID: "a", PlannedCents: 100}}}}}
-	ApplyActuals(&bv, ActualsView{}, time.August, nil)
+	ApplyActuals(&bv, ActualsView{}, 2026, time.August, nil)
 	if bv.Groups[0].Rows[0].HasActual || bv.Groups[0].Rows[0].ActualStatus != "" {
 		t.Error("a period with no imported file must be left completely untouched")
 	}
@@ -777,7 +798,7 @@ func TestGroupFlagSurvivesANettingOut(t *testing.T) {
 		Present: true, Complete: true,
 		ByCategory: map[string]int{"a": 130000, "b": 70000},
 	}
-	ApplyActuals(&bv, av, time.August, nil)
+	ApplyActuals(&bv, av, 2026, time.August, nil)
 
 	g := bv.Groups[0]
 	if g.ActualCents != g.PlannedCents {

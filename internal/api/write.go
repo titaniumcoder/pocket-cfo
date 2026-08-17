@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/actualsdata"
@@ -128,6 +130,85 @@ func appendMovementIfSet(o orderedObject, m *actualsdata.Movement) orderedObject
 		return o
 	}
 	return append(o, field{"movement", string(*m)})
+}
+
+var (
+	knownRootKeys     = map[string]bool{"$schema": true, "month": true, "coverage": true, "transactions": true}
+	knownCoverageKeys = map[string]bool{"account": true, "from": true, "to": true, "imported_at": true}
+	knownLineKeys     = map[string]bool{
+		"id": true, "date": true, "description": true, "amount": true, "account": true,
+		"category": true, "ignored": true, "untracked": true, "movement": true, "splits": true,
+	}
+	knownSplitKeys = map[string]bool{
+		"amount": true, "category": true, "ignored": true, "untracked": true, "movement": true,
+	}
+)
+
+func refuseUnknownFields(raw []byte, month string) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return errorf(CodeUpstream, "the committed %s does not parse: %v", month, err)
+	}
+
+	var unknown []string
+	note := func(where, key string) { unknown = append(unknown, where+"."+key) }
+
+	for k := range doc {
+		if !knownRootKeys[k] {
+			note(month, k)
+		}
+	}
+	for i, c := range arrayOf(doc["coverage"]) {
+		for k := range c {
+			if !knownCoverageKeys[k] {
+				note(fmt.Sprintf("coverage %d", i+1), k)
+			}
+		}
+	}
+	for i, tx := range arrayOf(doc["transactions"]) {
+		where := fmt.Sprintf("transaction %d", i+1)
+		if id, ok := tx["id"].(string); ok {
+			where = "transaction " + id
+		}
+		for k := range tx {
+			if !knownLineKeys[k] {
+				note(where, k)
+			}
+		}
+		for j, sp := range arrayOf(tx["splits"]) {
+			for k := range sp {
+				if !knownSplitKeys[k] {
+					note(fmt.Sprintf("%s split %d", where, j+1), k)
+				}
+			}
+		}
+	}
+	if len(unknown) == 0 {
+		return nil
+	}
+	sort.Strings(unknown)
+	return &Error{
+		Code:    CodeInternal,
+		Message: "refusing to write: " + month + " carries fields this endpoint does not know, and rewriting the file would drop them. Update the API to understand them first.",
+		Details: unknown,
+	}
+}
+
+func arrayOf(v any) []map[string]any {
+	items, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, it := range items {
+		if m, ok := it.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 func refuseDestruction(prev, next actualsdata.ActualsFile, allowMutation bool) error {

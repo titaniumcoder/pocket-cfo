@@ -109,6 +109,17 @@ func checkNote(d Doc, cat *notes.NotesJson) error {
 	return errors.Join(problems...)
 }
 
+func RecipientReferences(docs []Doc, known map[int]bool) error {
+	var problems []error
+	for _, d := range docs {
+		n := d.Inv.Recipient.Number
+		if !known[n] {
+			problems = append(problems, fmt.Errorf("%s names recipient %d, which has no file in recipients/ — it will be missing from the recipient ledger", d.Path, n))
+		}
+	}
+	return errors.Join(problems...)
+}
+
 func InvoiceSet(docs []Doc) error {
 	sorted := make([]Doc, len(docs))
 	copy(sorted, docs)

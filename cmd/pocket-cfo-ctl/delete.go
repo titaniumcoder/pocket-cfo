@@ -17,7 +17,7 @@ func runDelete(args []string) int {
 
 	flagArgs, positional := splitFlags(args)
 	if err := fs.Parse(flagArgs); err != nil {
-		return 2
+		return parseExit(err)
 	}
 	if len(positional) != 1 {
 		fmt.Fprintln(os.Stderr, "pocket-cfo-ctl delete: exactly one invoice number is required")

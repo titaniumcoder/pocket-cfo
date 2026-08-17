@@ -219,7 +219,7 @@ var templates = `
 
     <div class="periodnav-right">
       <a class="link" href="{{.Nav.TodayURL}}">Today</a>
-      <a class="link" href="{{.RefreshURL}}">Reload</a>
+      <form class="inline-form" method="post" action="{{.RefreshURL}}"><button class="link" type="submit">Reload</button></form>
     </div>
   </nav>
   <script>
@@ -234,6 +234,8 @@ var templates = `
     <h2 class="panel-title">Spending &mdash; {{.Month}}{{if .UntrackedCount}} <span class="untracked-mark" title="cash not yet placed">{{untracked .UntrackedCount}}{{eur .UntrackedCents}} untracked</span>{{end}}</h2>
 
     {{if .Err}}<p class="error">{{.Err}}</p>{{end}}
+    {{if .BalancesErr}}<p class="error">Balances: {{.BalancesErr}}</p>{{end}}
+    {{if .BudgetErr}}<p class="error">Budget: {{.BudgetErr}}</p>{{end}}
 
     {{if .Balances}}
     <h3>Balances</h3>
@@ -404,7 +406,7 @@ var templates = `
     <div class="periodnav-right">
       {{if and .UntrackedCount .SpendingDetailURL}}<a class="link untracked-mark" href="{{.SpendingDetailURL}}" title="cash not yet placed">{{untracked .UntrackedCount}}untracked</a>{{end}}
       <a class="link" href="{{.TodayURL}}">Today</a>
-      <a class="link" href="{{.RefreshURL}}">Reload</a>
+      <form class="inline-form" method="post" action="{{.RefreshURL}}"><button class="link" type="submit">Reload</button></form>
     </div>
   </nav>
   <script>
@@ -456,10 +458,10 @@ var templates = `
     <div class="panel-title-row">
       <h2 class="panel-title">Rolling budget</h2>
       {{if eq .Mode "month"}}
-      <a class="minimal-toggle no-print{{if .MinimalMode}} active{{end}}" href="{{.MinimalToggleURL}}" role="switch" aria-checked="{{if .MinimalMode}}true{{else}}false{{end}}">
+      <form class="inline-form no-print" method="post" action="{{.MinimalToggleURL}}"><button class="minimal-toggle{{if .MinimalMode}} active{{end}}" type="submit" role="switch" aria-checked="{{if .MinimalMode}}true{{else}}false{{end}}">
         <span class="minimal-toggle-track"><span class="minimal-toggle-thumb"></span></span>
         <span class="minimal-toggle-label">Minimal</span>
-      </a>
+      </button></form>
       {{end}}
     </div>
 

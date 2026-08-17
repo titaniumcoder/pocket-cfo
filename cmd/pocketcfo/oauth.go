@@ -18,7 +18,7 @@ const (
 func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	state, err := randomState()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, "loading data", err)
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
@@ -73,7 +73,7 @@ func (s *server) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 	encoded, err := auth.Encode(s.cfg.sessionSecret, sess)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, "loading data", err)
 		return
 	}
 	http.SetCookie(w, &http.Cookie{

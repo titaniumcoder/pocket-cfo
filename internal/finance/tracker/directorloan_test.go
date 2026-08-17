@@ -646,3 +646,53 @@ func TestTheWorthTotalIsShownInAMonthTheAccountRowsAreNot(t *testing.T) {
 		t.Error("the worth total is rendered below the cascade it is not part of")
 	}
 }
+
+func dualAnchorTracker(t *testing.T, bankAsOf, loanAsOf string) *Tracker {
+	t.Helper()
+	trk := actualsTracker(t, nil)
+	trk.Accounts = newTestAccounts(t, fmt.Sprintf(`{"accounts":[
+		{"name":"Private Checking","kind":"private","balances":[{"as_of":%q,"balance":4200}]},
+		{"name":"Company Checking","kind":"company","balances":[{"as_of":%q,"balance":6800}]}
+	],"director_loan":{"balances":[{"as_of":%q,"balance":12400}]}}`, bankAsOf, bankAsOf, loanAsOf))
+	return trk
+}
+
+func TestAMonthBeforeTheBankReadingHasNoBalance(t *testing.T) {
+	ctx := context.Background()
+
+	early := dualAnchorTracker(t, "2026-07-31", "2025-12-31").ComputeMonth(ctx, 2026, time.September)
+
+	together := dualAnchorTracker(t, "2026-07-31", "2026-07-31").ComputeMonth(ctx, 2026, time.September)
+
+	if early.AccountsErr != "" {
+		t.Fatalf("accounts error: %s", early.AccountsErr)
+	}
+
+	if early.LoanClosingCents == together.LoanClosingCents {
+		return
+	}
+	drift := early.LoanClosingCents - together.LoanClosingCents
+	if drift > 0 {
+		t.Errorf("the loan closes %d cents higher when anchored earlier (%d vs %d) — the pre-anchor months were cascaded with a balance from the future",
+			drift, early.LoanClosingCents, together.LoanClosingCents)
+	}
+}
+
+func TestThePreAnchorMonthsSeeNoCompanyBalance(t *testing.T) {
+	ctx := context.Background()
+	trk := dualAnchorTracker(t, "2026-07-31", "2025-12-31")
+
+	march := trk.ComputeMonth(ctx, 2026, time.March)
+	if march.AccountsErr != "" {
+		t.Fatalf("accounts error: %s", march.AccountsErr)
+	}
+	if march.FundingPersonal.CompanyOpeningCents != 0 {
+		t.Errorf("March opens with %d cents of company money, want 0 — the reading only opens in August",
+			march.FundingPersonal.CompanyOpeningCents)
+	}
+
+	august := trk.ComputeMonth(ctx, 2026, time.August)
+	if august.FundingPersonal.CompanyOpeningCents != 680000 {
+		t.Errorf("August opens with %d cents, want the 6 800 read on 31 July", august.FundingPersonal.CompanyOpeningCents)
+	}
+}

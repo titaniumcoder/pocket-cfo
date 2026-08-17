@@ -19,15 +19,15 @@ type MistimedRow struct {
 	Company bool
 }
 
-func ApplyActuals(bv *BudgetView, av ActualsView, viewed time.Month, charged map[string][]time.Month) {
+func ApplyActuals(bv *BudgetView, av ActualsView, viewedYear int, viewed time.Month, charged map[string][]time.Month) {
 	if bv == nil || !av.Present {
 		return
 	}
-	applyToGroups(bv.Groups, av, viewed, charged)
-	applyToGroups(bv.CompanyGroups, av, viewed, charged)
+	applyToGroups(bv.Groups, av, viewedYear, viewed, charged)
+	applyToGroups(bv.CompanyGroups, av, viewedYear, viewed, charged)
 }
 
-func applyToGroups(groups []CategoryGroupView, av ActualsView, viewed time.Month, charged map[string][]time.Month) {
+func applyToGroups(groups []CategoryGroupView, av ActualsView, viewedYear int, viewed time.Month, charged map[string][]time.Month) {
 	for gi := range groups {
 		g := &groups[gi]
 		for ri := range g.Rows {
@@ -38,7 +38,7 @@ func applyToGroups(groups []CategoryGroupView, av ActualsView, viewed time.Month
 				g.ActualCents += cents
 				g.HasActual = true
 			}
-			row.ActualStatus, row.ActualNote = actualStatus(*row, av.Complete, viewed, charged)
+			row.ActualStatus, row.ActualNote = actualStatus(*row, av.Complete, viewedYear, viewed, charged)
 			if row.ActualStatus == ActualMistimed {
 				g.HasMistimed = true
 			}
@@ -76,12 +76,15 @@ func worseStatus(a, b string) string {
 	return a
 }
 
-func actualStatus(row CategoryRow, coverageComplete bool, viewed time.Month, charged map[string][]time.Month) (status, note string) {
-	if due, ok := plannedMonth(row.PlannedDate); ok && charged != nil {
-		if row.HasActual && due != viewed {
+func actualStatus(row CategoryRow, coverageComplete bool, viewedYear int, viewed time.Month, charged map[string][]time.Month) (status, note string) {
+	if dueYear, due, ok := plannedMonth(row.PlannedDate); ok && charged != nil {
+		if row.HasActual && (due != viewed || dueYear != viewedYear) {
+			if dueYear != viewedYear {
+				return ActualMistimed, fmt.Sprintf("planned for %s %d, charged now", due, dueYear)
+			}
 			return ActualMistimed, fmt.Sprintf("planned for %s, charged now", due)
 		}
-		if !row.HasActual && due == viewed {
+		if !row.HasActual && due == viewed && dueYear == viewedYear {
 			if elsewhere, found := firstOtherMonth(charged[row.CategoryID], viewed); found {
 				return ActualMistimed, fmt.Sprintf("planned here, already charged in %s", elsewhere)
 			}
@@ -104,15 +107,15 @@ func actualStatus(row CategoryRow, coverageComplete bool, viewed time.Month, cha
 	return "", ""
 }
 
-func plannedMonth(date string) (time.Month, bool) {
+func plannedMonth(date string) (int, time.Month, bool) {
 	if date == "" {
-		return 0, false
+		return 0, 0, false
 	}
 	d, err := time.Parse("2006-01-02", date)
 	if err != nil {
-		return 0, false
+		return 0, 0, false
 	}
-	return d.Month(), true
+	return d.Year(), d.Month(), true
 }
 
 func firstOtherMonth(months []time.Month, viewed time.Month) (time.Month, bool) {

@@ -248,6 +248,7 @@ func viewOf(af actualsdata.ActualsFile, year int, month time.Month) ActualsView 
 	markedOnce := map[string]bool{}
 	for _, tx := range af.Transactions {
 		untracked := false
+		markedHere := map[actualsdata.Movement]int{}
 		for _, part := range actualsdata.PartsOf(tx) {
 			if part.Movement != "" {
 				byMovement[part.Movement] += eurToCents(part.Amount)
@@ -260,11 +261,7 @@ func viewOf(af actualsdata.ActualsFile, year int, month time.Month) ActualsView 
 				if part.CrossedOutsidePayroll() {
 					v.ArrivedPrivatelyCents += eurToCents(part.Amount)
 				}
-				key := fmt.Sprintf("%s|%s|%d", tx.Date, part.Movement, eurToCents(part.Amount))
-				if markedOnce[key] {
-					v.DoubleMarked = true
-				}
-				markedOnce[key] = true
+				markedHere[part.Movement] += eurToCents(part.Amount)
 			}
 			if part.Untracked != "" {
 				v.UntrackedCents += eurToCents(part.Amount)
@@ -279,6 +276,13 @@ func viewOf(af actualsdata.ActualsFile, year int, month time.Month) ActualsView 
 		}
 		if untracked {
 			v.UntrackedCount++
+		}
+		for movement, cents := range markedHere {
+			key := fmt.Sprintf("%s|%s|%d", tx.Date, movement, cents)
+			if markedOnce[key] {
+				v.DoubleMarked = true
+			}
+			markedOnce[key] = true
 		}
 	}
 	v.ByMovementRow = movementTotals(byMovement)

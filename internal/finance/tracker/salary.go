@@ -199,7 +199,7 @@ func minimumWageMissing(ym yearMonth) error {
 }
 
 func requireFixedClearsTheMinimumWage(p SalaryPeriod, l Legislation) error {
-	return eachMonthOf(p, func(ym yearMonth) error {
+	return eachMonthOf(p, l, func(ym yearMonth) error {
 		minimum := l.rulesAt(ym).MinimumEUR
 		if minimum > 0 && p.AmountEUR < minimum {
 			return fmt.Errorf("salary fixes %s for %s, below the %s minimum wage in force then. A fixed salary outranks what the company can afford, but not what the law sets — raise the amount, or say mode %q to track the minimum as it changes",
@@ -210,7 +210,7 @@ func requireFixedClearsTheMinimumWage(p SalaryPeriod, l Legislation) error {
 }
 
 func requireMinimumWageThroughout(p SalaryPeriod, l Legislation, complain func(yearMonth) error) error {
-	return eachMonthOf(p, func(ym yearMonth) error {
+	return eachMonthOf(p, l, func(ym yearMonth) error {
 		if l.rulesAt(ym).MinimumEUR == 0 {
 			return complain(ym)
 		}
@@ -218,10 +218,13 @@ func requireMinimumWageThroughout(p SalaryPeriod, l Legislation, complain func(y
 	})
 }
 
-func eachMonthOf(p SalaryPeriod, check func(yearMonth) error) error {
+func eachMonthOf(p SalaryPeriod, l Legislation, check func(yearMonth) error) error {
 	last := p.From
-	if p.ToSet {
+	switch {
+	case p.ToSet:
 		last = p.To
+	case len(l) > 0 && l[len(l)-1].From.ordinal() > last.ordinal():
+		last = l[len(l)-1].From
 	}
 	for ym := p.From; ym.ordinal() <= last.ordinal(); ym = ym.addMonths(1) {
 		if err := check(ym); err != nil {

@@ -383,3 +383,48 @@ func TestMarshalMonthKeepsSchemaOrder(t *testing.T) {
 		t.Errorf("round trip lost data: %+v", back)
 	}
 }
+
+func TestAddRefusesCoverageAndDatesFromTheFuture(t *testing.T) {
+	t.Run("coverage reaching past today", func(t *testing.T) {
+		gh := newFakeGitHub(nil)
+		s := writeService(t, gh)
+		_, err := add(t, s, AddRequest{
+			Coverage: []actualsdata.Coverage{
+				{Account: "A", From: "2026-10-01", To: "2026-10-31", ImportedAt: "2026-10-15"},
+			},
+		})
+		if err == nil {
+			t.Fatal("a coverage range claiming days that have not happened was accepted")
+		}
+		if !strings.Contains(err.Error(), "has not happened yet") {
+			t.Errorf("error = %v, want it to say the range is in the future", err)
+		}
+	})
+
+	t.Run("coverage up to today is fine", func(t *testing.T) {
+		gh := newFakeGitHub(nil)
+		s := writeService(t, gh)
+		if _, err := add(t, s, AddRequest{
+			Transactions: []actualsdata.Transaction{addTx("o1", "2026-10-02", 40, idGroceries)},
+			Coverage: []actualsdata.Coverage{
+				{Account: "A", From: "2026-10-01", To: "2026-10-15", ImportedAt: "2026-10-15"},
+			},
+		}); err != nil {
+			t.Fatalf("a partial month read up to today was refused: %v", err)
+		}
+	})
+
+	t.Run("a transaction dated in the future", func(t *testing.T) {
+		gh := newFakeGitHub(nil)
+		s := writeService(t, gh)
+		_, err := add(t, s, AddRequest{
+			Transactions: []actualsdata.Transaction{addTx("f1", "2026-11-01", 40, idGroceries)},
+			Coverage: []actualsdata.Coverage{
+				{Account: "A", From: "2026-11-01", To: "2026-11-01", ImportedAt: "2026-10-15"},
+			},
+		})
+		if err == nil {
+			t.Fatal("a transaction dated in the future was accepted")
+		}
+	})
+}

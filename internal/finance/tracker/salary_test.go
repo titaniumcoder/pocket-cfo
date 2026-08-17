@@ -351,3 +351,50 @@ func repeat(v float64, n int) []float64 {
 	}
 	return out
 }
+
+func TestAnOpenEndedFixedSalaryIsCheckedAgainstEveryLaterWage(t *testing.T) {
+	l, err := ParseLegislation([]LegislationEntry{
+		{From: "2026-01", MinimumWage: f64(900)},
+		{From: "2027-01", MinimumWage: f64(1077)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := ParseSalaryPlan([]SalaryEntry{{From: "2026-01", Mode: "fixed", Amount: f64(1000)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = ValidateSalaryAgainstLegislation(plan, l)
+	if err == nil {
+		t.Fatal("accepted an open-ended fixed salary that the 2027 minimum wage overtakes")
+	}
+	for _, want := range []string{"1,000", "1,077", "January 2027"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v, want it to mention %q", err, want)
+		}
+	}
+
+	above, _ := ParseSalaryPlan([]SalaryEntry{{From: "2026-01", Mode: "fixed", Amount: f64(1200)}})
+	if err := ValidateSalaryAgainstLegislation(above, l); err != nil {
+		t.Errorf("rejected an open-ended fixed salary that clears every wage: %v", err)
+	}
+}
+
+func TestAnOpenEndedMinimumPeriodNeedsAWageThroughout(t *testing.T) {
+	l, err := ParseLegislation([]LegislationEntry{
+		{From: "2026-01", MinimumWage: f64(900)},
+		{From: "2027-01", MinimumWage: f64(0)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := ParseSalaryPlan([]SalaryEntry{{From: "2026-01", Mode: "minimum"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateSalaryAgainstLegislation(plan, l); err == nil {
+		t.Error("accepted an open-ended minimum salary for months with no wage in force")
+	}
+}

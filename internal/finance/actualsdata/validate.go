@@ -226,6 +226,8 @@ func countTrue(flags ...bool) int {
 	return n
 }
 
+func RoundCents(euros float64) int { return roundCents(euros) }
+
 func roundCents(euros float64) int {
 	if euros < 0 {
 		return -int(-euros*100 + 0.5)

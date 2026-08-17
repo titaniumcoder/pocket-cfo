@@ -156,7 +156,7 @@ const HeaderTemplate = `
   <div class="hdr-right">
     <span class="avatar" title="{{.Login}}">
       <span class="avatar-initials">{{.Initials}}</span>
-      {{with .AvatarURL}}<img src="{{.}}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">{{end}}
+      {{with .AvatarURL}}<img src="{{.}}" alt="" referrerpolicy="no-referrer">{{end}}
     </span>
     <form method="post" action="/auth/logout">
       <button class="icon-button" title="Log out" aria-label="Log out">` + logoutIcon + `</button>

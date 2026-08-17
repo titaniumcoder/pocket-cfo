@@ -131,13 +131,25 @@ func TestCopyLinkWorksWithoutASecureContext(t *testing.T) {
 	RenderSpending(rec, trk.ComputeSpending(context.Background(), 2026, time.August))
 	body := rec.Body.String()
 
-	if !strings.Contains(body, "if (navigator.clipboard)") {
+	// The behaviour moved to static/app.js when the CSP stopped inline scripts
+	// running (see csp_test.go), so the fallback is asserted where it now lives
+	// rather than in the page that used to carry it.
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "static", "app.js"))
+	if err != nil {
+		t.Fatalf("read static/app.js: %v", err)
+	}
+	js := string(b)
+
+	if !strings.Contains(js, "if (navigator.clipboard)") {
 		t.Error("the copy link assumes a secure context")
 	}
 	for _, want := range []string{"execCommand", "flash(ok ? 'copied' : 'failed')"} {
-		if !strings.Contains(body, want) {
+		if !strings.Contains(js, want) {
 			t.Errorf("no %s fallback; the link would fail silently over plain HTTP", want)
 		}
+	}
+	if !strings.Contains(js, "classList.add(state)") {
+		t.Error("the copy control never flashes its confirmation")
 	}
 
 	// The control is an icon, and both states ship inside the link so the
@@ -146,7 +158,7 @@ func TestCopyLinkWorksWithoutASecureContext(t *testing.T) {
 	if strings.Contains(body, `title="Copy a change request for Hermes">copy</a>`) {
 		t.Error("the copy control is still a word")
 	}
-	for _, want := range []string{`class="i-copy"`, `class="i-done"`, "classList.add(state)"} {
+	for _, want := range []string{`class="i-copy"`, `class="i-done"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the copy control is missing %s", want)
 		}

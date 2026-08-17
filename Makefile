@@ -1,7 +1,10 @@
-.PHONY: build test vet fmt generate clean
+.PHONY: build validate test vet fmt generate clean
 
 build:
 	go build ./...
+
+validate:
+	go run ./cmd/pocket-cfo-ctl validate
 
 test:
 	go test ./...

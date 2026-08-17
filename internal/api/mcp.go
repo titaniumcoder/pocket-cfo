@@ -163,7 +163,7 @@ func (a editArgs) request() EditRequest {
 }
 
 type balanceArgs struct {
-	Account string  `json:"account" jsonschema:"which account was read, spelled exactly as list_accounts spells it. An account is never created here"`
+	Account string  `json:"account" jsonschema:"which account was read, spelled exactly as list_accounts spells it. An account is never created here, and the director's loan is refused — it is not a bank account and nothing reads it off one"`
 	AsOf    string  `json:"as_of" jsonschema:"the MONTH-END date the balance was read, YYYY-MM-DD. It must be the LAST day of the month — 2026-07-31, 2026-06-30, 2026-02-28 — because this is the closing balance of that month. A mid-month date is refused"`
 	Balance float64 `json:"balance" jsonschema:"euros in the account at the end of that day, as the bank shows it. Decimals allowed, and negative for an overdrawn account"`
 	Note    string  `json:"note,omitempty" jsonschema:"optional free text about this one reading, shown beside the account in the month it anchors. Not used in any computation"`
@@ -246,6 +246,7 @@ func (s *Service) registerTools(server *mcp.Server) {
 			"Spell a transaction's account field exactly as listed here. "+
 			"as_of is the newest of however many readings that account has; it says how current the balance figures are, and it is not the set of accounts a statement line may arrive on. "+
 			"An as_of older than the month that just closed means that account is due a fresh reading — record_account_balance is how you give it one. "+
+			"One entry has kind director_loan and is NOT a bank account: it is the running balance between the company and its owner, listed here because it sits with the accounts on the page. There is no statement behind it, no coverage to report for it, and record_account_balance refuses it — read it with get_director_loan and otherwise leave it alone. "+
 			"A balance you recorded through this API is reflected here at once; an account added or edited directly in the data repo appears only after that commit has deployed.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
 		out, err := s.AccountsList(ctx)

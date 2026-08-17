@@ -42,6 +42,9 @@ func (s *Service) RecordAccountBalance(ctx context.Context, req RecordBalanceReq
 	if err := checkDay(req.AsOf); err != nil {
 		return nil, errorf(CodeInvalidRequest, "as_of %q %s", req.AsOf, err)
 	}
+	if err := refuseTheDirectorLoan(account); err != nil {
+		return nil, err
+	}
 	if err := refuseAMidMonthReading(req.AsOf); err != nil {
 		return nil, err
 	}
@@ -253,6 +256,20 @@ func appendReading(src []byte, account string, reading accountsdata.Reading) ([]
 		}
 	}
 	return nil, errorf(CodeInvalidRequest, "no account %q in accounts.json", account)
+}
+
+// refuseTheDirectorLoan answers the one wrong guess list_accounts now makes
+// possible: the loan is reported beside the accounts, so an agent may try to
+// record a balance for it. Saying what it is beats "no such account", which
+// reads as a typo and invites a retry.
+func refuseTheDirectorLoan(account string) error {
+	if !strings.EqualFold(strings.TrimSpace(account), "director's loan") &&
+		!strings.EqualFold(strings.TrimSpace(account), KindDirectorLoan) {
+		return nil
+	}
+	return errorf(CodeInvalidRequest,
+		"the director's loan is not a bank account and takes no reading here — there is nothing to read it off. "+
+			"It is restated by hand in accounts.json, usually once a year with the accountant. Read it with get_director_loan.")
 }
 
 func rewriteAccount(dec *json.Decoder, src []byte, account string, reading accountsdata.Reading) (out []byte, done bool, err error) {

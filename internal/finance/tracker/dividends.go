@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -119,6 +120,7 @@ type DividendReport struct {
 	DividendTaxCents      int    `json:"dividend_tax_cents"`
 	NetToOwnerCents       int    `json:"net_to_owner_cents"`
 	CostToCompanyCents    int    `json:"cost_to_company_cents"`
+	CashNeededCents       int    `json:"cash_needed_cents"`
 	Note                  string `json:"note,omitempty"`
 }
 
@@ -143,8 +145,46 @@ func (p PersonalParams) DividendsIn(d Dividends, year int, month time.Month) []D
 			DividendTaxCents:      dividendTax,
 			NetToOwnerCents:       grossCents - dividendTax,
 			CostToCompanyCents:    grossCents + profitTax,
+			CashNeededCents:       profitTax + dividendTax,
 			Note:                  entry.Note,
 		})
 	}
 	return out
+}
+
+// DividendClearing sizes the distribution whose net exactly settles what the
+// owner owes. The gross is larger than the debt because the dividend tax comes
+// off on the way, and the cash the company must find is smaller than either —
+// it is the two taxes, and nothing else.
+func (p PersonalParams) DividendClearing(owedCents, year int, month time.Month) *DividendReport {
+	if owedCents <= 0 {
+		return nil
+	}
+	r := p.rulesFor(yearMonth{year, month})
+	if r.CompanyProfitTax == nil || r.DividendTax == nil {
+		return nil
+	}
+	owed := float64(owedCents) / 100
+	// Solved rather than iterated: net(g) = g - dividendTax(g), and with a flat
+	// band that inverts directly. Bands are walked in case it is not flat.
+	gross := owed
+	for range 8 {
+		net := gross - toCent(r.DividendTax.on(gross))
+		if math.Abs(net-owed) < 0.005 {
+			break
+		}
+		gross += owed - net
+	}
+	gross = toCent(gross)
+	profitTax := round(toCent(r.CompanyProfitTax.on(gross)) * 100)
+	dividendTax := round(toCent(r.DividendTax.on(gross)) * 100)
+	grossCents := round(gross * 100)
+	return &DividendReport{
+		GrossCents:            grossCents,
+		CompanyProfitTaxCents: profitTax,
+		DividendTaxCents:      dividendTax,
+		NetToOwnerCents:       grossCents - dividendTax,
+		CostToCompanyCents:    grossCents + profitTax,
+		CashNeededCents:       profitTax + dividendTax,
+	}
 }

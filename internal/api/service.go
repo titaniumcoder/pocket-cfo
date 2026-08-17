@@ -155,7 +155,22 @@ type Account struct {
 	Name string `json:"name"`
 	Kind string `json:"kind,omitempty"`
 	AsOf string `json:"as_of,omitempty"`
+
+	// Note is set only on the director's loan, which is reported here so an
+	// agent knows it exists and otherwise leaves it alone: there is no
+	// statement behind it and no balance to read off a bank.
+	Note string `json:"note,omitempty"`
 }
+
+// KindDirectorLoan is not one of accounts.json's two pots. It is reported
+// alongside them because the loan now sits with the accounts on the page, so
+// an agent meeting it there must be told what it is rather than inferring a
+// bank account nobody has imported.
+const KindDirectorLoan = "director_loan"
+
+const loanIsNotAnAccount = "Not a bank account: the running balance between the company and its owner. " +
+	"There is no statement to reconcile against it, no coverage to report for it, and record_account_balance does not accept it — " +
+	"it is restated by hand in accounts.json, usually once a year with the accountant. Read it with get_director_loan; otherwise ignore it."
 
 func (s *Service) AccountsList(ctx context.Context) ([]Account, error) {
 	af, err := s.Accounts.File(ctx)
@@ -167,6 +182,15 @@ func (s *Service) AccountsList(ctx context.Context) ([]Account, error) {
 		out = append(out, Account{Name: a.Name, Kind: string(a.Kind), AsOf: newestAsOf(a)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	if af.DirectorLoan != nil {
+		newest := ""
+		for _, r := range af.DirectorLoan.Balances {
+			if r.AsOf > newest {
+				newest = r.AsOf
+			}
+		}
+		out = append(out, Account{Name: "Director's loan", Kind: KindDirectorLoan, AsOf: newest, Note: loanIsNotAnAccount})
+	}
 	return out, nil
 }
 

@@ -52,6 +52,20 @@ type DirectorLoan struct {
 	Notes             []string `json:"notes,omitempty"`
 	PositiveMeans     string   `json:"positive_means"`
 	ReachesNoOtherSum string   `json:"reaches_no_other_figure"`
+
+	Clearing *ClearingDividend `json:"clearing_dividend,omitempty"`
+}
+
+// ClearingDividend sizes the distribution that would settle an overdrawn loan.
+// It is here because getting it wrong is what prompted the whole correction:
+// the gross looks unaffordable beside the company's bank balance, and it is
+// not, because the gross never moves — only the taxes do.
+type ClearingDividend struct {
+	GrossCents            int    `json:"gross_cents"`
+	CompanyProfitTaxCents int    `json:"company_profit_tax_cents"`
+	DividendTaxCents      int    `json:"dividend_tax_cents"`
+	CashNeededCents       int    `json:"cash_needed_cents"`
+	Note                  string `json:"note"`
 }
 
 type Settle struct {
@@ -89,7 +103,30 @@ func (s *Service) DirectorLoanFor(ctx context.Context, month string) (*DirectorL
 	for _, mv := range s.movementsIn(ctx, year, m) {
 		out.SettledBy = append(out.SettledBy, mv)
 	}
+	out.Clearing = s.clearingDividend(out.ClosingCents, year, m)
 	return out, nil
+}
+
+// clearingDividend answers only the case it can answer: the owner is overdrawn
+// and a distribution would square it. When the company owes him instead, a
+// dividend is not the instrument and inventing one would be advice nobody
+// asked for.
+func (s *Service) clearingDividend(closingCents, year int, month time.Month) *ClearingDividend {
+	if closingCents >= 0 {
+		return nil
+	}
+	sized := s.Personal.DividendClearing(-closingCents, year, month)
+	if sized == nil {
+		return nil
+	}
+	return &ClearingDividend{
+		GrossCents:            sized.GrossCents,
+		CompanyProfitTaxCents: sized.CompanyProfitTaxCents,
+		DividendTaxCents:      sized.DividendTaxCents,
+		CashNeededCents:       sized.CashNeededCents,
+		Note: "The gross is not money the company has to have — it settles against what the owner already drew. " +
+			"cash_needed_cents is what actually leaves the bank.",
+	}
 }
 
 func (s *Service) movementsIn(ctx context.Context, year int, month time.Month) []Settle {

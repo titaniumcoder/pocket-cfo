@@ -36,6 +36,7 @@ type searchArgs struct {
 	Category       string `json:"category,omitempty" jsonschema:"only transactions assigned to this budget category id"`
 	Account        string `json:"account,omitempty" jsonschema:"only transactions on this account"`
 	IncludeIgnored bool   `json:"include_ignored,omitempty" jsonschema:"include lines recorded as not-an-expense"`
+	OnlyMovements  bool   `json:"only_movements,omitempty" jsonschema:"only lines marked as money crossing between the company and its owner. This is how you find every transfer in a period without reading each month's document"`
 	OnlyUntracked  bool   `json:"only_untracked,omitempty" jsonschema:"only lines still waiting on a decision, i.e. carrying an untracked note. This is how you find the cash you parked earlier; untracked lines are in the results either way"`
 	Limit          int    `json:"limit,omitempty" jsonschema:"maximum results, default 50, capped at 500"`
 	Years          []int  `json:"years,omitempty" jsonschema:"which years to scan; derived from from/to when those are given, else the current year"`
@@ -50,6 +51,7 @@ type splitArg struct {
 	Category  string  `json:"category,omitempty" jsonschema:"the budget category id this part belongs to"`
 	Ignored   string  `json:"ignored,omitempty" jsonschema:"why this part is not a budget expense, e.g. 'moved to savings'"`
 	Untracked string  `json:"untracked,omitempty" jsonschema:"why this part is not decided yet, e.g. 'the rest is still in my wallet'. Exactly one of category, ignored or untracked per part"`
+	Movement  string  `json:"movement,omitempty" jsonschema:"what this line moved between the company and its owner, set ALONGSIDE ignored rather than instead of it. One of salary_transfer, owner_draw, dividend_payout, owner_contribution, corporate_tax, dividend_tax. The first four settle the director's loan; the last two leave the company for the state and settle nothing. RECORD IT ONCE, ON THE COMPANY STATEMENT: both sides of a transfer are imported, and marking both counts it twice. The sign enforces it — everything except owner_contribution must be money OUT of the company, so the mirror line on the private statement is refused"`
 }
 
 type txArg struct {
@@ -62,6 +64,7 @@ type txArg struct {
 	Ignored     string     `json:"ignored,omitempty" jsonschema:"why this line is not a budget expense, e.g. 'salary', 'transfer to savings'. A reason, never a bare yes. This is a decision that it does not belong in the figures"`
 	Untracked   string     `json:"untracked,omitempty" jsonschema:"why this line is not decided YET, e.g. 'ATM withdrawal, cash not spent yet'. Use this instead of guessing a category or stopping to ask; it shows on the spending page and marks the month until it is resolved. Different from ignored, which means it is deliberately not an expense"`
 	Splits      []splitArg `json:"splits,omitempty" jsonschema:"set instead of category/ignored/untracked when one line paid for more than one thing. Two or more parts, adding up to the line's amount"`
+	Movement    string     `json:"movement,omitempty" jsonschema:"what this line moved between the company and its owner, set ALONGSIDE ignored rather than instead of it. One of salary_transfer, owner_draw, dividend_payout, owner_contribution, corporate_tax, dividend_tax. The first four settle the director's loan; the last two leave the company for the state and settle nothing. RECORD IT ONCE, ON THE COMPANY STATEMENT: both sides of a transfer are imported, and marking both counts it twice. The sign enforces it — everything except owner_contribution must be money OUT of the company, so the mirror line on the private statement is refused"`
 }
 
 type coverageArg struct {
@@ -78,6 +81,7 @@ type editArg struct {
 	Ignored   string     `json:"ignored,omitempty" jsonschema:"mark the line as not a budget expense, with the reason, clearing whatever it had before"`
 	Untracked string     `json:"untracked,omitempty" jsonschema:"park the line as not decided yet, with a note, clearing whatever it had before"`
 	Splits    []splitArg `json:"splits,omitempty" jsonschema:"replace the line's attribution with these parts, which must add up to its amount. Set exactly one of category, ignored, untracked or splits per edit"`
+	Movement  string     `json:"movement,omitempty" jsonschema:"send WITH ignored to mark what this line moved between the company and its owner. An edit that does not send it clears it, so re-attributing a transfer to a category cannot leave the marker behind. what this line moved between the company and its owner, set ALONGSIDE ignored rather than instead of it. One of salary_transfer, owner_draw, dividend_payout, owner_contribution, corporate_tax, dividend_tax. The first four settle the director's loan; the last two leave the company for the state and settle nothing. RECORD IT ONCE, ON THE COMPANY STATEMENT: both sides of a transfer are imported, and marking both counts it twice. The sign enforces it — everything except owner_contribution must be money OUT of the company, so the mirror line on the private statement is refused"`
 }
 
 type addArgs struct {
@@ -97,6 +101,14 @@ func optional(s string) *string {
 	return &s
 }
 
+func optionalMovement(s string) *actualsdata.Movement {
+	if s == "" {
+		return nil
+	}
+	m := actualsdata.Movement(s)
+	return &m
+}
+
 func splitsOf(args []splitArg) []actualsdata.Split {
 	if len(args) == 0 {
 		return nil
@@ -108,6 +120,7 @@ func splitsOf(args []splitArg) []actualsdata.Split {
 			Category:  optional(s.Category),
 			Ignored:   optional(s.Ignored),
 			Untracked: optional(s.Untracked),
+			Movement:  optionalMovement(s.Movement),
 		})
 	}
 	return out
@@ -122,6 +135,7 @@ func (a addArgs) request() AddRequest {
 			Category:  optional(t.Category),
 			Ignored:   optional(t.Ignored),
 			Untracked: optional(t.Untracked),
+			Movement:  optionalMovement(t.Movement),
 			Splits:    splitsOf(t.Splits),
 		})
 	}
@@ -141,6 +155,7 @@ func (a editArgs) request() EditRequest {
 			Category:  optional(e.Category),
 			Ignored:   optional(e.Ignored),
 			Untracked: optional(e.Untracked),
+			Movement:  optionalMovement(e.Movement),
 			Splits:    splitsOf(e.Splits),
 		})
 	}
@@ -210,7 +225,8 @@ func (s *Service) registerTools(server *mcp.Server) {
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, a searchArgs) (*mcp.CallToolResult, any, error) {
 		return result(s.Search(ctx, SearchQuery{
 			Query: a.Query, From: a.From, To: a.To, Category: a.Category, Account: a.Account,
-			IncludeIgnored: a.IncludeIgnored, OnlyUntracked: a.OnlyUntracked, Limit: a.Limit, Years: a.Years,
+			IncludeIgnored: a.IncludeIgnored, OnlyUntracked: a.OnlyUntracked, OnlyMovements: a.OnlyMovements,
+			Limit: a.Limit, Years: a.Years,
 		}))
 	})
 

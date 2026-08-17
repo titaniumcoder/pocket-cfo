@@ -19,6 +19,12 @@ type Edit struct {
 	Ignored   *string             `json:"ignored,omitempty"`
 	Untracked *string             `json:"untracked,omitempty"`
 	Splits    []actualsdata.Split `json:"splits,omitempty"`
+
+	// Movement rides with ignored rather than being one of the four. An edit
+	// that does not set it clears it, along with everything else the line
+	// carried — re-attributing a transfer to a category must not leave the
+	// marker behind, settling a loan against a line that is now groceries.
+	Movement *actualsdata.Movement `json:"movement,omitempty"`
 }
 
 type EditRequest struct {
@@ -179,12 +185,13 @@ func (s *Service) planEdit(ctx context.Context, month string, edits []Edit, know
 }
 
 func applyEdit(tx actualsdata.Transaction, e Edit) actualsdata.Transaction {
-	tx.Category, tx.Ignored, tx.Untracked, tx.Splits = nil, nil, nil, nil
+	tx.Category, tx.Ignored, tx.Untracked, tx.Splits, tx.Movement = nil, nil, nil, nil, nil
 	switch {
 	case e.Category != nil:
 		tx.Category = e.Category
 	case e.Ignored != nil:
 		tx.Ignored = e.Ignored
+		tx.Movement = e.Movement
 	case e.Untracked != nil:
 		tx.Untracked = e.Untracked
 	default:
@@ -194,6 +201,10 @@ func applyEdit(tx actualsdata.Transaction, e Edit) actualsdata.Transaction {
 }
 
 func checkDisposition(i int, e Edit) error {
+	if e.Movement != nil && e.Ignored == nil {
+		return errorf(CodeInvalidRequest,
+			"edit %d (%s): movement needs an ignored reason beside it — money crossing between you and the company is not a budget expense, so it says so like every other line that isn't", i+1, e.ID)
+	}
 	set := countSet(e.Category != nil, e.Ignored != nil, e.Untracked != nil, len(e.Splits) > 0)
 	switch {
 	case set == 0:

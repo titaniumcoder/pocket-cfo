@@ -73,6 +73,9 @@ func mutations(was, is actualsdata.Transaction) []string {
 	if deref(was.Untracked) != deref(is.Untracked) {
 		out = append(out, fmt.Sprintf("untracked %q became %q", deref(was.Untracked), deref(is.Untracked)))
 	}
+	if derefMovement(was.Movement) != derefMovement(is.Movement) {
+		out = append(out, fmt.Sprintf("movement %q became %q", derefMovement(was.Movement), derefMovement(is.Movement)))
+	}
 	if a, b := splitLabel(was), splitLabel(is); a != b {
 		out = append(out, fmt.Sprintf("splits %s became %s", a, b))
 	}
@@ -85,9 +88,16 @@ func splitLabel(tx actualsdata.Transaction) string {
 	}
 	parts := make([]string, 0, len(tx.Splits))
 	for _, s := range tx.Splits {
-		parts = append(parts, fmt.Sprintf("%.2f→%s%s%s", s.Amount, deref(s.Category), deref(s.Ignored), deref(s.Untracked)))
+		parts = append(parts, fmt.Sprintf("%.2f→%s%s%s%s", s.Amount, deref(s.Category), deref(s.Ignored), deref(s.Untracked), derefMovement(s.Movement)))
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
+}
+
+func derefMovement(m *actualsdata.Movement) string {
+	if m == nil {
+		return ""
+	}
+	return string(*m)
 }
 
 func deref(s *string) string {

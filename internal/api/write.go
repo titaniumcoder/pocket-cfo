@@ -54,6 +54,7 @@ func marshalMonth(doc actualsdata.ActualsFile) ([]byte, error) {
 		o = appendIfSet(o, "category", tx.Category)
 		o = appendIfSet(o, "ignored", tx.Ignored)
 		o = appendIfSet(o, "untracked", tx.Untracked)
+		o = appendMovementIfSet(o, tx.Movement)
 		if len(tx.Splits) > 0 {
 			splits := make([]orderedObject, 0, len(tx.Splits))
 			for _, s := range tx.Splits {
@@ -61,6 +62,7 @@ func marshalMonth(doc actualsdata.ActualsFile) ([]byte, error) {
 				so = appendIfSet(so, "category", s.Category)
 				so = appendIfSet(so, "ignored", s.Ignored)
 				so = appendIfSet(so, "untracked", s.Untracked)
+				so = appendMovementIfSet(so, s.Movement)
 				splits = append(splits, so)
 			}
 			o = append(o, field{"splits", splits})
@@ -116,6 +118,16 @@ func appendIfSet(o orderedObject, key string, value *string) orderedObject {
 		return o
 	}
 	return append(o, field{key, *value})
+}
+
+// appendMovementIfSet exists because this function rebuilds the whole
+// document field by field: a field it does not know about is not preserved,
+// it is dropped from every line in the month.
+func appendMovementIfSet(o orderedObject, m *actualsdata.Movement) orderedObject {
+	if m == nil || *m == "" {
+		return o
+	}
+	return append(o, field{"movement", string(*m)})
 }
 
 func refuseDestruction(prev, next actualsdata.ActualsFile, allowMutation bool) error {

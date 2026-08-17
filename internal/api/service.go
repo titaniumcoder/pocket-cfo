@@ -213,6 +213,7 @@ type FoundTransaction struct {
 	Category    string  `json:"category,omitempty"`
 	Ignored     string  `json:"ignored,omitempty"`
 	Untracked   string  `json:"untracked,omitempty"`
+	Movement    string  `json:"movement,omitempty"`
 
 	Splits []FoundSplit `json:"splits,omitempty"`
 }
@@ -222,6 +223,7 @@ type FoundSplit struct {
 	Category  string  `json:"category,omitempty"`
 	Ignored   string  `json:"ignored,omitempty"`
 	Untracked string  `json:"untracked,omitempty"`
+	Movement  string  `json:"movement,omitempty"`
 }
 
 func anyPart(parts []actualsdata.Part, match func(actualsdata.Part) bool) bool {
@@ -241,6 +243,7 @@ type SearchQuery struct {
 	Account        string
 	IncludeIgnored bool
 	OnlyUntracked  bool
+	OnlyMovements  bool
 	Limit          int
 	Years          []int
 }
@@ -294,6 +297,9 @@ func (s *Service) Search(ctx context.Context, q SearchQuery) (*SearchResult, err
 			if q.Category != "" && !anyPart(parts, func(p actualsdata.Part) bool { return p.Category == q.Category }) {
 				continue
 			}
+			if q.OnlyMovements && !anyPart(parts, func(p actualsdata.Part) bool { return p.Movement != "" }) {
+				continue
+			}
 			if q.OnlyUntracked && !anyPart(parts, func(p actualsdata.Part) bool { return p.Untracked != "" }) {
 				continue
 			}
@@ -312,10 +318,12 @@ func (s *Service) Search(ctx context.Context, q SearchQuery) (*SearchResult, err
 				for _, p := range parts {
 					found.Splits = append(found.Splits, FoundSplit{
 						Amount: p.Amount, Category: p.Category, Ignored: p.Ignored, Untracked: p.Untracked,
+						Movement: string(p.Movement),
 					})
 				}
 			} else {
 				found.Category, found.Ignored, found.Untracked = parts[0].Category, parts[0].Ignored, parts[0].Untracked
+				found.Movement = string(parts[0].Movement)
 			}
 			out.Transactions = append(out.Transactions, found)
 		}

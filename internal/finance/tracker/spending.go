@@ -36,6 +36,15 @@ type SpendingView struct {
 	TotalCents   int
 	IgnoredCount int
 	Err          string
+	BalancesErr  string
+	BudgetErr    string
+}
+
+func appendErr(existing, add string) string {
+	if existing == "" {
+		return add
+	}
+	return existing + "; " + add
 }
 
 // SpendingMovementGroup lists the lines that moved money between the owner
@@ -124,7 +133,9 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 		SpendingURL: spendingURL(year, month),
 		RefreshURL:  spendingURL(year, month) + "?refresh=1",
 	}
-	if snap, ok, serr := t.Accounts.Snapshot(ctx, yearMonth{year, month}); serr == nil && ok {
+	if snap, ok, serr := t.Accounts.Snapshot(ctx, yearMonth{year, month}); serr != nil {
+		v.BalancesErr = serr.Error()
+	} else if ok {
 		v.Balances = snap.AccountRow
 	}
 
@@ -200,11 +211,16 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 
 	var bv BudgetView
 	if t.Budget != nil {
-		if built, berr := t.Budget.ForMonth(ctx, year, month, time.Now().In(t.locOrUTC())); berr == nil {
+		built, berr := t.Budget.ForMonth(ctx, year, month, time.Now().In(t.locOrUTC()))
+		if berr != nil {
+			v.BudgetErr = berr.Error()
+		} else {
 			bv = built
 			charged, cerr := t.Actuals.ChargedMonths(ctx, year, t.Start)
-			if cerr == nil {
-				ApplyActuals(&bv, av, month, charged)
+			if cerr != nil {
+				v.Err = appendErr(v.Err, cerr.Error())
+			} else {
+				ApplyActuals(&bv, av, year, month, charged)
 			}
 		}
 	}

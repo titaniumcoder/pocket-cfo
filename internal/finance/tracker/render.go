@@ -234,6 +234,8 @@ var templates = `
     <h2 class="panel-title">Spending &mdash; {{.Month}}{{if .UntrackedCount}} <span class="untracked-mark" title="cash not yet placed">{{untracked .UntrackedCount}}{{eur .UntrackedCents}} untracked</span>{{end}}</h2>
 
     {{if .Err}}<p class="error">{{.Err}}</p>{{end}}
+    {{if .BalancesErr}}<p class="error">Balances: {{.BalancesErr}}</p>{{end}}
+    {{if .BudgetErr}}<p class="error">Budget: {{.BudgetErr}}</p>{{end}}
 
     {{if .Balances}}
     <h3>Balances</h3>

@@ -400,3 +400,35 @@ func TestTheDividendRatesSurviveTheMonthAggregation(t *testing.T) {
 		t.Error("a year with no distribution still labels the dividend rates")
 	}
 }
+
+func TestAnUnratedMonthReportsNoTaxRatherThanZeroTax(t *testing.T) {
+	unrated := params()
+	d := Dividends{{On: testMonth, Day: "2026-01-31", AmountEUR: 10000}}
+
+	got := unrated.DividendsIn(d, testMonth.Year, testMonth.Month)
+	if len(got) != 1 {
+		t.Fatalf("got %d reports, want 1", len(got))
+	}
+	r := got[0]
+	if r.Unrated == "" {
+		t.Error("the report charged a dividend in a month with no rate in force and said nothing about it")
+	}
+	if r.CompanyProfitTaxCents != 0 || r.DividendTaxCents != 0 {
+		t.Errorf("taxes = %d and %d, want them left at zero beside the note rather than computed",
+			r.CompanyProfitTaxCents, r.DividendTaxCents)
+	}
+	if r.GrossCents != 1000000 {
+		t.Errorf("gross = %d, want the stated 10 000", r.GrossCents)
+	}
+	if r.NetToOwnerCents != 0 || r.CashNeededCents != 0 {
+		t.Error("net to owner and cash needed were derived from taxes that do not exist")
+	}
+
+	rated := withDividendRates(params()).DividendsIn(d, testMonth.Year, testMonth.Month)
+	if len(rated) != 1 || rated[0].Unrated != "" {
+		t.Fatalf("a legislated month reported unrated: %+v", rated)
+	}
+	if rated[0].DividendTaxCents == 0 {
+		t.Error("a legislated month charged no dividend tax")
+	}
+}

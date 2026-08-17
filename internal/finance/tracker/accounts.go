@@ -249,7 +249,27 @@ func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, loan di
 		Company:      companyStock{Known: snap.HasCompany, OpeningCents: snap.CompanyCents},
 		Loan:         loan,
 	}
+	companyAt := func(m yearMonth) (companyStock, bool) {
+		if !snap.Found {
+			return companyStock{}, false
+		}
+		switch {
+		case m.ordinal() < snap.OpensMonth.ordinal():
+			return companyStock{}, true
+		case m.ordinal() == snap.OpensMonth.ordinal():
+			return companyStock{Known: snap.HasCompany, OpeningCents: snap.CompanyCents}, true
+		}
+		return companyStock{}, false
+	}
+	if c, ok := companyAt(from); ok {
+		open.Company = c
+	}
+
 	for m := from; m.ordinal() < viewed.ordinal(); m = m.addMonths(1) {
+		if c, ok := companyAt(m); ok {
+			open.Company = c
+		}
+
 		closed, err := t.monthClose(ctx, m, now, rateCents, open.Company)
 		if err != nil {
 			return openings{}, err
@@ -264,6 +284,10 @@ func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, loan di
 		if loan.Known && m.ordinal() >= loan.OpensMonth.ordinal() {
 			open.Loan.OpeningCents += closed.NetIncomeCents - closed.CrossedCents
 		}
+	}
+
+	if c, ok := companyAt(viewed); ok {
+		open.Company = c
 	}
 	return open, nil
 }

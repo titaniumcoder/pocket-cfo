@@ -5,7 +5,13 @@ import (
 	"testing"
 	"testing/fstest"
 	"time"
+
+	"github.com/titaniumcoder/pocket-cfo/internal/finance/actualsdata"
 )
+
+func strp(s string) *string { return &s }
+
+func movementp(m actualsdata.Movement) *actualsdata.Movement { return &m }
 
 const testActualsAugust = `{
   "month": "2026-08",
@@ -246,5 +252,40 @@ func TestActualsRounding(t *testing.T) {
 	}
 	if want := 4219; got.ByCategory["food.groceries"] != want {
 		t.Errorf("42.185 euros = %d cents, want %d", got.ByCategory["food.groceries"], want)
+	}
+}
+
+func TestDoubleMarkedCatchesTheSameTransferOnBothStatements(t *testing.T) {
+	af := actualsdata.ActualsFile{
+		Month: "2026-08",
+		Transactions: []actualsdata.Transaction{
+			{Id: "c1", Date: "2026-08-05", Description: "To Rico", Amount: 2400, Account: "Company Checking",
+				Ignored: strp("owner draw"), Movement: movementp(actualsdata.MovementOwnerDraw)},
+			{Id: "p1", Date: "2026-08-05", Description: "From company", Amount: 2400, Account: "Private Checking",
+				Ignored: strp("owner draw"), Movement: movementp(actualsdata.MovementOwnerDraw)},
+		},
+	}
+	if v := viewOf(af, 2026, time.August); !v.DoubleMarked {
+		t.Error("the same transfer marked on two statements was not caught")
+	}
+}
+
+func TestTwoSplitPartsOfOneLineAreNotDoubleMarked(t *testing.T) {
+	af := actualsdata.ActualsFile{
+		Month: "2026-08",
+		Transactions: []actualsdata.Transaction{{
+			Id: "c1", Date: "2026-08-05", Description: "To Rico", Amount: 100, Account: "Company Checking",
+			Splits: []actualsdata.Split{
+				{Amount: 50, Ignored: strp("owner draw"), Movement: movementp(actualsdata.MovementOwnerDraw)},
+				{Amount: 50, Ignored: strp("owner draw"), Movement: movementp(actualsdata.MovementOwnerDraw)},
+			},
+		}},
+	}
+	v := viewOf(af, 2026, time.August)
+	if v.DoubleMarked {
+		t.Error("two split parts of one line were reported as the same transfer marked twice")
+	}
+	if v.CrossedCents != 10000 {
+		t.Errorf("crossed = %d, want the whole 100 counted once", v.CrossedCents)
 	}
 }

@@ -647,6 +647,11 @@ func (f *Figures) computeDirectorLoan(t *Tracker, ctx context.Context, viewed ye
 		f.ShowDirectorLoan = t.hasDirectorLoanBlock(ctx)
 		return
 	}
+	if f.FundingPersonal.Err != "" {
+		f.DirectorLoanUnknown = "The month's net income could not be worked out, so what the company owes cannot be closed off either — see the error above."
+		f.ShowDirectorLoan = t.hasDirectorLoanBlock(ctx)
+		return
+	}
 	f.ShowDirectorLoan = true
 	f.LoanOpeningCents = carried.Loan.OpeningCents
 	f.LoanNetIncomeCents = f.FundingPersonal.NetIncomeCents
@@ -1053,7 +1058,7 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 		}
 	}
 
-	ApplyActuals(bv, av, start.Month(), charged)
+	ApplyActuals(bv, av, year, start.Month(), charged)
 
 	f.ShowActuals = true
 	f.Mistimed = MistimedRowsOf(*bv)

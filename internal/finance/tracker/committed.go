@@ -42,12 +42,18 @@ func (c *committed) forget(key string) {
 }
 
 func (c *committed) supersedes(key string, onDisk []byte, readErr error) ([]byte, bool) {
-	body, ok := c.bytesFor(key)
+	if c == nil {
+		return nil, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	body, ok := c.byKey[key]
 	if !ok {
 		return nil, false
 	}
 	if readErr == nil && bytes.Equal(bytes.TrimSpace(onDisk), bytes.TrimSpace(body)) {
-		c.forget(key)
+		delete(c.byKey, key)
 		return nil, false
 	}
 	return body, true

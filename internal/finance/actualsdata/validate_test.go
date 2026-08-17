@@ -337,3 +337,65 @@ func TestAMovementOnTheLineAndOnAPartIsRefusedBecauseThePartsDecide(t *testing.T
 		t.Errorf("error = %q, want the same wording splits already use", err)
 	}
 }
+
+// TestEveryMovementBelongsToTheSumsItActuallyMoves: two predicates, two
+// different questions, and the pair is easy to transpose — a salary transfer
+// settles the loan but is already counted as gross salary, and a tax payment
+// leaves the bank without ever reaching the owner. Both answers are pinned
+// value by value, so a seventh movement fails here until somebody decides both.
+func TestEveryMovementBelongsToTheSumsItActuallyMoves(t *testing.T) {
+	answers := map[Movement]struct{ crossed, leftTheBank bool }{
+		MovementSalaryTransfer:    {crossed: true, leftTheBank: false},
+		MovementOwnerDraw:         {crossed: true, leftTheBank: true},
+		MovementDividendPayout:    {crossed: true, leftTheBank: true},
+		MovementOwnerContribution: {crossed: true, leftTheBank: true},
+		MovementCorporateTax:      {crossed: false, leftTheBank: true},
+		MovementDividendTax:       {crossed: false, leftTheBank: true},
+	}
+	for _, v := range enumValues_Movement {
+		s, ok := v.(string)
+		if !ok {
+			t.Fatalf("movement enum holds a non-string %v", v)
+		}
+		want, decided := answers[Movement(s)]
+		if !decided {
+			t.Errorf("movement %q is in the schema but nothing decides whether it settles the loan or leaves the bank", s)
+			continue
+		}
+		p := Part{Movement: Movement(s)}
+		if p.Crossed() != want.crossed {
+			t.Errorf("%s crossed = %v, want %v", s, p.Crossed(), want.crossed)
+		}
+		if p.MovedCompanyCash() != want.leftTheBank {
+			t.Errorf("%s moved company cash = %v, want %v", s, p.MovedCompanyCash(), want.leftTheBank)
+		}
+	}
+}
+
+// TestASalaryTransferSettlesTheLoanButLeavesCompanyCashAlone is the asymmetric
+// value, named so the reason survives: the cascade already subtracts the gross
+// salary, which covers the net paid to the owner and what is remitted to the
+// state for them, so counting the transfer too would pay it twice.
+func TestASalaryTransferSettlesTheLoanButLeavesCompanyCashAlone(t *testing.T) {
+	p := Part{Movement: MovementSalaryTransfer}
+	if !p.Crossed() {
+		t.Error("a salary transfer does not settle the loan")
+	}
+	if p.MovedCompanyCash() {
+		t.Error("a salary transfer takes the salary out of the company a second time")
+	}
+}
+
+// TestATaxPaymentLeavesTheBankWithoutSettlingTheLoan is the mirror image, and
+// the exact pair a reader will otherwise transpose.
+func TestATaxPaymentLeavesTheBankWithoutSettlingTheLoan(t *testing.T) {
+	for _, m := range []Movement{MovementCorporateTax, MovementDividendTax} {
+		p := Part{Movement: m}
+		if p.Crossed() {
+			t.Errorf("%s settles the loan — it left the company for the state and never reached the owner", m)
+		}
+		if !p.MovedCompanyCash() {
+			t.Errorf("%s did not leave the bank", m)
+		}
+	}
+}

@@ -57,7 +57,14 @@ type ActualsView struct {
 	// signs, so money out of the company and money back into it need no
 	// branch: a draw of +5000 settles 5000 of what is owed, a contribution of
 	// -500 adds 500 to it.
-	CrossedCents  int
+	CrossedCents int
+
+	// CompanyCashOutCents is what those same lines did to the company's bank,
+	// which is a different question and a different set: a salary transfer
+	// settles the loan but is already counted as gross salary, and the two
+	// taxes leave the bank without ever reaching the owner.
+	CompanyCashOutCents int
+
 	ByMovementRow []MovementTotal
 
 	// DoubleMarked is the one double count the sign rule cannot catch: two
@@ -238,6 +245,9 @@ func viewOf(af actualsdata.ActualsFile, year int, month time.Month) ActualsView 
 				byMovement[part.Movement] += eurToCents(part.Amount)
 				if part.Crossed() {
 					v.CrossedCents += eurToCents(part.Amount)
+				}
+				if part.MovedCompanyCash() {
+					v.CompanyCashOutCents += eurToCents(part.Amount)
 				}
 				key := fmt.Sprintf("%s|%s|%d", tx.Date, part.Movement, eurToCents(part.Amount))
 				if markedOnce[key] {

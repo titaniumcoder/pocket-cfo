@@ -155,6 +155,7 @@ type Figures struct {
 	ShowActualBalance         bool
 	ActualBalanceCents        int
 	ActualCompanyClosingCents int
+	CompanyCashOutCents       int
 
 	ShowOpeningBalance  bool
 	OpeningBalanceCents int
@@ -549,9 +550,14 @@ func (f *Figures) publishBalanceTheBankSaw(months int) {
 	f.ShowActualBalance = true
 	f.ActualBalanceCents = f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents - f.PrivateActualCents
 	pv := f.FundingPersonal
-	f.ActualCompanyClosingCents = pv.CompanyOpeningCents + pv.CompanyIncomeCents -
-		f.CompanyActualCents - pv.EmployerContribCents - pv.GrossSalaryCents -
-		pv.DividendTaxCents - pv.CompanyProfitTaxCents
+	// The Actual column takes what the statements say left the bank, where the
+	// planned one takes what the plan says will: the taxes are declared with
+	// the distribution but only leave when they are actually paid, and an owner
+	// draw is in no plan at all.
+	month := pv.plannedCompanyMonth(pv.CompanyOpeningCents)
+	month.ExpensesCents = f.CompanyActualCents
+	month.CashOutCents = f.CompanyCashOutCents
+	f.ActualCompanyClosingCents = month.closesAt()
 }
 
 func (f Figures) HeadlineBalanceCents() int {
@@ -1014,6 +1020,7 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 	companyIDs := t.companyCategoryIDs(ctx)
 	f.PrivateUnmatchedCents, f.CompanyUnmatchedCents = UnmatchedCents(*bv, av, companyIDs)
 	f.PrivateActualCents, f.CompanyActualCents = ActualTotals(av, companyIDs)
+	f.CompanyCashOutCents = av.CompanyCashOutCents
 }
 
 func (t *Tracker) companyCategoryIDs(ctx context.Context) map[string]bool {

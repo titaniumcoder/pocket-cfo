@@ -311,19 +311,36 @@ func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, ra
 	if pv.Err != "" {
 		return monthClosing{}, fmt.Errorf("accounts: income for %s: %s", m, pv.Err)
 	}
+	imported := av.Present && av.Complete
 	return monthClosing{
 		PrivateDeltaCents:   pv.NetIncomeCents - privateCents,
-		CompanyClosingCents: pv.CompanyClosingCents,
+		CompanyClosingCents: companyClosedOn(pv, av, imported),
 		NetIncomeCents:      pv.NetIncomeCents,
 		CrossedCents:        av.CrossedCents,
-		Imported:            av.Present && av.Complete,
+		Imported:            imported,
 	}, nil
+}
+
+// companyClosedOn seeds the next month, so it follows the same all-or-nothing
+// rule the expenses follow: a fully imported month closes on what the bank
+// says left — the draws and the taxes actually paid — and any other month
+// closes on the plan, which charges the taxes a distribution declared and
+// knows nothing of draws. Mixing them would charge a declared tax and an
+// imported part of that same tax into a figure that is then carried for good.
+func companyClosedOn(pv PersonalView, av ActualsView, imported bool) int {
+	if !imported || !pv.ShowCompanyBalance {
+		return pv.CompanyClosingCents
+	}
+	month := pv.plannedCompanyMonth(pv.CompanyOpeningCents)
+	month.CashOutCents = av.CompanyCashOutCents
+	return month.closesAt()
 }
 
 // closingExpenses hands back the view it read as well as the two figures, so
 // the walk still costs one read of a month's actuals. The expenses fall back
-// to the plan when nothing is imported; the crossings never do, because the
-// plan holds no transfers and an unimported month has settled nothing.
+// to the plan when nothing is imported, and so does the company's cash; the
+// loan's crossings never do, because the plan holds no transfers at all and an
+// unimported month has settled nothing.
 func (t *Tracker) closingExpenses(ctx context.Context, m yearMonth, bv BudgetView) (private, company int, av ActualsView) {
 	av, err := t.Actuals.ForMonth(ctx, m.Year, m.Month)
 	if err != nil || !av.Present || !av.Complete {

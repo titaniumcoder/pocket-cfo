@@ -270,3 +270,108 @@ func TestTwoLinesMarkedAsTheSameMovementOnOneDaySaySoWithoutFailingTheMonth(t *t
 		t.Errorf("movement = %d, want both lines counted so the note has something to warn about", f.LoanMovementCents)
 	}
 }
+
+// TestAnOwnerDrawLeavesTheCompanyInTheFigureTheBankSaw: the cash went, so the
+// figure that claims to say what the bank holds has to say it went. Before
+// this, a marked draw was fully imported, listed on the spending page, and
+// still left both company figures reading too high by exactly its amount.
+func TestAnOwnerDrawLeavesTheCompanyInTheFigureTheBankSaw(t *testing.T) {
+	const drawn = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+		"transactions":[{"id":"d1","date":"2026-08-06","description":"To Rico","amount":5000,"account":"Company Checking","ignored":"owner draw","movement":"owner_draw"}]}`
+	const unmarked = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+		"transactions":[{"id":"d1","date":"2026-08-06","description":"To Rico","amount":5000,"account":"Company Checking","ignored":"owner draw"}]}`
+
+	marked := loanTracker(t, "2026-07-31", 12400, map[string]string{"actuals/2026-08.json": drawn}).
+		ComputeMonth(context.Background(), 2026, time.August)
+	plain := loanTracker(t, "2026-07-31", 12400, map[string]string{"actuals/2026-08.json": unmarked}).
+		ComputeMonth(context.Background(), 2026, time.August)
+
+	if got := plain.ActualCompanyClosingCents - marked.ActualCompanyClosingCents; got != 500000 {
+		t.Errorf("the bank figure fell by %d when the draw was marked, want the 5000 that left", got)
+	}
+	// The planned column is a plan: a draw is in no plan, so it does not move.
+	if marked.FundingPersonal.CompanyClosingCents != plain.FundingPersonal.CompanyClosingCents {
+		t.Error("marking a draw moved the planned closing figure, which knows nothing of draws")
+	}
+	// And no private figure moves either — that half is unchanged.
+	if marked.BalanceCents != plain.BalanceCents || marked.AvailableCents != plain.AvailableCents {
+		t.Error("marking a draw moved a private figure")
+	}
+}
+
+// TestASalaryTransferDoesNotTakeTheSalaryOutTwice: the cascade already
+// subtracted the gross, so the transfer that pays it must not subtract it
+// again — the one movement deliberately outside the bank figure.
+func TestASalaryTransferDoesNotTakeTheSalaryOutTwice(t *testing.T) {
+	const paid = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+		"transactions":[{"id":"s1","date":"2026-08-05","description":"To Rico","amount":2400,"account":"Company Checking","ignored":"salary paid across","movement":"salary_transfer"}]}`
+	const unmarked = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+		"transactions":[{"id":"s1","date":"2026-08-05","description":"To Rico","amount":2400,"account":"Company Checking","ignored":"salary paid across"}]}`
+
+	marked := loanTracker(t, "2026-07-31", 12400, map[string]string{"actuals/2026-08.json": paid}).
+		ComputeMonth(context.Background(), 2026, time.August)
+	plain := loanTracker(t, "2026-07-31", 12400, map[string]string{"actuals/2026-08.json": unmarked}).
+		ComputeMonth(context.Background(), 2026, time.August)
+
+	if marked.ActualCompanyClosingCents != plain.ActualCompanyClosingCents {
+		t.Errorf("the bank figure moved by %d when a salary transfer was marked — the gross already covers it",
+			plain.ActualCompanyClosingCents-marked.ActualCompanyClosingCents)
+	}
+	// It still settles the loan, which is the whole reason it is marked.
+	if marked.LoanMovementCents == plain.LoanMovementCents {
+		t.Error("marking the salary transfer settled nothing on the loan")
+	}
+}
+
+// TestMoneyPaidIntoTheCompanyShowsUpInIt: the sign carries the direction, so
+// money in needs no branch of its own.
+func TestMoneyPaidIntoTheCompanyShowsUpInIt(t *testing.T) {
+	f := loanTracker(t, "2026-07-31", 12400, map[string]string{
+		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+			"transactions":[{"id":"c1","date":"2026-08-06","description":"From Rico","amount":-500,"account":"Company Checking","ignored":"paid in","movement":"owner_contribution"}]}`,
+	}).ComputeMonth(context.Background(), 2026, time.August)
+	bare := loanTracker(t, "2026-07-31", 12400, nil).ComputeMonth(context.Background(), 2026, time.August)
+
+	if got := f.ActualCompanyClosingCents - bare.ActualCompanyClosingCents; got != 50000 {
+		t.Errorf("the company gained %d, want the 500 that was paid in", got)
+	}
+}
+
+// TestAnImportedMonthCarriesTheDrawIntoTheNextMonthsOpening: the closing
+// figure seeds the next month, so a draw that only moved the month it landed
+// in would be forgotten the moment the page turned.
+func TestAnImportedMonthCarriesTheDrawIntoTheNextMonthsOpening(t *testing.T) {
+	const drawn = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+		"transactions":[{"id":"d1","date":"2026-08-06","description":"To Rico","amount":5000,"account":"Company Checking","ignored":"owner draw","movement":"owner_draw"}]}`
+	const unmarked = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+		"transactions":[{"id":"d1","date":"2026-08-06","description":"To Rico","amount":5000,"account":"Company Checking","ignored":"owner draw"}]}`
+
+	// September opens on what August closed at.
+	marked := loanTracker(t, "2026-07-31", 12400, map[string]string{"actuals/2026-08.json": drawn}).
+		ComputeMonth(context.Background(), 2026, time.September)
+	plain := loanTracker(t, "2026-07-31", 12400, map[string]string{"actuals/2026-08.json": unmarked}).
+		ComputeMonth(context.Background(), 2026, time.September)
+
+	if got := plain.FundingPersonal.CompanyOpeningCents - marked.FundingPersonal.CompanyOpeningCents; got != 500000 {
+		t.Errorf("September opened %d lower for the draw, want the 5000 August lost", got)
+	}
+}
+
+// TestAHalfImportedMonthCarriesThePlanRatherThanHalfOfEach: the movements come
+// from the same partial coverage the expenses do, and are no more trustworthy.
+// Mixing a full month's declared tax with whatever part of it happened to be
+// imported would charge the same money twice into a figure carried for good.
+func TestAHalfImportedMonthCarriesThePlanRatherThanHalfOfEach(t *testing.T) {
+	// Coverage stops on the 9th, so the month is present but not complete.
+	const half = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-09","imported_at":"2026-08-10"}],
+		"transactions":[{"id":"d1","date":"2026-08-06","description":"To Rico","amount":5000,"account":"Company Checking","ignored":"owner draw","movement":"owner_draw"}]}`
+
+	partial := loanTracker(t, "2026-07-31", 12400, map[string]string{"actuals/2026-08.json": half}).
+		ComputeMonth(context.Background(), 2026, time.September)
+	none := loanTracker(t, "2026-07-31", 12400, nil).ComputeMonth(context.Background(), 2026, time.September)
+
+	if partial.FundingPersonal.CompanyOpeningCents != none.FundingPersonal.CompanyOpeningCents {
+		t.Errorf("a half-imported August carried %d into September and an unimported one carried %d — a half-read month closes on the plan, whole",
+			partial.FundingPersonal.CompanyOpeningCents, none.FundingPersonal.CompanyOpeningCents)
+	}
+}

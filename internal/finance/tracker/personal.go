@@ -321,6 +321,40 @@ func (v *PersonalView) carryCompanyStock(m PersonalView, first bool) {
 	v.CompanyTargetCents = m.CompanyTargetCents
 }
 
+// companyMonth is the company's cash for one month, in one place. The same
+// arithmetic is asked three times — what the plan says the month closes on,
+// what the bank saw, and what the roll-forward carries into the next month —
+// and the three differ only in which pair of figures they are handed. Named
+// fields rather than six positional ints, because the two most easily
+// transposed are exactly the two that vary.
+type companyMonth struct {
+	OpeningCents         int
+	IncomeCents          int
+	ExpensesCents        int
+	EmployerContribCents int
+	GrossSalaryCents     int
+	CashOutCents         int
+}
+
+func (m companyMonth) closesAt() int {
+	return m.OpeningCents + m.IncomeCents - m.ExpensesCents -
+		m.EmployerContribCents - m.GrossSalaryCents - m.CashOutCents
+}
+
+// plannedCompanyMonth is what the plan says will leave: the declared taxes,
+// charged with the distribution. A declared dividend is not among them — it
+// hands the owner a claim, and the director's loan is what carries it.
+func (v PersonalView) plannedCompanyMonth(openingCents int) companyMonth {
+	return companyMonth{
+		OpeningCents:         openingCents,
+		IncomeCents:          v.CompanyIncomeCents,
+		ExpensesCents:        v.CompanyExpensesCents,
+		EmployerContribCents: v.EmployerContribCents,
+		GrossSalaryCents:     v.GrossSalaryCents,
+		CashOutCents:         v.DividendTaxCents + v.CompanyProfitTaxCents,
+	}
+}
+
 // closeCompanyOver settles the company balance from the rounded cent fields
 // rather than from the floats they came from. The closing figure seeds the
 // next month, so a half-cent here compounds down the year — and the rows on
@@ -338,9 +372,7 @@ func (v *PersonalView) closeCompanyOver(stock companyStock) {
 	v.ShowCompanyBalance = true
 	v.CompanyOpeningCents = stock.OpeningCents
 	v.CompanyTargetCents = stock.TargetCents
-	v.CompanyClosingCents = stock.OpeningCents + v.CompanyIncomeCents -
-		v.CompanyExpensesCents - v.EmployerContribCents - v.GrossSalaryCents -
-		v.DividendTaxCents - v.CompanyProfitTaxCents
+	v.CompanyClosingCents = v.plannedCompanyMonth(stock.OpeningCents).closesAt()
 }
 
 func grossSalaryFor(d SalaryDecision, r Rules, availableForPayroll float64) (gross float64, minimumEnforced bool) {

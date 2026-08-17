@@ -5,17 +5,42 @@
       "name": "Private Checking",
       "kind": "private",
       "balances": [
-        { "as_of": "2026-04-30", "balance": 3950, "note": "Read at month end; opens May" },
-        { "as_of": "2026-07-31", "balance": 4200, "note": "Read at month end; opens August" }
+        {
+          "as_of": "2026-04-30",
+          "balance": 3950,
+          "note": "Read at month end; opens May"
+        },
+        {
+          "as_of": "2026-07-31",
+          "balance": 4200,
+          "note": "Read at month end; opens August"
+        }
       ]
     },
     {
       "name": "Company Checking",
       "kind": "company",
       "balances": [
-        { "as_of": "2026-04-30", "balance": 5100, "note": "Before the fixed-salary months began" },
-        { "as_of": "2026-07-31", "balance": 6800, "note": "What the company kept while salary was at the minimum" }
+        {
+          "as_of": "2026-04-30",
+          "balance": 5100,
+          "note": "Before the fixed-salary months began"
+        },
+        {
+          "as_of": "2026-07-31",
+          "balance": 6800,
+          "note": "What the company kept while salary was at the minimum"
+        }
       ]
     }
-  ]
+  ],
+  "director_loan": {
+    "balances": [
+      {
+        "as_of": "2026-07-31",
+        "balance": 3200,
+        "note": "What the company still owed when July closed, per the accountant"
+      }
+    ]
+  }
 }

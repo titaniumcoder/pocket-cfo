@@ -852,6 +852,77 @@ reason, an `untracked` note for money not yet decided, or `splits` when one line
 more than one thing. Absence is never a decision — the file accounts for every row on the
 statement, so a skipped line is recorded as skipped rather than inferred from silence.
 
+**A dividend is the other way the company hands its owner money**, and it is taxed on both
+sides: company profit tax on the way out, dividend tax on the way in. Only the gross is
+written down, in `budget.json`, dated; both rates are dated `legislation` in `config.json`
+like every other government-set figure, so a distribution made under last year's rates stays
+reproducible when this year's move. The day on it is informational and the two-month funding
+shift does **not** apply — that rule is about when invoiced work becomes spendable, and a
+dividend is a payment made on a date.
+
+The ordering follows the side the money falls on, and it is a reading decision as much as an
+arithmetic one. Company profit tax is a company cost, so it sits with the company's own costs
+above the payroll cascade where it cannot read as reducing net income. The dividend behaves
+like a gross and its tax like income tax, so the pair brackets the personal rows. The
+dividend therefore appears in both sums — the company's and the owner's — and that is one
+movement seen twice, out of the company and, net of its own tax, into the pocket, not double
+counting.
+
+It is charged **before the salary is sized**, not only at the close. A full salary takes the
+whole remainder, so subtracting a distribution afterwards would drain the company straight
+through the target balance that is documented above as a floor. Charged first, both stated
+invariants survive: a full salary still closes the company at its target, and the rendered
+rows still add up to the closing figure. A `fixed` or `minimum` month is unaffected except at
+the close, which is already how those modes overdraw. A dividend in a month with **no rate in
+force is refused** rather than charged at zero — unlike a salary, which happens in every month
+the navigation offers, a dividend exists only where somebody deliberately wrote one, so the
+refusal is contained to that month and 0% presented as a computed figure is not.
+
+**The director's loan** is the running balance between the owner and the company: what the
+company owes, or what the owner owes it. Positive means the company owes the owner. It
+accrues by net income each month — which now includes a dividend net of its dividend tax,
+and that is what makes "net income is what the company owes me" true rather than roughly
+true — and is settled by money that actually crossed.
+
+A crossing is a statement line carrying a `movement` marker **beside** its `ignored` reason,
+never instead of one: such a line genuinely is not a budget expense, so the exactly-one-of
+rule above is untouched and a marked line still says why it is out of the figures. Two of the
+six values leave the company for the state and cross nothing; they are marked only so the
+spending page can list them rather than burying them among the ignored lines.
+
+Both statements are imported, so the same transfer arrives twice, and counting it twice is
+the one way this figure goes quietly wrong. **The sign is what enforces recording it once**:
+everything except a contribution must be money leaving the company, so the mirror line on the
+private statement — whose sign is the other way round — cannot be marked at all. That costs
+nothing and, crucially, needs no resolving of a transaction's `account` against
+`accounts.json`, which is deliberately not done. The residual case the sign cannot catch, two
+company-side lines marked for one real transfer, is a note beside the figure rather than a
+refusal: two genuine draws of one amount on one day are a real thing, and failing the month
+would take it off the dashboard entirely.
+
+Its opening figure lives in `accounts.json` as a series of dated readings — same shape as an
+account balance, so a year-end restatement from the accountant is an ordinary append that
+corrects everything after it without rewriting what was true before, and a month before every
+reading has **no known figure rather than a figure of zero**. It sits beside the accounts
+rather than becoming a third `kind` of one, and not only because a relationship between two
+pots is not a pot: the balance snapshot treats anything that is not `company` as private, so a
+reading would have been swept into the private opening balance, and it takes its opening month
+as the latest across all accounts, so a loan restated in December would have dragged the
+anchor both real balances are walked from. Living outside that array is what makes "it reaches
+no other figure" structural rather than a rule somebody has to remember.
+
+Because the two anchors are unrelated and either can be the earlier, the roll-forward starts
+at whichever comes first and gates each figure on its own — otherwise the months in between
+would silently never accrue. An unimported month settles nothing rather than falling back to
+the plan, because the plan holds no transfers; the loan then reads higher than it is, and says
+so. The year view has none, for the same reason it reads no balances at all.
+
+And it feeds nothing. The private balance still rolls forward assuming net income lands in the
+account, and the loan is precisely the number saying by how much that assumption is currently
+out. Settling it — by paying a salary large enough, or a dividend — is a decision taken with
+the accountant, so neither the distribution nor the loan's opening figure is writable through
+the agent API, only readable.
+
 ## 11. Agent-facing write API
 
 `internal/api` is one service with two adapters: REST under `/api` and MCP at `/mcp`.

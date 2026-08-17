@@ -38,6 +38,20 @@ reads work and writes return `write_not_configured`.
    record it with an `ignored` reason rather than dropping it, so the file still
    reconciles line-for-line against the statement. Never guess, never drop a line.
 
+   **`movement` rides *beside* `ignored`, never instead of it.** It says a line moved money
+   between the company and its owner, which is what the director's loan is settled from:
+   `salary_transfer`, `owner_draw`, `dividend_payout`, `owner_contribution` cross between
+   the two; `corporate_tax` and `dividend_tax` leave the company for the state and cross
+   nothing, and are marked only so the spending page can list them. Such a line is still
+   not a budget expense, so it still carries a reason.
+
+   **Record it once, on the company statement.** Both statements are imported, so the same
+   transfer reaches you twice, and marking both counts it twice. The sign enforces this:
+   everything except `owner_contribution` must be money *out* of the company, so the mirror
+   line on the private statement is refused with a message saying where the marker belongs.
+   Leave that mirror as a plain `ignored` line. `search_transactions` with `only_movements`
+   shows what is already marked, which is how you avoid marking the other side by mistake.
+
    **`untracked` is for money you cannot place *yet*** — cash out of a machine being the
    usual case. It takes a note, not a bare yes: `"ATM withdrawal, cash not spent yet"`. It
    is not the same as `ignored`, which is the decision that something is not a budget
@@ -112,6 +126,35 @@ reads work and writes return `write_not_configured`.
     the bank. `list_accounts` shows the `as_of` of the newest reading each one has, so an
     account still sitting on an older month is one to ask about. See below — the date rule
     is not negotiable.
+
+11. **`get_director_loan`** is where the markers land: what the company owes the owner at
+    the end of a month, or what the owner owes the company. Read it to check a marker you
+    just wrote did what you meant, and read its `notes` — they say when a month is not
+    fully imported, so the figure reads high, and when one transfer looks marked twice. A
+    month before any figure has been stated answers `known: false`, which means *nobody has
+    said*, not *nothing is owed*.
+
+12. **`get_finance_config`** is the dated rules every figure is computed from — both
+    contribution schedules, income tax, company profit tax, dividend tax, the salary plan
+    and the target balance. Read it before explaining a figure rather than assuming a rate.
+    A month before the earliest entry has nothing in force and is charged nothing, which is
+    not the same as a rate of zero.
+
+## What you cannot write, and why
+
+Three things are readable here and only editable in the data repo, deliberately:
+
+- **The rates** (`config.json`). Deployment configuration, changed by redeploying. A past
+  payslip has to stay reproducible against the rates it was actually computed under.
+- **A dividend** (`budget.json`). A distribution is a decision taken with the accountant,
+  and it moves both the company's balance and the owner's income. `get_budget` reports any
+  planned for a month with both taxes already worked out, so you never recompute them.
+- **The director's loan's opening figure** (`accounts.json`). Unlike a bank balance there
+  is nothing to read it off; it is a year-end restatement from the accountant. Appending a
+  reading corrects everything after it without rewriting what was true before.
+
+If the user asks you to change one of these, say where it lives rather than looking for a
+tool. There isn't one.
 
 ## Balances close a month, and never sit in the middle of one
 

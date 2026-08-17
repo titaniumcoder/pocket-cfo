@@ -30,7 +30,7 @@
       "description": "SEPA CREDIT SALARY JULI",
       "amount": -2400,
       "account": "Private Checking",
-      "ignored": "salary"
+      "ignored": "salary arriving — the company side of this is marked there"
     },
     {
       "id": "1c8ff203",
@@ -108,6 +108,15 @@
           "ignored": "cash still in my pocket"
         }
       ]
+    },
+    {
+      "id": "a41c9e02",
+      "date": "2026-08-02",
+      "description": "SALARY TO OWNER",
+      "amount": 2400,
+      "account": "Company Checking",
+      "ignored": "salary paid across to the private account",
+      "movement": "salary_transfer"
     }
   ]
 }

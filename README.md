@@ -179,7 +179,7 @@ reproducible. Each entry states only what changed; anything it omits carries for
 
 | Block | Decides |
 |---|---|
-| `legislation` | every government-set payroll figure: both parties' contribution schedules as marginal bands, the income tax bands, the minimum wage |
+| `legislation` | every government-set figure: both parties' contribution schedules as marginal bands, the income tax bands, the minimum wage, and the two a distribution is charged at — `companyProfitTax` and `dividendTax`, in the same band shape |
 | `salary` | what a month pays: a full salary, only the statutory minimum, a `fixed` gross `amount`, or none at all |
 | `targetBalance` | a figure the company saves towards: under it a month pays the minimum, at or above it full salary resumes |
 | `startMonth` | the first month budgeting covers; earlier months are not offered at all |

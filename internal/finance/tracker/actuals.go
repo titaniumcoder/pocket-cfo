@@ -52,6 +52,18 @@ type ActualsView struct {
 
 	UntrackedCents int
 	UntrackedCount int
+
+	// CrossedCents is the month's marked movements summed with their own
+	// signs, so money out of the company and money back into it need no
+	// branch: a draw of +5000 settles 5000 of what is owed, a contribution of
+	// -500 adds 500 to it.
+	CrossedCents  int
+	ByMovementRow []MovementTotal
+}
+
+type MovementTotal struct {
+	Movement actualsdata.Movement
+	Cents    int
 }
 
 func (a *Actuals) ForMonth(ctx context.Context, year int, month time.Month) (ActualsView, error) {
@@ -210,9 +222,16 @@ func (a *Actuals) fetch(year int, month time.Month) actualsResult {
 
 func viewOf(af actualsdata.ActualsFile, year int, month time.Month) ActualsView {
 	v := ActualsView{Present: true, ByCategory: map[string]int{}}
+	byMovement := map[actualsdata.Movement]int{}
 	for _, tx := range af.Transactions {
 		untracked := false
 		for _, part := range actualsdata.PartsOf(tx) {
+			if part.Movement != "" {
+				byMovement[part.Movement] += eurToCents(part.Amount)
+				if part.Crossed() {
+					v.CrossedCents += eurToCents(part.Amount)
+				}
+			}
 			if part.Untracked != "" {
 				v.UntrackedCents += eurToCents(part.Amount)
 				untracked = true
@@ -228,8 +247,31 @@ func viewOf(af actualsdata.ActualsFile, year int, month time.Month) ActualsView 
 			v.UntrackedCount++
 		}
 	}
+	v.ByMovementRow = movementTotals(byMovement)
 	v.Complete = coverageComplete(af, year, month)
 	return v
+}
+
+// movementTotals keeps the schema's own order rather than a map's, so the
+// page does not reshuffle itself between two reads of the same file.
+func movementTotals(byMovement map[actualsdata.Movement]int) []MovementTotal {
+	if len(byMovement) == 0 {
+		return nil
+	}
+	out := make([]MovementTotal, 0, len(byMovement))
+	for _, m := range []actualsdata.Movement{
+		actualsdata.MovementSalaryTransfer,
+		actualsdata.MovementOwnerDraw,
+		actualsdata.MovementDividendPayout,
+		actualsdata.MovementOwnerContribution,
+		actualsdata.MovementCorporateTax,
+		actualsdata.MovementDividendTax,
+	} {
+		if cents, ok := byMovement[m]; ok {
+			out = append(out, MovementTotal{Movement: m, Cents: cents})
+		}
+	}
+	return out
 }
 
 func coverageComplete(af actualsdata.ActualsFile, year int, month time.Month) bool {

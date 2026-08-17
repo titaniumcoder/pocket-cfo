@@ -41,6 +41,7 @@ type AccountSnapshot struct {
 	PrivateCents int
 	CompanyCents int
 	HasCompany   bool
+	Found        bool
 	AccountRow   []AccountRow
 	LatestAsOf   time.Time
 }
@@ -211,6 +212,7 @@ func snapshotFor(af accountsdata.AccountsFile, viewed yearMonth) (AccountSnapsho
 		}
 		found = true
 	}
+	snap.Found = found
 	return snap, found
 }
 
@@ -228,37 +230,64 @@ const maxRollForwardMonths = 120
 type openings struct {
 	PrivateCents int
 	Company      companyStock
+	Loan         directorLoanStock
 }
 
 // rollForward walks the months between the read date and the one being looked
 // at, carrying both pots at once. They cannot be walked separately: the
 // company balance is an input to the payroll cascade, and the private balance
 // is fed by what that cascade pays out.
-func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, viewed yearMonth, now time.Time, rateCents int) (openings, error) {
-	elapsed := viewed.ordinal() - snap.OpensMonth.ordinal()
-	if elapsed > maxRollForwardMonths {
-		return openings{}, fmt.Errorf("accounts: as_of is %d months before this month (%s) — check the date in accounts.json, that looks like a typo",
-			elapsed, snap.LatestAsOf.Format("2006-01-02"))
+func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, loan directorLoanStock, viewed yearMonth, now time.Time, rateCents int) (openings, error) {
+	from := walkStart(snap, loan, viewed)
+	if elapsed := viewed.ordinal() - from.ordinal(); elapsed > maxRollForwardMonths {
+		return openings{}, fmt.Errorf("accounts: a reading is %d months before this month (%s) — check the dates in accounts.json, that looks like a typo",
+			elapsed, from)
 	}
 
 	open := openings{
 		PrivateCents: snap.PrivateCents,
 		Company:      companyStock{Known: snap.HasCompany, OpeningCents: snap.CompanyCents},
+		Loan:         loan,
 	}
-	for m := snap.OpensMonth; m.ordinal() < viewed.ordinal(); m = m.addMonths(1) {
+	for m := from; m.ordinal() < viewed.ordinal(); m = m.addMonths(1) {
 		closed, err := t.monthClose(ctx, m, now, rateCents, open.Company)
 		if err != nil {
 			return openings{}, err
 		}
-		open.PrivateCents += closed.PrivateDeltaCents
-		open.Company.OpeningCents = closed.CompanyClosingCents
+		// Each figure starts accruing only from its own anchor: the loan's
+		// reading and the bank's are unrelated, and either may be the earlier
+		// one. The months before a pot's own anchor contribute nothing to it.
+		if snap.Found && m.ordinal() >= snap.OpensMonth.ordinal() {
+			open.PrivateCents += closed.PrivateDeltaCents
+			open.Company.OpeningCents = closed.CompanyClosingCents
+		}
+		if loan.Known && m.ordinal() >= loan.OpensMonth.ordinal() {
+			open.Loan.OpeningCents += closed.NetIncomeCents - closed.CrossedCents
+		}
 	}
 	return open, nil
+}
+
+// walkStart is the earlier of the two anchors, because the loan and the bank
+// balances are anchored independently and a loan stated further back would
+// otherwise never accrue the months in between.
+func walkStart(snap AccountSnapshot, loan directorLoanStock, viewed yearMonth) yearMonth {
+	switch {
+	case snap.Found && loan.Known && loan.OpensMonth.ordinal() < snap.OpensMonth.ordinal():
+		return loan.OpensMonth
+	case snap.Found:
+		return snap.OpensMonth
+	case loan.Known:
+		return loan.OpensMonth
+	}
+	return viewed
 }
 
 type monthClosing struct {
 	PrivateDeltaCents   int
 	CompanyClosingCents int
+	NetIncomeCents      int
+	CrossedCents        int
 }
 
 func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, rateCents int, company companyStock) (monthClosing, error) {
@@ -266,7 +295,7 @@ func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, ra
 	if err != nil {
 		return monthClosing{}, fmt.Errorf("accounts: budget for %s: %w", m, err)
 	}
-	privateCents, companyCents := t.closingExpenses(ctx, m, bv)
+	privateCents, companyCents, av := t.closingExpenses(ctx, m, bv)
 	fundingStart, fundingEnd := fundingRangeForMonth(m.Year, m.Month)
 	pv := t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(companyCents)/100, bv.CompanyGroups, company, bv.Dividends)
 	if pv.Err != "" {
@@ -275,15 +304,22 @@ func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, ra
 	return monthClosing{
 		PrivateDeltaCents:   pv.NetIncomeCents - privateCents,
 		CompanyClosingCents: pv.CompanyClosingCents,
+		NetIncomeCents:      pv.NetIncomeCents,
+		CrossedCents:        av.CrossedCents,
 	}, nil
 }
 
-func (t *Tracker) closingExpenses(ctx context.Context, m yearMonth, bv BudgetView) (private, company int) {
+// closingExpenses hands back the view it read as well as the two figures, so
+// the walk still costs one read of a month's actuals. The expenses fall back
+// to the plan when nothing is imported; the crossings never do, because the
+// plan holds no transfers and an unimported month has settled nothing.
+func (t *Tracker) closingExpenses(ctx context.Context, m yearMonth, bv BudgetView) (private, company int, av ActualsView) {
 	av, err := t.Actuals.ForMonth(ctx, m.Year, m.Month)
 	if err != nil || !av.Present || !av.Complete {
-		return bv.TotalPlannedCents, bv.CompanyTotalPlannedCents
+		return bv.TotalPlannedCents, bv.CompanyTotalPlannedCents, av
 	}
-	return ActualTotals(av, t.companyCategoryIDs(ctx))
+	private, company = ActualTotals(av, t.companyCategoryIDs(ctx))
+	return private, company, av
 }
 
 func derefStr(p *string) string {

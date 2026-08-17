@@ -14,7 +14,34 @@ var tmpl = template.Must(template.Must(template.New("").Funcs(template.FuncMap{
 	"untracked":  untrackedMark,
 	"out":        outEuro,
 	"outClass":   outClass,
+	"owed":       owedClass,
+	"signed":     signedEuro,
 }).Parse(webui.HeaderTemplate)).Parse(templates))
+
+// owedClass is the director's loan's only signal, and it carries the
+// direction on its own: green where the figure is in the owner's favour, red
+// where it is against. On the two balance rows that reads as which way round
+// the debt is; on the movement row it is reality that decides, and that row is
+// the one which genuinely goes either way. No mark and no flag — those mean
+// something is wrong, and a direction is not.
+func owedClass(cents int) string {
+	switch {
+	case cents > 0:
+		return " goodamt"
+	case cents < 0:
+		return " neg"
+	}
+	return ""
+}
+
+// signedEuro keeps the sign on the two flow rows, so the four figures add
+// straight down the column to the one that closes them.
+func signedEuro(cents int) template.HTML {
+	if cents > 0 {
+		return template.HTML("+" + formatEuro(cents))
+	}
+	return template.HTML(formatEuro(cents))
+}
 
 func outEuro(cents int) template.HTML {
 	if cents > 0 {
@@ -497,6 +524,19 @@ var templates = `
     <div class="ledger">
       <div class="row net neg"><span class="label">Total private expenses</span>{{if .ShowActuals}}<span class="mid{{outClass .PrivateTotalPlannedCents}}">{{out .PrivateTotalPlannedCents}}</span><span class="amt{{outClass .PrivateActualCents}}">{{out .PrivateActualCents}}<span class="stack-m">of {{out .PrivateTotalPlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .PrivateTotalPlannedCents}}</span>{{end}}</div>
       <div class="row net balance{{if lt .HeadlineBalanceCents 0}} neg{{end}}"><span class="label">Balance</span>{{if .ShowActualBalance}}<span class="mid">{{eur .BalanceCents}}</span><span class="amt netamt">{{eur .ActualBalanceCents}}<span class="stack-m">planned {{eur .BalanceCents}}</span></span>{{else}}<span class="mid"></span><span class="amt netamt">{{eur .BalanceCents}}</span>{{end}}</div>
+    </div>
+    {{end}}
+
+    {{if .ShowDirectorLoan}}
+    <div class="ledger">
+      <h2>Director&rsquo;s loan</h2>
+      {{if .DirectorLoanUnknown}}<div class="row"><span class="stale-note">{{.DirectorLoanUnknown}}</span></div>
+      {{else}}
+      <div class="row net{{owed .LoanOpeningCents}}"><span class="label">At the start</span><span class="mid"></span><span class="amt netamt">{{eur .LoanOpeningCents}}</span></div>
+      <div class="row{{owed .LoanNetIncomeCents}}"><span class="label">Net income</span><span class="mid"></span><span class="amt">{{signed .LoanNetIncomeCents}}</span></div>
+      <div class="row{{owed .LoanMovementCents}}"><span class="label">Money movement</span><span class="mid"></span><span class="amt">{{signed .LoanMovementCents}}</span></div>
+      <div class="row net{{owed .LoanClosingCents}}"><span class="label">At the end</span><span class="mid"></span><span class="amt netamt">{{eur .LoanClosingCents}}</span></div>
+      {{end}}
     </div>
     {{end}}
   </section>

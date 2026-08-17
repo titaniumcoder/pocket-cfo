@@ -166,6 +166,13 @@ type Figures struct {
 	TargetNeedsBalanceNote   string
 	DividendNeedsBalanceNote string
 
+	ShowDirectorLoan    bool
+	LoanOpeningCents    int
+	LoanNetIncomeCents  int
+	LoanMovementCents   int
+	LoanClosingCents    int
+	DirectorLoanUnknown string
+
 	AccountsErr string
 }
 
@@ -271,6 +278,8 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	result.computeSpendable(months, year, start, trackedHours > 0 || expectedNetHours > 0)
 
 	result.computeFundingBalance(t, ctx, year, start, now, months, rateCents, bv, carried, snap, opened)
+
+	result.computeDirectorLoan(t, ctx, viewed, months, carried)
 
 	if at, stale := t.Toggl.YearStatus(year); !at.IsZero() {
 		result.LastUpdated = at.In(t.Loc).Format("02 Jan 15:04")
@@ -591,6 +600,49 @@ func (t *Tracker) dividendNeedsBalanceNote(viewed yearMonth, months int, carried
 		"Add the account with \"kind\": \"company\"."
 }
 
+// computeDirectorLoan carries the running balance between the owner and the
+// company into the month, adds what the company took on and takes off what
+// actually crossed. It reaches no other figure on the page: the private
+// balance still rolls forward assuming net income lands in the account, and
+// this is precisely the number saying by how much that assumption is out.
+func (f *Figures) computeDirectorLoan(t *Tracker, ctx context.Context, viewed yearMonth, months int, carried openings) {
+	if months != 1 || t.Accounts == nil || f.AccountsErr != "" {
+		return
+	}
+	if !carried.Loan.Known {
+		f.DirectorLoanUnknown = "No opening figure is stated before this month, so what the company owes is not known — which is not the same as nothing. " +
+			"Add a reading to director_loan in accounts.json."
+		f.ShowDirectorLoan = t.hasDirectorLoanBlock(ctx)
+		return
+	}
+	f.ShowDirectorLoan = true
+	f.LoanOpeningCents = carried.Loan.OpeningCents
+	f.LoanNetIncomeCents = f.FundingPersonal.NetIncomeCents
+	f.LoanMovementCents = -t.crossedInMonth(ctx, viewed)
+	f.LoanClosingCents = f.LoanOpeningCents + f.LoanNetIncomeCents + f.LoanMovementCents
+}
+
+// crossedInMonth is the viewed month's own settlements. The month's actuals
+// are already cached by everything else on the page, so this costs no read.
+func (t *Tracker) crossedInMonth(ctx context.Context, viewed yearMonth) int {
+	if t.Actuals == nil {
+		return 0
+	}
+	av, err := t.Actuals.ForMonth(ctx, viewed.Year, viewed.Month)
+	if err != nil {
+		return 0
+	}
+	return av.CrossedCents
+}
+
+// hasDirectorLoanBlock decides whether "not known" is worth saying at all: a
+// file that has never mentioned the loan is not being told anything by a note
+// about a figure it does not track.
+func (t *Tracker) hasDirectorLoanBlock(ctx context.Context) bool {
+	af, err := t.Accounts.File(ctx)
+	return err == nil && af.DirectorLoan != nil
+}
+
 // carriedBalances rolls both pots up to the month being looked at. It runs
 // before the cascade rather than after it, because the company balance is one
 // of the cascade's inputs now — what a full salary can afford includes what the
@@ -599,18 +651,22 @@ func (t *Tracker) carriedBalances(ctx context.Context, viewed yearMonth, now tim
 	if t.Accounts == nil || months != 1 {
 		return openings{}, AccountSnapshot{}, false, ""
 	}
-	snap, ok, err := t.Accounts.Snapshot(ctx, viewed)
+	af, err := t.Accounts.File(ctx)
 	if err != nil {
 		return openings{}, AccountSnapshot{}, false, err.Error()
 	}
-	if !ok {
+	snap, ok := snapshotFor(af, viewed)
+	loan := directorLoanInForce(af, viewed)
+	// Either anchor is enough to walk: the loan can be stated when no bank
+	// balance has been read yet, and it opens on its own reading regardless.
+	if !ok && !loan.Known {
 		return openings{}, AccountSnapshot{}, false, ""
 	}
-	carried, err := t.rollForward(ctx, snap, viewed, now, rateCents)
+	carried, err := t.rollForward(ctx, snap, loan, viewed, now, rateCents)
 	if err != nil {
 		return openings{}, AccountSnapshot{}, false, err.Error()
 	}
-	return carried, snap, true, ""
+	return carried, snap, ok, ""
 }
 
 func (f *Figures) publishAccountBalances(snap AccountSnapshot, carried openings, viewed yearMonth) {

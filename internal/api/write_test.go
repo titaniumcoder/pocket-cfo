@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/actualsdata"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
@@ -105,6 +106,7 @@ func writeService(t *testing.T, gh *fakeGitHub) *Service {
 	t.Helper()
 	srv := gh.server(t)
 	return &Service{
+		Now:     func() time.Time { return time.Date(2026, time.October, 15, 0, 0, 0, 0, time.UTC) },
 		Budget:  &tracker.Budget{FS: fstest.MapFS{"budget.json": &fstest.MapFile{Data: []byte(writeBudgetJSON)}}},
 		Actuals: &tracker.Actuals{FS: fstest.MapFS{}},
 		Store: &ContentsClient{
@@ -261,5 +263,85 @@ func TestActualsForWithoutWritesHasNoSHA(t *testing.T) {
 	}
 	if got.SHA != "" {
 		t.Errorf("sha = %q, want empty when writes are not configured", got.SHA)
+	}
+}
+
+func TestRefuseUnknownFields(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"a clean month passes", `{"month":"2026-08","coverage":[],"transactions":[]}`, ""},
+		{"nothing to lose in a month that does not exist yet", ``, ""},
+		{
+			"a root key nobody here models",
+			`{"month":"2026-08","reconciled_by":"someone","coverage":[],"transactions":[]}`,
+			"reconciled_by",
+		},
+		{
+			"a line key nobody here models",
+			`{"month":"2026-08","coverage":[],"transactions":[
+				{"id":"a1","date":"2026-08-01","description":"X","amount":1,"account":"A","counterparty_iban":"BG00"}]}`,
+			"counterparty_iban",
+		},
+		{
+			"a split key nobody here models",
+			`{"month":"2026-08","coverage":[],"transactions":[
+				{"id":"a1","date":"2026-08-01","description":"X","amount":2,"account":"A",
+				 "splits":[{"amount":1,"ignored":"x","vat_rate":20},{"amount":1,"ignored":"y"}]}]}`,
+			"vat_rate",
+		},
+		{
+			"a coverage key nobody here models",
+			`{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01","statement_id":"7"}],"transactions":[]}`,
+			"statement_id",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := refuseUnknownFields([]byte(tt.raw), "2026-08")
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("a field this endpoint would have dropped was accepted")
+			}
+			e, ok := err.(*Error)
+			if !ok {
+				t.Fatalf("error = %T, want *Error", err)
+			}
+			details, _ := e.Details.([]string)
+			if !strings.Contains(strings.Join(details, " "), tt.want) {
+				t.Errorf("details = %v, want them to name %q", details, tt.want)
+			}
+		})
+	}
+}
+
+func TestAddRefusesAMonthCarryingAFieldItWouldDrop(t *testing.T) {
+	gh := newFakeGitHub(map[string]string{
+		"data/actuals/2026-08.json": `{
+  "month": "2026-08",
+  "coverage": [{ "account": "A", "from": "2026-08-01", "to": "2026-08-31", "imported_at": "2026-09-01" }],
+  "transactions": [
+    { "id": "a1", "date": "2026-08-01", "description": "MIETE", "amount": 900, "account": "A",
+      "category": "` + idRent + `", "settled_on": "2026-08-02" }
+  ]
+}`,
+	})
+	s := writeService(t, gh)
+
+	_, err := add(t, s, AddRequest{
+		Transactions: []actualsdata.Transaction{addTx("a2", "2026-08-05", 40, idGroceries)},
+	})
+	if err == nil {
+		t.Fatal("the write went ahead and would have dropped settled_on from the file")
+	}
+	if !strings.Contains(err.Error(), "does not know") {
+		t.Errorf("error = %v, want it to say the field is not understood", err)
 	}
 }

@@ -38,11 +38,12 @@ func (s *Service) AddTransactions(ctx context.Context, req AddRequest) (*AddResu
 		return nil, errorf(CodeWriteNotConfigured, "writes are not configured")
 	}
 
-	txByMonth, err := groupTransactionsByMonth(req.Transactions)
+	today := s.now().Format("2006-01-02")
+	txByMonth, err := groupTransactionsByMonth(req.Transactions, today)
 	if err != nil {
 		return nil, err
 	}
-	covByMonth, err := groupCoverageByMonth(req.Coverage)
+	covByMonth, err := groupCoverageByMonth(req.Coverage, today)
 	if err != nil {
 		return nil, err
 	}
@@ -97,9 +98,12 @@ type plannedMonth struct {
 }
 
 func (s *Service) planAdd(ctx context.Context, month string, txs []actualsdata.Transaction, cov []actualsdata.Coverage, knownIDs map[string]bool) (plannedMonth, error) {
-	doc, _, sha, err := s.loadMonth(ctx, month)
+	doc, raw, sha, err := s.loadMonth(ctx, month)
 	if err != nil {
 		return plannedMonth{}, err
+	}
+	if uerr := refuseUnknownFields(raw, month); uerr != nil {
+		return plannedMonth{}, uerr
 	}
 	before := doc
 
@@ -177,7 +181,7 @@ func mergeCoverage(have, incoming []actualsdata.Coverage) []actualsdata.Coverage
 	return out
 }
 
-func groupTransactionsByMonth(txs []actualsdata.Transaction) (map[string][]actualsdata.Transaction, error) {
+func groupTransactionsByMonth(txs []actualsdata.Transaction, today string) (map[string][]actualsdata.Transaction, error) {
 	out := map[string][]actualsdata.Transaction{}
 	seen := map[string]bool{}
 	for i, tx := range txs {
@@ -191,12 +195,17 @@ func groupTransactionsByMonth(txs []actualsdata.Transaction) (map[string][]actua
 			return nil, errorf(CodeInvalidRequest, "transaction id %q appears twice in this request", tx.Id)
 		}
 		seen[tx.Id] = true
+		if tx.Date > today {
+			return nil, errorf(CodeInvalidRequest,
+				"transaction %d (%s): date %s has not happened yet — no statement carries it. Today is %s.",
+				i+1, tx.Id, tx.Date, today)
+		}
 		out[monthOf(tx.Date)] = append(out[monthOf(tx.Date)], tx)
 	}
 	return out, nil
 }
 
-func groupCoverageByMonth(cov []actualsdata.Coverage) (map[string][]actualsdata.Coverage, error) {
+func groupCoverageByMonth(cov []actualsdata.Coverage, today string) (map[string][]actualsdata.Coverage, error) {
 	out := map[string][]actualsdata.Coverage{}
 	for i, c := range cov {
 		if err := checkDay(c.From); err != nil {
@@ -209,6 +218,11 @@ func groupCoverageByMonth(cov []actualsdata.Coverage) (map[string][]actualsdata.
 			return nil, errorf(CodeInvalidRequest,
 				"coverage %d (%s): %s..%s crosses a month boundary — split it into one range per month, since a month is one file",
 				i+1, c.Account, c.From, c.To)
+		}
+		if c.To > today {
+			return nil, errorf(CodeInvalidRequest,
+				"coverage %d (%s): to %s has not happened yet — a statement is read, not projected. Today is %s.",
+				i+1, c.Account, c.To, today)
 		}
 		out[monthOf(c.From)] = append(out[monthOf(c.From)], c)
 	}

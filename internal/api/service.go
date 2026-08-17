@@ -84,6 +84,7 @@ type MonthBudget struct {
 	TotalPrivateCents int               `json:"total_private_cents"`
 	TotalCompanyCents int               `json:"total_company_cents"`
 	Dividends         []DividendPlanned `json:"dividends,omitempty"`
+	SHA               string            `json:"sha,omitempty"`
 }
 
 func (s *Service) BudgetForMonth(ctx context.Context, month string) (*MonthBudget, error) {
@@ -97,7 +98,19 @@ func (s *Service) BudgetForMonth(ctx context.Context, month string) (*MonthBudge
 	}
 	mb := monthBudgetOf(month, planned)
 	mb.Dividends = s.dividendsIn(ctx, year, m)
+	mb.SHA = s.budgetSHA(ctx)
 	return mb, nil
+}
+
+func (s *Service) budgetSHA(ctx context.Context) string {
+	if s.Store == nil {
+		return ""
+	}
+	_, sha, err := s.Store.Get(ctx, s.budgetPath())
+	if err != nil {
+		return ""
+	}
+	return sha
 }
 
 // dividendsIn reports the month's distributions with both taxes worked out,
@@ -382,9 +395,11 @@ func (s *Service) Search(ctx context.Context, q SearchQuery) (*SearchResult, err
 	return out, nil
 }
 
+const maxScanYears = 12
+
 func scanYears(q SearchQuery, currentYear int) []int {
 	if len(q.Years) > 0 {
-		return q.Years
+		return boundYears(q.Years, currentYear)
 	}
 	lo, hi := 0, 0
 	for _, bound := range []string{q.From, q.To} {
@@ -405,6 +420,25 @@ func scanYears(q SearchQuery, currentYear int) []int {
 	out := make([]int, 0, hi-lo+1)
 	for y := lo; y <= hi; y++ {
 		out = append(out, y)
+	}
+	return out
+}
+
+func boundYears(years []int, currentYear int) []int {
+	seen := map[int]bool{}
+	out := make([]int, 0, len(years))
+	for _, y := range years {
+		if y < 1970 || y > currentYear+1 || seen[y] {
+			continue
+		}
+		seen[y] = true
+		out = append(out, y)
+		if len(out) == maxScanYears {
+			break
+		}
+	}
+	if len(out) == 0 {
+		return []int{currentYear}
 	}
 	return out
 }

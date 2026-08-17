@@ -126,7 +126,9 @@ reads work and writes return `write_not_configured`.
 9. **`get_reconciliation_status`** reports how much is still `untracked` and any one-off
    charged in a month other than the one it is budgeted for. When it reports a mistimed
    charge, **`move_planned_expense`** shifts the plan to match — it changes that category's
-   date and nothing else, and needs a reason.
+   date and nothing else, and needs a reason and a `base_sha`. That sha is the `sha` field
+   `get_budget` returns; sending a stale one comes back as a conflict carrying the current
+   value, so you can re-read and try again.
 
 10. When a month closes, **`record_account_balance`** for each account the user reads off
     the bank. `list_accounts` shows the `as_of` of the newest reading each one has, so an
@@ -215,7 +217,10 @@ A balance you recorded is in force the same way — `list_accounts` reports the 
 at once, and the dashboard opens the next month on the new figure.
 
 Two limits worth knowing. A change made somewhere other than this app — a hand edit in the
-data repo, or another instance — appears only once it has deployed. And the app never
+data repo, or another instance — appears only once it has deployed, *except* through
+`get_actuals`, which reads the data repo directly whenever writes are configured and so
+sees a hand edit at once. So `get_actuals` and `search_transactions` can disagree for the
+length of one deploy, and `get_actuals` is the one that is up to date. And the app never
 writes to its own copy on disk: the memory is dropped when the deploy replaces the file, so
 git remains the only thing that is true.
 
@@ -264,6 +269,7 @@ else, so "it touched nothing that was already there" is something you can confir
 glance instead of taking on faith.
 
 The app never writes its own checkout — that directory is ephemeral and would diverge
-from git. One consequence worth knowing: the copy `edit_transactions` searches when you
-omit `month` is that checkout, so it lags by a deploy and cannot see a line you added a
-minute ago. Pass `month` and it never has to look.
+from git. The lookup `edit_transactions` does when you omit `month` reads through the same
+memory as everything else, so it *does* find a line you added a minute ago — but it scans
+the months around now, which is slower and only covers a three-year window. Pass `month`
+and it never has to look.

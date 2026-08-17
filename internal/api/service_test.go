@@ -808,3 +808,37 @@ func TestSearchFindsUntrackedLines(t *testing.T) {
 		t.Errorf("split untracked note lost: %+v", got)
 	}
 }
+
+func TestScanYearsIsBounded(t *testing.T) {
+	const current = 2026
+
+	t.Run("an absurd range is capped", func(t *testing.T) {
+		var many []int
+		for y := 1; y <= 9999; y++ {
+			many = append(many, y)
+		}
+		got := scanYears(SearchQuery{Years: many}, current)
+		if len(got) > maxScanYears {
+			t.Errorf("%d years scanned, want at most %d", len(got), maxScanYears)
+		}
+		for _, y := range got {
+			if y < 1970 || y > current+1 {
+				t.Errorf("year %d is outside anything plausible", y)
+			}
+		}
+	})
+
+	t.Run("an ordinary request is untouched", func(t *testing.T) {
+		got := scanYears(SearchQuery{Years: []int{2025, 2026}}, current)
+		if len(got) != 2 || got[0] != 2025 || got[1] != 2026 {
+			t.Errorf("years = %v, want [2025 2026]", got)
+		}
+	})
+
+	t.Run("nothing plausible falls back to this year", func(t *testing.T) {
+		got := scanYears(SearchQuery{Years: []int{1066, 9999}}, current)
+		if len(got) != 1 || got[0] != current {
+			t.Errorf("years = %v, want [%d]", got, current)
+		}
+	})
+}

@@ -76,7 +76,7 @@ type coverageArg struct {
 
 type editArg struct {
 	ID        string     `json:"id" jsonschema:"the id of the transaction to change, as get_actuals or search_transactions reported it"`
-	Month     string     `json:"month,omitempty" jsonschema:"the month it is filed under, YYYY-MM, exactly as get_actuals or search_transactions returned it beside the id. Optional, but always worth sending: without it the id is looked up in the deployed copy, which lags by one deploy"`
+	Month     string     `json:"month,omitempty" jsonschema:"the month it is filed under, YYYY-MM, exactly as get_actuals or search_transactions returned it beside the id. Optional, but always worth sending: without it the id is looked up by scanning the months around now, which is both slower and bounded to a three-year window"`
 	Category  string     `json:"category,omitempty" jsonschema:"reattribute the line to this budget category id, clearing whatever it had before"`
 	Ignored   string     `json:"ignored,omitempty" jsonschema:"mark the line as not a budget expense, with the reason, clearing whatever it had before"`
 	Untracked string     `json:"untracked,omitempty" jsonschema:"park the line as not decided yet, with a note, clearing whatever it had before"`
@@ -174,7 +174,7 @@ type moveArgs struct {
 	FromMonth  string `json:"from_month" jsonschema:"the month it is currently planned for, YYYY-MM"`
 	ToMonth    string `json:"to_month" jsonschema:"the month it was actually charged in, YYYY-MM"`
 	Reason     string `json:"reason" jsonschema:"why it moved; lands in the commit message"`
-	BaseSHA    string `json:"base_sha" jsonschema:"the sha of budget.json this edit is based on"`
+	BaseSHA    string `json:"base_sha" jsonschema:"the sha of budget.json this edit is based on, as get_budget reports it in its sha field. A stale one comes back as a conflict carrying the current sha, so re-read and try again"`
 }
 
 type categoriesResult struct {
@@ -206,7 +206,7 @@ func (s *Service) registerTools(server *mcp.Server) {
 	})
 
 	mcp.AddTool(server, tool("get_budget",
-		"The plan for a period, with overrides already applied. period is YYYY-MM for one month or YYYY for twelve month buckets. A category with a date is a one-off counted only in that month. dividends lists any distribution planned for the month with both taxes already worked out — the gross, the company profit tax it costs the company, the dividend tax withheld and what actually reaches the owner. Read those figures rather than recomputing them from get_finance_config, which is easy to resolve to the wrong month. A move_planned_expense you made is reflected at once; a budget.json edited directly appears only after that commit has deployed.",
+		"The plan for a period, with overrides already applied. period is YYYY-MM for one month or YYYY for twelve month buckets. A category with a date is a one-off counted only in that month. dividends lists any distribution planned for the month with both taxes already worked out — the gross, the company profit tax it costs the company, the dividend tax withheld and what actually reaches the owner. Read those figures rather than recomputing them from get_finance_config, which is easy to resolve to the wrong month. A move_planned_expense you made is reflected at once; a budget.json edited directly appears only after that commit has deployed. For a month, sha is budget.json's current sha — that is the base_sha move_planned_expense needs.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, a periodArgs) (*mcp.CallToolResult, any, error) {
 		if len(a.Period) == 4 {
 			return result(s.BudgetForYear(ctx, a.Period))
@@ -215,7 +215,7 @@ func (s *Service) registerTools(server *mcp.Server) {
 	})
 
 	mcp.AddTool(server, tool("get_actuals",
-		"The committed document for one month. This file is the source of truth: where it disagrees with your own recollection, it wins — read it before adding lines, so you send only what is missing. Returns not_found when the month has never been reconciled. Writes take no sha, so nothing here has to be passed back; the id and month beside each line are what add_transactions and edit_transactions work from. A month you wrote through this API reads back immediately; a change made directly in the data repo appears only after that commit has deployed.",
+		"The committed document for one month. This file is the source of truth: where it disagrees with your own recollection, it wins — read it before adding lines, so you send only what is missing. Returns not_found when the month has never been reconciled. Writes take no sha, so nothing here has to be passed back; the id and month beside each line are what add_transactions and edit_transactions work from. This reads the data repo directly whenever writes are configured, so a month you wrote through this API AND a change made by hand in the repo both read back immediately — which means this can be ahead of search_transactions and get_reconciliation_status, which lag until the commit has deployed. Where they disagree, this one is current.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, a monthArgs) (*mcp.CallToolResult, any, error) {
 		return result(s.ActualsFor(ctx, a.Month))
 	})
@@ -280,7 +280,7 @@ func (s *Service) registerTools(server *mcp.Server) {
 		"Change what already-recorded transactions are attributed to — the common correction, e.g. every Parkmart line in August to Groceries. Send all the changes as one edits array: one call, one commit per month touched. "+
 			"Each edit names a transaction id and exactly one of category, ignored, untracked or splits, which REPLACES whatever that line carried before — this is how an ignored line becomes a category, or a category becomes untracked. "+
 			"It CANNOT change a date, amount, description or account, cannot add a line, and cannot remove one; anything you leave out of the array is left alone. There is no removal in this API at all. "+
-			"Pass month with each edit — get_actuals and search_transactions both return it beside the id. It is optional, but the fallback lookup reads the deployed copy, which lags by one deploy and so cannot see a line added minutes ago. "+
+			"Pass month with each edit — get_actuals and search_transactions both return it beside the id. It is optional: the fallback lookup does find a line added minutes ago, but it scans the months around now, which is slower and only covers a three-year window. "+
 			"There is no base_sha: only the ids you name are touched, so someone else's change to another line merges rather than being lost. "+
 			"If any id does not exist, nothing in that month is written and the missing ids come back. reason lands in the commit message.",
 		false), func(ctx context.Context, _ *mcp.CallToolRequest, a editArgs) (*mcp.CallToolResult, any, error) {

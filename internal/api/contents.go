@@ -122,7 +122,10 @@ func (c *ContentsClient) Put(ctx context.Context, path string, content []byte, b
 			return "", fmt.Errorf("github PUT %s: %w", path, err)
 		}
 		return out.Content.SHA, nil
-	case http.StatusConflict, http.StatusUnprocessableEntity:
+	case http.StatusUnprocessableEntity:
+		return "", errorf(CodeUpstream,
+			"GitHub refused the write to %s (422) — this is not a conflict, so re-reading and retrying will not help. A month file that has grown past the Contents API limit is the usual cause.", path)
+	case http.StatusConflict:
 		return "", &Error{Code: CodeConflict, Message: fmt.Sprintf("%s changed underneath us; re-read and merge", path)}
 	}
 	return "", fmt.Errorf("github PUT %s: %s", path, resp.Status)

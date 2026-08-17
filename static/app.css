@@ -562,6 +562,11 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
    past. First in the grid means no heading gap above it. */
 .spend-grid > h3.sg-untracked:first-child { margin-top: 0; }
 .spend-grid > .sg-untracked-row > * { font-weight: 700; }
+/* The note rides with the description rather than taking the third track,
+   because that track is the account here as it is in every other section, and
+   because the narrow-screen rules drop it: on a phone the note is the half of
+   the pair worth keeping. Not nowrap like .part-of — a note is a sentence. */
+.untracked-note { font-size: .82em; opacity: .6; font-weight: 400; }
 .muted { opacity: .6; font-size: .88rem; }
 .budget-of { text-align: right; opacity: .55; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* A part of a split says what it is a part of: 50 under Restaurant against a

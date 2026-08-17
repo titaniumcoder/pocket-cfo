@@ -725,6 +725,41 @@ func TestSpendingPageShowsUntrackedCash(t *testing.T) {
 	}
 }
 
+// TestUntrackedCashNamesTheAccountItLeft: knowing 42 went missing is not
+// actionable until you know which card it went missing from, and with the
+// account in the third track — where every other section on the page keeps it
+// — the note moves in beside the description rather than being dropped. The
+// row still contributes five cells, which TestSpendingIsOneGrid pins for the
+// whole page.
+func TestUntrackedCashNamesTheAccountItLeft(t *testing.T) {
+	trk := actualsTracker(t, map[string]string{"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"Revolut Private","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+		"transactions":[
+			{"id":"u1","date":"2026-08-13","description":"10aug Pvvpanazl","amount":42,"account":"Revolut Private","untracked":"merchant not identified from the statement"}]}`})
+
+	rec := httptest.NewRecorder()
+	RenderSpending(rec, trk.ComputeSpending(context.Background(), 2026, time.August))
+	body := rec.Body.String()
+
+	row := regexp.MustCompile(`(?s)<div class="sg-row sg-untracked-row">(.*?)</div>`).FindStringSubmatch(body)
+	if row == nil {
+		t.Fatal("no untracked row on the page")
+	}
+	if !strings.Contains(row[1], `<span class="col-secondary">Revolut Private</span>`) {
+		t.Errorf("the untracked row does not name the account it left: %s", row[1])
+	}
+	if !strings.Contains(row[1], `<span class="untracked-note">merchant not identified from the statement</span>`) {
+		t.Errorf("the note did not move in beside the description: %s", row[1])
+	}
+	if got := topLevelCells(row[1]); got != 5 {
+		t.Errorf("the untracked row contributes %d cells, want 5 — the note has to nest inside the description, not take a track", got)
+	}
+	// The header names what the column now holds, or the figures line up under
+	// the wrong word.
+	if !strings.Contains(body, `<span class="sg-head col-secondary">Account</span><span class="sg-head num">Amount</span>`) {
+		t.Error("the untracked header still says Note over the account column")
+	}
+}
+
 // TestUntrackedCashLeadsThePage: it is the one section on the page that asks
 // to be acted on, so it is read before the categories rather than found after
 // scrolling past them.

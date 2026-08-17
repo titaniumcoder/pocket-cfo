@@ -123,8 +123,23 @@
             "$ref": "#/$defs/split"
           },
           "description": "Set instead of category, ignored or untracked when one statement line paid for more than one thing. The line itself stays a single row so the file still reconciles line-for-line against the statement; the parts must add up to its amount. Two or more parts — one part is just a category."
+        },
+        "movement": {
+          "$ref": "#/$defs/movement"
         }
       }
+    },
+    "movement": {
+      "type": "string",
+      "enum": [
+        "salary_transfer",
+        "owner_draw",
+        "dividend_payout",
+        "owner_contribution",
+        "corporate_tax",
+        "dividend_tax"
+      ],
+      "description": "What this line moved between the company and its owner, set ALONGSIDE ignored rather than instead of it — such a line genuinely is not a budget expense, so it still carries a reason like every other ignored line. It is what the director's loan is settled from. The first four cross between the two of you and move that balance: salary_transfer, owner_draw and dividend_payout hand money to the owner, owner_contribution puts money back in. The last two leave the company for the state and move nothing; they are marked only so the spending page can list them rather than burying them among the ignored lines. RECORD IT ONCE, ON THE COMPANY STATEMENT: both statements are imported, so the same transfer arrives twice, and counting it twice is the one way this figure goes quietly wrong. The sign enforces it — everything except owner_contribution must be money OUT of the company (a positive amount) and owner_contribution must be money in (negative), so the mirror line on the private statement, whose sign is the other way round, cannot be marked at all."
     },
     "split": {
       "type": "object",
@@ -151,6 +166,9 @@
           "type": "string",
           "minLength": 1,
           "description": "Why this part is not decided yet — 'the rest is still in my wallet'. The case a split exists for: 100 out of the machine, 60 of it recognisably groceries and 40 still unaccounted for, recorded as exactly that instead of guessing at the 40 or ignoring the whole line."
+        },
+        "movement": {
+          "$ref": "#/$defs/movement"
         }
       }
     }

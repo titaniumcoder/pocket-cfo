@@ -66,6 +66,7 @@ func transactionProblems(af ActualsFile, first, last time.Time, knownIDs map[str
 		seen[tx.Id] = true
 
 		problems = appendIfProblem(problems, dispositionProblem(tx))
+		problems = append(problems, movementProblems(tx)...)
 		problems = append(problems, splitProblems(tx, knownIDs)...)
 		problems = appendIfProblem(problems, unknownCategoryProblem(tx, knownIDs))
 		problems = appendIfProblem(problems, zeroAmountProblem(tx))
@@ -136,6 +137,50 @@ func splitDispositionProblem(id string, i int, s Split, knownIDs map[string]bool
 		return fmt.Errorf("transaction %s split %d cites category %q, which is not in budget.json", id, i+1, *s.Category)
 	}
 	return nil
+}
+
+// movementProblems keeps the marker orthogonal to the disposition rule: it
+// rides beside an ignored reason rather than replacing one, so a marked line
+// is still a line that says why it is not a budget expense.
+func movementProblems(tx Transaction) []error {
+	var problems []error
+	if tx.Movement != nil {
+		if len(tx.Splits) > 0 {
+			problems = append(problems, fmt.Errorf("transaction %s is marked as a %s and also has splits — the parts decide, so the line itself must not", tx.Id, *tx.Movement))
+		} else if !hasText(tx.Ignored) {
+			problems = append(problems, fmt.Errorf("transaction %s is marked as a %s but carries no ignored reason — money crossing between you and the company is not a budget expense, so it says so like every other line that isn't", tx.Id, *tx.Movement))
+		}
+		problems = appendIfProblem(problems, directionProblem(tx.Id, "", *tx.Movement, tx.Amount))
+	}
+	for i, s := range tx.Splits {
+		if s.Movement == nil {
+			continue
+		}
+		where := fmt.Sprintf(" split %d", i+1)
+		if !hasText(s.Ignored) {
+			problems = append(problems, fmt.Errorf("transaction %s%s is marked as a %s but carries no ignored reason", tx.Id, where, *s.Movement))
+		}
+		problems = appendIfProblem(problems, directionProblem(tx.Id, where, *s.Movement, s.Amount))
+	}
+	return problems
+}
+
+// directionProblem is what enforces "record it once, on the company
+// statement". Both statements are imported, so the same transfer arrives
+// twice; the mirror has the opposite sign, so requiring the company side's
+// sign makes the mirror unmarkable. It gets that guarantee without resolving
+// account against accounts.json, which this file deliberately does not do.
+func directionProblem(id, where string, m Movement, amount float64) error {
+	in := m == MovementOwnerContribution
+	if in == (amount < 0) {
+		return nil
+	}
+	if in {
+		return fmt.Errorf("transaction %s%s is marked owner_contribution but the amount is money leaving the company — money you put in arrives on the company statement as a credit. This is the mirror line on your private statement; mark the company side instead, once",
+			id, where)
+	}
+	return fmt.Errorf("transaction %s%s is marked %s but the amount is money arriving — %s is money leaving the company. This is the mirror line on your private statement; mark the company side instead, once",
+		id, where, m, m)
 }
 
 func splitsReconcileProblem(tx Transaction) error {

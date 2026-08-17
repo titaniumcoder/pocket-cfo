@@ -4,7 +4,16 @@ type Part struct {
 	Category  string
 	Ignored   string
 	Untracked string
+	Movement  Movement
 	Amount    float64
+}
+
+func (p Part) Crossed() bool {
+	switch p.Movement {
+	case MovementSalaryTransfer, MovementOwnerDraw, MovementDividendPayout, MovementOwnerContribution:
+		return true
+	}
+	return false
 }
 
 func PartsOf(tx Transaction) []Part {
@@ -21,6 +30,7 @@ func partsOfSplits(splits []Split) []Part {
 			Category:  deref(s.Category),
 			Ignored:   deref(s.Ignored),
 			Untracked: deref(s.Untracked),
+			Movement:  derefMovement(s.Movement),
 			Amount:    s.Amount,
 		})
 	}
@@ -32,6 +42,7 @@ func wholeLineAsPart(tx Transaction) Part {
 		Category:  deref(tx.Category),
 		Ignored:   deref(tx.Ignored),
 		Untracked: deref(tx.Untracked),
+		Movement:  derefMovement(tx.Movement),
 		Amount:    tx.Amount,
 	}
 }
@@ -42,6 +53,13 @@ func SplitSum(tx Transaction) float64 {
 		sum += s.Amount
 	}
 	return sum
+}
+
+func derefMovement(m *Movement) Movement {
+	if m == nil {
+		return ""
+	}
+	return *m
 }
 
 func deref(s *string) string {

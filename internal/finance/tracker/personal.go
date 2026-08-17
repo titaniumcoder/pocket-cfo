@@ -91,7 +91,9 @@ type PersonalView struct {
 	DividendCents         int
 	DividendTaxCents      int
 	CompanyProfitTaxCents int
-	DividendDays          []string
+	DividendRows          []DividendRow
+	DividendTaxRate       []RateLine
+	CompanyProfitTaxRate  []RateLine
 
 	ShowCompanyBalance  bool
 	CompanyOpeningCents int
@@ -240,7 +242,13 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 	mode := d.Mode
 	monthlyRawIncome := totalIncomeEUR / float64(months)
 	monthlyCompanyExpenses := companyExpensesEUR / float64(months)
-	availableForPayroll := toCent(monthlyRawIncome - monthlyCompanyExpenses + stock.spendableEUR())
+
+	dividendEUR := toCent(due.AmountEUR)
+	profitTaxEUR := toCent(r.CompanyProfitTax.on(dividendEUR))
+	dividendTaxEUR := toCent(r.DividendTax.on(dividendEUR))
+
+	availableForPayroll := toCent(monthlyRawIncome - monthlyCompanyExpenses + stock.spendableEUR() -
+		dividendEUR - profitTaxEUR)
 
 	gross, minimumEnforced := grossSalaryFor(d, r, availableForPayroll)
 	employerContrib := toCent(r.Employer.on(gross))
@@ -251,10 +259,6 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 	taxable := taxableAfter(gross, employeeContrib)
 	incomeTax := toCent(r.IncomeTax.on(taxable))
 	net := gross - employeeContrib - incomeTax
-
-	dividendEUR := toCent(due.AmountEUR)
-	profitTaxEUR := toCent(r.CompanyProfitTax.on(dividendEUR))
-	dividendTaxEUR := toCent(r.DividendTax.on(dividendEUR))
 
 	m := float64(months)
 	cents := func(x float64) int { return round(x * 100 * m) }
@@ -282,11 +286,24 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 		DividendCents:         absolute(dividendEUR),
 		DividendTaxCents:      absolute(dividendTaxEUR),
 		CompanyProfitTaxCents: absolute(profitTaxEUR),
-		DividendDays:          due.Days,
+		DividendRows:          due.dividendRows(),
+		DividendTaxRate:       oneRate(dividendEUR, 0, r.DividendTax),
+		CompanyProfitTaxRate:  oneRate(dividendEUR, 0, r.CompanyProfitTax),
 	}
 	v.NetIncomeCents = cents(net) + v.DividendCents - v.DividendTaxCents
 	v.closeCompanyOver(stock)
 	return v
+}
+
+// OneDividendDay dates the Dividend row itself when the period holds a single
+// distribution, which is the ordinary case. More than one and the row carries
+// the total instead, with a sub-row per entry, so the figure can be read back
+// against budget.json rather than being a sum nobody can check.
+func (v PersonalView) OneDividendDay() string {
+	if len(v.DividendRows) != 1 {
+		return ""
+	}
+	return v.DividendRows[0].Day
 }
 
 // carryCompanyStock is where a balance parts company with every other figure
@@ -368,7 +385,12 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 		stock = p.targetStock(ym, stock)
 		d := p.decide(ym, stock)
 		mode := d.Mode
-		m := p.breakdown(income, companyExpenses, 1, p.rulesFor(ym), d, stock, p.Dividends.dueIn(ym))
+		rules := p.rulesFor(ym)
+		due := p.Dividends.dueIn(ym)
+		if problem := due.unrated(ym, rules); problem != "" {
+			return PersonalView{Err: problem}
+		}
+		m := p.breakdown(income, companyExpenses, 1, rules, d, stock, due)
 		one = m
 		switch mode {
 		case SalaryMinimum:
@@ -412,13 +434,14 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 		result.DividendCents += m.DividendCents
 		result.DividendTaxCents += m.DividendTaxCents
 		result.CompanyProfitTaxCents += m.CompanyProfitTaxCents
-		result.DividendDays = append(result.DividendDays, m.DividendDays...)
+		result.DividendRows = append(result.DividendRows, m.DividendRows...)
 		result.carryCompanyStock(m, i == 0)
 		stock.OpeningCents = m.CompanyClosingCents
 	}
 	months := len(monthlyIncomeEUR)
 	if months == 1 {
 		result.EmployerRate, result.EmployeeRate, result.IncomeTaxRate = one.EmployerRate, one.EmployeeRate, one.IncomeTaxRate
+		result.DividendTaxRate, result.CompanyProfitTaxRate = one.DividendTaxRate, one.CompanyProfitTaxRate
 		return result
 	}
 	result.EmployerRate = p.rateLines(start, months, func(r Rules) (Bands, float64) {
@@ -430,6 +453,14 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 	result.IncomeTaxRate = p.rateLines(start, months, func(r Rules) (Bands, float64) {
 		return r.IncomeTax, 0
 	})
+	if result.DividendCents != 0 {
+		result.DividendTaxRate = p.rateLines(start, months, func(r Rules) (Bands, float64) {
+			return r.DividendTax, 0
+		})
+		result.CompanyProfitTaxRate = p.rateLines(start, months, func(r Rules) (Bands, float64) {
+			return r.CompanyProfitTax, 0
+		})
+	}
 	return result
 }
 

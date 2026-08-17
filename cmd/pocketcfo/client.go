@@ -65,7 +65,7 @@ func (s *server) handleClientPortal(w http.ResponseWriter, r *http.Request) {
 
 	recipients, err := stats.LoadRecipients(recipientsDir)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, "loading data", err)
 		return
 	}
 	found, ok := findRecipientByToken(token, recipients, s.cfg.clientLinkSecret)
@@ -76,13 +76,13 @@ func (s *server) handleClientPortal(w http.ResponseWriter, r *http.Request) {
 
 	invoices, err := stats.LoadInvoices(invoicesDir)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, "loading data", err)
 		return
 	}
 
 	paid, err := stats.LoadPaid(paidInvoicesPath)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, "loading data", err)
 		return
 	}
 
@@ -93,7 +93,7 @@ func (s *server) handleClientPortal(w http.ResponseWriter, r *http.Request) {
 		}
 		totals, err := money.Compute(inv)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			serverError(w, r, "loading data", err)
 			return
 		}
 		_, isPaid := paid[inv.Number]
@@ -123,7 +123,7 @@ func (s *server) handleClientPortal(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Robots-Tag", "noindex")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.clientTmpl.Execute(w, view); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, "loading data", err)
 	}
 }
 
@@ -133,7 +133,7 @@ func (s *server) handleClientInvoicePDF(w http.ResponseWriter, r *http.Request) 
 
 	recipients, err := stats.LoadRecipients(recipientsDir)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, "loading data", err)
 		return
 	}
 	found, ok := findRecipientByToken(token, recipients, s.cfg.clientLinkSecret)
@@ -150,7 +150,7 @@ func (s *server) handleClientInvoicePDF(w http.ResponseWriter, r *http.Request) 
 
 	invoices, err := stats.LoadInvoices(invoicesDir)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, "loading data", err)
 		return
 	}
 	var match *invoice.InvoiceJson
@@ -165,6 +165,10 @@ func (s *server) handleClientInvoicePDF(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if !stillPaid(file) {
+		http.NotFound(w, r)
+		return
+	}
 	path := buildDir + "/" + file
 	if _, err := os.Stat(path); err != nil {
 		http.NotFound(w, r)

@@ -86,7 +86,7 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.infoTmpl.Execute(w, view); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, "loading data", err)
 	}
 }
 

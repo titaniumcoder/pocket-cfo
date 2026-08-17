@@ -19,7 +19,7 @@ func TestADividendIsFoundByItsMonthAndNotItsDay(t *testing.T) {
 		{"name":"Housing","kind":"private","categories":[{"id":"00000000-0000-4000-8000-000000000001","name":"Rent","amount":1000}]}
 	],"dividends":[{"date":"2026-09-30","amount":10000,"note":"2025 profit"}]}`})
 
-	bv, err := trk.Budget.ForMonth(context.Background(), 2026, time.September, time.Now())
+	bv, err := trk.Budget.ForMonth(context.Background(), 2026, time.September, time.Now(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestADividendIsFoundByItsMonthAndNotItsDay(t *testing.T) {
 	}
 	// The plan travels whole, not pre-filtered: the roll-forward walks other
 	// months with this same view and each one picks its own out.
-	bvAugust, err := trk.Budget.ForMonth(context.Background(), 2026, time.August, time.Now())
+	bvAugust, err := trk.Budget.ForMonth(context.Background(), 2026, time.August, time.Now(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestTwoDividendsInOneMonthAreSummed(t *testing.T) {
 		{"name":"Housing","kind":"private","categories":[{"id":"00000000-0000-4000-8000-000000000001","name":"Rent","amount":1000}]}
 	],"dividends":[{"date":"2026-09-30","amount":4000},{"date":"2026-09-15","amount":6000}]}`})
 
-	bv, err := trk.Budget.ForMonth(context.Background(), 2026, time.September, time.Now())
+	bv, err := trk.Budget.ForMonth(context.Background(), 2026, time.September, time.Now(), false)
 	if err != nil {
 		t.Fatal(err)
 	}

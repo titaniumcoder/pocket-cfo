@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -69,20 +70,62 @@ func TestNormalizeEmail(t *testing.T) {
 	}
 }
 
+func emailPost(remoteAddr string) *http.Request {
+	r := httptest.NewRequest(http.MethodPost, "/auth/email", nil)
+	r.RemoteAddr = remoteAddr
+	return r
+}
+
 func TestAllowEmailRequestCooldown(t *testing.T) {
 	s := &server{emailRequestedAt: map[string]time.Time{}}
+	r := emailPost("192.0.2.1:1234")
 
-	if !s.allowEmailRequest("person@example.com") {
+	if !s.allowEmailRequest(r, "person@example.com") {
 		t.Fatal("first request should be allowed")
 	}
-	if s.allowEmailRequest("person@example.com") {
+	if s.allowEmailRequest(r, "person@example.com") {
 		t.Fatal("immediate second request should be blocked by cooldown")
 	}
 
 	s.emailRequestedAt["person@example.com"] = time.Now().Add(-2 * emailRequestCooldown)
-	if !s.allowEmailRequest("person@example.com") {
+	if !s.allowEmailRequest(r, "person@example.com") {
 		t.Fatal("request after cooldown elapsed should be allowed")
 	}
+}
+
+func TestAllowEmailRequestPerIPAndGlobalCeilings(t *testing.T) {
+	t.Run("one host is capped however many addresses it tries", func(t *testing.T) {
+		s := &server{emailRequestedAt: map[string]time.Time{}}
+		r := emailPost("192.0.2.7:1234")
+
+		allowed := 0
+		for i := range emailRequestsPerIPPerHour * 3 {
+			if s.allowEmailRequest(r, fmt.Sprintf("person%d@example.com", i)) {
+				allowed++
+			}
+		}
+		if allowed != emailRequestsPerIPPerHour {
+			t.Errorf("%d requests allowed from one host, want %d", allowed, emailRequestsPerIPPerHour)
+		}
+
+		if !s.allowEmailRequest(emailPost("198.51.100.9:1234"), "someone@example.com") {
+			t.Error("a second host was blocked by the first host's ceiling")
+		}
+	})
+
+	t.Run("the whole endpoint has a ceiling too", func(t *testing.T) {
+		s := &server{emailRequestedAt: map[string]time.Time{}}
+		allowed := 0
+		for i := range emailRequestsPerHour * 2 {
+			r := emailPost(fmt.Sprintf("192.0.2.%d:1234", i%250+1))
+			if s.allowEmailRequest(r, fmt.Sprintf("p%d@example.com", i)) {
+				allowed++
+			}
+		}
+		if allowed != emailRequestsPerHour {
+			t.Errorf("%d requests allowed overall, want %d", allowed, emailRequestsPerHour)
+		}
+	})
 }
 
 // newTestServer chdirs into an isolated temp dir (same convention as

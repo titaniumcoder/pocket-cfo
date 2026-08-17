@@ -3,6 +3,7 @@ package tracker
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sort"
 	"time"
 
@@ -131,7 +132,8 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 		Nav:         monthNav(now, start, t.startMonth(), spendingURL),
 		OverviewURL: monthURL(year, month),
 		SpendingURL: spendingURL(year, month),
-		RefreshURL:  spendingURL(year, month) + "?refresh=1",
+		RefreshURL: "/refresh?return=" + url.QueryEscape(spendingURL(year, month)) +
+			fmt.Sprintf("&year=%d&month=%d", year, int(month)),
 	}
 	if snap, ok, serr := t.Accounts.Snapshot(ctx, yearMonth{year, month}); serr != nil {
 		v.BalancesErr = serr.Error()
@@ -211,7 +213,7 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 
 	var bv BudgetView
 	if t.Budget != nil {
-		built, berr := t.Budget.ForMonth(ctx, year, month, time.Now().In(t.locOrUTC()))
+		built, berr := t.Budget.ForMonth(ctx, year, month, time.Now().In(t.locOrUTC()), t.Minimal)
 		if berr != nil {
 			v.BudgetErr = berr.Error()
 		} else {

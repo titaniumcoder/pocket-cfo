@@ -77,7 +77,7 @@ func TestBudgetFileMissing(t *testing.T) {
 
 func TestBudgetForMonthRecurringCategoryAlwaysCounts(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
-	view, err := b.ForMonth(context.Background(), 2026, time.January, testNow)
+	view, err := b.ForMonth(context.Background(), 2026, time.January, testNow, false)
 	if err != nil {
 		t.Fatalf("ForMonth: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestBudgetForMonthRecurringCategoryAlwaysCounts(t *testing.T) {
 func TestBudgetForMonthDatedCategoryCountsOnlyWhenDue(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
 
-	due, err := b.ForMonth(context.Background(), 2026, time.September, testNow)
+	due, err := b.ForMonth(context.Background(), 2026, time.September, testNow, false)
 	if err != nil {
 		t.Fatalf("ForMonth: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestBudgetForMonthDatedCategoryCountsOnlyWhenDue(t *testing.T) {
 		t.Errorf("Desk spent in its due month = %d, want %d", got, eurToCents(500))
 	}
 
-	notDue, err := b.ForMonth(context.Background(), 2026, time.July, testNow)
+	notDue, err := b.ForMonth(context.Background(), 2026, time.July, testNow, false)
 	if err != nil {
 		t.Fatalf("ForMonth: %v", err)
 	}
@@ -331,7 +331,7 @@ func TestBudgetEvictForcesRefetch(t *testing.T) {
 // and vice versa for private.
 func TestBudgetSplitsGroupsByKind(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithCompany})
-	view, err := b.ForMonth(context.Background(), 2026, time.January, testNow)
+	view, err := b.ForMonth(context.Background(), 2026, time.January, testNow, false)
 	if err != nil {
 		t.Fatalf("ForMonth: %v", err)
 	}
@@ -363,7 +363,7 @@ func TestBudgetGroupAllFutureStillShows(t *testing.T) {
 			]}
 		]
 	}`})
-	view, err := b.ForMonth(context.Background(), 2026, time.July, testNow) // testNow is July 2026, due date is September
+	view, err := b.ForMonth(context.Background(), 2026, time.July, testNow, false) // testNow is July 2026, due date is September
 	if err != nil {
 		t.Fatalf("ForMonth: %v", err)
 	}
@@ -395,7 +395,7 @@ func TestBudgetGroupAllPastIsHidden(t *testing.T) {
 			]}
 		]
 	}`})
-	view, err := b.ForMonth(context.Background(), 2026, time.July, testNow) // testNow is July 2026, due date was January
+	view, err := b.ForMonth(context.Background(), 2026, time.July, testNow, false) // testNow is July 2026, due date was January
 	if err != nil {
 		t.Fatalf("ForMonth: %v", err)
 	}
@@ -421,7 +421,7 @@ func TestBudgetForMonthRowVisibilityFollowsViewedMonthNotRealNow(t *testing.T) {
 	ctx := context.Background()
 
 	// September: still upcoming -> grayed-out reminder.
-	sep, err := b.ForMonth(ctx, 2026, time.September, testNow)
+	sep, err := b.ForMonth(ctx, 2026, time.September, testNow, false)
 	if err != nil {
 		t.Fatalf("ForMonth(September): %v", err)
 	}
@@ -430,7 +430,7 @@ func TestBudgetForMonthRowVisibilityFollowsViewedMonthNotRealNow(t *testing.T) {
 	}
 
 	// October: due this month -> active, full amount.
-	oct, err := b.ForMonth(ctx, 2026, time.October, testNow)
+	oct, err := b.ForMonth(ctx, 2026, time.October, testNow, false)
 	if err != nil {
 		t.Fatalf("ForMonth(October): %v", err)
 	}
@@ -441,7 +441,7 @@ func TestBudgetForMonthRowVisibilityFollowsViewedMonthNotRealNow(t *testing.T) {
 	// November: already in the past relative to the viewed month -> the whole
 	// group disappears, even though testNow (a fixed July "today") is well
 	// before November too.
-	nov, err := b.ForMonth(ctx, 2026, time.November, testNow)
+	nov, err := b.ForMonth(ctx, 2026, time.November, testNow, false)
 	if err != nil {
 		t.Fatalf("ForMonth(November): %v", err)
 	}
@@ -567,27 +567,6 @@ func TestComputeYearWithBudget(t *testing.T) {
 	}
 }
 
-// TestBudgetMinimalToggleFlipsGlobalState confirms ToggleMinimal/IsMinimal
-// flip a single global flag, not tied to any particular month.
-func TestBudgetMinimalToggleFlipsGlobalState(t *testing.T) {
-	b := &Budget{}
-	if b.IsMinimal() {
-		t.Fatal("expected minimal mode to start off")
-	}
-	if on := b.ToggleMinimal(); !on {
-		t.Error("first toggle should turn minimal mode on")
-	}
-	if !b.IsMinimal() {
-		t.Error("IsMinimal should report on after toggling on")
-	}
-	if on := b.ToggleMinimal(); on {
-		t.Error("second toggle should turn minimal mode back off")
-	}
-	if b.IsMinimal() {
-		t.Error("IsMinimal should report off after toggling back off")
-	}
-}
-
 // testBudgetJSONWithMinimal has a recurring category with a minimal_amount,
 // one without (Rent — a fixed cost that should stay full even in minimal
 // mode), and a one-off dated category with a minimal_amount, for testing
@@ -606,7 +585,7 @@ const testBudgetJSONWithMinimal = `{
 
 func TestBudgetForMonthFullAmountsWhenMinimalOff(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithMinimal})
-	view, err := b.ForMonth(context.Background(), 2026, time.September, testNow)
+	view, err := b.ForMonth(context.Background(), 2026, time.September, testNow, false)
 	if err != nil {
 		t.Fatalf("ForMonth: %v", err)
 	}
@@ -621,9 +600,8 @@ func TestBudgetForMonthFullAmountsWhenMinimalOff(t *testing.T) {
 // this month also respects minimal mode.
 func TestBudgetForMonthSubstitutesMinimalAmountWhenOn(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithMinimal})
-	b.ToggleMinimal()
 
-	view, err := b.ForMonth(context.Background(), 2026, time.September, testNow)
+	view, err := b.ForMonth(context.Background(), 2026, time.September, testNow, true)
 	if err != nil {
 		t.Fatalf("ForMonth: %v", err)
 	}
@@ -639,10 +617,9 @@ func TestBudgetForMonthSubstitutesMinimalAmountWhenOn(t *testing.T) {
 }
 
 // TestBudgetForYearIgnoresMinimalMode confirms year view always uses full
-// amounts, even when the global minimal-mode flag is on.
+// amounts. It takes no minimal flag at all.
 func TestBudgetForYearIgnoresMinimalMode(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithMinimal})
-	b.ToggleMinimal()
 
 	view, err := b.ForYear(context.Background(), 2027, testNow, time.Time{}) // entirely future relative to testNow -> all 12 months count
 	if err != nil {
@@ -654,7 +631,7 @@ func TestBudgetForYearIgnoresMinimalMode(t *testing.T) {
 }
 
 // TestComputeMonthMinimalModeFields confirms Figures.MinimalMode/
-// MinimalToggleURL are wired up from the global Budget flag for month view.
+// MinimalToggleURL are wired up from this request's own setting for month view.
 func TestComputeMonthMinimalModeFields(t *testing.T) {
 	trk := fullTracker()
 	trk.Budget = newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
@@ -663,28 +640,34 @@ func TestComputeMonthMinimalModeFields(t *testing.T) {
 	if off.MinimalMode {
 		t.Error("MinimalMode should start false")
 	}
-	if off.MinimalToggleURL != "/2026/3?minimal=toggle" {
-		t.Errorf("MinimalToggleURL = %q, want /2026/3?minimal=toggle", off.MinimalToggleURL)
+	if want := "/minimal?return=%2F2026%2F3"; off.MinimalToggleURL != want {
+		t.Errorf("MinimalToggleURL = %q, want %q", off.MinimalToggleURL, want)
 	}
 
-	trk.Budget.ToggleMinimal()
+	trk.Minimal = true
 	on := trk.ComputeMonth(context.Background(), 2026, time.March)
 	if !on.MinimalMode {
-		t.Error("MinimalMode should be true after toggling on")
+		t.Error("MinimalMode should be true when this request asked for it")
+	}
+
+	other := fullTracker()
+	other.Budget = trk.Budget
+	if other.ComputeMonth(context.Background(), 2026, time.March).MinimalMode {
+		t.Error("one session's minimal mode leaked into another's view")
 	}
 }
 
 // TestComputeYearMinimalModeAlwaysFalse confirms year view never reports
-// minimal mode as on, even when the global flag is toggled on, and doesn't
+// minimal mode as on, even for a request that asked for it, and doesn't
 // expose a toggle URL (the toggle only lives in month view).
 func TestComputeYearMinimalModeAlwaysFalse(t *testing.T) {
 	trk := fullTracker()
 	trk.Budget = newTestBudget(t, map[string]string{"budget.json": testBudgetJSON})
-	trk.Budget.ToggleMinimal()
+	trk.Minimal = true
 
 	f := trk.ComputeYear(context.Background(), 2026)
 	if f.MinimalMode {
-		t.Error("MinimalMode should stay false in year view even when the global flag is on")
+		t.Error("MinimalMode should stay false in year view even when the request asked for it")
 	}
 	if f.MinimalToggleURL != "" {
 		t.Errorf("MinimalToggleURL = %q, want empty in year view", f.MinimalToggleURL)
@@ -713,7 +696,7 @@ const testBudgetJSONWithOverrides = `{
 func TestBudgetForMonthNoOverridesUnaffected(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithOverrides})
 	for _, m := range []time.Month{time.July, time.August, time.December} {
-		view, err := b.ForMonth(context.Background(), 2026, m, testNow)
+		view, err := b.ForMonth(context.Background(), 2026, m, testNow, false)
 		if err != nil {
 			t.Fatalf("ForMonth(%v): %v", m, err)
 		}
@@ -734,7 +717,7 @@ func TestBudgetForMonthNoOverridesUnaffected(t *testing.T) {
 func TestBudgetForMonthSingleZeroOverrideZeroesOnlyThatMonth(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithOverrides})
 
-	july, err := b.ForMonth(context.Background(), 2026, time.July, testNow)
+	july, err := b.ForMonth(context.Background(), 2026, time.July, testNow, false)
 	if err != nil {
 		t.Fatalf("ForMonth(July): %v", err)
 	}
@@ -742,7 +725,7 @@ func TestBudgetForMonthSingleZeroOverrideZeroesOnlyThatMonth(t *testing.T) {
 		t.Errorf("July: Flight PlannedCents = %d, want %d", rowByName(BudgetView{Groups: july.CompanyGroups}, "Flight").PlannedCents, want)
 	}
 
-	aug, err := b.ForMonth(context.Background(), 2026, time.August, testNow)
+	aug, err := b.ForMonth(context.Background(), 2026, time.August, testNow, false)
 	if err != nil {
 		t.Fatalf("ForMonth(August): %v", err)
 	}
@@ -760,7 +743,7 @@ func TestBudgetForMonthSingleZeroOverrideZeroesOnlyThatMonth(t *testing.T) {
 		t.Error("August: Flight.Overridden should be false (describes September, which has no override)")
 	}
 
-	sep, err := b.ForMonth(context.Background(), 2026, time.September, testNow)
+	sep, err := b.ForMonth(context.Background(), 2026, time.September, testNow, false)
 	if err != nil {
 		t.Fatalf("ForMonth(September): %v", err)
 	}
@@ -779,7 +762,7 @@ func TestBudgetForMonthMultipleZeroOverridesZeroEach(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithOverrides})
 
 	for _, m := range []time.Month{time.August, time.December} {
-		view, err := b.ForMonth(context.Background(), 2026, m, testNow)
+		view, err := b.ForMonth(context.Background(), 2026, m, testNow, false)
 		if err != nil {
 			t.Fatalf("ForMonth(%v): %v", m, err)
 		}
@@ -788,7 +771,7 @@ func TestBudgetForMonthMultipleZeroOverridesZeroEach(t *testing.T) {
 		}
 	}
 	for _, m := range []time.Month{time.July, time.November} {
-		view, err := b.ForMonth(context.Background(), 2026, m, testNow)
+		view, err := b.ForMonth(context.Background(), 2026, m, testNow, false)
 		if err != nil {
 			t.Fatalf("ForMonth(%v): %v", m, err)
 		}
@@ -841,9 +824,8 @@ func TestBudgetCompanyExpensesByMonthRespectsOverrides(t *testing.T) {
 // minimal_amount — an override always wins over minimal mode.
 func TestBudgetZeroOverrideWinsOverMinimalAmount(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithOverrides})
-	b.ToggleMinimal()
 
-	aug, err := b.ForMonth(context.Background(), 2026, time.August, testNow)
+	aug, err := b.ForMonth(context.Background(), 2026, time.August, testNow, true)
 	if err != nil {
 		t.Fatalf("ForMonth(August): %v", err)
 	}
@@ -851,7 +833,7 @@ func TestBudgetZeroOverrideWinsOverMinimalAmount(t *testing.T) {
 		t.Errorf("August (zero override, minimal on): Hotel PlannedCents = %d, want 0, not minimal_amount", got)
 	}
 
-	july, err := b.ForMonth(context.Background(), 2026, time.July, testNow)
+	july, err := b.ForMonth(context.Background(), 2026, time.July, testNow, true)
 	if err != nil {
 		t.Fatalf("ForMonth(July): %v", err)
 	}
@@ -899,7 +881,7 @@ const testBudgetJSONWithNonZeroOverride = `{
 func TestBudgetForMonthNonZeroOverrideReplacesRecurringAmount(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithNonZeroOverride})
 
-	sep, err := b.ForMonth(context.Background(), 2026, time.September, testNow)
+	sep, err := b.ForMonth(context.Background(), 2026, time.September, testNow, false)
 	if err != nil {
 		t.Fatalf("ForMonth(September): %v", err)
 	}
@@ -911,7 +893,7 @@ func TestBudgetForMonthNonZeroOverrideReplacesRecurringAmount(t *testing.T) {
 		t.Error("September: Flight.Overridden should be true")
 	}
 
-	aug, err := b.ForMonth(context.Background(), 2026, time.August, testNow)
+	aug, err := b.ForMonth(context.Background(), 2026, time.August, testNow, false)
 	if err != nil {
 		t.Fatalf("ForMonth(August): %v", err)
 	}
@@ -930,9 +912,8 @@ func TestBudgetForMonthNonZeroOverrideReplacesRecurringAmount(t *testing.T) {
 // minimal_amount normally.
 func TestBudgetOverrideWinsOverMinimalMode(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithNonZeroOverride})
-	b.ToggleMinimal()
 
-	sep, err := b.ForMonth(context.Background(), 2026, time.September, testNow)
+	sep, err := b.ForMonth(context.Background(), 2026, time.September, testNow, true)
 	if err != nil {
 		t.Fatalf("ForMonth(September): %v", err)
 	}
@@ -940,7 +921,7 @@ func TestBudgetOverrideWinsOverMinimalMode(t *testing.T) {
 		t.Errorf("September (minimal on): Flight PlannedCents = %d, want %d (override wins)", rowByName(BudgetView{Groups: sep.CompanyGroups}, "Flight").PlannedCents, want)
 	}
 
-	aug, err := b.ForMonth(context.Background(), 2026, time.August, testNow)
+	aug, err := b.ForMonth(context.Background(), 2026, time.August, testNow, true)
 	if err != nil {
 		t.Fatalf("ForMonth(August): %v", err)
 	}

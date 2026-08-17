@@ -107,7 +107,7 @@ func (s *Service) dividendsIn(ctx context.Context, year int, month time.Month) [
 	if s.Budget == nil {
 		return nil
 	}
-	bv, err := s.Budget.ForMonth(ctx, year, month, s.now())
+	bv, err := s.Budget.ForMonth(ctx, year, month, s.now(), false)
 	if err != nil {
 		return nil
 	}

@@ -219,7 +219,7 @@ var templates = `
 
     <div class="periodnav-right">
       <a class="link" href="{{.Nav.TodayURL}}">Today</a>
-      <a class="link" href="{{.RefreshURL}}">Reload</a>
+      <form class="inline-form" method="post" action="{{.RefreshURL}}"><button class="link" type="submit">Reload</button></form>
     </div>
   </nav>
   <script>
@@ -406,7 +406,7 @@ var templates = `
     <div class="periodnav-right">
       {{if and .UntrackedCount .SpendingDetailURL}}<a class="link untracked-mark" href="{{.SpendingDetailURL}}" title="cash not yet placed">{{untracked .UntrackedCount}}untracked</a>{{end}}
       <a class="link" href="{{.TodayURL}}">Today</a>
-      <a class="link" href="{{.RefreshURL}}">Reload</a>
+      <form class="inline-form" method="post" action="{{.RefreshURL}}"><button class="link" type="submit">Reload</button></form>
     </div>
   </nav>
   <script>
@@ -458,10 +458,10 @@ var templates = `
     <div class="panel-title-row">
       <h2 class="panel-title">Rolling budget</h2>
       {{if eq .Mode "month"}}
-      <a class="minimal-toggle no-print{{if .MinimalMode}} active{{end}}" href="{{.MinimalToggleURL}}" role="switch" aria-checked="{{if .MinimalMode}}true{{else}}false{{end}}">
+      <form class="inline-form no-print" method="post" action="{{.MinimalToggleURL}}"><button class="minimal-toggle{{if .MinimalMode}} active{{end}}" type="submit" role="switch" aria-checked="{{if .MinimalMode}}true{{else}}false{{end}}">
         <span class="minimal-toggle-track"><span class="minimal-toggle-thumb"></span></span>
         <span class="minimal-toggle-label">Minimal</span>
-      </a>
+      </button></form>
       {{end}}
     </div>
 

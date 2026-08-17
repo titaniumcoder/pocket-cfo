@@ -19,7 +19,7 @@ type Config struct {
 
 func SendLoginLink(ctx context.Context, httpClient *http.Client, cfg Config, toEmail, link string) error {
 	if cfg.From == "" {
-		log.Printf("mail: SES_FROM_EMAIL not set, logging login link instead of emailing %s: %s", toEmail, link)
+		log.Printf("mail: SES_FROM_EMAIL not set, so no login link was sent to %s", toEmail)
 		return nil
 	}
 

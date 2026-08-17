@@ -315,7 +315,7 @@ type monthClosing struct {
 }
 
 func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, rateCents int, company companyStock) (monthClosing, error) {
-	bv, err := t.Budget.ForMonth(ctx, m.Year, m.Month, now)
+	bv, err := t.Budget.ForMonth(ctx, m.Year, m.Month, now, t.Minimal)
 	if err != nil {
 		return monthClosing{}, fmt.Errorf("accounts: budget for %s: %w", m, err)
 	}

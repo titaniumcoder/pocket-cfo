@@ -38,6 +38,8 @@ type server struct {
 
 	emailRequestMu   sync.Mutex
 	emailRequestedAt map[string]time.Time
+	emailPerIP       hourlyLimiter
+	emailGlobal      hourlyLimiter
 }
 
 func buildTracker(cfg financeconfig.Config, httpClient *http.Client, budgetDir string) *tracker.Tracker {
@@ -96,7 +98,15 @@ func main() {
 
 	addr := ":" + cfg.port
 	log.Printf("pocketcfo listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	log.Fatal(srv.ListenAndServe())
 }
 
 func mustPageTemplate(path string) *template.Template {
@@ -146,13 +156,13 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	view, err := s.loadInvoicingView(r, sess)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, "loading data", err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.indexTmpl.Execute(w, view); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, "loading data", err)
 	}
 }
 
@@ -255,6 +265,10 @@ func (s *server) handleInvoicePDF(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if !stillPaid(file) {
+		http.NotFound(w, r)
+		return
+	}
 	path := buildDir + "/" + file
 	if _, err := os.Stat(path); err != nil {
 		http.NotFound(w, r)
@@ -285,7 +299,25 @@ func (s *server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, path)
 }
 
-func (s *server) routes() *http.ServeMux {
+func stillPaid(file string) bool {
+	if !strings.HasSuffix(file, "-paid.pdf") {
+		return true
+	}
+	paid, err := stats.LoadPaid(paidInvoicesPath)
+	if err != nil {
+		log.Printf("paid-invoices: %v", err)
+		return false
+	}
+	_, ok := paid[strings.TrimSuffix(file, "-paid.pdf")]
+	return ok
+}
+
+func serverError(w http.ResponseWriter, r *http.Request, what string, err error) {
+	log.Printf("%s %s: %s: %v", r.Method, r.URL.Path, what, err)
+	http.Error(w, "Something went wrong.", http.StatusInternalServerError)
+}
+
+func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /static/{file}", s.handleStatic)
 	mux.HandleFunc("GET /auth/login", s.handleLogin)
@@ -302,6 +334,9 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /invoicing", s.handleIndex)
 	mux.HandleFunc("GET /info", s.handleInfo)
 
+	mux.HandleFunc("POST /refresh", s.handleRefresh)
+	mux.HandleFunc("POST /minimal", s.handleMinimalToggle)
+
 	mux.HandleFunc("GET /{$}", s.financeCurrentMonth)
 	mux.HandleFunc("GET /{year}", s.financeYear)
 	mux.HandleFunc("GET /{year}/{month}", s.financeMonth)
@@ -309,5 +344,18 @@ func (s *server) routes() *http.ServeMux {
 
 	s.registerAPI(mux)
 
-	return mux
+	return securityHeaders(mux)
+}
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "+
+				"object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
 }

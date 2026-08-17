@@ -4,6 +4,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -370,28 +371,56 @@ func TestFinanceMonth_ValidYearMonthRenders(t *testing.T) {
 	}
 }
 
-func TestIsRefreshAndIsMinimalToggle(t *testing.T) {
-	tests := []struct {
-		name              string
-		query             string
-		wantRefresh       bool
-		wantMinimalToggle bool
-	}{
-		{"neither", "", false, false},
-		{"refresh", "?refresh=1", true, false},
-		{"minimal toggle", "?minimal=toggle", false, true},
-		{"minimal wrong value", "?minimal=other", false, false},
+func TestMinimalFor(t *testing.T) {
+	off := httptest.NewRequest(http.MethodGet, "/", nil)
+	if minimalFor(off) {
+		t.Error("minimalFor = true with no cookie")
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := httptest.NewRequest(http.MethodGet, "/"+tt.query, nil)
-			if got := isRefresh(r); got != tt.wantRefresh {
-				t.Errorf("isRefresh = %v, want %v", got, tt.wantRefresh)
+
+	on := httptest.NewRequest(http.MethodGet, "/", nil)
+	on.AddCookie(&http.Cookie{Name: minimalCookie, Value: "1"})
+	if !minimalFor(on) {
+		t.Error("minimalFor = false with the cookie set")
+	}
+
+	cleared := httptest.NewRequest(http.MethodGet, "/", nil)
+	cleared.AddCookie(&http.Cookie{Name: minimalCookie, Value: ""})
+	if minimalFor(cleared) {
+		t.Error("minimalFor = true with the cookie cleared")
+	}
+}
+
+func TestStateChangingEndpointsDoNotActOnGET(t *testing.T) {
+	s := newTestServer(t)
+	for _, path := range []string{"/refresh", "/minimal", "/minimal?return=%2F"} {
+		w := httptest.NewRecorder()
+		s.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		for _, c := range w.Result().Cookies() {
+			if c.Name == minimalCookie {
+				t.Errorf("GET %s set the minimal cookie", path)
 			}
-			if got := isMinimalToggle(r); got != tt.wantMinimalToggle {
-				t.Errorf("isMinimalToggle = %v, want %v", got, tt.wantMinimalToggle)
-			}
-		})
+		}
+	}
+
+	w := httptest.NewRecorder()
+	s.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/minimal", nil))
+	if w.Header().Get("Location") == "/" && w.Code == http.StatusSeeOther {
+		t.Error("a GET was answered by the toggle handler")
+	}
+}
+
+func TestBackTo(t *testing.T) {
+	tests := map[string]string{
+		"/2026/8":            "/2026/8",
+		"":                   "/",
+		"https://evil.test/": "/",
+		"//evil.test/":       "/",
+	}
+	for in, want := range tests {
+		r := httptest.NewRequest(http.MethodPost, "/refresh?return="+url.QueryEscape(in), nil)
+		if got := backTo(r); got != want {
+			t.Errorf("backTo(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

@@ -24,8 +24,8 @@ func TestFillMonthNav(t *testing.T) {
 	if f.MonthViewURL != "/2026/3" || f.YearViewURL != "/2026" {
 		t.Errorf("view urls = %q/%q", f.MonthViewURL, f.YearViewURL)
 	}
-	if f.RefreshURL != "/2026/3?refresh=1" {
-		t.Errorf("refresh url = %q", f.RefreshURL)
+	if want := "/refresh?return=%2F2026%2F3&year=2026&month=3"; f.RefreshURL != want {
+		t.Errorf("refresh url = %q, want %q", f.RefreshURL, want)
 	}
 	if len(f.Months) != 12 || f.Months[0].Name != "January" {
 		t.Errorf("months not filled: %+v", f.Months)

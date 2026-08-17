@@ -25,7 +25,6 @@ type Budget struct {
 
 	mu        sync.Mutex
 	cache     *budgetResult
-	minimalOn bool
 	justWrote committed
 }
 
@@ -35,19 +34,6 @@ func (b *Budget) Publish(body []byte) {
 	}
 	b.justWrote.publish(budgetPath, body)
 	b.Evict()
-}
-
-func (b *Budget) ToggleMinimal() bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.minimalOn = !b.minimalOn
-	return b.minimalOn
-}
-
-func (b *Budget) IsMinimal() bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.minimalOn
 }
 
 type budgetResult struct {
@@ -159,13 +145,12 @@ type BudgetView struct {
 	Dividends Dividends
 }
 
-func (b *Budget) ForMonth(ctx context.Context, year int, month time.Month, now time.Time) (BudgetView, error) {
+func (b *Budget) ForMonth(ctx context.Context, year int, month time.Month, now time.Time, minimal bool) (BudgetView, error) {
 	bf, err := b.File(ctx)
 	if err != nil {
 		return BudgetView{}, err
 	}
 	key := monthKey(year, month)
-	minimal := b.IsMinimal()
 	plannedFor := func(c budgetdata.Category) (int, bool) {
 		_, overridden := overrideFor(c, key)
 		return categoryCents(c, key, minimal), overridden

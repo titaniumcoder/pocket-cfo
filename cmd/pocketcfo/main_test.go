@@ -3,10 +3,13 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
+	"github.com/titaniumcoder/pocket-cfo/internal/users"
 )
 
 func TestCurrentSession_BypassesAuthOnlyInDevelopment(t *testing.T) {
@@ -61,4 +64,62 @@ func TestCurrentSession_RequiresRealSessionInProd(t *testing.T) {
 			t.Errorf("Login = %q, want octocat", sess.Login)
 		}
 	})
+}
+
+func TestReadOnlySessionPartsAreRecheckedPerRequest(t *testing.T) {
+	s := newTestServer(t)
+	encoded, err := auth.Encode(s.cfg.sessionSecret,
+		auth.NewReadOnlySession("person@example.com", []string{users.PartFinance, users.PartInvoicing}, time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	withCookie := func() *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.AddCookie(&http.Cookie{Name: sessionCookie, Value: encoded})
+		return r
+	}
+
+	sess, ok := s.currentSession(withCookie())
+	if !ok {
+		t.Fatal("want the session accepted")
+	}
+	if sess.HasPart(users.PartFinance) {
+		t.Error("a part the cookie claims but users.json does not grant survived")
+	}
+	if !sess.HasPart(users.PartInvoicing) {
+		t.Error("a part users.json does grant was dropped")
+	}
+
+	if err := os.WriteFile(usersFile, []byte(`{"users":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.currentSession(withCookie()); ok {
+		t.Error("a session for a user who is no longer listed was still accepted")
+	}
+
+	if err := os.Remove(usersFile); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.currentSession(withCookie()); !ok {
+		t.Error("an unreadable users.json locked out a session it says nothing about")
+	}
+}
+
+func TestSecurityHeadersOnEveryResponse(t *testing.T) {
+	s := newTestServer(t)
+	w := httptest.NewRecorder()
+	s.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/robots.txt", nil))
+
+	for header, want := range map[string]string{
+		"X-Frame-Options":        "DENY",
+		"X-Content-Type-Options": "nosniff",
+		"Referrer-Policy":        "no-referrer",
+	} {
+		if got := w.Header().Get(header); got != want {
+			t.Errorf("%s = %q, want %q", header, got, want)
+		}
+	}
+	if csp := w.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Errorf("Content-Security-Policy = %q, want it to forbid framing", csp)
+	}
 }

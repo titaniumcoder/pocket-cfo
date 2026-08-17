@@ -98,9 +98,7 @@ func TestPlannedIgnoresMinimalMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !b.ToggleMinimal() {
-		t.Fatal("ToggleMinimal did not switch minimal mode on")
-	}
+
 	after, err := b.PlannedForMonth(ctx, 2026, time.August)
 	if err != nil {
 		t.Fatal(err)
@@ -122,7 +120,7 @@ func TestPlannedIgnoresMinimalMode(t *testing.T) {
 	}
 
 	// And ForMonth *does* move, so the fixture would catch a leak.
-	view, err := b.ForMonth(ctx, 2026, time.August, testNow)
+	view, err := b.ForMonth(ctx, 2026, time.August, testNow, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +138,7 @@ func TestPlannedMatchesForMonth(t *testing.T) {
 
 	for _, month := range []time.Month{time.January, time.August, time.September, time.December} {
 		t.Run(month.String(), func(t *testing.T) {
-			view, err := b.ForMonth(ctx, 2026, month, testNow)
+			view, err := b.ForMonth(ctx, 2026, month, testNow, false)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -374,7 +374,7 @@ func TestAPIBudgetMatchesTheDashboard(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	view, err := s.tracker.Budget.ForMonth(t.Context(), 2026, time.August, time.Now())
+	view, err := s.tracker.Budget.ForMonth(t.Context(), 2026, time.August, time.Now(), false)
 	if err != nil {
 		t.Fatal(err)
 	}

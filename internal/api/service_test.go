@@ -563,7 +563,7 @@ func TestBudgetForMonthMatchesTheDashboard(t *testing.T) {
 	for _, month := range []time.Month{time.January, time.August, time.October, time.December} {
 		key := monthKey(2026, month)
 		t.Run(key, func(t *testing.T) {
-			view, err := s.Budget.ForMonth(ctx, 2026, month, now)
+			view, err := s.Budget.ForMonth(ctx, 2026, month, now, false)
 			if err != nil {
 				t.Fatal(err)
 			}

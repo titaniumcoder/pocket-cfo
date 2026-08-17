@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -17,6 +19,9 @@ const (
 	emailLinkTTL = 15 * time.Minute
 
 	emailRequestCooldown = 60 * time.Second
+
+	emailRequestsPerIPPerHour = 10
+	emailRequestsPerHour      = 60
 )
 
 func (s *server) handleEmailLoginForm(w http.ResponseWriter, r *http.Request) {
@@ -25,26 +30,31 @@ func (s *server) handleEmailLoginForm(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleEmailLoginRequest(w http.ResponseWriter, r *http.Request) {
 	email := normalizeEmail(r.FormValue("email"))
-	_, allowed := s.emailParts(email)
-	if validEmail(email) && allowed && s.allowEmailRequest(email) {
-		s.sendLoginLink(r, email)
+	if validEmail(email) && s.allowEmailRequest(r, email) {
+		if _, allowed := s.emailParts(email); allowed {
+			s.sendLoginLink(email)
+		}
 	}
 
 	tracker.RenderEmailSent(w)
 }
 
-func (s *server) sendLoginLink(r *http.Request, email string) {
+func (s *server) sendLoginLink(email string) {
 	token, err := auth.GenerateLoginToken(s.cfg.otpLinkSecret, email, emailLinkTTL)
 	if err != nil {
 		log.Printf("auth: generating login token for %s failed: %v", email, err)
 		return
 	}
 	link := s.cfg.baseURL + "/auth/email/callback?token=" + url.QueryEscape(token)
-
 	mailCfg := mail.Config{Region: s.cfg.sesRegion, From: s.cfg.sesFromEmail}
-	if err := mail.SendLoginLink(r.Context(), s.httpClient, mailCfg, email, link); err != nil {
-		log.Printf("mail: sending login link to %s failed: %v", email, err)
-	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), 30*time.Second)
+		defer cancel()
+		if err := mail.SendLoginLink(ctx, s.httpClient, mailCfg, email, link); err != nil {
+			log.Printf("mail: sending login link to %s failed: %v", email, err)
+		}
+	}()
 }
 
 func (s *server) handleEmailLoginCallback(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +72,7 @@ func (s *server) handleEmailLoginCallback(w http.ResponseWriter, r *http.Request
 	sess := auth.NewReadOnlySession(email, parts, auth.ReadOnlyTTL)
 	encoded, err := auth.Encode(s.cfg.sessionSecret, sess)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, "loading data", err)
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
@@ -94,15 +104,56 @@ func (s *server) emailParts(email string) ([]string, bool) {
 	return users.PartsFor(u, email)
 }
 
-func (s *server) allowEmailRequest(email string) bool {
+func (s *server) allowEmailRequest(r *http.Request, email string) bool {
+	now := time.Now()
+
 	s.emailRequestMu.Lock()
 	defer s.emailRequestMu.Unlock()
 
-	if last, ok := s.emailRequestedAt[email]; ok && time.Since(last) < emailRequestCooldown {
+	if last, ok := s.emailRequestedAt[email]; ok && now.Sub(last) < emailRequestCooldown {
 		return false
 	}
-	s.emailRequestedAt[email] = time.Now()
+	ip := clientIP(r)
+	if !s.emailPerIP.allow(ip, now, emailRequestsPerIPPerHour) {
+		return false
+	}
+	if !s.emailGlobal.allow("", now, emailRequestsPerHour) {
+		return false
+	}
+
+	s.emailRequestedAt[email] = now
 	return true
+}
+
+type hourlyLimiter struct {
+	at map[string][]time.Time
+}
+
+func (l *hourlyLimiter) allow(key string, now time.Time, limit int) bool {
+	if l.at == nil {
+		l.at = map[string][]time.Time{}
+	}
+	cutoff := now.Add(-time.Hour)
+	kept := l.at[key][:0]
+	for _, t := range l.at[key] {
+		if t.After(cutoff) {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) >= limit {
+		l.at[key] = kept
+		return false
+	}
+	l.at[key] = append(kept, now)
+	return true
+}
+
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 func normalizeEmail(raw string) string {

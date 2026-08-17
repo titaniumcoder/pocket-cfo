@@ -153,3 +153,41 @@ func TestTranslateOne_IssuedInvoiceUntouched(t *testing.T) {
 		t.Error("issued invoice file was modified")
 	}
 }
+
+func TestWithTranslations_KeepsUnknownKeys(t *testing.T) {
+	raw := []byte(`{
+  "schema_version": 1,
+  "number": "INV-0000000009",
+  "a_field_the_struct_has_never_heard_of": {"kept": true},
+  "lines": [
+    {"description": {"de": "Arbeit"}, "unit_price": 1000, "vat_rate": 0, "internal_note": "do not lose me"}
+  ]
+}`)
+	bg := "Работа"
+	inv := &invoice.InvoiceJson{
+		Lines: []invoice.Line{{Description: invoice.LocalizedString{De: strp("Arbeit"), Bg: &bg}}},
+	}
+
+	out, err := withTranslations(raw, inv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["a_field_the_struct_has_never_heard_of"]; !ok {
+		t.Error("a root key the generated struct does not know was dropped")
+	}
+	line := got["lines"].([]any)[0].(map[string]any)
+	if line["internal_note"] != "do not lose me" {
+		t.Error("a line key the generated struct does not know was dropped")
+	}
+	if desc := line["description"].(map[string]any); desc["bg"] != bg {
+		t.Errorf("bg = %v, want the translation written in", desc["bg"])
+	}
+	if desc := line["description"].(map[string]any); desc["de"] != "Arbeit" {
+		t.Error("the original de text did not survive")
+	}
+}

@@ -219,7 +219,7 @@ func runActualsStatus(args []string) int {
 			for _, p := range parts {
 				switch {
 				case p.Category != "":
-					cents += int(p.Amount*100 + 0.5)
+					cents += actualsdata.RoundCents(p.Amount)
 					decided = true
 				case p.Untracked != "":
 					hasUntracked = true

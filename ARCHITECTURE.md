@@ -467,7 +467,7 @@ Three rules, one per artifact.
 | Artifact | Rule |
 |---|---|
 | `INV-….pdf` | Render if missing and status != `draft`. **Never overwrite.** |
-| `INV-….-draft.pdf` | Render if status is `draft`. Overwrite on each run of the action. |
+| `INV-….-DRAFT.pdf` | Render if status is `draft`. Overwrite on each run of the action. |
 | `INV-….-paid.pdf` | Render if the invoice is listed in `paid-invoices.json` and it's missing, or if the JSON is newer. |
 
 "Newer" means per-file git commit timestamps:
@@ -538,8 +538,13 @@ their 24-hour file store. Retry with backoff on 5xx.
 **Fonts — Google Fonts, with two required settings.**
 
 ```html
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;700&display=block&subset=cyrillic,latin-ext" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=block&subset=cyrillic,latin-ext" rel="stylesheet">
 ```
+
+The family is PT Sans, which is what `templates/invoice.html.tmpl` loads and what every
+issued PDF is set in. The two settings below are the part that matters — either font
+covers Cyrillic, and changing the family now would restyle a legal document for no
+reason.
 
 - `display=block`, not `swap`. With `swap` Chrome paints fallback text immediately and
   substitutes later; capture in between and you get the fallback font, or tofu where it

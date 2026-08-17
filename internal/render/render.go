@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"html/template"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/atombender/go-jsonschema/pkg/types"
 
@@ -22,6 +24,14 @@ func getenv(key, fallback string) string {
 	}
 	return fallback
 }
+
+var invoiceTemplate = sync.OnceValues(func() (*template.Template, error) {
+	tmpl, err := template.New("invoice.html.tmpl").Funcs(funcMap).ParseFiles(templatePath)
+	if err != nil {
+		return nil, fmt.Errorf("parse template: %w", err)
+	}
+	return tmpl, nil
+})
 
 type View struct {
 	Invoice   *invoice.InvoiceJson
@@ -40,9 +50,9 @@ func HTML(inv *invoice.InvoiceJson, totals money.Totals, paidOn *types.Serializa
 		return nil, fmt.Errorf("localization: %w", err)
 	}
 
-	tmpl, err := template.New("invoice.html.tmpl").Funcs(funcMap).ParseFiles(templatePath)
+	tmpl, err := invoiceTemplate()
 	if err != nil {
-		return nil, fmt.Errorf("parse template: %w", err)
+		return nil, err
 	}
 
 	hasVAT := false
@@ -127,8 +137,14 @@ func FormatAmount(minor int64) string {
 	return fmt.Sprintf("%s%s,%02d", sign, grouped.String(), cents)
 }
 
+var LogoRoot = getenv("STATIC_DIR", "static")
+
 func loadLogoSVG(path string) (template.HTML, error) {
-	b, err := os.ReadFile(path)
+	clean, err := confineToLogoRoot(path)
+	if err != nil {
+		return "", err
+	}
+	b, err := os.ReadFile(clean)
 	if err != nil {
 		return "", err
 	}
@@ -138,7 +154,29 @@ func loadLogoSVG(path string) (template.HTML, error) {
 			s = strings.TrimLeft(s[i+2:], " \t\r\n")
 		}
 	}
+	if !strings.HasPrefix(s, "<svg") {
+		return "", fmt.Errorf("%s does not start with an <svg> element", path)
+	}
 	return template.HTML(s), nil
+}
+
+func confineToLogoRoot(path string) (string, error) {
+	if !strings.EqualFold(filepath.Ext(path), ".svg") {
+		return "", fmt.Errorf("%s is not an .svg", path)
+	}
+	root, err := filepath.Abs(LogoRoot)
+	if err != nil {
+		return "", err
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(root, abs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%s is outside %s, which is the only place a logo is read from", path, LogoRoot)
+	}
+	return abs, nil
 }
 
 func formatScaledHundredths(scaled *int) string {
@@ -151,9 +189,9 @@ func formatScaledHundredths(scaled *int) string {
 	if frac == 0 {
 		return strconv.Itoa(whole)
 	}
-	s := fmt.Sprintf("%d.%02d", whole, frac)
+	s := fmt.Sprintf("%d,%02d", whole, frac)
 	s = strings.TrimRight(s, "0")
-	return strings.TrimSuffix(s, ".")
+	return strings.TrimSuffix(s, ",")
 }
 
 func formatPercentPtr(scaled *int) string {

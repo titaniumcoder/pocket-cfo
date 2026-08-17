@@ -84,14 +84,53 @@ func translateOne(ctx context.Context, client *translate.Client, path string) (b
 		return false, nil
 	}
 
-	out, err := json.MarshalIndent(&inv, "", "  ")
+	out, err := withTranslations(b, &inv)
 	if err != nil {
-		return false, fmt.Errorf("marshal: %w", err)
+		return false, err
 	}
-	if err := os.WriteFile(path, append(out, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(path, out, 0o644); err != nil {
 		return false, fmt.Errorf("write: %w", err)
 	}
 	return true, nil
+}
+
+func withTranslations(raw []byte, inv *invoice.InvoiceJson) ([]byte, error) {
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, fmt.Errorf("parse: %w", err)
+	}
+
+	setBg := func(container any, i int, key string, ls invoice.LocalizedString) {
+		if ls.Bg == nil {
+			return
+		}
+		list, ok := container.([]any)
+		if !ok || i >= len(list) {
+			return
+		}
+		item, ok := list[i].(map[string]any)
+		if !ok {
+			return
+		}
+		field, ok := item[key].(map[string]any)
+		if !ok {
+			return
+		}
+		field["bg"] = *ls.Bg
+	}
+
+	for i, l := range inv.Lines {
+		setBg(doc["lines"], i, "description", l.Description)
+	}
+	for i, d := range inv.Discounts {
+		setBg(doc["discounts"], i, "label", d.Label)
+	}
+
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal: %w", err)
+	}
+	return append(out, '\n'), nil
 }
 
 func fillBg(ctx context.Context, client *translate.Client, ls *invoice.LocalizedString, lang invoice.InvoiceJsonLanguage) (bool, error) {

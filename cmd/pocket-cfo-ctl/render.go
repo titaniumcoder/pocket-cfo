@@ -110,11 +110,23 @@ func runRender(args []string) int {
 }
 
 func splitFlags(args []string) (flagArgs, positional []string) {
-	for _, a := range args {
-		if strings.HasPrefix(a, "-") {
-			flagArgs = append(flagArgs, a)
-		} else {
+	return splitFlagsWithValues(args, nil)
+}
+
+func splitFlagsWithValues(args []string, takesValue map[string]bool) (flagArgs, positional []string) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if !strings.HasPrefix(a, "-") {
 			positional = append(positional, a)
+			continue
+		}
+		flagArgs = append(flagArgs, a)
+		if strings.Contains(a, "=") {
+			continue
+		}
+		if takesValue[strings.TrimLeft(a, "-")] && i+1 < len(args) {
+			i++
+			flagArgs = append(flagArgs, args[i])
 		}
 	}
 	return flagArgs, positional

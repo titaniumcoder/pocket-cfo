@@ -74,7 +74,11 @@ func validateActuals(dataDir string) int {
 		return 1
 	}
 
-	knownIDs := budgetCategoryIDs(dataDir)
+	knownIDs, err := budgetCategoryIDs(dataDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "pocket-cfo-ctl validate:", err)
+		return 1
+	}
 
 	problems := 0
 	for _, e := range entries {

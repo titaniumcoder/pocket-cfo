@@ -28,6 +28,9 @@ func ValidateAccounts(f AccountsFile) error {
 // readingProblems holds the two rules a series of readings has to keep,
 // applied to the accounts and to the director's loan from one place so the
 // two cannot drift apart.
+// readingProblems holds the rules a series of readings has to keep, applied
+// to the accounts and to the director's loan from one place so the two cannot
+// drift apart.
 func readingProblems(what string, readings []Reading) error {
 	seenMonth := map[string]string{}
 	for _, r := range readings {

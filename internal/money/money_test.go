@@ -75,6 +75,39 @@ func TestCompute_QuantityAbsent(t *testing.T) {
 	}
 }
 
+func TestCompute_ZeroSubtotalAcrossRateGroups(t *testing.T) {
+	amount := 0
+	inv := &invoice.InvoiceJson{
+		Lines: []invoice.Line{
+			line("free, zero-rated", nil, 0, 0),
+			line("free, standard-rated", nil, 0, 20),
+		},
+		Discounts: []invoice.Discount{
+			{Label: invoice.LocalizedString{De: strp("Rabatt"), Bg: strp("Rabatt")}, Amount: &amount},
+		},
+	}
+	got, err := Compute(inv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Subtotal != 0 || got.Net != 0 || got.GrandTotal != 0 {
+		t.Errorf("subtotal/net/grand = %d/%d/%d, want 0/0/0", got.Subtotal, got.Net, got.GrandTotal)
+	}
+	for _, g := range got.VATGroups {
+		if g.DiscountedBase != 0 || g.VAT != 0 {
+			t.Errorf("group %d%%: discounted base = %d, vat = %d, want 0 and 0", g.Rate, g.DiscountedBase, g.VAT)
+		}
+	}
+}
+
+func TestAllocateDiscount_ZeroSubtotalDoesNotPanic(t *testing.T) {
+	groups := []VATGroup{{Rate: 0}, {Rate: 20}}
+	allocateDiscount(groups, 0, -10000, 10000)
+	if groups[0].DiscountedBase != 10000 {
+		t.Errorf("first group discounted base = %d, want 10000", groups[0].DiscountedBase)
+	}
+}
+
 // TestCompute_StackedDiscounts pins the worked example from
 // ARCHITECTURE.md §3.5: two discounts on a 10 200,00 € base leave
 // 9 896,00 € — each applied against the running total, not the original

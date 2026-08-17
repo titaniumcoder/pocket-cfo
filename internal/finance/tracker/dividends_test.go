@@ -115,11 +115,13 @@ func dividendOf(amount float64, day string, on yearMonth) dividendDue {
 	return Dividends{{On: on, Day: day, AmountEUR: amount}}.dueIn(on)
 }
 
-// TestADividendOfTenThousandCostsTheCompanyElevenThousand: the distribution
-// and the profit tax it triggers both leave, and the owner's side sees the
-// dividend less its own tax. This is the worked example the whole design was
-// agreed on.
-func TestADividendOfTenThousandCostsTheCompanyElevenThousand(t *testing.T) {
+// TestADividendOfTenThousandCostsTheCompanyElevenThousandButOnlyInWorth: the
+// distribution costs the company 11,000 — the gross plus the profit tax it
+// triggers — but only 1,500 of that is money leaving the bank. The other 9,500
+// is handed to the owner as a claim, and the director's loan is what carries
+// it. Getting this wrong is what made a distribution look unaffordable to a
+// company whose cash had already gone out as draws.
+func TestADividendOfTenThousandCostsTheCompanyElevenThousandButOnlyInWorth(t *testing.T) {
 	p := withDividendRates(params())
 	r := p.rulesFor(testMonth)
 	stock := companyStock{Known: true, OpeningCents: 5000000}
@@ -138,11 +140,41 @@ func TestADividendOfTenThousandCostsTheCompanyElevenThousand(t *testing.T) {
 		t.Errorf("dividend tax = %d, want 5%% of the distribution", with.DividendTaxCents)
 	}
 
-	if got := without.CompanyClosingCents - with.CompanyClosingCents; got != 1100000 {
-		t.Errorf("the company lost %d, want the dividend plus its profit tax", got)
+	cash := without.CompanyClosingCents - with.CompanyClosingCents
+	if cash != 150000 {
+		t.Errorf("the company's cash fell by %d, want only the two taxes — the gross is a claim, not a payment", cash)
 	}
-	if got := with.NetIncomeCents - without.NetIncomeCents; got != 950000 {
-		t.Errorf("net income rose by %d, want the dividend less its dividend tax", got)
+	owed := with.NetIncomeCents - without.NetIncomeCents
+	if owed != 950000 {
+		t.Errorf("the owner is owed %d more, want the dividend less its dividend tax", owed)
+	}
+	// Cash out plus the claim handed over is what the distribution really cost.
+	if cash+owed != 1100000 {
+		t.Errorf("the distribution cost %d in all, want the gross plus its profit tax", cash+owed)
+	}
+}
+
+// TestADividendSettledAgainstTheLoanTakesNoCashOutOfTheCompany is the case that
+// prompted the correction: a company holding almost nothing can still declare
+// the distribution that clears what its owner already drew, because the gross
+// never moves. Only the taxes have to be found.
+func TestADividendSettledAgainstTheLoanTakesNoCashOutOfTheCompany(t *testing.T) {
+	p := withDividendRates(params())
+	r := p.rulesFor(testMonth)
+	// 204 in the bank, the way it really was.
+	stock := companyStock{Known: true, OpeningCents: 20400}
+	d := SalaryDecision{Mode: SalaryNone}
+
+	v := p.breakdown(0, 0, 1, r, d, stock, dividendOf(17894.74, "2026-01-31", testMonth))
+
+	taxes := v.CompanyProfitTaxCents + v.DividendTaxCents
+	if got := stock.OpeningCents - v.CompanyClosingCents; got != taxes {
+		t.Errorf("the company's cash fell by %d, want the %d of tax and nothing else", got, taxes)
+	}
+	// It is still overdrawn — the taxes are real money it does not have — but
+	// by 2,684, not by 20,579.
+	if v.CompanyClosingCents < -300000 {
+		t.Errorf("closing = %d; the gross is being taken out of the bank again", v.CompanyClosingCents)
 	}
 }
 
@@ -157,8 +189,9 @@ func TestTheClosingBalanceStillEqualsTheRowsAboveItWithADividend(t *testing.T) {
 	for _, mode := range []SalaryDecision{{Mode: SalaryFull}, {Mode: SalaryFixed, FixedEUR: 2500}, {Mode: SalaryNone}} {
 		v := p.breakdown(4000, 250, 1, r, mode, stock, dividendOf(10000, "2026-01-31", testMonth))
 
+		// The company's column: cash out only, so the gross is not in it.
 		rows := stock.OpeningCents + v.CompanyIncomeCents - v.CompanyExpensesCents -
-			v.EmployerContribCents - v.GrossSalaryCents - v.DividendCents - v.CompanyProfitTaxCents
+			v.EmployerContribCents - v.GrossSalaryCents - v.DividendTaxCents - v.CompanyProfitTaxCents
 		if rows != v.CompanyClosingCents {
 			t.Errorf("%s: the rows add to %d and the closing figure says %d", mode.Mode, rows, v.CompanyClosingCents)
 		}

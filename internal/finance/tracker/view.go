@@ -551,7 +551,7 @@ func (f *Figures) publishBalanceTheBankSaw(months int) {
 	pv := f.FundingPersonal
 	f.ActualCompanyClosingCents = pv.CompanyOpeningCents + pv.CompanyIncomeCents -
 		f.CompanyActualCents - pv.EmployerContribCents - pv.GrossSalaryCents -
-		pv.DividendCents - pv.CompanyProfitTaxCents
+		pv.DividendTaxCents - pv.CompanyProfitTaxCents
 }
 
 func (f Figures) HeadlineBalanceCents() int {

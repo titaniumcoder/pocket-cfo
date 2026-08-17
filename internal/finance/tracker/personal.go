@@ -248,7 +248,7 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 	dividendTaxEUR := toCent(r.DividendTax.on(dividendEUR))
 
 	availableForPayroll := toCent(monthlyRawIncome - monthlyCompanyExpenses + stock.spendableEUR() -
-		dividendEUR - profitTaxEUR)
+		dividendTaxEUR - profitTaxEUR)
 
 	gross, minimumEnforced := grossSalaryFor(d, r, availableForPayroll)
 	employerContrib := toCent(r.Employer.on(gross))
@@ -326,6 +326,11 @@ func (v *PersonalView) carryCompanyStock(m PersonalView, first bool) {
 // next month, so a half-cent here compounds down the year — and the rows on
 // the page have to add up to it, because that is the first thing a reader
 // checks.
+//
+// This is the company's CASH, not what it is worth. A declared dividend is
+// deliberately absent: it hands the owner an obligation, not money, and the
+// obligation is carried by the director's loan. Only the two taxes leave the
+// bank.
 func (v *PersonalView) closeCompanyOver(stock companyStock) {
 	if !stock.Known {
 		return
@@ -335,7 +340,7 @@ func (v *PersonalView) closeCompanyOver(stock companyStock) {
 	v.CompanyTargetCents = stock.TargetCents
 	v.CompanyClosingCents = stock.OpeningCents + v.CompanyIncomeCents -
 		v.CompanyExpensesCents - v.EmployerContribCents - v.GrossSalaryCents -
-		v.DividendCents - v.CompanyProfitTaxCents
+		v.DividendTaxCents - v.CompanyProfitTaxCents
 }
 
 func grossSalaryFor(d SalaryDecision, r Rules, availableForPayroll float64) (gross float64, minimumEnforced bool) {

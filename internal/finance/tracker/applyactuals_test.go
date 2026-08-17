@@ -448,6 +448,43 @@ func TestTheLiveCompanyClosingIsTheRowsAboveIt(t *testing.T) {
 	}
 }
 
+// TestTheLiveCompanyClosingLosesTheSameFiguresAsThePlannedOne: the live closing
+// is re-derived by hand rather than sharing closeCompanyOver, so the two
+// expressions can drift apart silently — and did, for the whole life of the
+// dividend, because no fixture with a distribution ever reached this one. The
+// distribution itself must not be in either: it hands the owner a claim, not
+// money, and only the two taxes leave the bank.
+func TestTheLiveCompanyClosingLosesTheSameFiguresAsThePlannedOne(t *testing.T) {
+	f := Figures{
+		ShowActuals:        true,
+		CompanyActualCents: 40000,
+		FundingPersonal: PersonalView{
+			ShowCompanyBalance:    true,
+			CompanyOpeningCents:   5000000,
+			CompanyIncomeCents:    400000,
+			EmployerContribCents:  20000,
+			GrossSalaryCents:      107700,
+			DividendCents:         1000000,
+			DividendTaxCents:      50000,
+			CompanyProfitTaxCents: 100000,
+		},
+	}
+	f.publishBalanceTheBankSaw(1)
+
+	pv := f.FundingPersonal
+	want := pv.CompanyOpeningCents + pv.CompanyIncomeCents - f.CompanyActualCents -
+		pv.EmployerContribCents - pv.GrossSalaryCents - pv.DividendTaxCents - pv.CompanyProfitTaxCents
+	if f.ActualCompanyClosingCents != want {
+		t.Errorf("live closing = %d, want %d", f.ActualCompanyClosingCents, want)
+	}
+	// Stated as its own claim so the failure names the mistake rather than a
+	// number: the gross is nowhere in the bank figure.
+	withoutTheGross := want
+	if f.ActualCompanyClosingCents == withoutTheGross-pv.DividendCents {
+		t.Error("the gross distribution is being taken out of the bank again")
+	}
+}
+
 // TestBothFiguresReachThePage: the pair is only useful side by side, in the
 // column grammar the ledger already uses for planned against actual.
 func TestBothFiguresReachThePage(t *testing.T) {

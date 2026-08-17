@@ -20,6 +20,14 @@ func (ls LocalizedString) Get(lang InvoiceJsonLanguage) (string, bool) {
 	return *p, true
 }
 
+func TaxRegimes() []TaxRegime {
+	out := make([]TaxRegime, 0, len(enumValues_TaxRegime))
+	for _, v := range enumValues_TaxRegime {
+		out = append(out, TaxRegime(v.(string)))
+	}
+	return out
+}
+
 func (ls LocalizedString) IsEmpty() bool {
 	return ls.De == nil && ls.En == nil && ls.Fr == nil && ls.Bg == nil
 }

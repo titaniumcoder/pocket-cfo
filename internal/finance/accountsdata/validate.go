@@ -25,13 +25,14 @@ func ValidateAccounts(f AccountsFile) error {
 	return nil
 }
 
-// readingProblems holds the two rules a series of readings has to keep,
-// applied to the accounts and to the director's loan from one place so the
-// two cannot drift apart.
 // readingProblems holds the rules a series of readings has to keep, applied
 // to the accounts and to the director's loan from one place so the two cannot
 // drift apart.
 func readingProblems(what string, readings []Reading) error {
+	if len(readings) == 0 {
+		return fmt.Errorf("%s has no readings — an account is declared by its first balance, and one with none can never be given one", what)
+	}
+
 	seenMonth := map[string]string{}
 	for _, r := range readings {
 		d, err := time.Parse("2006-01-02", r.AsOf)

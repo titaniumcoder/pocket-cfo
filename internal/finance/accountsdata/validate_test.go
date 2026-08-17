@@ -68,6 +68,28 @@ func TestAnUnparseableDateIsRefused(t *testing.T) {
 	}
 }
 
+func TestAnAccountWithNoReadingsIsRefused(t *testing.T) {
+	t.Run("an account", func(t *testing.T) {
+		err := ValidateAccounts(fileWith())
+		if err == nil {
+			t.Fatal("an account with no readings was accepted")
+		}
+		for _, want := range []string{"P", "no readings"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error = %q, want it to contain %q", err, want)
+			}
+		}
+	})
+
+	t.Run("the director's loan", func(t *testing.T) {
+		f := fileWith(reading("2026-07-31"))
+		f.DirectorLoan = &AccountsFileDirectorLoan{}
+		if err := ValidateAccounts(f); err == nil {
+			t.Error("a director's loan with no readings was accepted")
+		}
+	})
+}
+
 func TestTwoAccountsWithTheSameNameAreRefused(t *testing.T) {
 	f := AccountsFile{Accounts: []Account{
 		{Name: "P", Kind: AccountKindPrivate, Balances: []Reading{reading("2026-07-31")}},

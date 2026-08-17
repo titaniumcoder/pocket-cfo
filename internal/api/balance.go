@@ -306,7 +306,8 @@ func rewriteAccount(dec *json.Decoder, src []byte, account string, reading accou
 		return nil, false, nil
 	}
 	if insertAt < 0 {
-		return nil, false, errorf(CodeUpstream, "account %q has no readings to append to", account)
+		return nil, false, errorf(CodeValidationFailed,
+			"account %q is declared with no readings, so there is nothing to append to — give it a first balance by hand in accounts.json", account)
 	}
 
 	var buf bytes.Buffer

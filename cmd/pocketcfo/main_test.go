@@ -9,18 +9,27 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
 )
 
-func TestCurrentSession_BypassesAuthOutsideProd(t *testing.T) {
-	for _, env := range []string{"", "development", "anything-else"} {
+func TestCurrentSession_BypassesAuthOnlyInDevelopment(t *testing.T) {
+	s := &server{cfg: config{env: "development"}}
+	r := httptest.NewRequest(http.MethodGet, "/", nil) // no cookie at all
+
+	sess, ok := s.currentSession(r)
+	if !ok {
+		t.Fatal("want ok=true in development, got false")
+	}
+	if !s.authorized(sess) {
+		t.Errorf("want an authorized synthetic session, got %+v", sess)
+	}
+}
+
+func TestCurrentSession_UnknownEnvDoesNotBypassAuth(t *testing.T) {
+	for _, env := range []string{"", "production", "Development", "anything-else"} {
 		t.Run("env="+env, func(t *testing.T) {
 			s := &server{cfg: config{env: env}}
-			r := httptest.NewRequest(http.MethodGet, "/", nil) // no cookie at all
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
 
-			sess, ok := s.currentSession(r)
-			if !ok {
-				t.Fatal("want ok=true outside prod, got false")
-			}
-			if !s.authorized(sess) {
-				t.Errorf("want an authorized synthetic session, got %+v", sess)
+			if _, ok := s.currentSession(r); ok {
+				t.Errorf("ENV=%q served a session with no cookie", env)
 			}
 		})
 	}

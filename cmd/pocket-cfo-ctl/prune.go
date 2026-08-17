@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	iofs "io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,6 +41,9 @@ func runPrune(args []string) int {
 		jsonPath := filepath.Join(invoicesDir, number+".json")
 		if _, err := os.Stat(jsonPath); err == nil {
 			continue
+		} else if !errors.Is(err, iofs.ErrNotExist) {
+			fmt.Fprintf(os.Stderr, "pocket-cfo-ctl prune: %s: %v\n", jsonPath, err)
+			return 1
 		}
 
 		pdfPath := filepath.Join(buildDir, e.Name())

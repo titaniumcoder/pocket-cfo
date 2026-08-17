@@ -152,7 +152,7 @@ Secrets and deployment-specific paths come from the environment. Copy `.envrc.ex
 
 | Variable | Used by | |
 |---|---|---|
-| `ENV` | `cmd/pocketcfo` | login is enforced only when this is exactly `prod`; anything else skips auth, so local dev needs none of the OAuth vars |
+| `ENV` | `cmd/pocketcfo` | `prod` enforces login; `development` skips auth, so local dev needs none of the OAuth vars. Those are the only two values — anything else, unset included, refuses to boot rather than guessing |
 | `API2PDF_KEY` | `pocket-cfo-ctl render` | api2pdf API key |
 | `HERMES_API_TOKEN` | `cmd/pocketcfo` | optional — bearer token for the agent API. Unset means `/api/` and `/mcp` are never registered, so they do not exist rather than returning 401 |
 | `GITHUB_DATA_TOKEN` | `cmd/pocketcfo` | optional — fine-grained PAT with `contents: write` on the data repo only, for committing reconciled months |

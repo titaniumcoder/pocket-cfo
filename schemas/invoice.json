@@ -34,10 +34,12 @@
     "lines": {
       "type": "array",
       "minItems": 1,
+      "maxItems": 10000,
       "items": { "$ref": "#/$defs/line" }
     },
     "discounts": {
       "type": "array",
+      "maxItems": 10000,
       "items": { "$ref": "#/$defs/discount" }
     },
     "tax": { "$ref": "#/$defs/tax" }
@@ -120,9 +122,9 @@
       "required": ["description", "unit_price", "vat_rate"],
       "properties": {
         "description": { "$ref": "#/$defs/localized_string" },
-        "quantity": { "type": "integer", "minimum": 1 },
+        "quantity": { "type": "integer", "minimum": 1, "maximum": 100000000 },
         "unit": { "type": "string" },
-        "unit_price": { "type": "integer" },
+        "unit_price": { "type": "integer", "minimum": 0, "maximum": 100000000 },
         "vat_rate": { "type": "integer", "minimum": 0, "maximum": 100 }
       }
     },
@@ -132,8 +134,8 @@
       "required": ["label"],
       "properties": {
         "label": { "$ref": "#/$defs/localized_string" },
-        "percent": { "type": "integer", "minimum": 0 },
-        "amount": { "type": "integer" }
+        "percent": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "amount": { "type": "integer", "minimum": 0, "maximum": 100000000000000 }
       },
       "oneOf": [
         { "required": ["percent"], "not": { "required": ["amount"] } },

@@ -43,6 +43,36 @@ func TestSplitFlags(t *testing.T) {
 	}
 }
 
+func TestSplitFlagsWithValues(t *testing.T) {
+	takesValue := map[string]bool{"base-ref": true, "allow-removals": true}
+	tests := []struct {
+		name           string
+		args           []string
+		wantFlags      []string
+		wantPositional []string
+	}{
+		{"value flag before the directory", []string{"--base-ref", "HEAD", "data"}, []string{"--base-ref", "HEAD"}, []string{"data"}},
+		{"value flag after the directory", []string{"data", "--base-ref", "HEAD"}, []string{"--base-ref", "HEAD"}, []string{"data"}},
+		{"equals form keeps its own value", []string{"data", "--base-ref=HEAD"}, []string{"--base-ref=HEAD"}, []string{"data"}},
+		{"a value that looks like a directory", []string{"--base-ref", "origin/main", "data"}, []string{"--base-ref", "origin/main"}, []string{"data"}},
+		{"two value flags around the directory", []string{"--base-ref", "HEAD", "data", "--allow-removals", "duplicate import"},
+			[]string{"--base-ref", "HEAD", "--allow-removals", "duplicate import"}, []string{"data"}},
+		{"an unknown flag takes no value", []string{"--force", "data"}, []string{"--force"}, []string{"data"}},
+		{"a trailing value flag with nothing after it", []string{"--base-ref"}, []string{"--base-ref"}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotFlags, gotPositional := splitFlagsWithValues(tt.args, takesValue)
+			if !reflect.DeepEqual(gotFlags, tt.wantFlags) {
+				t.Errorf("flags = %v, want %v", gotFlags, tt.wantFlags)
+			}
+			if !reflect.DeepEqual(gotPositional, tt.wantPositional) {
+				t.Errorf("positional = %v, want %v", gotPositional, tt.wantPositional)
+			}
+		})
+	}
+}
+
 func TestForceAllowed(t *testing.T) {
 	tests := []struct {
 		name     string

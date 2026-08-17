@@ -108,14 +108,14 @@ var apiPaths = []string{
 }
 
 // TestAPIRoutesAbsentWithoutToken: unconfigured, no endpoint answers. env is
-// deliberately "" — the tier where currentSession hands admin to every local
-// request — so this also proves the routes aren't merely session-gated.
+// deliberately "development" — the tier where currentSession hands admin to
+// every request — so this also proves the routes aren't merely session-gated.
 //
 // The assertion is "serves no data", not "404": a two-segment path like
 // /api/accounts falls through to /{year}/{month} when the API isn't
 // registered, which is ordinary unknown-path behaviour rather than a leak.
 func TestAPIRoutesAbsentWithoutToken(t *testing.T) {
-	s := apiServer(t, "", "")
+	s := apiServer(t, "", "development")
 	for _, p := range apiPaths {
 		w := apiGet(t, s, p, "")
 		if w.Code == http.StatusOK {
@@ -162,7 +162,7 @@ func TestAPIRejectsWrongBearer(t *testing.T) {
 // currentSession hands out an admin session to every local request, and the
 // API must not inherit it.
 func TestAPIIgnoresSessionCookie(t *testing.T) {
-	s := apiServer(t, apiTestToken, "") // the dev-bypass tier
+	s := apiServer(t, apiTestToken, "development") // the dev-bypass tier
 	encoded, err := auth.Encode(s.cfg.sessionSecret, auth.Session{Login: "someone", Permission: "admin"})
 	if err != nil {
 		t.Fatal(err)

@@ -3,6 +3,7 @@ package actualsdata
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -58,7 +59,11 @@ func coverageProblems(af ActualsFile, first, last time.Time) []error {
 func transactionProblems(af ActualsFile, first, last time.Time, knownIDs map[string]bool) []error {
 	var problems []error
 	seen := map[string]bool{}
-	for _, tx := range af.Transactions {
+	for i, tx := range af.Transactions {
+		if tx.Id == "" {
+			problems = append(problems, fmt.Errorf("transaction %d (%s, %s) has no id — the id is what makes a repeat import a no-op instead of a duplicate", i+1, tx.Date, tx.Description))
+			continue
+		}
 		if seen[tx.Id] {
 			problems = append(problems, fmt.Errorf("transaction id %q appears more than once — ids must be unique so re-importing a statement is idempotent", tx.Id))
 			continue
@@ -145,6 +150,7 @@ func splitDispositionProblem(id string, i int, s Split, knownIDs map[string]bool
 func movementProblems(tx Transaction) []error {
 	var problems []error
 	if tx.Movement != nil {
+		problems = appendIfProblem(problems, unknownMovementProblem(tx.Id, "", *tx.Movement))
 		if len(tx.Splits) > 0 {
 			problems = append(problems, fmt.Errorf("transaction %s is marked as a %s and also has splits — the parts decide, so the line itself must not", tx.Id, *tx.Movement))
 		} else if !hasText(tx.Ignored) {
@@ -157,12 +163,21 @@ func movementProblems(tx Transaction) []error {
 			continue
 		}
 		where := fmt.Sprintf(" split %d", i+1)
+		problems = appendIfProblem(problems, unknownMovementProblem(tx.Id, where, *s.Movement))
 		if !hasText(s.Ignored) {
 			problems = append(problems, fmt.Errorf("transaction %s%s is marked as a %s but carries no ignored reason", tx.Id, where, *s.Movement))
 		}
 		problems = appendIfProblem(problems, directionProblem(tx.Id, where, *s.Movement, s.Amount))
 	}
 	return problems
+}
+
+func unknownMovementProblem(id, where string, m Movement) error {
+	if KnownMovement(m) {
+		return nil
+	}
+	return fmt.Errorf("transaction %s%s is marked %q, which is not a movement — use one of %s",
+		id, where, string(m), strings.Join(Movements(), ", "))
 }
 
 // directionProblem is what enforces "record it once, on the company

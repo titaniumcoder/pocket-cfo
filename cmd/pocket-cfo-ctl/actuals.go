@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,12 +40,30 @@ func runActualsValidate(args []string) int {
 	baseRef := fs.String("base-ref", "", "git revision to compare against (e.g. HEAD, origin/main)")
 	allowRemovals := fs.String("allow-removals", "", "reason for accepting removals; never optional and never a bare flag, so git log records why")
 
-	if err := fs.Parse(args); err != nil {
+	flagArgs, positional := splitFlagsWithValues(args, map[string]bool{
+		"base-ref": true, "allow-removals": true,
+	})
+	if err := fs.Parse(flagArgs); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if len(positional) > 1 {
+		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl actuals validate: expected at most one directory, got %s\n",
+			strings.Join(positional, " "))
 		return 2
 	}
 	dir := "data"
-	if fs.NArg() > 0 {
-		dir = fs.Arg(0)
+	if len(positional) == 1 {
+		dir = positional[0]
+	}
+
+	if *baseRef != "" {
+		if err := requireRef(dir, *baseRef); err != nil {
+			fmt.Fprintln(os.Stderr, "pocket-cfo-ctl actuals validate:", err)
+			return 1
+		}
 	}
 
 	months, err := actualsMonths(dir)
@@ -57,7 +76,11 @@ func runActualsValidate(args []string) int {
 		return 0
 	}
 
-	knownIDs := budgetCategoryIDs(dir)
+	knownIDs, err := budgetCategoryIDs(dir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "pocket-cfo-ctl actuals validate:", err)
+		return 1
+	}
 
 	problems := 0
 	for _, m := range months {
@@ -139,16 +162,35 @@ func removalReason(dir, ref, flagReason string) string {
 	return ""
 }
 
+var absentFromRef = []string{"does not exist in", "exists on disk, but not in"}
+
 func gitShow(dir, ref, rel string) ([]byte, bool, error) {
 	out, err := exec.Command("git", "-C", dir, "show", ref+":"+rel).Output()
 	if err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
-			return nil, false, nil
+			stderr := strings.TrimSpace(string(ee.Stderr))
+			for _, shape := range absentFromRef {
+				if strings.Contains(stderr, shape) {
+					return nil, false, nil
+				}
+			}
+			if stderr == "" {
+				return nil, false, fmt.Errorf("git show %s:%s: %w", ref, rel, err)
+			}
+			return nil, false, fmt.Errorf("git show %s:%s: %s", ref, rel, stderr)
 		}
 		return nil, false, err
 	}
 	return out, true, nil
+}
+
+func requireRef(dir, ref string) error {
+	cmd := exec.Command("git", "-C", dir, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%q is not a revision in %s — check the name, and that the clone is deep enough to contain it", ref, dir)
+	}
+	return nil
 }
 
 func runActualsStatus(args []string) int {
@@ -263,14 +305,18 @@ func readActuals(path string) (actualsdata.ActualsFile, error) {
 	return af, nil
 }
 
-func budgetCategoryIDs(dir string) map[string]bool {
-	b, err := os.ReadFile(filepath.Join(dir, "budget.json"))
+func budgetCategoryIDs(dir string) (map[string]bool, error) {
+	path := filepath.Join(dir, "budget.json")
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var bf budgetdata.BudgetFile
-	if json.Unmarshal(b, &bf) != nil {
-		return nil
+	if err := json.Unmarshal(b, &bf); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	out := map[string]bool{}
 	for _, g := range bf.Groups {
@@ -278,5 +324,5 @@ func budgetCategoryIDs(dir string) map[string]bool {
 			out[c.Id] = true
 		}
 	}
-	return out
+	return out, nil
 }

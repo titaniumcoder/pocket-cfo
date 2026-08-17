@@ -1,5 +1,22 @@
 package actualsdata
 
+func KnownMovement(m Movement) bool {
+	for _, known := range enumValues_Movement {
+		if known == string(m) {
+			return true
+		}
+	}
+	return false
+}
+
+func Movements() []string {
+	out := make([]string, 0, len(enumValues_Movement))
+	for _, v := range enumValues_Movement {
+		out = append(out, v.(string))
+	}
+	return out
+}
+
 type Part struct {
 	Category  string
 	Ignored   string

@@ -147,6 +147,69 @@ func TestValidateActualsReportsEveryBreach(t *testing.T) {
 	}
 }
 
+func TestAnUnknownMovementIsRefused(t *testing.T) {
+	t.Run("on the line", func(t *testing.T) {
+		f := validFile()
+		typo := Movement("owner_dra")
+		f.Transactions[1].Movement = &typo
+
+		err := ValidateActuals(f, "2026-08", known)
+		if err == nil {
+			t.Fatal("want an error for a movement outside the six")
+		}
+		for _, want := range []string{"owner_dra", "owner_draw"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error = %q, want it to mention %q", err, want)
+			}
+		}
+	})
+
+	t.Run("on a split part", func(t *testing.T) {
+		f := validFile()
+		typo := Movement("salary_transfr")
+		f.Transactions[1].Category = nil
+		f.Transactions[1].Ignored = nil
+		f.Transactions[1].Splits = []Split{
+			{Amount: -1200, Ignored: strp("salary"), Movement: &typo},
+			{Amount: -1200, Ignored: strp("salary"), Movement: movementp(MovementSalaryTransfer)},
+		}
+		err := ValidateActuals(f, "2026-08", known)
+		if err == nil || !strings.Contains(err.Error(), "salary_transfr") {
+			t.Errorf("error = %v, want it to name the unknown marker on the part", err)
+		}
+	})
+
+	t.Run("every real one is accepted", func(t *testing.T) {
+		for _, name := range Movements() {
+			if !KnownMovement(Movement(name)) {
+				t.Errorf("KnownMovement(%q) = false, want true", name)
+			}
+		}
+		if KnownMovement(Movement("")) {
+			t.Error(`KnownMovement("") = true, want false`)
+		}
+	})
+}
+
+func movementp(m Movement) *Movement { return &m }
+
+func TestATransactionWithNoIdIsRefused(t *testing.T) {
+	f := validFile()
+	f.Transactions[0].Id = ""
+	f.Transactions[1].Id = ""
+
+	err := ValidateActuals(f, "2026-08", known)
+	if err == nil {
+		t.Fatal("want an error for a transaction with no id")
+	}
+	if !strings.Contains(err.Error(), "has no id") {
+		t.Errorf("error = %q, want it to say the id is missing", err)
+	}
+	if strings.Contains(err.Error(), "appears more than once") {
+		t.Errorf("error = %q, want two missing ids reported as missing, not as duplicates", err)
+	}
+}
+
 // TestValidateActualsNilKnownIDsSkipsTheCrossCheck covers the runtime loader,
 // which has no budget file to hand.
 func TestValidateActualsNilKnownIDsSkipsTheCrossCheck(t *testing.T) {

@@ -176,3 +176,48 @@ func TestActualsValidateHonoursTheCommitTrailer(t *testing.T) {
 		t.Errorf("validate = %d, want 0 — an Allow-Removals trailer is the override CI uses", code)
 	}
 }
+
+func TestActualsValidateRefusesAnUnusableBaseRef(t *testing.T) {
+	t.Run("a ref that does not resolve", func(t *testing.T) {
+		dir := actualsDir(t)
+		gitRepo(t, dir)
+		if code := runActuals([]string{"validate", "--base-ref", "origin/nope", dir}); code == 0 {
+			t.Error("validate = 0, want non-zero — the ref names nothing, so nothing was compared")
+		}
+	})
+
+	t.Run("a directory that is not a git repository", func(t *testing.T) {
+		dir := actualsDir(t)
+		if code := runActuals([]string{"validate", "--base-ref", "HEAD", dir}); code == 0 {
+			t.Error("validate = 0, want non-zero — there is no repository to compare against")
+		}
+	})
+}
+
+func TestActualsValidateAcceptsFlagsAfterTheDirectory(t *testing.T) {
+	dir := actualsDir(t)
+	gitRepo(t, dir)
+
+	shrunk := `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-02","to":"2026-08-31","imported_at":"2026-09-01"}],
+		"transactions":[{"id":"t2","date":"2026-08-03","description":"LIDL","amount":210.4,"account":"A","category":"00000000-0000-4000-8000-000000000002"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "actuals", "2026-08.json"), []byte(shrunk), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if code := runActuals([]string{"validate", dir, "--base-ref", "HEAD"}); code == 0 {
+		t.Error("validate = 0, want non-zero — --base-ref after the directory must still be honoured")
+	}
+	if code := runActuals([]string{"validate", dir, "--base-ref=HEAD"}); code == 0 {
+		t.Error("validate = 0, want non-zero — --base-ref=HEAD after the directory must still be honoured")
+	}
+	if code := runActuals([]string{"validate", dir, "--base-ref", "HEAD", "--allow-removals", "duplicate import"}); code != 0 {
+		t.Errorf("validate = %d, want 0 — --allow-removals after the directory must be honoured too", code)
+	}
+}
+
+func TestActualsValidateRefusesExtraDirectories(t *testing.T) {
+	dir := actualsDir(t)
+	if code := runActuals([]string{"validate", dir, dir}); code == 0 {
+		t.Error("validate = 0, want non-zero — a second directory is a mistake, not something to ignore")
+	}
+}

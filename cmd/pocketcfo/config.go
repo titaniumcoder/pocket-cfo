@@ -1,8 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -88,17 +91,40 @@ func loadConfig() config {
 		githubAPIURL:     os.Getenv("GITHUB_API_URL"),
 		finance:          financeconfig.Load(financeFileConfig),
 	}
-	applyDevDefaults(&c)
-	if c.env == "prod" {
-		requireProdVars(c)
+	if err := requireKnownEnv(c.env); err != nil {
+		log.Fatalf("pocketcfo: %v", err)
+	}
+	applyDefaults(&c)
+	if c.env == envProd {
+		if err := requireProdVars(c); err != nil {
+			log.Fatalf("pocketcfo: %v", err)
+		}
+	} else {
+		log.Printf("pocketcfo: ENV=%s — login is DISABLED and every request is served as admin, "+
+			"including the client-portal links. Never expose this to a network you do not control.", c.env)
 	}
 	return c
 }
 
-func applyDevDefaults(c *config) {
-	if c.env == "" {
-		c.env = "development"
+const (
+	envProd        = "prod"
+	envDevelopment = "development"
+)
+
+func requireKnownEnv(env string) error {
+	switch env {
+	case envProd, envDevelopment:
+		return nil
+	case "":
+		return fmt.Errorf("ENV is not set — use ENV=%s to serve with login, or ENV=%s to run locally without it (see .envrc.example)",
+			envProd, envDevelopment)
+	default:
+		return fmt.Errorf("ENV=%q is not an environment — use %s or %s (see .envrc.example)",
+			env, envProd, envDevelopment)
 	}
+}
+
+func applyDefaults(c *config) {
 	if c.repo == "" {
 		c.repo = "unset"
 	}
@@ -107,8 +133,10 @@ func applyDevDefaults(c *config) {
 	}
 }
 
-func requireProdVars(c config) {
-	missing := map[string]string{
+const minSecretLength = 32
+
+func requireProdVars(c config) error {
+	required := map[string]string{
 		"GITHUB_OAUTH_CLIENT_ID":     c.clientID,
 		"GITHUB_OAUTH_CLIENT_SECRET": c.clientSecret,
 		"SESSION_SECRET":             c.sessionSecret,
@@ -119,9 +147,27 @@ func requireProdVars(c config) {
 		"SES_FROM_EMAIL":             c.sesFromEmail,
 		"OTP_LINK_SECRET":            c.otpLinkSecret,
 	}
-	for name, v := range missing {
-		if v == "" {
-			log.Fatalf("pocketcfo: %s is not set (see .envrc.example)", name)
+	for _, name := range slices.Sorted(maps.Keys(required)) {
+		if required[name] == "" {
+			return fmt.Errorf("%s is not set (see .envrc.example)", name)
 		}
 	}
+
+	if !strings.HasPrefix(c.baseURL, "https://") {
+		return fmt.Errorf("PUBLIC_BASE_URL=%q must be https:// in %s — session cookies and the OAuth redirect are derived from it",
+			c.baseURL, envProd)
+	}
+
+	secrets := map[string]string{
+		"SESSION_SECRET":     c.sessionSecret,
+		"CLIENT_LINK_SECRET": c.clientLinkSecret,
+		"OTP_LINK_SECRET":    c.otpLinkSecret,
+	}
+	for _, name := range slices.Sorted(maps.Keys(secrets)) {
+		if len(secrets[name]) < minSecretLength {
+			return fmt.Errorf("%s is only %d characters — use at least %d (try `openssl rand -hex 32`)",
+				name, len(secrets[name]), minSecretLength)
+		}
+	}
+	return nil
 }

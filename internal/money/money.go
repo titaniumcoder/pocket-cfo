@@ -124,7 +124,7 @@ func allocateDiscount(groups []VATGroup, subtotal, totalDiscount, net int64) {
 	if len(groups) == 0 {
 		return
 	}
-	if len(groups) == 1 || totalDiscount == 0 {
+	if len(groups) == 1 || totalDiscount == 0 || subtotal == 0 {
 		groups[0].DiscountedBase = groups[0].Base - totalDiscount
 		for i := 1; i < len(groups); i++ {
 			groups[i].DiscountedBase = groups[i].Base

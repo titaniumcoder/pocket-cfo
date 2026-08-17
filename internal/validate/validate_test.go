@@ -281,3 +281,22 @@ func TestCatalog(t *testing.T) {
 		}
 	})
 }
+
+func TestRecipientReferences(t *testing.T) {
+	d := atInvoice(t)
+	d.Inv.Recipient.Number = 7
+
+	if err := RecipientReferences([]Doc{d}, map[int]bool{7: true}); err != nil {
+		t.Errorf("unexpected error for a recipient that exists: %v", err)
+	}
+
+	err := RecipientReferences([]Doc{d}, map[int]bool{1: true, 2: true})
+	if err == nil {
+		t.Fatal("want an error for an invoice naming a recipient with no file")
+	}
+	for _, want := range []string{d.Path, "7"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to mention %q", err, want)
+		}
+	}
+}

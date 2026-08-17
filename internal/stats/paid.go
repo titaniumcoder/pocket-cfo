@@ -29,6 +29,10 @@ func LoadPaid(path string) (map[string]types.SerializableDate, error) {
 
 	paid := make(map[string]types.SerializableDate, len(pf.Paid))
 	for _, p := range pf.Paid {
+		if first, dup := paid[p.Invoice]; dup {
+			return nil, fmt.Errorf("%s: %s is listed twice, paid on %s and on %s — which one is it?",
+				path, p.Invoice, first.Format("2006-01-02"), p.Date.Format("2006-01-02"))
+		}
 		paid[p.Invoice] = p.Date
 	}
 	return paid, nil

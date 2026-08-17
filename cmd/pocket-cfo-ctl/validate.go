@@ -31,12 +31,17 @@ func runValidate(args []string) int {
 	catalogDir := getenv("CATALOG_DIR", filepath.Join(filepath.Dir(dataDir), "catalog"))
 
 	problems := 0
+	knownRecipients := map[int]bool{}
 	problems += validateDir(filepath.Join(dataDir, "recipients"), func(b []byte) error {
 		if err := schemas.Validate(schemas.Recipient, b); err != nil {
 			return err
 		}
 		var r recipient.RecipientJson
-		return json.Unmarshal(b, &r)
+		if err := json.Unmarshal(b, &r); err != nil {
+			return err
+		}
+		knownRecipients[r.Number] = true
+		return nil
 	})
 	problems += validateFile(filepath.Join(dataDir, "issuer.json"), func(b []byte) error {
 		if err := schemas.Validate(schemas.Issuer, b); err != nil {
@@ -45,7 +50,7 @@ func runValidate(args []string) int {
 		var i issuer.IssuerJson
 		return json.Unmarshal(b, &i)
 	})
-	problems += validateInvoices(dataDir, catalogDir)
+	problems += validateInvoices(dataDir, catalogDir, knownRecipients)
 	problems += validateFile(filepath.Join(dataDir, "users.json"), func(b []byte) error {
 		if err := schemas.Validate(schemas.Users, b); err != nil {
 			return err
@@ -121,7 +126,7 @@ func validateActuals(dataDir string) int {
 	return problems
 }
 
-func validateInvoices(dataDir, catalogDir string) int {
+func validateInvoices(dataDir, catalogDir string, knownRecipients map[int]bool) int {
 	dir := filepath.Join(dataDir, "invoices")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -164,6 +169,7 @@ func validateInvoices(dataDir, catalogDir string) int {
 	}
 
 	problems += report(dir, validate.InvoiceSet(docs))
+	problems += report(dir, validate.RecipientReferences(docs, knownRecipients))
 	return problems
 }
 

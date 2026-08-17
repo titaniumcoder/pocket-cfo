@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -125,4 +126,26 @@ func TestValidatePaid(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestLoadPaidRefusesADuplicate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "paid-invoices.json")
+	body := `{"paid":[
+		{"invoice":"INV-0000000001","date":"2026-02-01"},
+		{"invoice":"INV-0000000001","date":"2026-03-15"}
+	]}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadPaid(path)
+	if err == nil {
+		t.Fatal("want an error for an invoice listed twice")
+	}
+	for _, want := range []string{"INV-0000000001", "2026-02-01", "2026-03-15"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to mention %q", err, want)
+		}
+	}
 }

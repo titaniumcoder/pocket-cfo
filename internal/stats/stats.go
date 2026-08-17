@@ -3,6 +3,7 @@ package stats
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -90,15 +91,18 @@ func deriveState(inv *invoice.InvoiceJson, paidOn *types.SerializableDate, today
 	if paidOn != nil {
 		return "paid"
 	}
-	if inv.DueDate.Time.Before(today) {
+	if dayOf(inv.DueDate.Time).Before(dayOf(today)) {
 		return "overdue"
 	}
 	return "issued"
 }
 
+func dayOf(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+}
+
 func Aggregate(invoices []*invoice.InvoiceJson, recipients []recipient.RecipientJson, paid map[string]types.SerializableDate, year *int, now time.Time) (years []int, recipientRows []RecipientRow, invoiceRows []InvoiceRow, err error) {
-	today := now.UTC()
-	today = time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 
 	all, years, err := computeAll(invoices, paid, today)
 	if err != nil {
@@ -128,6 +132,10 @@ func computeAll(invoices []*invoice.InvoiceJson, paid map[string]types.Serializa
 	for _, inv := range invoices {
 		totals, err := money.Compute(inv)
 		if err != nil {
+			if inv.Status == invoice.InvoiceJsonStatusDraft {
+				log.Printf("stats: skipping draft %s, which does not compute: %v", inv.Number, err)
+				continue
+			}
 			return nil, nil, fmt.Errorf("compute totals for %s: %w", inv.Number, err)
 		}
 		var paidOn *types.SerializableDate

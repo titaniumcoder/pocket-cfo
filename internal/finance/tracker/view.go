@@ -681,13 +681,15 @@ func (f *Figures) publishCompanyWorth() {
 	f.CompanyWorthCents = f.FundingPersonal.CompanyOpeningCents + f.OwedToOwnerCents
 }
 
-// OwedLabel turns over with the direction, because "owed" alone does not say
-// which way and the figure beside it is a bare number.
+// OwedLabel turns over with the direction, because the figure beside it is a
+// bare number and the noun alone does not say which way it points. Both sides
+// name it a loan: this is one director's-loan account that can sit either way
+// up, and calling only one direction a loan would read as two separate things.
 func (f Figures) OwedLabel() string {
 	if f.OwedToOwnerCents < 0 {
-		return "Owed to the owner"
+		return "Loan from the owner"
 	}
-	return "Owed by the owner"
+	return "Loan to the owner"
 }
 
 // ArrivedPrivatelyLabel turns over the same way, and says the money left the

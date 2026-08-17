@@ -187,6 +187,7 @@ var templates = `
 <title>Pocket CFO — Spending {{.Month}}{{if .UntrackedCount}} &bull;{{end}}</title>
 ` + favicon + `
 <link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
 </head>
 <body>
 <main>
@@ -203,10 +204,10 @@ var templates = `
       {{else}}
       <a class="arrow" href="{{.PrevURL}}" aria-label="Previous" title="Previous">` + chevronLeft + `</a>
       {{end}}
-      <select id="msel" onchange="navSpending()" aria-label="Month">
+      <select id="msel" data-nav="spending" aria-label="Month">
         {{$m := .MonthNum}}{{range .Months}}<option value="{{.Num}}"{{if eq .Num $m}} selected{{end}}>{{.Name}}{{if .Untracked}} &bull;{{end}}</option>{{end}}
       </select>
-      <select id="ysel" onchange="navSpending()" aria-label="Year">
+      <select id="ysel" data-nav="spending" aria-label="Year">
         {{$y := .Year}}{{range .Years}}<option value="{{.}}"{{if eq . $y}} selected{{end}}>{{.}}</option>{{end}}
       </select>
       {{if .NextDisabled}}
@@ -222,13 +223,6 @@ var templates = `
       <form class="inline-form" method="post" action="{{.RefreshURL}}"><button class="link" type="submit">Reload</button></form>
     </div>
   </nav>
-  <script>
-    function navSpending() {
-      var y = document.getElementById('ysel').value;
-      var m = document.getElementById('msel').value;
-      location.href = '/' + y + '/' + m + '/spending';
-    }
-  </script>
 
   <section class="panel">
     <h2 class="panel-title">Spending &mdash; {{.Month}}{{if .UntrackedCount}} <span class="untracked-mark" title="cash not yet placed">{{untracked .UntrackedCount}}{{eur .UntrackedCents}} untracked</span>{{end}}</h2>
@@ -299,44 +293,12 @@ var templates = `
     {{end}}
   </section>
 </main>
-<script>
-  document.addEventListener('click', function (e) {
-    var a = e.target.closest('.copy-tx');
-    if (!a) return;
-    e.preventDefault();
-
-    function flash(state) {
-      a.classList.add(state);
-      setTimeout(function () { a.classList.remove(state); }, 1500);
-    }
-
-    function fallback() {
-      var box = document.createElement('textarea');
-      box.value = a.dataset.copy;
-      box.setAttribute('readonly', '');
-      box.style.position = 'fixed';
-      box.style.opacity = '0';
-      document.body.appendChild(box);
-      box.select();
-      var ok = false;
-      try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
-      document.body.removeChild(box);
-      flash(ok ? 'copied' : 'failed');
-    }
-
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(a.dataset.copy).then(function () { flash('copied'); }, fallback);
-    } else {
-      fallback();
-    }
-  });
-</script>
 </body>
 </html>{{end}}
 
 {{define "categoryGroups"}}{{$show := .ShowActuals}}{{$detail := .SpendingDetailURL}}{{range .Groups}}
       <div class="group">
-        <div class="group-header" onclick="this.closest('.group').classList.toggle('open')">
+        <div class="group-header">
           <span class="label">{{.Name}} <span class="chevron">&#9656;</span></span>
           {{if $show}}<span class="mid{{outClass .PlannedCents}}">{{out .PlannedCents}}</span><span class="amt act{{if .HasActual}}{{outClass .ActualCents}}{{end}}{{if .Status}} flagged{{end}}">{{mark .Status}}{{if .HasActual}}{{out .ActualCents}}{{end}}<span class="stack-m">{{if .HasActual}}of {{end}}{{out .PlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt{{outClass .PlannedCents}}">{{out .PlannedCents}}</span>{{end}}
         </div>
@@ -361,6 +323,7 @@ var templates = `
 <title>Pocket CFO — Finance</title>
 ` + favicon + `
 <link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
 </head>
 <body>
 <main>
@@ -385,14 +348,14 @@ var templates = `
       <a class="arrow" href="{{.PrevURL}}" aria-label="Previous" title="Previous">` + chevronLeft + `</a>
       {{end}}
       {{if eq .Mode "year"}}
-      <select id="ysel" onchange="navYear()" aria-label="Year">
+      <select id="ysel" data-nav="year" aria-label="Year">
         {{range .Years}}<option value="{{.}}"{{if eq . $.Year}} selected{{end}}>{{.}}</option>{{end}}
       </select>
       {{else}}
-      <select id="msel" onchange="navMonth()" aria-label="Month">
+      <select id="msel" data-nav="month" aria-label="Month">
         {{range .Months}}<option value="{{.Num}}"{{if eq .Num $.MonthNum}} selected{{end}}>{{.Name}}{{if .Untracked}} &bull;{{end}}</option>{{end}}
       </select>
-      <select id="ysel" onchange="navMonth()" aria-label="Year">
+      <select id="ysel" data-nav="month" aria-label="Year">
         {{range .Years}}<option value="{{.}}"{{if eq . $.Year}} selected{{end}}>{{.}}</option>{{end}}
       </select>
       {{end}}
@@ -409,16 +372,6 @@ var templates = `
       <form class="inline-form" method="post" action="{{.RefreshURL}}"><button class="link" type="submit">Reload</button></form>
     </div>
   </nav>
-  <script>
-    function navMonth() {
-      var y = document.getElementById('ysel').value;
-      var m = document.getElementById('msel').value;
-      location.href = '/' + y + '/' + m;
-    }
-    function navYear() {
-      location.href = '/' + document.getElementById('ysel').value;
-    }
-  </script>
 
   <section class="panel income-panel">
     <h2 class="panel-title">Income</h2>

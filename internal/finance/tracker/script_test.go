@@ -3,17 +3,20 @@ package tracker
 import (
 	"context"
 	"net/http/httptest"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 )
 
-// scriptsIn returns the contents of every <script> element in a page.
-func scriptsIn(body string) []string {
+// scriptSrcsIn returns the src of every <script> element in a page.
+func scriptSrcsIn(body string) []string {
 	var out []string
-	for _, m := range regexp.MustCompile(`(?s)<script>(.*?)</script>`).FindAllStringSubmatch(body, -1) {
+	for _, m := range regexp.MustCompile(`(?i)<script[^>]*\ssrc="([^"]+)"`).FindAllStringSubmatch(body, -1) {
 		out = append(out, m[1])
 	}
 	return out
@@ -95,10 +98,16 @@ func itoa(n int) string {
 	return string(b)
 }
 
-// TestRenderedScriptsParse guards every inline script the app serves. These
-// live inside Go string literals, so nothing about editing them tells you when
-// one stops being valid JavaScript — the compiler is happy, the tests that
-// grep for a substring are happy, and the page silently loses the feature.
+// TestRenderedScriptsParse guards the JavaScript the app serves. It used to sit
+// in inline <script> blocks; the Content-Security-Policy moved it to
+// static/app.js (see csp_test.go), which changes where it lives but not the
+// failure it invites: nothing compiles or lints that file either, so an edit
+// that drops a brace leaves the compiler happy, the substring tests happy, and
+// the browser parsing nothing — no listener registered and the feature silently
+// gone, which is exactly how the copy link once shipped broken.
+//
+// The pages are still rendered, to check they actually load the file. A script
+// that parses but is linked from nowhere is as dead as one that does not parse.
 func TestRenderedScriptsParse(t *testing.T) {
 	trk := actualsTracker(t, map[string]string{
 		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
@@ -115,25 +124,30 @@ func TestRenderedScriptsParse(t *testing.T) {
 	RenderPage(rec, trk.ComputeMonth(ctx, 2026, time.August))
 	pages["dashboard"] = rec.Body.String()
 
-	node, nodeErr := exec.LookPath("node")
+	const want = "/static/app.js"
 	for name, body := range pages {
-		scripts := scriptsIn(body)
-		if len(scripts) == 0 {
-			t.Errorf("%s has no inline script; this test would pass vacuously", name)
+		if !slices.Contains(scriptSrcsIn(body), want) {
+			t.Errorf("%s does not load %s, so nothing binds its accordion or period pickers", name, want)
 		}
-		for i, src := range scripts {
-			if problem := balanced(src); problem != "" {
-				t.Errorf("%s script %d is not valid JavaScript: %s", name, i, problem)
-			}
-			if nodeErr != nil {
-				continue // the balance check above is the one CI relies on
-			}
-			cmd := exec.Command(node, "--check", "-")
-			cmd.Stdin = strings.NewReader(src)
-			if out, err := cmd.CombinedOutput(); err != nil {
-				t.Errorf("%s script %d fails node --check: %v\n%s", name, i, err, out)
-			}
-		}
+	}
+
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "static", "app.js"))
+	if err != nil {
+		t.Fatalf("read static/app.js: %v", err)
+	}
+	src := string(b)
+	if problem := balanced(src); problem != "" {
+		t.Errorf("static/app.js is not valid JavaScript: %s", problem)
+	}
+
+	node, nodeErr := exec.LookPath("node")
+	if nodeErr != nil {
+		return // the balance check above is the one CI relies on
+	}
+	cmd := exec.Command(node, "--check", "-")
+	cmd.Stdin = strings.NewReader(src)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Errorf("static/app.js fails node --check: %v\n%s", err, out)
 	}
 }
 

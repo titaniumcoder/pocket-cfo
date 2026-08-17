@@ -573,7 +573,7 @@ func TestTheCompanyIsWorthItsCashLessWhatItOwesTheOwner(t *testing.T) {
 	if f.CompanyWorthCents != 1720400 {
 		t.Errorf("worth = %d, want 204 in the bank plus the 17,000 owed to it", f.CompanyWorthCents)
 	}
-	if f.OwedLabel() != "Owed by the owner" {
+	if f.OwedLabel() != "Loan to the owner" {
 		t.Errorf("label = %q, want it to say which way the debt runs", f.OwedLabel())
 	}
 }
@@ -594,7 +594,7 @@ func TestTheWorthRowFlipsTheLoansSignAndItsLabel(t *testing.T) {
 	if owes.CompanyWorthCents != 180000 {
 		t.Errorf("worth = %d, want the cash less what it owes", owes.CompanyWorthCents)
 	}
-	if owes.OwedLabel() != "Owed to the owner" {
+	if owes.OwedLabel() != "Loan from the owner" {
 		t.Errorf("label = %q, want the other direction", owes.OwedLabel())
 	}
 }

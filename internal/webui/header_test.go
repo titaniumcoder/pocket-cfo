@@ -2,6 +2,8 @@ package webui
 
 import (
 	htmltemplate "html/template"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -109,7 +111,14 @@ func TestAvatarFallsBackWhenTheImageFails(t *testing.T) {
 	}
 	body := b.String()
 
-	if !strings.Contains(body, "onerror=") {
+	// The fallback used to be an onerror= attribute. The Content-Security-Policy
+	// blocks inline handlers, so it is bound in static/app.js instead — asserted
+	// here so the behaviour cannot quietly disappear along with the attribute.
+	js, err := os.ReadFile(filepath.Join("..", "..", "static", "app.js"))
+	if err != nil {
+		t.Fatalf("read static/app.js: %v", err)
+	}
+	if !strings.Contains(string(js), ".avatar") {
 		t.Error("a failed avatar has nothing to fall back to; the broken-image icon stays")
 	}
 	// The initials must be in the markup regardless, since they are what is

@@ -13,10 +13,14 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/actualsdata"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/budgetdata"
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/invoice"
+	"github.com/titaniumcoder/pocket-cfo/internal/schema/issuer"
+	"github.com/titaniumcoder/pocket-cfo/internal/schema/notes"
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/paidinvoices"
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/recipient"
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/users"
 	"github.com/titaniumcoder/pocket-cfo/internal/stats"
+	"github.com/titaniumcoder/pocket-cfo/internal/validate"
+	"github.com/titaniumcoder/pocket-cfo/schemas"
 )
 
 func runValidate(args []string) int {
@@ -24,17 +28,28 @@ func runValidate(args []string) int {
 	if len(args) > 0 {
 		dataDir = args[0]
 	}
+	catalogDir := getenv("CATALOG_DIR", filepath.Join(filepath.Dir(dataDir), "catalog"))
 
 	problems := 0
 	problems += validateDir(filepath.Join(dataDir, "recipients"), func(b []byte) error {
+		if err := schemas.Validate(schemas.Recipient, b); err != nil {
+			return err
+		}
 		var r recipient.RecipientJson
 		return json.Unmarshal(b, &r)
 	})
-	problems += validateDir(filepath.Join(dataDir, "invoices"), func(b []byte) error {
-		var inv invoice.InvoiceJson
-		return json.Unmarshal(b, &inv)
+	problems += validateFile(filepath.Join(dataDir, "issuer.json"), func(b []byte) error {
+		if err := schemas.Validate(schemas.Issuer, b); err != nil {
+			return err
+		}
+		var i issuer.IssuerJson
+		return json.Unmarshal(b, &i)
 	})
+	problems += validateInvoices(dataDir, catalogDir)
 	problems += validateFile(filepath.Join(dataDir, "users.json"), func(b []byte) error {
+		if err := schemas.Validate(schemas.Users, b); err != nil {
+			return err
+		}
 		var u users.UsersJson
 		return json.Unmarshal(b, &u)
 	})
@@ -106,6 +121,86 @@ func validateActuals(dataDir string) int {
 	return problems
 }
 
+func validateInvoices(dataDir, catalogDir string) int {
+	dir := filepath.Join(dataDir, "invoices")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0
+		}
+		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: read %s: %v\n", dir, err)
+		return 1
+	}
+
+	cat, catProblems := loadCatalog(catalogDir)
+	problems := catProblems
+
+	var docs []validate.Doc
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		b, err := os.ReadFile(path)
+		if err != nil {
+			problems += report(path, err)
+			continue
+		}
+		problems += report(path, schemas.Validate(schemas.Invoice, b))
+
+		var inv invoice.InvoiceJson
+		if err := json.Unmarshal(b, &inv); err != nil {
+			problems += report(path, err)
+			continue
+		}
+		doc := validate.Doc{Path: path, Base: strings.TrimSuffix(e.Name(), ".json"), Inv: &inv}
+		docs = append(docs, doc)
+		problems += report(path, validate.Invoice(doc, cat))
+	}
+
+	if cat == nil && len(docs) > 0 {
+		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: no catalog at %s, so the mandatory wording on %d invoice(s) was not checked\n", catalogDir, len(docs))
+		problems++
+	}
+
+	problems += report(dir, validate.InvoiceSet(docs))
+	return problems
+}
+
+func loadCatalog(catalogDir string) (*notes.NotesJson, int) {
+	path := filepath.Join(catalogDir, "notes.json")
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, 0
+	}
+	if err != nil {
+		return nil, report(path, err)
+	}
+	if err := schemas.Validate(schemas.Notes, b); err != nil {
+		return nil, report(path, err)
+	}
+	var cat notes.NotesJson
+	if err := json.Unmarshal(b, &cat); err != nil {
+		return nil, report(path, err)
+	}
+	if p := report(path, validate.Catalog(&cat)); p > 0 {
+		return &cat, p
+	}
+	return &cat, 0
+}
+
+func report(path string, err error) int {
+	if err == nil {
+		return 0
+	}
+	lines := strings.Split(err.Error(), "\n")
+	fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: %s:\n", path)
+	for _, l := range lines {
+		fmt.Fprintf(os.Stderr, "  - %s\n", l)
+	}
+	return len(lines)
+}
+
 func validatePaidInvoices(dataDir string) int {
 	path := filepath.Join(dataDir, "paid-invoices.json")
 	b, err := os.ReadFile(path)
@@ -115,6 +210,10 @@ func validatePaidInvoices(dataDir string) int {
 		}
 		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: read %s: %v\n", path, err)
 		return 1
+	}
+
+	if p := report(path, schemas.Validate(schemas.PaidInvoices, b)); p > 0 {
+		return p
 	}
 
 	var pf paidinvoices.PaidInvoicesJson

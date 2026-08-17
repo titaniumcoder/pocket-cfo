@@ -39,6 +39,24 @@ func TestBilingual(t *testing.T) {
 		}
 	})
 
+	t.Run("the threshold counts characters, not bytes", func(t *testing.T) {
+		latin := bilingual(invoice.LocalizedString{
+			De: strp(strings.Repeat("a", 25)),
+			Bg: strp(strings.Repeat("b", 25)),
+		}, invoice.InvoiceJsonLanguageDe)
+		cyrillic := bilingual(invoice.LocalizedString{
+			De: strp(strings.Repeat("a", 25)),
+			Bg: strp(strings.Repeat("б", 25)),
+		}, invoice.InvoiceJsonLanguageDe)
+
+		if !latin.Inline {
+			t.Fatalf("a 50-character latin pair = %+v, want Inline=true", latin)
+		}
+		if !cyrillic.Inline {
+			t.Errorf("a 50-character pair with a Cyrillic half = %+v, want Inline=true — it is the same length on the page", cyrillic)
+		}
+	})
+
 	t.Run("missing bg translation renders empty secondary, no crash", func(t *testing.T) {
 		ls := invoice.LocalizedString{De: strp("Hallo")}
 		got := bilingual(ls, invoice.InvoiceJsonLanguageDe)

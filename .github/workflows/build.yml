@@ -33,6 +33,12 @@ jobs:
       - name: Build
         run: go build ./...
 
+      # ARCHITECTURE.md §4.3 makes this step 1 of the build, and it was in no
+      # workflow at all. Here it guards the example data and the validator
+      # itself; the data repo runs the same command over the real files.
+      - name: Validate data
+        run: go run ./cmd/pocket-cfo-ctl validate
+
       - name: Test
         run: go test ./...
 

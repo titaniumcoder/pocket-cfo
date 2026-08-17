@@ -409,9 +409,34 @@ It should be paranoid.
   never goes negative.
 - **Translation complete**: every `de` string has a `bg` sibling.
 
-Note what is *not* checked: whether an issued invoice's content changed.
-`git log -p data/invoices/INV-….json` is the record, and the PDF beside it was written
-once. A check here would be redundant.
+The regime is cross-checked, not trusted: `tax.Resolve` is run over the parties the
+invoice itself snapshotted, and a stored `tax.regime` that disagrees is refused, naming
+both sides. A zero-rated regime whose lines carry VAT is refused too. The reverse is not
+checked — a domestic invoice may legitimately zero-rate a line, and the resolver never
+sees lines.
+
+Two things the JSON Schema is checked with, rather than against: `pocket-cfo-ctl
+validate` runs the raw bytes through the embedded schema (`schemas.Validate`) *before*
+unmarshalling, because go-jsonschema generates no code for `additionalProperties`,
+`oneOf`/`not`, `propertyNames`, `uniqueItems` or a non-string `const`. Unmarshalling
+alone would let a typo'd key, a discount carrying both `percent` and `amount`, and a
+misspelled regime key in the catalog through.
+
+Note what is *not* checked:
+
+- **Whether an issued invoice's content changed.** `git log -p data/invoices/INV-….json`
+  is the record, and the PDF beside it was written once. A check here would be redundant.
+- **The recipient snapshot against the current `data/recipients/*.json`.** That drift is
+  the point (§2): rewording a recipient must not alter a document already sent.
+- **That every regime in the enum has a catalog entry.** Only the regimes invoices
+  actually use are required to have one — `catalog/notes.json` carries no
+  `domestic_standard` entry, and its wording has to come from the accountant before the
+  first BG-domestic invoice can be issued.
+
+A consequence worth stating: because the wording check reads the *current* catalog, an
+accountant adding a mandatory phrase retroactively fails older invoices. That is
+intended for a legal content requirement — it should be loud — and `reviewed_at` is the
+signal for that conversation.
 
 ---
 

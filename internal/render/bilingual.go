@@ -11,17 +11,17 @@ type Bilingual struct {
 }
 
 func bilingual(ls invoice.LocalizedString, lang invoice.InvoiceJsonLanguage) Bilingual {
-	primary, _ := ls.Get(lang)
-	if lang == invoice.InvoiceJsonLanguageBg {
-		return Bilingual{Primary: primary}
+	texts := ls.RenderedTexts(lang)
+	switch len(texts) {
+	case 0:
+		return Bilingual{}
+	case 1:
+		return Bilingual{Primary: texts[0]}
 	}
-	secondary, _ := ls.Get(invoice.InvoiceJsonLanguageBg)
-	if secondary == "" {
-		return Bilingual{Primary: primary}
-	}
+	primary, secondary := texts[0], texts[1]
 	return Bilingual{
 		Primary:   primary,
 		Secondary: secondary,
-		Inline:    len(primary)+len(secondary) <= inlineThreshold,
+		Inline:    len([]rune(primary))+len([]rune(secondary)) <= inlineThreshold,
 	}
 }

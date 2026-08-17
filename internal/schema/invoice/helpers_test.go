@@ -1,6 +1,9 @@
 package invoice
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func strp(v string) *string { return &v }
 
@@ -77,4 +80,55 @@ func TestLocalizedStringRequire(t *testing.T) {
 			t.Fatal("Require(de) with no bg key: expected an error, got nil")
 		}
 	})
+}
+
+func TestRenderedTexts(t *testing.T) {
+	both := LocalizedString{De: strp("Hinweis"), Bg: strp("Бележка")}
+
+	tests := []struct {
+		name string
+		ls   LocalizedString
+		lang InvoiceJsonLanguage
+		want []string
+	}{
+		{"a bg invoice prints one column", both, InvoiceJsonLanguageBg, []string{"Бележка"}},
+		{"a de invoice prints its own text and the bg beside it", both, InvoiceJsonLanguageDe, []string{"Hinweis", "Бележка"}},
+		{"a language with no text falls back to the bg alone", both, InvoiceJsonLanguageFr, []string{"Бележка"}},
+		{"no bg sibling prints the primary alone", LocalizedString{De: strp("Hinweis")}, InvoiceJsonLanguageDe, []string{"Hinweis"}},
+		{"nothing at all prints nothing", LocalizedString{}, InvoiceJsonLanguageDe, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.ls.RenderedTexts(tt.lang)
+			if len(got) != len(tt.want) {
+				t.Fatalf("RenderedTexts = %q, want %q", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("RenderedTexts[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestValidateLocalizationReportsEveryGap(t *testing.T) {
+	inv := &InvoiceJson{
+		Language: InvoiceJsonLanguageDe,
+		Lines: []Line{
+			{Description: LocalizedString{De: strp("Arbeit")}},
+			{Description: LocalizedString{Bg: strp("Работа")}},
+		},
+		Discounts: []Discount{{Label: LocalizedString{De: strp("Rabatt")}}},
+		Tax:       Tax{Note: LocalizedString{De: strp("Hinweis")}},
+	}
+	err := ValidateLocalization(inv)
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	for _, want := range []string{"line 1", "line 2", "discount 1", "tax note"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to also report %q", err, want)
+		}
+	}
 }

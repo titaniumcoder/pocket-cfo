@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -58,5 +59,39 @@ func TestTwoDividendsInOneMonthAreSummed(t *testing.T) {
 	// Sorted by date, so the page does not reorder itself when the file does.
 	if len(due.Days) != 2 || due.Days[0] != "2026-09-15" || due.Days[1] != "2026-09-30" {
 		t.Errorf("days = %v, want both, earliest first", due.Days)
+	}
+}
+
+// TestAnEmptyDividendChangesNoFigure guards the commit that threaded a
+// distribution through the cascade without paying one: every figure in a month
+// that has no dividend must be cent-for-cent what it was before the parameter
+// existed, or the plumbing itself moved money.
+func TestAnEmptyDividendChangesNoFigure(t *testing.T) {
+	p := params()
+	r := p.rulesFor(testMonth)
+	stock := companyStock{Known: true, OpeningCents: 500000}
+
+	plain := p.breakdown(6000, 250, 1, r, SalaryDecision{Mode: SalaryFull}, stock, noDividend)
+
+	// The same month, reached through a plan that holds a distribution in a
+	// month this one is not.
+	elsewhere := p.withDividends(Dividends{{On: yearMonth{2030, time.March}, Day: "2030-03-31", AmountEUR: 10000}})
+	viaPlan := elsewhere.breakdown(6000, 250, 1, r, SalaryDecision{Mode: SalaryFull}, stock,
+		elsewhere.Dividends.dueIn(testMonth))
+
+	if !reflect.DeepEqual(plain, viaPlan) {
+		t.Errorf("a month with no dividend differs once a plan exists:\n plain = %+v\n plan  = %+v", plain, viaPlan)
+	}
+	for _, zero := range []struct {
+		name  string
+		cents int
+	}{
+		{"dividend", plain.DividendCents},
+		{"dividend tax", plain.DividendTaxCents},
+		{"company profit tax", plain.CompanyProfitTaxCents},
+	} {
+		if zero.cents != 0 {
+			t.Errorf("%s = %d in a month with no distribution", zero.name, zero.cents)
+		}
 	}
 }

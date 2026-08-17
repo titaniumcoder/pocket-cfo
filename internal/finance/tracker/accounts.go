@@ -236,7 +236,7 @@ func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, ra
 	}
 	privateCents, companyCents := t.closingExpenses(ctx, m, bv)
 	fundingStart, fundingEnd := fundingRangeForMonth(m.Year, m.Month)
-	pv := t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(companyCents)/100, bv.CompanyGroups, company)
+	pv := t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(companyCents)/100, bv.CompanyGroups, company, bv.Dividends)
 	if pv.Err != "" {
 		return monthClosing{}, fmt.Errorf("accounts: income for %s: %s", m, pv.Err)
 	}

@@ -23,6 +23,10 @@ type dividendDue struct {
 	Days      []string
 }
 
+var noDividend dividendDue
+
+func (d dividendDue) none() bool { return d.AmountEUR == 0 }
+
 func dividendsIn(bf budgetdata.BudgetFile) Dividends {
 	out := make(Dividends, 0, len(bf.Dividends))
 	for _, entry := range bf.Dividends {

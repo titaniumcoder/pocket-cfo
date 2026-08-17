@@ -76,7 +76,7 @@ func linkForRange(start, end yearMonth, majorityYear int) string {
 	return fmt.Sprintf("/%d", majorityYear)
 }
 
-func (t *Tracker) fundingIncome(ctx context.Context, start, end yearMonth, now time.Time, rateCents int, companyExpensesEUR float64, companyGroups []CategoryGroupView, opening companyStock) PersonalView {
+func (t *Tracker) fundingIncome(ctx context.Context, start, end yearMonth, now time.Time, rateCents int, companyExpensesEUR float64, companyGroups []CategoryGroupView, opening companyStock, dividends Dividends) PersonalView {
 	label := rangeLabel(start, end)
 	url := linkForRange(start, end, end.Year)
 	months := monthsBetween(start, end)
@@ -91,7 +91,7 @@ func (t *Tracker) fundingIncome(ctx context.Context, start, end yearMonth, now t
 		expensesEUR[i] = perMonthExpenseEUR
 	}
 
-	pv := t.Personal.breakdownMonths(incomeEUR, expensesEUR, start.addMonths(-fundingShiftMonths), opening)
+	pv := t.Personal.withDividends(dividends).breakdownMonths(incomeEUR, expensesEUR, start.addMonths(-fundingShiftMonths), opening)
 	pv.CompanyGroups = companyGroups
 	pv.FundingLabel = label
 	pv.FundingURL = url

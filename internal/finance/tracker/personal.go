@@ -13,6 +13,15 @@ type PersonalParams struct {
 	Salary SalaryPlan
 
 	Target TargetPlan
+
+	Dividends Dividends
+}
+
+// withDividends returns a copy, so the plan a request read off budget.json
+// never lands on the tracker's shared params.
+func (p PersonalParams) withDividends(d Dividends) PersonalParams {
+	p.Dividends = d
+	return p
 }
 
 // decide is the whole salary policy for one month. The salary block states it;
@@ -78,6 +87,11 @@ type PersonalView struct {
 	EmployeeContribCents int
 	IncomeTaxCents       int
 	NetIncomeCents       int
+
+	DividendCents         int
+	DividendTaxCents      int
+	CompanyProfitTaxCents int
+	DividendDays          []string
 
 	ShowCompanyBalance  bool
 	CompanyOpeningCents int
@@ -219,7 +233,7 @@ func oneRate(base, minBase float64, b Bands) []RateLine {
 	return []RateLine{{Rate: rate}}
 }
 
-func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, months int, r Rules, d SalaryDecision, stock companyStock) PersonalView {
+func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, months int, r Rules, d SalaryDecision, stock companyStock, due dividendDue) PersonalView {
 	if months <= 0 {
 		months = 1
 	}
@@ -238,8 +252,15 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 	incomeTax := toCent(r.IncomeTax.on(taxable))
 	net := gross - employeeContrib - incomeTax
 
+	dividendEUR := toCent(due.AmountEUR)
+	profitTaxEUR := toCent(r.CompanyProfitTax.on(dividendEUR))
+	dividendTaxEUR := toCent(r.DividendTax.on(dividendEUR))
+
 	m := float64(months)
 	cents := func(x float64) int { return round(x * 100 * m) }
+	// A distribution is an absolute one-off, not a flow quoted per month, so it
+	// is not averaged across the range the way income and expenses are.
+	absolute := func(x float64) int { return round(x * 100) }
 	v := PersonalView{
 		NoLegislation:        r.nothingInForce(),
 		Mode:                 mode,
@@ -257,8 +278,13 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 		GrossSalaryCents:     cents(gross),
 		EmployeeContribCents: cents(employeeContrib),
 		IncomeTaxCents:       cents(incomeTax),
-		NetIncomeCents:       cents(net),
+
+		DividendCents:         absolute(dividendEUR),
+		DividendTaxCents:      absolute(dividendTaxEUR),
+		CompanyProfitTaxCents: absolute(profitTaxEUR),
+		DividendDays:          due.Days,
 	}
+	v.NetIncomeCents = cents(net) + v.DividendCents - v.DividendTaxCents
 	v.closeCompanyOver(stock)
 	return v
 }
@@ -291,7 +317,8 @@ func (v *PersonalView) closeCompanyOver(stock companyStock) {
 	v.CompanyOpeningCents = stock.OpeningCents
 	v.CompanyTargetCents = stock.TargetCents
 	v.CompanyClosingCents = stock.OpeningCents + v.CompanyIncomeCents -
-		v.CompanyExpensesCents - v.EmployerContribCents - v.GrossSalaryCents
+		v.CompanyExpensesCents - v.EmployerContribCents - v.GrossSalaryCents -
+		v.DividendCents - v.CompanyProfitTaxCents
 }
 
 func grossSalaryFor(d SalaryDecision, r Rules, availableForPayroll float64) (gross float64, minimumEnforced bool) {
@@ -341,7 +368,7 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 		stock = p.targetStock(ym, stock)
 		d := p.decide(ym, stock)
 		mode := d.Mode
-		m := p.breakdown(income, companyExpenses, 1, p.rulesFor(ym), d, stock)
+		m := p.breakdown(income, companyExpenses, 1, p.rulesFor(ym), d, stock, p.Dividends.dueIn(ym))
 		one = m
 		switch mode {
 		case SalaryMinimum:
@@ -382,6 +409,10 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 		result.EmployeeContribCents += m.EmployeeContribCents
 		result.IncomeTaxCents += m.IncomeTaxCents
 		result.NetIncomeCents += m.NetIncomeCents
+		result.DividendCents += m.DividendCents
+		result.DividendTaxCents += m.DividendTaxCents
+		result.CompanyProfitTaxCents += m.CompanyProfitTaxCents
+		result.DividendDays = append(result.DividendDays, m.DividendDays...)
 		result.carryCompanyStock(m, i == 0)
 		stock.OpeningCents = m.CompanyClosingCents
 	}

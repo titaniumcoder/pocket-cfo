@@ -105,7 +105,7 @@ func TestTheTargetIsAFloorAndNotAWatermark(t *testing.T) {
 	if d.Mode != SalaryMinimum || !d.HeldForTarget {
 		t.Errorf("decision under target = %+v, want a minimum held for the target", d)
 	}
-	held := p.breakdown(6000, 0, 1, r, d, under)
+	held := p.breakdown(6000, 0, 1, r, d, under, noDividend)
 	if held.GrossSalaryCents != 62020 {
 		t.Errorf("gross = %d, want the 620.20 minimum", held.GrossSalaryCents)
 	}
@@ -120,7 +120,7 @@ func TestTheTargetIsAFloorAndNotAWatermark(t *testing.T) {
 	if got := p.decide(ym, at); got.Mode != SalaryFull || got.HeldForTarget {
 		t.Errorf("decision at target = %+v, want a plain full salary", got)
 	}
-	resumed := p.breakdown(6000, 0, 1, r, p.decide(ym, at), at)
+	resumed := p.breakdown(6000, 0, 1, r, p.decide(ym, at), at, noDividend)
 	if resumed.CompanyClosingCents != 300000 {
 		t.Errorf("closing = %d, want exactly the 3,000 target — a full salary must not spend the reserve", resumed.CompanyClosingCents)
 	}

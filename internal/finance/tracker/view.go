@@ -460,7 +460,7 @@ func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months 
 		first, _ := yearMonthRange(year, t.startMonth())
 		start := time.Date(year, first, 1, 0, 0, 0, 0, t.Loc)
 		end := time.Date(year, time.December, 31, 0, 0, 0, 0, t.Loc)
-		f.Personal = t.Personal.breakdownMonths(
+		f.Personal = t.Personal.withDividends(bv.Dividends).breakdownMonths(
 			monthlyIncomeEUR(start, end, monthlyCompanyCents),
 			monthlyIncomeEUR(start, end, monthlyCompanyExpenseCents),
 			yearMonth{year, first},
@@ -469,7 +469,7 @@ func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months 
 	} else {
 		stock := t.Personal.targetStock(viewed, company)
 		f.Personal = t.Personal.breakdown(float64(f.TotalCents)/100, float64(bv.CompanyTotalPlannedCents)/100, 1,
-			t.Personal.rulesFor(viewed), t.Personal.decide(viewed, stock), stock)
+			t.Personal.rulesFor(viewed), t.Personal.decide(viewed, stock), stock, bv.Dividends.dueIn(viewed))
 	}
 	f.Personal.CompanyGroups = bv.CompanyGroups
 }
@@ -495,7 +495,7 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 	} else {
 		fundingStart, fundingEnd = fundingRangeForMonth(year, start.Month())
 	}
-	f.FundingPersonal = t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(bv.CompanyTotalPlannedCents)/100, bv.CompanyGroups, carried.Company)
+	f.FundingPersonal = t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(bv.CompanyTotalPlannedCents)/100, bv.CompanyGroups, carried.Company, bv.Dividends)
 
 	if t.Budget == nil {
 		return

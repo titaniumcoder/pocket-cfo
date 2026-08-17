@@ -216,3 +216,57 @@ func TestTheYearViewShowsNoDirectorLoanBecauseItReadsNoBalances(t *testing.T) {
 		t.Error("the year view shows a director's loan")
 	}
 }
+
+// TestADirectorLoanOverAMonthNobodyImportedSaysSoRatherThanLookingSettled: an
+// unimported month settles nothing, so the figure is optimistically high by
+// whatever crossed in it. That is honest only if the page says so.
+func TestADirectorLoanOverAMonthNobodyImportedSaysSoRatherThanLookingSettled(t *testing.T) {
+	// The loan opens in January; nothing is imported for the months between.
+	quiet := loanTracker(t, "2025-12-31", 12400, nil).ComputeMonth(context.Background(), 2026, time.August)
+	if len(quiet.DirectorLoanNotes) == 0 {
+		t.Fatal("seven unimported months and the page says nothing")
+	}
+	if !strings.Contains(quiet.DirectorLoanNotes[0], "not fully imported") {
+		t.Errorf("note = %q, want it to name what is missing", quiet.DirectorLoanNotes[0])
+	}
+
+	// A loan anchored on the month before the one being read has walked
+	// nothing, so there is nothing to caveat.
+	current := loanTracker(t, "2026-07-31", 12400, nil).ComputeMonth(context.Background(), 2026, time.August)
+	for _, note := range current.DirectorLoanNotes {
+		if strings.Contains(note, "not fully imported") {
+			t.Errorf("a loan with no months to walk still warns: %q", note)
+		}
+	}
+}
+
+// TestTwoLinesMarkedAsTheSameMovementOnOneDaySaySoWithoutFailingTheMonth: the
+// sign rule cannot catch a transfer marked twice on the company side. Refusing
+// it would take the whole month off the dashboard for a heuristic with real
+// false positives, so it is a note.
+func TestTwoLinesMarkedAsTheSameMovementOnOneDaySaySoWithoutFailingTheMonth(t *testing.T) {
+	trk := loanTracker(t, "2026-07-31", 12400, map[string]string{
+		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+			"transactions":[
+				{"id":"d1","date":"2026-08-06","description":"To Rico","amount":5000,"account":"Company Checking","ignored":"owner draw","movement":"owner_draw"},
+				{"id":"d2","date":"2026-08-06","description":"To Rico again","amount":5000,"account":"Company Checking","ignored":"owner draw","movement":"owner_draw"}]}`,
+	})
+	f := trk.ComputeMonth(context.Background(), 2026, time.August)
+
+	if !f.ShowDirectorLoan {
+		t.Fatal("the month was taken off the dashboard for a heuristic")
+	}
+	found := false
+	for _, note := range f.DirectorLoanNotes {
+		if strings.Contains(note, "counted twice") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("two lines marked identically on one day and no note: %v", f.DirectorLoanNotes)
+	}
+	// It is a note, not a refusal: the figure is still shown, doubled.
+	if f.LoanMovementCents != -1000000 {
+		t.Errorf("movement = %d, want both lines counted so the note has something to warn about", f.LoanMovementCents)
+	}
+}

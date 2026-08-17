@@ -283,6 +283,13 @@ var templates = `
       {{range .Unmatched}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}</span><span class="col-secondary">{{.Category}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
       {{end}}
 
+      {{range .Movements}}
+      <h3 class="sg-span">{{.Name}} &mdash; {{eur .Cents}}</h3>
+      <p class="sg-span muted">{{.Note}} In none of the figures on this page or the dashboard; it settles the director&rsquo;s loan instead.</p>
+      <div class="sg-row"><span class="sg-head col-secondary">Date</span><span class="sg-head sg-desc">Description</span><span class="sg-head col-secondary">Account</span><span class="sg-head num">Amount</span><span class="sg-head copy-col no-print"></span></div>
+      {{range .Transactions}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}{{if .Reason}} <span class="untracked-note">{{.Reason}}</span>{{end}}</span><span class="col-secondary">{{.Account}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
+      {{end}}
+
       <h3 class="sg-span">Not budget expenses</h3>
       <p class="sg-span muted">Every statement line deliberately left out of the figures, with the reason &mdash; so this page reconciles to the whole statement and a mis-ignored line is visible.</p>
       {{if .Ignored}}
@@ -536,6 +543,7 @@ var templates = `
       <div class="row{{owed .LoanNetIncomeCents}}"><span class="label">Net income</span><span class="mid"></span><span class="amt">{{signed .LoanNetIncomeCents}}</span></div>
       <div class="row{{owed .LoanMovementCents}}"><span class="label">Money movement</span><span class="mid"></span><span class="amt">{{signed .LoanMovementCents}}</span></div>
       <div class="row net{{owed .LoanClosingCents}}"><span class="label">At the end</span><span class="mid"></span><span class="amt netamt">{{eur .LoanClosingCents}}</span></div>
+      {{range .DirectorLoanNotes}}<div class="row"><span class="stale-note">{{.}}</span></div>{{end}}
       {{end}}
     </div>
     {{end}}

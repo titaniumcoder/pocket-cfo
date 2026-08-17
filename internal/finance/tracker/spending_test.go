@@ -409,7 +409,8 @@ func TestSpendingIsOneGrid(t *testing.T) {
 			"transactions":[
 			  {"id":"t1","date":"2026-08-03","description":"L","amount":210.4,"account":"A","category":"00000000-0000-4000-8000-000000000001"},
 			  {"id":"t2","date":"2026-08-04","description":"A much longer statement line than the other one","amount":15,"account":"Revolut Private","category":"00000000-0000-4000-8000-000000000002"},
-			  {"id":"t3","date":"2026-08-05","description":"X","amount":9,"account":"A","ignored":"own account"}]}`,
+			  {"id":"t3","date":"2026-08-05","description":"X","amount":9,"account":"A","ignored":"own account"},
+			  {"id":"t4","date":"2026-08-06","description":"To Rico Metzger","amount":5000,"account":"Company Checking","ignored":"owner draw","movement":"owner_draw"}]}`,
 	})
 	rec := httptest.NewRecorder()
 	RenderSpending(rec, trk.ComputeSpending(context.Background(), 2026, time.August))
@@ -894,5 +895,97 @@ func TestALedgerWithoutActualsPutsItsFigureInTheAmountColumn(t *testing.T) {
 	header := regexp.MustCompile(`(?s)<div class="group-header".*?</div>`).FindString(body)
 	if !strings.Contains(header, `<span class="mid"></span>`) {
 		t.Errorf("the group header stopped agreeing with its rows:\n%s", header)
+	}
+}
+
+// movementActualsJSON: one line marked as money crossing to the owner, one
+// tax payment that leaves the company without reaching him, one ordinary
+// ignored line and one categorised line to compare against.
+const movementActualsJSON = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+	"transactions":[
+		{"id":"m0","date":"2026-08-03","description":"LIDL","amount":1000,"account":"A","category":"rent"},
+		{"id":"m1","date":"2026-08-06","description":"To Rico Metzger","amount":5000,"account":"Company Checking","ignored":"owner draw — the receiving side is on the private statement","movement":"owner_draw"},
+		{"id":"m2","date":"2026-08-07","description":"NRA","amount":1000,"account":"Company Checking","ignored":"corporate tax","movement":"corporate_tax"},
+		{"id":"m3","date":"2026-08-08","description":"SAVINGS","amount":300,"account":"A","ignored":"transfer to my own savings account"}]}`
+
+// TestAMarkedTransferIsListedOnceAndNotAlsoUnderNotBudgetExpenses: a marked
+// line carries an ignored reason too, so the page would otherwise show it in
+// both places and count it twice.
+func TestAMarkedTransferIsListedOnceAndNotAlsoUnderNotBudgetExpenses(t *testing.T) {
+	trk := actualsTracker(t, map[string]string{"actuals/2026-08.json": movementActualsJSON})
+	v := trk.ComputeSpending(context.Background(), 2026, time.August)
+
+	if len(v.Movements) != 2 {
+		t.Fatalf("got %d movement sections, want the draw and the tax: %+v", len(v.Movements), v.Movements)
+	}
+	if len(v.Ignored) != 1 || v.IgnoredCount != 1 {
+		t.Errorf("Not budget expenses holds %d line(s) and counts %d, want only the savings transfer", len(v.Ignored), v.IgnoredCount)
+	}
+	for _, ig := range v.Ignored {
+		if strings.Contains(ig.Description, "Rico") || ig.Description == "NRA" {
+			t.Errorf("a marked line is listed under Not budget expenses as well: %+v", ig)
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	RenderSpending(rec, v)
+	body := rec.Body.String()
+	// Counted as rows rather than as text: the description also rides inside
+	// the copy link's payload, which is not a second listing of it.
+	if n := strings.Count(body, `<span class="sg-desc">To Rico Metzger`); n != 1 {
+		t.Errorf("the draw is listed %d times on the page, want once", n)
+	}
+	for _, want := range []string{"Owner draw", "Company profit tax paid", "settles the director"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the spending page never says %q", want)
+		}
+	}
+}
+
+// TestTheTaxPaymentsAreVisibleAndFeedNoFigure: they earn a section only so the
+// page still reconciles line-for-line against the statement.
+func TestOwnerMovementsReachNoFinanceFigure(t *testing.T) {
+	const withMarkers = movementActualsJSON
+	const unmarked = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+		"transactions":[
+			{"id":"m0","date":"2026-08-03","description":"LIDL","amount":1000,"account":"A","category":"rent"},
+			{"id":"m1","date":"2026-08-06","description":"To Rico Metzger","amount":5000,"account":"Company Checking","ignored":"owner draw — the receiving side is on the private statement"},
+			{"id":"m2","date":"2026-08-07","description":"NRA","amount":1000,"account":"Company Checking","ignored":"corporate tax"},
+			{"id":"m3","date":"2026-08-08","description":"SAVINGS","amount":300,"account":"A","ignored":"transfer to my own savings account"}]}`
+
+	marked := actualsTracker(t, map[string]string{"actuals/2026-08.json": withMarkers}).
+		ComputeSpending(context.Background(), 2026, time.August)
+	plain := actualsTracker(t, map[string]string{"actuals/2026-08.json": unmarked}).
+		ComputeSpending(context.Background(), 2026, time.August)
+
+	if marked.TotalCents != plain.TotalCents {
+		t.Errorf("the page total moved from %d to %d because lines were marked", plain.TotalCents, marked.TotalCents)
+	}
+	if marked.UntrackedCents != plain.UntrackedCents {
+		t.Errorf("untracked cash moved from %d to %d", plain.UntrackedCents, marked.UntrackedCents)
+	}
+	if len(marked.Movements) == 0 {
+		t.Fatal("nothing was marked, so this test proves nothing")
+	}
+}
+
+// TestMovementSectionsKeepTheirOrderWhateverTheStatementOrder: the sections
+// follow the schema's own order, so the page does not reshuffle between two
+// reads of the same file.
+func TestMovementSectionsKeepTheirOrderWhateverTheStatementOrder(t *testing.T) {
+	trk := actualsTracker(t, map[string]string{"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+		"transactions":[
+			{"id":"z1","date":"2026-08-09","description":"NRA","amount":1000,"account":"C","ignored":"corporate tax","movement":"corporate_tax"},
+			{"id":"z2","date":"2026-08-08","description":"From Rico","amount":-500,"account":"C","ignored":"paid in","movement":"owner_contribution"},
+			{"id":"z3","date":"2026-08-07","description":"To Rico","amount":5000,"account":"C","ignored":"draw","movement":"owner_draw"}]}`})
+	v := trk.ComputeSpending(context.Background(), 2026, time.August)
+
+	var got []string
+	for _, g := range v.Movements {
+		got = append(got, g.Name)
+	}
+	want := []string{"Owner draw", "Paid into the company", "Company profit tax paid"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("sections = %v, want %v", got, want)
 	}
 }

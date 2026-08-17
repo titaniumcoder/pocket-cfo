@@ -31,9 +31,52 @@ type SpendingView struct {
 	UntrackedCents int
 	UntrackedCount int
 
+	Movements []SpendingMovementGroup
+
 	TotalCents   int
 	IgnoredCount int
 	Err          string
+}
+
+// SpendingMovementGroup lists the lines that moved money between the owner
+// and the company. It is on the page to be seen and reaches no figure on it —
+// the same standing as Untracked and Not budget expenses.
+type SpendingMovementGroup struct {
+	Name         string
+	Note         string
+	Cents        int
+	Transactions []SpendingTx
+}
+
+// movementNames are in the schema's own order, so the page does not reshuffle
+// itself between two reads of the same file.
+var movementNames = []struct {
+	Movement actualsdata.Movement
+	Name     string
+	Note     string
+}{
+	{actualsdata.MovementSalaryTransfer, "Salary paid across", "The salary the cascade above already accounts for, leaving the company for your own account."},
+	{actualsdata.MovementOwnerDraw, "Owner draw", "Money taken out of the company outside payroll."},
+	{actualsdata.MovementDividendPayout, "Dividend paid out", "A distribution reaching your account."},
+	{actualsdata.MovementOwnerContribution, "Paid into the company", "Money you put in, which the company then owes you."},
+	{actualsdata.MovementCorporateTax, "Company profit tax paid", "Left the company for the state, so it settles nothing between you and it."},
+	{actualsdata.MovementDividendTax, "Dividend tax paid", "Left the company for the state, so it settles nothing between you and it."},
+}
+
+func movementGroups(byMovement map[actualsdata.Movement][]SpendingTx) []SpendingMovementGroup {
+	var out []SpendingMovementGroup
+	for _, m := range movementNames {
+		rows := byMovement[m.Movement]
+		if len(rows) == 0 {
+			continue
+		}
+		group := SpendingMovementGroup{Name: m.Name, Note: m.Note, Transactions: rows}
+		for _, row := range rows {
+			group.Cents += row.Cents
+		}
+		out = append(out, group)
+	}
+	return out
 }
 
 type CoverageRow struct {
@@ -115,6 +158,7 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 	}
 
 	byCategory := map[string][]SpendingTx{}
+	byMovement := map[actualsdata.Movement][]SpendingTx{}
 	for _, tx := range af.Transactions {
 		parts := actualsdata.PartsOf(tx)
 		split := len(tx.Splits) > 0
@@ -136,6 +180,13 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 			}
 			if part.Ignored != "" {
 				row.Reason = part.Ignored
+				// A marked line carries an ignored reason too, so without
+				// this it would be listed twice — here and under Not budget
+				// expenses — and counted twice with it.
+				if part.Movement != "" {
+					byMovement[part.Movement] = append(byMovement[part.Movement], row)
+					continue
+				}
 				v.Ignored = append(v.Ignored, row)
 				v.IgnoredCount++
 				continue
@@ -147,6 +198,8 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 			byCategory[part.Category] = append(byCategory[part.Category], row)
 		}
 	}
+
+	v.Movements = movementGroups(byMovement)
 
 	var bv BudgetView
 	if t.Budget != nil {

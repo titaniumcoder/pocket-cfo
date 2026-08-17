@@ -172,6 +172,7 @@ type Figures struct {
 	LoanMovementCents   int
 	LoanClosingCents    int
 	DirectorLoanUnknown string
+	DirectorLoanNotes   []string
 
 	AccountsErr string
 }
@@ -620,6 +621,44 @@ func (f *Figures) computeDirectorLoan(t *Tracker, ctx context.Context, viewed ye
 	f.LoanNetIncomeCents = f.FundingPersonal.NetIncomeCents
 	f.LoanMovementCents = -t.crossedInMonth(ctx, viewed)
 	f.LoanClosingCents = f.LoanOpeningCents + f.LoanNetIncomeCents + f.LoanMovementCents
+	f.DirectorLoanNotes = t.directorLoanNotes(ctx, viewed, carried.Loan)
+}
+
+// directorLoanNotes says the two things that make the figure less than final,
+// rather than letting it read as settled when it is not.
+func (t *Tracker) directorLoanNotes(ctx context.Context, viewed yearMonth, loan directorLoanStock) []string {
+	var notes []string
+	if n := loan.UnimportedMonths; n > 0 {
+		notes = append(notes, fmt.Sprintf("%s since the opening figure %s not fully imported, so anything that crossed in %s has not been counted yet — this reads higher than it is.",
+			monthsPhrase(n), isAre(n), themOrIt(n)))
+	}
+	if t.Actuals != nil {
+		if av, err := t.Actuals.ForMonth(ctx, viewed.Year, viewed.Month); err == nil && av.DoubleMarked {
+			notes = append(notes, "Two lines this month are marked as the same movement, for the same amount, on the same day. If they are one transfer recorded from both statements, unmark the private side — it is counted twice here.")
+		}
+	}
+	return notes
+}
+
+func monthsPhrase(n int) string {
+	if n == 1 {
+		return "One month"
+	}
+	return fmt.Sprintf("%d months", n)
+}
+
+func isAre(n int) string {
+	if n == 1 {
+		return "is"
+	}
+	return "are"
+}
+
+func themOrIt(n int) string {
+	if n == 1 {
+		return "it"
+	}
+	return "them"
 }
 
 // crossedInMonth is the viewed month's own settlements. The month's actuals

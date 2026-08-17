@@ -59,6 +59,13 @@ type ActualsView struct {
 	// -500 adds 500 to it.
 	CrossedCents  int
 	ByMovementRow []MovementTotal
+
+	// DoubleMarked is the one double count the sign rule cannot catch: two
+	// company-side lines marked for what is really one transfer. It is a note
+	// rather than a refusal, because two genuine draws of the same amount on
+	// one day are a real thing and failing the month would take it off the
+	// dashboard entirely.
+	DoubleMarked bool
 }
 
 type MovementTotal struct {
@@ -223,6 +230,7 @@ func (a *Actuals) fetch(year int, month time.Month) actualsResult {
 func viewOf(af actualsdata.ActualsFile, year int, month time.Month) ActualsView {
 	v := ActualsView{Present: true, ByCategory: map[string]int{}}
 	byMovement := map[actualsdata.Movement]int{}
+	markedOnce := map[string]bool{}
 	for _, tx := range af.Transactions {
 		untracked := false
 		for _, part := range actualsdata.PartsOf(tx) {
@@ -231,6 +239,11 @@ func viewOf(af actualsdata.ActualsFile, year int, month time.Month) ActualsView 
 				if part.Crossed() {
 					v.CrossedCents += eurToCents(part.Amount)
 				}
+				key := fmt.Sprintf("%s|%s|%d", tx.Date, part.Movement, eurToCents(part.Amount))
+				if markedOnce[key] {
+					v.DoubleMarked = true
+				}
+				markedOnce[key] = true
 			}
 			if part.Untracked != "" {
 				v.UntrackedCents += eurToCents(part.Amount)

@@ -170,6 +170,12 @@ type directorLoanStock struct {
 	Known        bool
 	OpeningCents int
 	OpensMonth   yearMonth
+
+	// UnimportedMonths counts the walked months whose statements are missing
+	// or half-read. An unimported month settles nothing, so the figure is
+	// optimistically high by whatever crossed in them — honest, but only if
+	// the page says so.
+	UnimportedMonths int
 }
 
 func directorLoanInForce(af accountsdata.AccountsFile, viewed yearMonth) directorLoanStock {
@@ -263,6 +269,9 @@ func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, loan di
 		}
 		if loan.Known && m.ordinal() >= loan.OpensMonth.ordinal() {
 			open.Loan.OpeningCents += closed.NetIncomeCents - closed.CrossedCents
+			if !closed.Imported {
+				open.Loan.UnimportedMonths++
+			}
 		}
 	}
 	return open, nil
@@ -288,6 +297,7 @@ type monthClosing struct {
 	CompanyClosingCents int
 	NetIncomeCents      int
 	CrossedCents        int
+	Imported            bool
 }
 
 func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, rateCents int, company companyStock) (monthClosing, error) {
@@ -306,6 +316,7 @@ func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, ra
 		CompanyClosingCents: pv.CompanyClosingCents,
 		NetIncomeCents:      pv.NetIncomeCents,
 		CrossedCents:        av.CrossedCents,
+		Imported:            av.Present && av.Complete,
 	}, nil
 }
 

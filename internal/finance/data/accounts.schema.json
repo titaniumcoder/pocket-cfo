@@ -11,6 +11,19 @@
     "accounts": {
       "type": "array",
       "items": { "$ref": "#/$defs/account" }
+    },
+    "director_loan": {
+      "type": "object",
+      "required": ["balances"],
+      "additionalProperties": false,
+      "description": "What the company owes its owner, or the owner owes the company — the running balance between the two, which accrues by net income and is settled by money that actually crosses. It is NOT an account and deliberately not one of the entries above: it is a relationship between the two pots rather than a pot, it belongs to neither side of the payroll cascade, and it reaches no other figure on any page. Same shape as an account's balances, so a year-end restatement from the accountant is the ordinary operation of appending a reading rather than a migration: the newest one dated before a month is the one in force, a month before every reading has no known figure rather than a figure of zero, and a later reading corrects everything after it without rewriting what was true before. Positive means the company owes the owner. Hand-edited: unlike a bank balance there is nothing to read it off, so the write API does not offer it.",
+      "properties": {
+        "balances": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/reading" }
+        }
+      }
     }
   },
   "$defs": {

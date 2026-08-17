@@ -135,10 +135,18 @@ func (s *AccountSnapshot) addBalance(kind accountsdata.AccountKind, cents int) {
 }
 
 func readingInForce(acc accountsdata.Account, viewed yearMonth) (accountsdata.Reading, time.Time, bool) {
+	return newestReadingBefore(acc.Balances, viewed)
+}
+
+// newestReadingBefore is the whole rule a series of readings follows, and the
+// director's loan follows it too: a reading closes its month and opens the
+// next, the newest one before the month being looked at wins, and a month
+// before every reading has nothing in force — which is not the same as zero.
+func newestReadingBefore(readings []accountsdata.Reading, viewed yearMonth) (accountsdata.Reading, time.Time, bool) {
 	var best accountsdata.Reading
 	var bestDate time.Time
 	found := false
-	for _, r := range acc.Balances {
+	for _, r := range readings {
 		d, err := time.Parse("2006-01-02", r.AsOf)
 		if err != nil {
 			continue
@@ -152,6 +160,30 @@ func readingInForce(acc accountsdata.Account, viewed yearMonth) (accountsdata.Re
 		}
 	}
 	return best, bestDate, found
+}
+
+// directorLoanStock is the loan's own anchor, resolved independently of the
+// bank readings: the two are unrelated, and either can be known while the
+// other is not.
+type directorLoanStock struct {
+	Known        bool
+	OpeningCents int
+	OpensMonth   yearMonth
+}
+
+func directorLoanInForce(af accountsdata.AccountsFile, viewed yearMonth) directorLoanStock {
+	if af.DirectorLoan == nil {
+		return directorLoanStock{}
+	}
+	reading, d, ok := newestReadingBefore(af.DirectorLoan.Balances, viewed)
+	if !ok {
+		return directorLoanStock{}
+	}
+	return directorLoanStock{
+		Known:        true,
+		OpeningCents: round(reading.Balance * 100),
+		OpensMonth:   yearMonth{d.Year(), d.Month()}.addMonths(1),
+	}
 }
 
 func snapshotFor(af accountsdata.AccountsFile, viewed yearMonth) (AccountSnapshot, bool) {

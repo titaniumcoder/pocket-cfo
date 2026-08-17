@@ -3,6 +3,7 @@ package tracker
 import (
 	"context"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -963,5 +964,112 @@ func TestAPublishedFileIsStillValidated(t *testing.T) {
 	}
 	if overlayErr.Error() != diskErr.Error() {
 		t.Errorf("overlay refused with %q, disk with %q — the overlay must be judged by the same rules", overlayErr, diskErr)
+	}
+}
+
+// TestADirectorLoanReadingMustCloseItsMonthJustLikeABalance: the loan follows
+// the same rule an account balance does, from the same place, so the two
+// cannot drift apart.
+func TestADirectorLoanReadingMustCloseItsMonthJustLikeABalance(t *testing.T) {
+	f := accountsdata.AccountsFile{DirectorLoan: &accountsdata.AccountsFileDirectorLoan{
+		Balances: []accountsdata.Reading{{AsOf: "2025-12-15", Balance: 12400}},
+	}}
+	err := accountsdata.ValidateAccounts(f)
+	if err == nil {
+		t.Fatal("a mid-month figure was accepted as what a month closed on")
+	}
+	if !strings.Contains(err.Error(), "director's loan") {
+		t.Errorf("error = %q, want it to name what was wrong", err)
+	}
+}
+
+func TestTwoDirectorLoanReadingsInOneMonthAreRefused(t *testing.T) {
+	f := accountsdata.AccountsFile{DirectorLoan: &accountsdata.AccountsFileDirectorLoan{
+		Balances: []accountsdata.Reading{
+			{AsOf: "2025-12-31", Balance: 12400},
+			{AsOf: "2025-12-31", Balance: 9000},
+		},
+	}}
+	if err := accountsdata.ValidateAccounts(f); err == nil {
+		t.Fatal("two restatements for one month were accepted — which one opens January is then a coin toss")
+	}
+}
+
+// TestAnAccountsFileWithoutADirectorLoanStillLoads: every existing file has
+// none, and absence is not a problem to report.
+func TestAnAccountsFileWithoutADirectorLoanStillLoads(t *testing.T) {
+	if err := accountsdata.ValidateAccounts(accountsdata.AccountsFile{
+		Accounts: []accountsdata.Account{{Name: "A", Kind: accountsdata.AccountKindPrivate,
+			Balances: []accountsdata.Reading{{AsOf: "2026-07-31", Balance: 100}}}},
+	}); err != nil {
+		t.Fatalf("a file with no director's loan was refused: %v", err)
+	}
+}
+
+// TestTheNewestDirectorLoanReadingBeforeTheMonthWins, and a restatement
+// corrects everything after it without rewriting what was true before — which
+// is the point of keeping the series rather than overwriting the figure.
+func TestTheNewestDirectorLoanReadingBeforeTheMonthWins(t *testing.T) {
+	af := accountsdata.AccountsFile{DirectorLoan: &accountsdata.AccountsFileDirectorLoan{
+		Balances: []accountsdata.Reading{
+			{AsOf: "2025-12-31", Balance: 12400},
+			{AsOf: "2026-12-31", Balance: 3000},
+		},
+	}}
+
+	if got := directorLoanInForce(af, yearMonth{2026, time.June}); !got.Known || got.OpeningCents != 1240000 {
+		t.Errorf("June 2026 opened on %+v, want the 2025 restatement", got)
+	}
+	if got := directorLoanInForce(af, yearMonth{2027, time.June}); !got.Known || got.OpeningCents != 300000 {
+		t.Errorf("June 2027 opened on %+v, want the 2026 restatement", got)
+	}
+	// The reading closes its month, so it opens the next one.
+	if got := directorLoanInForce(af, yearMonth{2025, time.December}); got.Known {
+		t.Errorf("December 2025 opened on its own closing figure: %+v", got)
+	}
+	if got := directorLoanInForce(af, yearMonth{2026, time.January}); !got.Known || got.OpensMonth != (yearMonth{2026, time.January}) {
+		t.Errorf("January 2026 = %+v, want the December reading opening it", got)
+	}
+}
+
+// TestAMonthBeforeEveryReadingHasNoKnownDirectorLoan: not known is not zero,
+// the same distinction an unread company balance already keeps.
+func TestAMonthBeforeEveryReadingHasNoKnownDirectorLoan(t *testing.T) {
+	af := accountsdata.AccountsFile{DirectorLoan: &accountsdata.AccountsFileDirectorLoan{
+		Balances: []accountsdata.Reading{{AsOf: "2025-12-31", Balance: 12400}},
+	}}
+	if got := directorLoanInForce(af, yearMonth{2025, time.March}); got.Known {
+		t.Errorf("a month before every reading claims to know the loan: %+v", got)
+	}
+	if got := directorLoanInForce(accountsdata.AccountsFile{}, yearMonth{2026, time.June}); got.Known {
+		t.Errorf("a file stating no loan at all claims to know one: %+v", got)
+	}
+}
+
+// TestTheDirectorLoanIsNotAnAccountAndNeverReachesTheOpeningBalance is the
+// structural guard on the whole design: it lives beside the accounts rather
+// than among them, so the else-fallthrough in addBalance cannot sweep it into
+// the private pot and its date cannot drag the anchor both pots are walked
+// from.
+func TestTheDirectorLoanIsNotAnAccountAndNeverReachesTheOpeningBalance(t *testing.T) {
+	accounts := []accountsdata.Account{
+		{Name: "Private Checking", Kind: accountsdata.AccountKindPrivate,
+			Balances: []accountsdata.Reading{{AsOf: "2026-04-30", Balance: 4200}}},
+		{Name: "Company Checking", Kind: accountsdata.AccountKindCompany,
+			Balances: []accountsdata.Reading{{AsOf: "2026-04-30", Balance: 6800}}},
+	}
+	without, _ := snapshotFor(accountsdata.AccountsFile{Accounts: accounts}, yearMonth{2026, time.August})
+	with, _ := snapshotFor(accountsdata.AccountsFile{Accounts: accounts,
+		DirectorLoan: &accountsdata.AccountsFileDirectorLoan{
+			// Dated later than either bank reading, which is the shape that
+			// would drag OpensMonth if it were an account.
+			Balances: []accountsdata.Reading{{AsOf: "2026-07-31", Balance: 12400}},
+		}}, yearMonth{2026, time.August})
+
+	if !reflect.DeepEqual(without, with) {
+		t.Errorf("the director's loan reached the account snapshot:\n without = %+v\n with    = %+v", without, with)
+	}
+	if with.PrivateCents != 420000 {
+		t.Errorf("private opening = %d, want the bank reading alone", with.PrivateCents)
 	}
 }

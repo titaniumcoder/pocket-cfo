@@ -177,6 +177,11 @@ func (r *API2PDF) attempt(ctx context.Context, body []byte) (pdf []byte, retryab
 		return nil, false, fmt.Errorf("api2pdf: request rejected %d: %s", resp.StatusCode, truncate(respBody, 500))
 	}
 
+	// outputBinary is asked for but not relied on. api2pdf ignores it on this
+	// endpoint and answers with its usual JSON envelope, so both shapes have to
+	// work: the bytes inline if we ever get them, and the file store if not.
+	// Requiring the inline form broke every render on first contact with the
+	// real service.
 	if bytes.HasPrefix(respBody, []byte("%PDF-")) {
 		return respBody, false, nil
 	}
@@ -188,7 +193,46 @@ func (r *API2PDF) attempt(ctx context.Context, body []byte) (pdf []byte, retryab
 	if parsed.Error != "" {
 		return nil, false, fmt.Errorf("api2pdf: %s", parsed.Error)
 	}
-	return nil, false, fmt.Errorf("api2pdf: no PDF in the response: %s", truncate(respBody, 500))
+	if parsed.FileUrl == "" {
+		return nil, false, fmt.Errorf("api2pdf: no PDF and no file URL in the response: %s", truncate(respBody, 500))
+	}
+	return r.fetch(ctx, parsed.FileUrl)
+}
+
+// fetch downloads from the file store api2pdf puts the document in when it
+// does not hand the bytes back. The URL needs no credentials, which is the
+// reason outputBinary is asked for at all — the document sits there for 24
+// hours behind a link that is its own bearer token. Until api2pdf honours the
+// flag this is the only way to collect the PDF, so the prefix check below is
+// what stops anything that is not one being written into the repo.
+func (r *API2PDF) fetch(ctx context.Context, url string) (pdf []byte, retryable bool, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, false, fmt.Errorf("api2pdf: build download request: %w", err)
+	}
+	resp, err := r.Client.Do(req)
+	if err != nil {
+		return nil, true, fmt.Errorf("api2pdf: download failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, true, fmt.Errorf("api2pdf: read download: %w", err)
+	}
+	if resp.StatusCode >= 500 {
+		return nil, true, fmt.Errorf("api2pdf: download server error %d", resp.StatusCode)
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, true, fmt.Errorf("api2pdf: download throttled")
+	}
+	if resp.StatusCode >= 400 {
+		return nil, false, fmt.Errorf("api2pdf: download rejected %d", resp.StatusCode)
+	}
+	if !bytes.HasPrefix(respBody, []byte("%PDF-")) {
+		return nil, false, fmt.Errorf("api2pdf: downloaded file is not a PDF")
+	}
+	return respBody, false, nil
 }
 
 func truncate(b []byte, n int) string {

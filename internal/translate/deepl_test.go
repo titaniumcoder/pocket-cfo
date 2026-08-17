@@ -80,3 +80,48 @@ func TestClient_Translate_Error(t *testing.T) {
 		t.Fatal("expected an error, got nil")
 	}
 }
+
+func TestClient_Translate_RetriesTransientFailures(t *testing.T) {
+	for _, status := range []int{http.StatusTooManyRequests, statusQuotaExceeded, http.StatusBadGateway} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			attempts := 0
+			client := &Client{
+				APIKey: "test-key:fx",
+				HTTPClient: &http.Client{Transport: fakeTransport{t: t, handler: func(t *testing.T, req *http.Request) *http.Response {
+					attempts++
+					if attempts == 1 {
+						return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(`{"message":"later"}`))}
+					}
+					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"translations":[{"text":"Здравей"}]}`))}
+				}}},
+			}
+			got, err := client.Translate(context.Background(), "Hallo", "de", "bg")
+			if err != nil {
+				t.Fatalf("Translate: %v", err)
+			}
+			if got != "Здравей" {
+				t.Errorf("Translate = %q, want %q", got, "Здравей")
+			}
+			if attempts != 2 {
+				t.Errorf("attempts = %d, want 2", attempts)
+			}
+		})
+	}
+}
+
+func TestClient_Translate_DoesNotRetryARealRejection(t *testing.T) {
+	attempts := 0
+	client := &Client{
+		APIKey: "test-key:fx",
+		HTTPClient: &http.Client{Transport: fakeTransport{t: t, handler: func(t *testing.T, req *http.Request) *http.Response {
+			attempts++
+			return &http.Response{StatusCode: http.StatusForbidden, Body: io.NopCloser(strings.NewReader(`{"message":"bad key"}`))}
+		}}},
+	}
+	if _, err := client.Translate(context.Background(), "x", "de", "bg"); err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if attempts != 1 {
+		t.Errorf("attempts = %d, want 1 — a wrong API key is not going to fix itself", attempts)
+	}
+}

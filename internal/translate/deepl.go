@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 type Client struct {
@@ -28,7 +29,33 @@ type translateResponse struct {
 	} `json:"translations"`
 }
 
+const maxRetries = 3
+
+const statusQuotaExceeded = 456
+
 func (c *Client) Translate(ctx context.Context, text, sourceLang, targetLang string) (string, error) {
+	var lastErr error
+	for attempt := range maxRetries {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(time.Duration(attempt) * 2 * time.Second):
+			}
+		}
+		out, retryable, err := c.attempt(ctx, text, sourceLang, targetLang)
+		if err == nil {
+			return out, nil
+		}
+		lastErr = err
+		if !retryable {
+			return "", err
+		}
+	}
+	return "", fmt.Errorf("giving up after %d attempts: %w", maxRetries, lastErr)
+}
+
+func (c *Client) attempt(ctx context.Context, text, sourceLang, targetLang string) (out string, retryable bool, err error) {
 	body := url.Values{}
 	body.Set("text", text)
 	body.Set("source_lang", strings.ToUpper(sourceLang))
@@ -36,33 +63,36 @@ func (c *Client) Translate(ctx context.Context, text, sourceLang, targetLang str
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint(), strings.NewReader(body.Encode()))
 	if err != nil {
-		return "", fmt.Errorf("build request: %w", err)
+		return "", false, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Authorization", "DeepL-Auth-Key "+c.APIKey)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("request failed: %w", err)
+		return "", true, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("read response: %w", err)
+		return "", true, fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("deepl rejected %d: %s", resp.StatusCode, truncate(respBody))
+		retryable := resp.StatusCode >= 500 ||
+			resp.StatusCode == http.StatusTooManyRequests ||
+			resp.StatusCode == statusQuotaExceeded
+		return "", retryable, fmt.Errorf("deepl rejected %d: %s", resp.StatusCode, truncate(respBody))
 	}
 
 	var parsed translateResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return "", fmt.Errorf("unexpected response: %s", truncate(respBody))
+		return "", false, fmt.Errorf("unexpected response: %s", truncate(respBody))
 	}
 	if len(parsed.Translations) == 0 {
-		return "", fmt.Errorf("no translation in response: %s", truncate(respBody))
+		return "", false, fmt.Errorf("no translation in response: %s", truncate(respBody))
 	}
-	return parsed.Translations[0].Text, nil
+	return parsed.Translations[0].Text, false, nil
 }
 
 func truncate(b []byte) string {

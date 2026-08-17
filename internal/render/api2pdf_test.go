@@ -30,28 +30,25 @@ func newResponse(status int, body string) *http.Response {
 func TestAPI2PDF_Render_Success(t *testing.T) {
 	var gotAuth, gotContentType, gotMethod string
 	var gotHTML string
+	var gotOutputBinary bool
 
 	renderer := &API2PDF{
 		APIKey: "test-key",
 		Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			switch req.URL.String() {
-			case api2pdfEndpoint:
-				gotMethod = req.Method
-				gotAuth = req.Header.Get("Authorization")
-				gotContentType = req.Header.Get("Content-Type")
-				var decoded api2pdfRequest
-				if err := json.NewDecoder(req.Body).Decode(&decoded); err != nil {
-					t.Fatalf("decode request body: %v", err)
-				}
-				gotHTML = decoded.HTML
-				resp, _ := json.Marshal(api2pdfResponse{Success: true, FileUrl: "https://files.example/out.pdf"})
-				return newResponse(http.StatusOK, string(resp)), nil
-			case "https://files.example/out.pdf":
-				return newResponse(http.StatusOK, "%PDF-1.4 fake"), nil
-			default:
+			if req.URL.String() != api2pdfEndpoint {
 				t.Fatalf("unexpected request to %s", req.URL)
 				return nil, nil
 			}
+			gotMethod = req.Method
+			gotAuth = req.Header.Get("Authorization")
+			gotContentType = req.Header.Get("Content-Type")
+			var decoded api2pdfRequest
+			if err := json.NewDecoder(req.Body).Decode(&decoded); err != nil {
+				t.Fatalf("decode request body: %v", err)
+			}
+			gotHTML = decoded.HTML
+			gotOutputBinary = decoded.OutputBinary
+			return newResponse(http.StatusOK, "%PDF-1.4 fake"), nil
 		})},
 	}
 
@@ -73,6 +70,50 @@ func TestAPI2PDF_Render_Success(t *testing.T) {
 	}
 	if gotHTML != "<html>hi</html>" {
 		t.Errorf("request HTML = %q, want the input unchanged", gotHTML)
+	}
+	if !gotOutputBinary {
+		t.Error("outputBinary was not requested, so the PDF goes through the 24-hour file store")
+	}
+}
+
+func TestAPI2PDF_Render_JSONErrorInsteadOfBytes(t *testing.T) {
+	renderer := &API2PDF{
+		APIKey: "test-key",
+		Client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			resp, _ := json.Marshal(api2pdfResponse{Success: false, Error: "html too large"})
+			return newResponse(http.StatusOK, string(resp)), nil
+		})},
+	}
+	_, err := renderer.Render(context.Background(), []byte("<html/>"))
+	if err == nil {
+		t.Fatal("want an error when the response carries no PDF")
+	}
+	if !strings.Contains(err.Error(), "html too large") {
+		t.Errorf("error = %q, want api2pdf's own reason", err)
+	}
+}
+
+func TestAPI2PDF_Render_429IsRetried(t *testing.T) {
+	attempts := 0
+	renderer := &API2PDF{
+		APIKey: "test-key",
+		Client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			attempts++
+			if attempts == 1 {
+				return newResponse(http.StatusTooManyRequests, "slow down"), nil
+			}
+			return newResponse(http.StatusOK, "%PDF-1.4 fake"), nil
+		})},
+	}
+	pdf, err := renderer.Render(context.Background(), []byte("<html/>"))
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if attempts != 2 {
+		t.Errorf("attempts = %d, want 2 — the throttle should have been retried", attempts)
+	}
+	if !strings.HasPrefix(string(pdf), "%PDF-") {
+		t.Errorf("Render returned non-PDF bytes: %q", pdf)
 	}
 }
 

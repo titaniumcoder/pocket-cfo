@@ -474,8 +474,13 @@ Three rules, one per artifact.
 
 ```
 git log -1 --format=%ct -- data/invoices/INV-0000000002.json
+git log -1 --format=%ct -- data/paid-invoices.json
 git log -1 --format=%ct -- build/INV-0000000002-paid.pdf
 ```
+
+Both sources count, not just the invoice: the stamped date itself lives in
+`paid-invoices.json`, so correcting a payment date has to make the PDF stale even though
+the invoice never changed.
 
 JSON timestamp greater → re-render. This works identically on your laptop and in CI,
 needs no event context, and carries no state between runs. `github.event.before` would
@@ -708,9 +713,13 @@ marking is what keeps the statistics honest.
 - `stats` tests: paid before and after the due date.
 - Nothing in the test job hits api2pdf.
 
-The shallow-clone case deserves a real test. If `fetch-depth` is ever wrong, every
-timestamp comes back empty and the build quietly regenerates every `-paid.pdf` — which
-costs money and churns the repo without failing.
+The shallow-clone case deserves a real test, and it has one — though the symptom is not
+the one predicted here. A `--depth 1` clone does not return empty timestamps: it
+attributes every file to the single grafted commit, so every timestamp is *identical*.
+Nothing then ever looks newer than anything, and a corrected payment date is silently
+never re-stamped — the opposite failure, and a quieter one. `render` therefore checks
+`git rev-parse --is-shallow-repository` and refuses to guess, rather than reasoning from
+timestamps it knows are meaningless.
 
 ---
 

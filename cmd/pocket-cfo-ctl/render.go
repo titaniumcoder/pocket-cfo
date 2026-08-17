@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -40,7 +41,7 @@ func runRender(args []string) int {
 
 	flagArgs, explicit := splitFlags(args)
 	if err := fs.Parse(flagArgs); err != nil {
-		return 2
+		return parseExit(err)
 	}
 	if !forceAllowed(*force, explicit) {
 		fmt.Fprintln(os.Stderr, "pocket-cfo-ctl render: --force requires exactly one invoice number (bulk force-render is not allowed)")
@@ -109,6 +110,13 @@ func runRender(args []string) int {
 	return 0
 }
 
+func parseExit(err error) int {
+	if errors.Is(err, flag.ErrHelp) {
+		return 0
+	}
+	return 2
+}
+
 func splitFlags(args []string) (flagArgs, positional []string) {
 	return splitFlagsWithValues(args, nil)
 }
@@ -170,7 +178,7 @@ func renderOne(ctx context.Context, renderer render.Renderer, number string, for
 		return fmt.Errorf("%s: number field %q does not match filename", path, inv.Number)
 	}
 
-	if err := removeStaleDraftPDF(inv, dryRun); err != nil {
+	if err := removeStaleDraftPDF(inv, manifest, dryRun); err != nil {
 		return err
 	}
 
@@ -182,15 +190,22 @@ func renderOne(ctx context.Context, renderer render.Renderer, number string, for
 
 		if !t.overwrite && !force {
 			if _, err := os.Stat(t.path); err == nil {
-				fmt.Printf("skip  %s (already rendered, use --force to overwrite)\n", t.path)
-
-				if !dryRun {
-					totals, haveTotals, err = backfillManifestEntry(&inv, t, filename, manifest, totals, haveTotals)
-					if err != nil {
-						return err
-					}
+				stale, serr := t.staleAgainst(path)
+				if serr != nil {
+					return serr
 				}
-				continue
+				if !stale {
+					fmt.Printf("skip  %s (already rendered, use --force to overwrite)\n", t.path)
+
+					if !dryRun {
+						totals, haveTotals, err = backfillManifestEntry(&inv, t, filename, manifest, totals, haveTotals)
+						if err != nil {
+							return err
+						}
+					}
+					continue
+				}
+				fmt.Printf("stale %s (its source changed since it was written)\n", t.path)
 			}
 		}
 
@@ -218,8 +233,8 @@ func renderOne(ctx context.Context, renderer render.Renderer, number string, for
 		if err := os.MkdirAll(buildDir, 0o755); err != nil {
 			return fmt.Errorf("mkdir %s: %w", buildDir, err)
 		}
-		if err := os.WriteFile(t.path, pdf, 0o644); err != nil {
-			return fmt.Errorf("write %s: %w", t.path, err)
+		if err := writeAtomic(t.path, pdf); err != nil {
+			return err
 		}
 		manifest[filename] = render.HashHTML(html)
 		fmt.Printf("wrote %s\n", t.path)
@@ -248,7 +263,7 @@ func backfillManifestEntry(inv *invoice.InvoiceJson, t target, filename string, 
 	return totals, haveTotals, nil
 }
 
-func removeStaleDraftPDF(inv invoice.InvoiceJson, dryRun bool) error {
+func removeStaleDraftPDF(inv invoice.InvoiceJson, manifest render.Manifest, dryRun bool) error {
 	if inv.Status == invoice.InvoiceJsonStatusDraft {
 		return nil
 	}
@@ -263,14 +278,52 @@ func removeStaleDraftPDF(inv invoice.InvoiceJson, dryRun bool) error {
 	if err := os.Remove(stale); err != nil {
 		return fmt.Errorf("remove stale %s: %w", stale, err)
 	}
+	delete(manifest, filepath.Base(stale))
 	fmt.Printf("removed stale %s\n", stale)
 	return nil
 }
 
+func writeAtomic(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	defer os.Remove(tmp.Name())
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
+
 type target struct {
-	path      string
-	overwrite bool
-	paidOn    *types.SerializableDate
+	path         string
+	overwrite    bool
+	paidOn       *types.SerializableDate
+	staleSources []string
+}
+
+func (t target) staleAgainst(invoicePath string) (bool, error) {
+	if len(t.staleSources) == 0 {
+		return false, nil
+	}
+	clock, err := newGitClock()
+	if err != nil {
+		return false, err
+	}
+	sources := append([]string{invoicePath}, t.staleSources...)
+	return clock.newer(t.path, sources...)
 }
 
 func targetsFor(inv invoice.InvoiceJson, paidOn *types.SerializableDate) []target {
@@ -286,6 +339,7 @@ func targetsFor(inv invoice.InvoiceJson, paidOn *types.SerializableDate) []targe
 	if paidOn != nil {
 		targets = append(targets, target{
 			path: filepath.Join(buildDir, inv.Number+"-paid.pdf"), overwrite: false, paidOn: paidOn,
+			staleSources: []string{paidInvoicesPath},
 		})
 	}
 	return targets

@@ -33,7 +33,7 @@ func runBudgetIDs(args []string) int {
 
 	flagArgs, positional := splitFlags(args)
 	if err := fs.Parse(flagArgs); err != nil {
-		return 2
+		return parseExit(err)
 	}
 	dir := "data"
 	if len(positional) > 0 {

@@ -44,10 +44,7 @@ func runActualsValidate(args []string) int {
 		"base-ref": true, "allow-removals": true,
 	})
 	if err := fs.Parse(flagArgs); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return 0
-		}
-		return 2
+		return parseExit(err)
 	}
 	if len(positional) > 1 {
 		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl actuals validate: expected at most one directory, got %s\n",

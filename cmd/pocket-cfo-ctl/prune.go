@@ -16,7 +16,7 @@ func runPrune(args []string) int {
 	fs := flag.NewFlagSet("prune", flag.ContinueOnError)
 	dryRun := fs.Bool("dry-run", false, "print what would be removed, without removing it")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return parseExit(err)
 	}
 
 	entries, err := os.ReadDir(buildDir)

@@ -67,5 +67,27 @@ func ValidateBudget(f BudgetFile) error {
 		}
 		seenLoan[l.Name] = true
 	}
+	return dividendProblems(f.Dividends)
+}
+
+// dividendProblems refuses the copy-paste and lets the deliberate case
+// through: two distributions in one month sum, because summing them is the
+// only reading, but the same amount on the same day twice is the one shape
+// where summing silently doubles a real payout.
+func dividendProblems(dividends []Dividend) error {
+	seen := map[string]bool{}
+	for _, d := range dividends {
+		if err := validateDate("dividend date", d.Date); err != nil {
+			return err
+		}
+		if d.Amount <= 0 {
+			return fmt.Errorf("dividend on %s has no positive amount — a distribution of nothing is not one", d.Date)
+		}
+		key := fmt.Sprintf("%s|%v", d.Date, d.Amount)
+		if seen[key] {
+			return fmt.Errorf("two dividends of %v on %s — if that really is two distributions, date them apart or write one entry of %v", d.Amount, d.Date, d.Amount*2)
+		}
+		seen[key] = true
+	}
 	return nil
 }

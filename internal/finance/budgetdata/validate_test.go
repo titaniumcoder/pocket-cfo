@@ -216,3 +216,56 @@ func TestValidateBudgetMissingID(t *testing.T) {
 		t.Errorf("error = %q, want it to name the missing id", err)
 	}
 }
+
+// TestADividendWithoutAPositiveAmountIsRefused: the whole file fails rather
+// than the distribution quietly charging nothing, because a dividend exists
+// only where somebody deliberately wrote one.
+func TestADividendWithoutAPositiveAmountIsRefused(t *testing.T) {
+	for _, amount := range []float64{0, -100} {
+		f := BudgetFile{Dividends: []Dividend{{Date: "2026-09-30", Amount: amount}}}
+		if err := ValidateBudget(f); err == nil {
+			t.Errorf("a dividend of %v was accepted", amount)
+		}
+	}
+}
+
+func TestADividendWithAnUnparseableDateIsRefused(t *testing.T) {
+	f := BudgetFile{Dividends: []Dividend{{Date: "2026-09-31", Amount: 10000}}}
+	if err := ValidateBudget(f); err == nil {
+		t.Fatal("a dividend dated on a day September does not have was accepted")
+	}
+}
+
+// TestTwoIdenticalDividendsOnOneDayAreRefused: two distributions in one month
+// sum, because summing them is the only reading available. The same amount on
+// the same day twice is the one shape that is certainly a copy-paste, and
+// summing that doubles a real payout in silence.
+func TestTwoIdenticalDividendsOnOneDayAreRefused(t *testing.T) {
+	same := BudgetFile{Dividends: []Dividend{
+		{Date: "2026-09-30", Amount: 10000},
+		{Date: "2026-09-30", Amount: 10000},
+	}}
+	if err := ValidateBudget(same); err == nil {
+		t.Error("the same dividend written twice was accepted")
+	}
+
+	deliberate := BudgetFile{Dividends: []Dividend{
+		{Date: "2026-09-15", Amount: 10000},
+		{Date: "2026-09-30", Amount: 4000},
+		{Date: "2026-09-30", Amount: 6000},
+	}}
+	if err := ValidateBudget(deliberate); err != nil {
+		t.Errorf("two different distributions in one month were refused: %v", err)
+	}
+}
+
+// TestABudgetWithNoDividendsParsesAsBefore: every existing file has none, and
+// absence is not a problem to report.
+func TestABudgetWithNoDividendsParsesAsBefore(t *testing.T) {
+	f := BudgetFile{Groups: []Group{
+		{Name: "A", Categories: []Category{{Id: "rent-x", Name: "Rent", Amount: 1000}}},
+	}}
+	if err := ValidateBudget(f); err != nil {
+		t.Fatalf("a budget with no dividends was refused: %v", err)
+	}
+}

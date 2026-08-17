@@ -15,9 +15,35 @@
     "loans": {
       "type": "array",
       "items": { "$ref": "#/$defs/loan" }
+    },
+    "dividends": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dividend" },
+      "description": "Profit distributed to the owner, dated. A dividend is not a budget category: it is not planned spending, it is the second way a one-person company hands its owner money, and it is taxed on both sides — company profit tax stays in the company's side of the ledger, dividend tax comes off what reaches the owner. Only the gross figure is stated here; both rates come from config.json's legislation for the month it lands in, so a distribution made under last year's rates stays reproducible when this year's move."
     }
   },
   "$defs": {
+    "dividend": {
+      "type": "object",
+      "required": ["date", "amount"],
+      "additionalProperties": false,
+      "properties": {
+        "date": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "The month the distribution lands in; the day is informational, the same convention a one-off category's date follows. It is NOT shifted by the two-month funding rule — that rule is about when invoiced work becomes spendable, and a dividend is a payment made on a date."
+        },
+        "amount": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Euros, gross, before either tax. The company loses this plus its company profit tax; the owner's net income gains this less its dividend tax."
+        },
+        "note": {
+          "type": "string",
+          "description": "Free-text context for whoever edits this file — which year's profit it distributes, say. Rendered nowhere and used in no computation."
+        }
+      }
+    },
     "group": {
       "type": "object",
       "required": ["name", "kind", "categories"],

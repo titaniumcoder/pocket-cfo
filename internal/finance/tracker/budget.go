@@ -151,6 +151,12 @@ type BudgetView struct {
 
 	CompanyGroups            []CategoryGroupView
 	CompanyTotalPlannedCents int
+
+	// Dividends is the whole dated list, not the viewed month's share of it:
+	// the roll-forward walks other months with this same view and each one
+	// picks its own out, the way the salary plan and the target balance are
+	// already read by month rather than filtered by the caller.
+	Dividends Dividends
 }
 
 func (b *Budget) ForMonth(ctx context.Context, year int, month time.Month, now time.Time) (BudgetView, error) {
@@ -240,7 +246,7 @@ func (b *Budget) CompanyExpensesByMonth(ctx context.Context, year int, start tim
 }
 
 func buildBudgetView(bf budgetdata.BudgetFile, privatePlanned, companyPlanned func(budgetdata.Category) (int, bool), ref time.Time, minimal bool) BudgetView {
-	var view BudgetView
+	view := BudgetView{Dividends: dividendsIn(bf)}
 	for _, g := range bf.Groups {
 		plannedFor := privatePlanned
 		isCompany := g.Kind == budgetdata.GroupKindCompany

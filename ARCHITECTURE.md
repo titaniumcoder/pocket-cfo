@@ -742,7 +742,14 @@ what the cascade leaves behind opens the next month:
 
 ```
 company closing = opening + company income − company expenses − employer social − gross
+                  − what else actually left the bank
 ```
+
+That last term is the owner's own withdrawals and the taxes a distribution triggers, and it
+is the one the plan cannot state: a draw is in nobody's budget. So the planned column charges
+what the plan says will leave — the declared taxes — and the Actual column charges what the
+statements say did. A month closes on one or the other, whole, never a mixture, for the same
+reason a half-imported month falls back to the plan for its expenses.
 
 Two things follow from that formula rather than from code written to produce them. A full
 salary still closes the company at zero. And the closing figure is derived from the
@@ -863,26 +870,68 @@ dividend is a payment made on a date.
 The ordering follows the side the money falls on, and it is a reading decision as much as an
 arithmetic one. Company profit tax is a company cost, so it sits with the company's own costs
 above the payroll cascade where it cannot read as reducing net income. The dividend behaves
-like a gross and its tax like income tax, so the pair brackets the personal rows. The
-dividend therefore appears in both sums — the company's and the owner's — and that is one
-movement seen twice, out of the company and, net of its own tax, into the pocket, not double
-counting.
+like a gross and its tax like income tax, so the pair brackets the personal rows.
 
-It is charged **before the salary is sized**, not only at the close. A full salary takes the
-whole remainder, so subtracting a distribution afterwards would drain the company straight
+**Declaring a dividend moves no money.** It hands the owner a claim, and the director's loan
+is what carries it; only the two taxes leave the bank. This is not a nicety — it is the
+difference between a distribution being possible and not. Clearing a loan of 17,000 needs a
+gross of 17,894.74, and a company with 204 in the bank can declare it, because the 17,000
+never moves: it settles against what the owner already drew. Only 2,684.21 of tax is money
+that has to be found. Charging the gross to the bank reported that company as 25,816
+overdrawn when it was 7,921, and made the one instrument that fixes its position look
+unaffordable.
+
+So the company's cash and what the company is **worth** are two figures:
+
+```
+company worth = company cash − the director's loan
+```
+
+with the loan owner-centric, positive meaning the company owes him. The distribution costs
+the worth its gross plus the profit tax; it costs the cash only the two taxes. Both are true
+at once and the page shows both, the worth beside the accounts and the cash in the cascade.
+
+The two taxes are charged **before the salary is sized**, not only at the close. A full salary
+takes the whole remainder, so subtracting them afterwards would drain the company straight
 through the target balance that is documented above as a floor. Charged first, both stated
 invariants survive: a full salary still closes the company at its target, and the rendered
-rows still add up to the closing figure. A `fixed` or `minimum` month is unaffected except at
-the close, which is already how those modes overdraw. A dividend in a month with **no rate in
-force is refused** rather than charged at zero — unlike a salary, which happens in every month
-the navigation offers, a dividend exists only where somebody deliberately wrote one, so the
-refusal is contained to that month and 0% presented as a computed figure is not.
+rows still add up to the closing figure. The rule underneath, which no type can express: **the
+set of figures charged before the salary is sized must be the set charged at the close.** A
+`fixed` or `minimum` month is unaffected except at the close, which is already how those modes
+overdraw. A dividend in a month with **no rate in force is refused** rather than charged at
+zero — unlike a salary, which happens in every month the navigation offers, a dividend exists
+only where somebody deliberately wrote one, so the refusal is contained to that month and 0%
+presented as a computed figure is not.
+
+**Why a gross salary still leaves the company and a gross dividend does not.** Not because
+one is more real than the other. A salary is settled every month by a transfer and its
+remittances, so charging the gross is a one-month-lag approximation of a flow that does get
+settled, with no liability accumulating behind it. A distribution is settled irregularly, or
+never in cash at all — which is precisely why a director's loan exists for it and not for
+salary. Making them symmetric would cost the "a full salary closes the company at its target"
+property that the whole `targetBalance` design rests on, and buy nothing.
 
 **The director's loan** is the running balance between the owner and the company: what the
 company owes, or what the owner owes it. Positive means the company owes the owner. It
 accrues by net income each month — which now includes a dividend net of its dividend tax,
 and that is what makes "net income is what the company owes me" true rather than roughly
 true — and is settled by money that actually crossed.
+
+A marked line moves two figures, and which two is not the same question. Whether it
+**settles the loan** is whether the money reached the owner; whether it **left the bank** is
+whether the company is poorer for it. A salary transfer does the first and not the second —
+the cascade has already charged the gross, and counting the transfer as well would pay the
+salary twice. The two taxes do the second and not the first: they leave the company for the
+state and never reach the owner. Transposing those two sets is the easiest mistake in this
+module, which is why both answers are pinned value by value over the schema's own enum.
+
+Two limits worth knowing rather than rediscovering. A month nobody has fully imported now
+carries the company's cash **high** by whatever the owner drew in it, where before it carried
+it high by nothing — because a draw reached no figure at all. And a distribution declared in
+an unimported month charges its taxes to the plan, while the month the tax is actually paid
+charges them again if that month *is* imported; the carried balance is then light by that tax
+until the next bank reading re-anchors it. Both are the ordinary cost of the plan-or-statement
+switch, and both are bounded by the next reading.
 
 A crossing is a statement line carrying a `movement` marker **beside** its `ignored` reason,
 never instead of one: such a line genuinely is not a budget expense, so the exactly-one-of
@@ -917,9 +966,12 @@ would silently never accrue. An unimported month settles nothing rather than fal
 the plan, because the plan holds no transfers; the loan then reads higher than it is, and says
 so. The year view has none, for the same reason it reads no balances at all.
 
-And it feeds nothing. The private balance still rolls forward assuming net income lands in the
-account, and the loan is precisely the number saying by how much that assumption is currently
-out. Settling it — by paying a salary large enough, or a dividend — is a decision taken with
+It reaches the company's worth and nothing else — no cash figure, and no input to the
+cascade, so a salary is never sized against money the owner has not given back. The private
+balance still rolls forward assuming net income lands in the account, and the loan is
+precisely the number saying by how much that assumption is currently out; the private side
+deliberately does **not** rise when he draws, because reporting that gap is what the loan is
+for. Settling it — by paying a salary large enough, or a dividend — is a decision taken with
 the accountant, so neither the distribution nor the loan's opening figure is writable through
 the agent API, only readable.
 

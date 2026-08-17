@@ -117,6 +117,15 @@
       "account": "Company Checking",
       "ignored": "salary paid across to the private account",
       "movement": "salary_transfer"
+    },
+    {
+      "id": "c7f1a930",
+      "date": "2026-08-19",
+      "description": "TO OWNER",
+      "amount": 1500,
+      "account": "Company Checking",
+      "ignored": "owner draw, outside payroll",
+      "movement": "owner_draw"
     }
   ]
 }

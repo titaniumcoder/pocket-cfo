@@ -38,8 +38,8 @@
     "balances": [
       {
         "as_of": "2026-07-31",
-        "balance": 3200,
-        "note": "What the company still owed when July closed, per the accountant"
+        "balance": -4800,
+        "note": "The owner is overdrawn: he drew more than he had been owed"
       }
     ]
   }

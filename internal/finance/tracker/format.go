@@ -44,7 +44,11 @@ func formatEuro(cents int) string {
 	if cents < 0 {
 		sign, cents = "-", -cents
 	}
-	return sign + groupThousands(roundedToWholeEuros(cents))
+	whole := roundedToWholeEuros(cents)
+	if whole == 0 {
+		sign = ""
+	}
+	return sign + groupThousands(whole)
 }
 
 func roundedToWholeEuros(cents int) int { return (cents + 50) / 100 }

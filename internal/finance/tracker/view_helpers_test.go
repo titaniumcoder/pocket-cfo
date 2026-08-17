@@ -25,7 +25,10 @@ func TestFormatHM(t *testing.T) {
 }
 
 func TestFormatEuro(t *testing.T) {
-	cases := map[int]string{136875: "1,369", 0: "0", 50: "1", 49: "0", -136875: "-1,369", 100: "1", 999950: "10,000"}
+	// A few cents short of nothing is nothing, not minus nothing: the sign is
+	// dropped when the figure rounds to zero euros, or a loan settled to within
+	// a cent renders as "-0".
+	cases := map[int]string{136875: "1,369", 0: "0", 50: "1", 49: "0", -136875: "-1,369", 100: "1", 999950: "10,000", -1: "0", -49: "0", -50: "-1"}
 	for in, want := range cases {
 		if got := formatEuro(in); got != want {
 			t.Errorf("formatEuro(%d) = %q, want %q", in, got, want)

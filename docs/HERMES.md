@@ -45,6 +45,12 @@ reads work and writes return `write_not_configured`.
    nothing, and are marked only so the spending page can list them. Such a line is still
    not a budget expense, so it still carries a reason.
 
+   A marked line now moves the company's bank figure as well as the loan, so marking
+   the wrong side moves two figures rather than one. The two sets are not the same:
+   a `salary_transfer` settles the loan but does **not** leave the bank again (the
+   cascade already charged the gross salary), and `corporate_tax` / `dividend_tax`
+   leave the bank without settling anything.
+
    **Record it once, on the company statement.** Both statements are imported, so the same
    transfer reaches you twice, and marking both counts it twice. The sign enforces this:
    everything except `owner_contribution` must be money *out* of the company, so the mirror
@@ -152,6 +158,15 @@ Three things are readable here and only editable in the data repo, deliberately:
 - **The director's loan's opening figure** (`accounts.json`). Unlike a bank balance there
   is nothing to read it off; it is a year-end restatement from the accountant. Appending a
   reading corrects everything after it without rewriting what was true before.
+  `list_accounts` reports the loan with `kind: director_loan` so you know it exists — it is
+  not a statement account, has no coverage, and `record_account_balance` refuses it. Read it
+  with `get_director_loan` and otherwise leave it alone.
+
+One thing worth knowing before you advise on a distribution: **declaring a dividend moves no
+money.** It hands the owner a claim, which the director's loan carries; only the two taxes
+leave the bank. So a company with almost nothing in the account can still declare the
+distribution that clears what its owner already drew — `get_director_loan` sizes it, and
+`cash_needed_cents` is the figure that has to be affordable, not the gross.
 
 If the user asks you to change one of these, say where it lives rather than looking for a
 tool. There isn't one.

@@ -159,18 +159,22 @@ type Figures struct {
 
 	ShowOpeningBalance  bool
 	OpeningBalanceCents int
-	OpeningBalanceLabel string
 	AvailableCents      int
 	PrivateAccounts     []AccountRow
 	CompanyAccounts     []AccountRow
 
+	// ArrivedPrivatelyCents is the asset side of a draw, and ActualAvailable is
+	// what it changes. They are Actual-column figures only: a draw is in no
+	// plan, so it may not reach AvailableCents, which stays pure budget.
+	ArrivedPrivatelyCents int
+	ActualAvailableCents  int
+
 	TargetNeedsBalanceNote   string
 	DividendNeedsBalanceNote string
 
-	ShowCompanyWorth   bool
-	OwedToOwnerCents   int
-	CompanyWorthCents  int
-	DividendSettlement string
+	ShowCompanyWorth  bool
+	OwedToOwnerCents  int
+	CompanyWorthCents int
 
 	ShowDirectorLoan    bool
 	LoanOpeningCents    int
@@ -279,7 +283,6 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	result.AccountsErr = accountsErr
 	result.TargetNeedsBalanceNote = t.targetNeedsBalanceNote(viewed, months, carried)
 	result.DividendNeedsBalanceNote = t.dividendNeedsBalanceNote(viewed, months, carried, bv)
-	result.DividendSettlement = dividendSettlementNote(months, bv.Dividends.dueIn(viewed))
 
 	result.computePersonal(t, ctx, year, months, viewed, monthlyCompanyCents, bv, carried.Company)
 
@@ -549,12 +552,21 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 // next month opens with. Both are shown rather than one replacing the other,
 // because the actual one is optimistic by whatever has not been imported or
 // assigned yet, and only the pair says so.
+//
+// It is also where a draw is finally worth something. The plan can only assume
+// the net salary arrived and knows of no other funding, so the planned column
+// stays on that assumption; the Actual column starts from the same net salary
+// and then adds what the statements say actually reached the owner besides it.
+// The residual — net salary the company never transferred — is the director's
+// loan's own movement row, so the two figures disagree by exactly the thing the
+// loan is there to report, and neither has to guess.
 func (f *Figures) publishBalanceTheBankSaw(months int) {
 	if months != 1 || !f.ShowActuals {
 		return
 	}
 	f.ShowActualBalance = true
-	f.ActualBalanceCents = f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents - f.PrivateActualCents
+	f.ActualAvailableCents = f.OpeningBalanceCents + f.FundingPersonal.NetSalaryCents() + f.ArrivedPrivatelyCents
+	f.ActualBalanceCents = f.ActualAvailableCents - f.PrivateActualCents
 	pv := f.FundingPersonal
 	// The Actual column takes what the statements say left the bank, where the
 	// planned one takes what the plan says will: the taxes are declared with
@@ -571,6 +583,13 @@ func (f Figures) HeadlineBalanceCents() int {
 		return f.ActualBalanceCents
 	}
 	return f.BalanceCents
+}
+
+func (f Figures) HeadlineAvailableCents() int {
+	if f.ShowActualBalance {
+		return f.ActualAvailableCents
+	}
+	return f.AvailableCents
 }
 
 func (f Figures) HeadlineCompanyClosingCents() int {
@@ -594,18 +613,6 @@ func (t *Tracker) targetNeedsBalanceNote(viewed yearMonth, months int, carried o
 	}
 	return "A target balance of " + formatEuro(round(amount*100)) + " is set for this month, but no company account is declared in accounts.json — " +
 		"there is no balance to compare it against, so the target does nothing. Add the account with \"kind\": \"company\"."
-}
-
-// dividendSettlementNote is the sentence the whole correction is about: a
-// declared distribution hands the owner a claim rather than money, so the
-// company's bank figure does not fall by it. Said on the page because that is
-// where the arithmetic looked wrong.
-func dividendSettlementNote(months int, due dividendDue) string {
-	if months != 1 || due.none() {
-		return ""
-	}
-	return "The " + formatEuro(round(due.AmountEUR*100)) + " distribution is not money leaving the bank — it settles against the director's loan below. " +
-		"Only its two taxes are cash the company has to find."
 }
 
 // dividendNeedsBalanceNote covers the case where a distribution is charged
@@ -645,7 +652,7 @@ func (f *Figures) computeDirectorLoan(t *Tracker, ctx context.Context, viewed ye
 	f.LoanNetIncomeCents = f.FundingPersonal.NetIncomeCents
 	f.LoanMovementCents = -t.crossedInMonth(ctx, viewed)
 	f.LoanClosingCents = f.LoanOpeningCents + f.LoanNetIncomeCents + f.LoanMovementCents
-	f.DirectorLoanNotes = t.directorLoanNotes(ctx, viewed, carried.Loan)
+	f.DirectorLoanNotes = t.directorLoanNotes(ctx, viewed)
 	f.publishCompanyWorth()
 }
 
@@ -676,41 +683,28 @@ func (f Figures) OwedLabel() string {
 	return "Owed by the owner"
 }
 
-// directorLoanNotes says the two things that make the figure less than final,
-// rather than letting it read as settled when it is not.
-func (t *Tracker) directorLoanNotes(ctx context.Context, viewed yearMonth, loan directorLoanStock) []string {
-	var notes []string
-	if n := loan.UnimportedMonths; n > 0 {
-		notes = append(notes, fmt.Sprintf("%s since the opening figure %s not fully imported, so anything that crossed in %s has not been counted yet — this reads higher than it is.",
-			monthsPhrase(n), isAre(n), themOrIt(n)))
+// ArrivedPrivatelyLabel turns over the same way, and says the money left the
+// company rather than that it landed in an account: a draw taken as cash and
+// never deposited is still the owner's to spend, so naming an account would be
+// a claim the statements do not make.
+func (f Figures) ArrivedPrivatelyLabel() string {
+	if f.ArrivedPrivatelyCents < 0 {
+		return "Paid into the company"
 	}
+	return "Drawn from the company"
+}
+
+// directorLoanNotes says the one thing about the figure nobody can work out by
+// reading it: two lines marked for a single transfer count that transfer twice.
+// It is a warning about the data, not a description of the arithmetic.
+func (t *Tracker) directorLoanNotes(ctx context.Context, viewed yearMonth) []string {
+	var notes []string
 	if t.Actuals != nil {
 		if av, err := t.Actuals.ForMonth(ctx, viewed.Year, viewed.Month); err == nil && av.DoubleMarked {
 			notes = append(notes, "Two lines this month are marked as the same movement, for the same amount, on the same day. If they are one transfer recorded from both statements, unmark the private side — it is counted twice here.")
 		}
 	}
 	return notes
-}
-
-func monthsPhrase(n int) string {
-	if n == 1 {
-		return "One month"
-	}
-	return fmt.Sprintf("%d months", n)
-}
-
-func isAre(n int) string {
-	if n == 1 {
-		return "is"
-	}
-	return "are"
-}
-
-func themOrIt(n int) string {
-	if n == 1 {
-		return "it"
-	}
-	return "them"
 }
 
 // crossedInMonth is the viewed month's own settlements. The month's actuals
@@ -1067,6 +1061,7 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 	f.PrivateUnmatchedCents, f.CompanyUnmatchedCents = UnmatchedCents(*bv, av, companyIDs)
 	f.PrivateActualCents, f.CompanyActualCents = ActualTotals(av, companyIDs)
 	f.CompanyCashOutCents = av.CompanyCashOutCents
+	f.ArrivedPrivatelyCents = av.ArrivedPrivatelyCents
 }
 
 func (t *Tracker) companyCategoryIDs(ctx context.Context) map[string]bool {

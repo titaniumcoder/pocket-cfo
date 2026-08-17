@@ -98,7 +98,7 @@ func (s *Service) DirectorLoanFor(ctx context.Context, month string) (*DirectorL
 		ClosingCents:      f.LoanClosingCents,
 		Notes:             f.DirectorLoanNotes,
 		PositiveMeans:     "the company owes the owner; negative means the owner owes the company",
-		ReachesNoOtherSum: "read-only: it feeds no other figure, and the private balance still assumes net income lands in the account",
+		ReachesNoOtherSum: "read-only: this figure feeds only the company's worth, though the crossings it is built from also raise the Actual column of Available to spend — the planned column still assumes net income lands in the account, and the residual here is what it accrued and never transferred",
 	}
 	for _, mv := range s.movementsIn(ctx, year, m) {
 		out.SettledBy = append(out.SettledBy, mv)

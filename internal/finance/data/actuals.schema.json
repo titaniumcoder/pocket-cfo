@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/titaniumcoder/pocket-cfo/internal/finance/data/actuals.schema.json",
   "title": "Actuals",
-  "description": "What was ACTUALLY spent in one month, reconciled from bank statements — one file per month, named for the month it covers (data/actuals/2026-08.json). Display only: nothing here feeds Balance, Available to spend, Total private expenses or the account roll-forward, all of which stay planned-based. Every transaction carries exactly one of category, ignored or untracked, so the file accounts for every row on the statement and both 'deliberately skipped' and 'not decided yet' are recorded rather than inferred from absence. coverage is what stops a mid-month import reading as a spectacular underspend.",
+  "description": "What was ACTUALLY spent in one month, reconciled from bank statements — one file per month, named for the month it covers (data/actuals/2026-08.json). It feeds the Actual column of Balance, Available to spend and Total private expenses, and a fully imported month closes the account roll-forward on it; the Planned column of each stays budget.json alone, so nothing here ever moves a planned figure. Every transaction carries exactly one of category, ignored or untracked, so the file accounts for every row on the statement and both 'deliberately skipped' and 'not decided yet' are recorded rather than inferred from absence. coverage is what stops a mid-month import reading as a spectacular underspend.",
   "type": "object",
   "required": [
     "month",

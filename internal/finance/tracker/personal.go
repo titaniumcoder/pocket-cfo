@@ -295,6 +295,14 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 	return v
 }
 
+// NetSalaryCents is net income with the distribution taken back out, which is
+// the part of it the private side may assume arrived without being told: a
+// salary is transferred every month, a dividend is settled irregularly or never
+// in cash. All three terms sum across a range, so this holds for a year too.
+func (v PersonalView) NetSalaryCents() int {
+	return v.NetIncomeCents - v.DividendCents + v.DividendTaxCents
+}
+
 // OneDividendDay dates the Dividend row itself when the period holds a single
 // distribution, which is the ordinary case. More than one and the row carries
 // the total instead, with a sub-row per entry, so the figure can be read back

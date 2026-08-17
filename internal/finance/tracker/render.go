@@ -260,7 +260,6 @@ var templates = `
     <div class="spend-grid">
       {{if .Untracked}}
       <h3 class="sg-span sg-untracked">{{untracked .UntrackedCount}}Untracked cash &mdash; {{eur .UntrackedCents}}</h3>
-      <p class="sg-span muted">Money that has left the account and has not been decided yet. It is in none of the figures on this page or the dashboard, so until it is placed the month is not finished. Copy a line to tell Hermes what it was.</p>
       <div class="sg-row"><span class="sg-head col-secondary">Date</span><span class="sg-head sg-desc">Description</span><span class="sg-head col-secondary">Account</span><span class="sg-head num">Amount</span><span class="sg-head copy-col no-print"></span></div>
       {{range .Untracked}}<div class="sg-row sg-untracked-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}{{if .Reason}} <span class="untracked-note">{{.Reason}}</span>{{end}}</span><span class="col-secondary">{{.Account}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
       {{end}}
@@ -278,20 +277,17 @@ var templates = `
 
       {{if .Unmatched}}
       <h3 class="sg-span">Not in this month&rsquo;s plan</h3>
-      <p class="sg-span muted">These cite a budget category that has no row this month &mdash; renamed, removed, or a one-off whose month has passed.</p>
       <div class="sg-row"><span class="sg-head col-secondary">Date</span><span class="sg-head sg-desc">Description</span><span class="sg-head col-secondary">Category</span><span class="sg-head num">Amount</span><span class="sg-head copy-col no-print"></span></div>
       {{range .Unmatched}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}</span><span class="col-secondary">{{.Category}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
       {{end}}
 
       {{range .Movements}}
       <h3 class="sg-span">{{.Name}} &mdash; {{eur .Cents}}</h3>
-      <p class="sg-span muted">{{.Note}} In none of the figures on this page or the dashboard; it settles the director&rsquo;s loan instead.</p>
       <div class="sg-row"><span class="sg-head col-secondary">Date</span><span class="sg-head sg-desc">Description</span><span class="sg-head col-secondary">Account</span><span class="sg-head num">Amount</span><span class="sg-head copy-col no-print"></span></div>
       {{range .Transactions}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}{{if .Reason}} <span class="untracked-note">{{.Reason}}</span>{{end}}</span><span class="col-secondary">{{.Account}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
       {{end}}
 
       <h3 class="sg-span">Not budget expenses</h3>
-      <p class="sg-span muted">Every statement line deliberately left out of the figures, with the reason &mdash; so this page reconciles to the whole statement and a mis-ignored line is visible.</p>
       {{if .Ignored}}
       <div class="sg-row"><span class="sg-head col-secondary">Date</span><span class="sg-head sg-desc">Description</span><span class="sg-head col-secondary">Reason</span><span class="sg-head num">Amount</span><span class="sg-head copy-col no-print"></span></div>
       {{range .Ignored}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}</span><span class="col-secondary">{{.Reason}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
@@ -501,14 +497,14 @@ var templates = `
       {{if .TargetNote}}<div class="row"><span class="stale-note">{{.TargetNote}}</span></div>{{end}}
       {{if $.TargetNeedsBalanceNote}}<div class="row"><span class="stale-note">{{$.TargetNeedsBalanceNote}}</span></div>{{end}}
       {{if $.DividendNeedsBalanceNote}}<div class="row"><span class="stale-note">{{$.DividendNeedsBalanceNote}}</span></div>{{end}}
-      {{if $.DividendSettlement}}<div class="row"><span class="stale-note">{{$.DividendSettlement}}</span></div>{{end}}
       {{end}}
       {{end}}
       {{if .AccountsErr}}<div class="row"><span class="error">{{.AccountsErr}}</span></div>{{end}}
       {{if .ShowOpeningBalance}}
       <div class="row net{{if lt .OpeningBalanceCents 0}} neg{{end}}"><span class="label">Private opening balance</span><span class="mid"></span><span class="amt netamt">{{eur .OpeningBalanceCents}}</span></div>
       {{range .PrivateAccounts}}<div class="row acct"><span class="label">{{.Name}}</span><span class="mid"></span><span class="amt">{{eur .Cents}}</span></div>{{end}}
-      <div class="row net gap-above{{if lt .AvailableCents 0}} neg{{end}}"><span class="label">Available to spend</span><span class="mid"></span><span class="amt netamt">{{eur .AvailableCents}}</span></div>
+      {{if and .ShowActualBalance .ArrivedPrivatelyCents}}<div class="row acct gap-above"><span class="label">{{.ArrivedPrivatelyLabel}}</span><span class="mid"></span><span class="amt{{owed .ArrivedPrivatelyCents}}">{{signed .ArrivedPrivatelyCents}}</span></div>{{end}}
+      <div class="row net gap-above{{if lt .HeadlineAvailableCents 0}} neg{{end}}"><span class="label">Available to spend</span>{{if .ShowActualBalance}}<span class="mid">{{eur .AvailableCents}}</span><span class="amt netamt">{{eur .ActualAvailableCents}}<span class="stack-m">planned {{eur .AvailableCents}}</span></span>{{else}}<span class="mid"></span><span class="amt netamt">{{eur .AvailableCents}}</span>{{end}}</div>
       {{end}}
     </div>
 

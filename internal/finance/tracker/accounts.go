@@ -170,12 +170,6 @@ type directorLoanStock struct {
 	Known        bool
 	OpeningCents int
 	OpensMonth   yearMonth
-
-	// UnimportedMonths counts the walked months whose statements are missing
-	// or half-read. An unimported month settles nothing, so the figure is
-	// optimistically high by whatever crossed in them — honest, but only if
-	// the page says so.
-	UnimportedMonths int
 }
 
 func directorLoanInForce(af accountsdata.AccountsFile, viewed yearMonth) directorLoanStock {
@@ -269,9 +263,6 @@ func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, loan di
 		}
 		if loan.Known && m.ordinal() >= loan.OpensMonth.ordinal() {
 			open.Loan.OpeningCents += closed.NetIncomeCents - closed.CrossedCents
-			if !closed.Imported {
-				open.Loan.UnimportedMonths++
-			}
 		}
 	}
 	return open, nil
@@ -297,7 +288,6 @@ type monthClosing struct {
 	CompanyClosingCents int
 	NetIncomeCents      int
 	CrossedCents        int
-	Imported            bool
 }
 
 func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, rateCents int, company companyStock) (monthClosing, error) {
@@ -313,12 +303,30 @@ func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, ra
 	}
 	imported := av.Present && av.Complete
 	return monthClosing{
-		PrivateDeltaCents:   pv.NetIncomeCents - privateCents,
+		PrivateDeltaCents:   privateClosedOn(pv, av, imported) - privateCents,
 		CompanyClosingCents: companyClosedOn(pv, av, imported),
 		NetIncomeCents:      pv.NetIncomeCents,
 		CrossedCents:        av.CrossedCents,
-		Imported:            imported,
 	}, nil
+}
+
+// privateClosedOn is what funded the private account over a walked month, and
+// it obeys the same all-or-nothing rule as the expenses it is about to be netted
+// against: a fully imported month is funded by the net salary the plan assumes
+// plus what the statements say actually reached the owner besides it, and any
+// other month is funded by net income alone, the way it always was.
+//
+// Ungated it would fold half a month's draws into a figure otherwise built
+// entirely from the plan — and one that is then carried forward until the next
+// bank reading, changing silently as the rest of the month is imported. That is
+// the mixture the company side refuses for the same reason. The viewed month is
+// a different case and is ungated: it is shown beside its planned twin, not
+// carried into anything.
+func privateClosedOn(pv PersonalView, av ActualsView, imported bool) int {
+	if !imported {
+		return pv.NetIncomeCents
+	}
+	return pv.NetSalaryCents() + av.ArrivedPrivatelyCents
 }
 
 // companyClosedOn seeds the next month, so it follows the same all-or-nothing

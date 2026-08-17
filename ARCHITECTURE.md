@@ -917,21 +917,33 @@ accrues by net income each month — which now includes a dividend net of its di
 and that is what makes "net income is what the company owes me" true rather than roughly
 true — and is settled by money that actually crossed.
 
-A marked line moves two figures, and which two is not the same question. Whether it
+A marked line moves three figures, and which three is not the same question. Whether it
 **settles the loan** is whether the money reached the owner; whether it **left the bank** is
-whether the company is poorer for it. A salary transfer does the first and not the second —
-the cascade has already charged the gross, and counting the transfer as well would pay the
-salary twice. The two taxes do the second and not the first: they leave the company for the
-state and never reach the owner. Transposing those two sets is the easiest mistake in this
-module, which is why both answers are pinned value by value over the schema's own enum.
+whether the company is poorer for it; whether it **reached the owner outside payroll** is
+whether the plan had not already assumed it would. A salary transfer does the first and
+neither of the others — the cascade has already charged the gross, and counting the transfer
+again would pay the salary twice on the company side and credit it twice on the private one.
+The two taxes do the second alone: they leave the company for the state and never reach the
+owner. A draw, a distribution paid out and money paid back in do all three. Transposing those
+sets is the easiest mistake in this module, which is why all three answers are pinned value by
+value over the schema's own enum.
 
-Two limits worth knowing rather than rediscovering. A month nobody has fully imported now
-carries the company's cash **high** by whatever the owner drew in it, where before it carried
-it high by nothing — because a draw reached no figure at all. And a distribution declared in
-an unimported month charges its taxes to the plan, while the month the tax is actually paid
-charges them again if that month *is* imported; the carried balance is then light by that tax
-until the next bank reading re-anchors it. Both are the ordinary cost of the plan-or-statement
-switch, and both are bounded by the next reading.
+The third set is the second question the private side had to answer, and the salary is the one
+value that separates them. The paragraph above is the whole reason: a salary is settled every
+month by a transfer, so the private figures are right to expect it and must not count the
+transfer as well; a distribution is settled irregularly or never in cash, so the private side
+may only count one that actually arrived. Excluding it there instead would make the private
+figure optimistic by the net dividend in exactly the months a distribution is declared —
+which is the case a loan exists for.
+
+Two limits worth knowing rather than rediscovering. A month nobody has fully imported carries
+the company's cash **high** by whatever the owner drew in it, and carries the private side
+**low** by the same draw, because a half-read month closes on its plan whole rather than on
+part of a statement. And a distribution declared in an unimported month charges its taxes to
+the plan, while the month the tax is actually paid charges them again if that month *is*
+imported; the carried balance is then light by that tax until the next bank reading re-anchors
+it. Both are the ordinary cost of the plan-or-statement switch, and both are bounded by the
+next reading.
 
 A crossing is a statement line carrying a `movement` marker **beside** its `ignored` reason,
 never instead of one: such a line genuinely is not a budget expense, so the exactly-one-of
@@ -966,12 +978,24 @@ would silently never accrue. An unimported month settles nothing rather than fal
 the plan, because the plan holds no transfers; the loan then reads higher than it is, and says
 so. The year view has none, for the same reason it reads no balances at all.
 
-It reaches the company's worth and nothing else — no cash figure, and no input to the
-cascade, so a salary is never sized against money the owner has not given back. The private
-balance still rolls forward assuming net income lands in the account, and the loan is
-precisely the number saying by how much that assumption is currently out; the private side
-deliberately does **not** rise when he draws, because reporting that gap is what the loan is
-for. Settling it — by paying a salary large enough, or a dividend — is a decision taken with
+The loan figure itself reaches the company's worth and nothing else — no cash figure, and no
+input to the cascade, so a salary is never sized against money the owner has not given back.
+The crossings it is built from are not private to it, though, and that is the correction §10
+was missing longest: a draw is one transaction with two sides, and booking only the liability
+left **Available to spend** reading low by every draw the owner had taken. It now books both.
+The asset side lands in the **Actual column only** — a draw is in no plan, so the planned
+column may not know it happened — which is the same planned/actual pair `Balance` and `Left in
+the company` already show, and is why no budget figure moves when a statement is imported.
+
+What each column assumes is the whole of it. The planned column assumes net income arrived,
+because that is all a plan can say. The Actual column assumes only the **net salary** arrived
+and counts everything else from the statements, for the reason two paragraphs up. So the two
+columns agree exactly when the company transferred the net salary the plan sized and nothing
+else crossed, and the residual between them is net salary accrued but never transferred —
+which is the loan's own movement row. Neither figure has to guess, and a test pins the identity
+because nothing in the type system ties the exclusion set to the internals of net income.
+
+Settling the loan — by paying a salary large enough, or a dividend — is a decision taken with
 the accountant, so neither the distribution nor the loan's opening figure is writable through
 the agent API, only readable.
 

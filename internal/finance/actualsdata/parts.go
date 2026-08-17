@@ -35,6 +35,21 @@ func (p Part) MovedCompanyCash() bool {
 	return false
 }
 
+// CrossedOutsidePayroll is Crossed minus the one crossing the plan already
+// assumes happened. Net salary is settled every month by a transfer, so the
+// private side is right to expect it and counting the transfer as well would
+// credit the salary twice. A distribution is settled irregularly or never in
+// cash, which is the whole reason a director's loan exists for it, so the
+// private side may only count one that actually arrived. A draw is in no plan
+// at all. The two taxes reach the owner in neither direction.
+func (p Part) CrossedOutsidePayroll() bool {
+	switch p.Movement {
+	case MovementOwnerDraw, MovementOwnerContribution, MovementDividendPayout:
+		return true
+	}
+	return false
+}
+
 func PartsOf(tx Transaction) []Part {
 	if len(tx.Splits) > 0 {
 		return partsOfSplits(tx.Splits)

@@ -935,7 +935,7 @@ func TestAMarkedTransferIsListedOnceAndNotAlsoUnderNotBudgetExpenses(t *testing.
 	if n := strings.Count(body, `<span class="sg-desc">To Rico Metzger`); n != 1 {
 		t.Errorf("the draw is listed %d times on the page, want once", n)
 	}
-	for _, want := range []string{"Owner draw", "Company profit tax paid", "settles the director"} {
+	for _, want := range []string{"Owner draw", "Company profit tax paid"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the spending page never says %q", want)
 		}

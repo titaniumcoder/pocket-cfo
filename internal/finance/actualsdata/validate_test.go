@@ -338,19 +338,20 @@ func TestAMovementOnTheLineAndOnAPartIsRefusedBecauseThePartsDecide(t *testing.T
 	}
 }
 
-// TestEveryMovementBelongsToTheSumsItActuallyMoves: two predicates, two
-// different questions, and the pair is easy to transpose — a salary transfer
-// settles the loan but is already counted as gross salary, and a tax payment
-// leaves the bank without ever reaching the owner. Both answers are pinned
-// value by value, so a seventh movement fails here until somebody decides both.
+// TestEveryMovementBelongsToTheSumsItActuallyMoves: three predicates, three
+// different questions, and they are easy to transpose — a salary transfer
+// settles the loan but is already counted as gross salary, a tax payment leaves
+// the bank without ever reaching the owner, and a distribution reaches the owner
+// without the plan having assumed it would. All three answers are pinned value
+// by value, so a seventh movement fails here until somebody decides all of them.
 func TestEveryMovementBelongsToTheSumsItActuallyMoves(t *testing.T) {
-	answers := map[Movement]struct{ crossed, leftTheBank bool }{
-		MovementSalaryTransfer:    {crossed: true, leftTheBank: false},
-		MovementOwnerDraw:         {crossed: true, leftTheBank: true},
-		MovementDividendPayout:    {crossed: true, leftTheBank: true},
-		MovementOwnerContribution: {crossed: true, leftTheBank: true},
-		MovementCorporateTax:      {crossed: false, leftTheBank: true},
-		MovementDividendTax:       {crossed: false, leftTheBank: true},
+	answers := map[Movement]struct{ crossed, leftTheBank, offPlan bool }{
+		MovementSalaryTransfer:    {crossed: true, leftTheBank: false, offPlan: false},
+		MovementOwnerDraw:         {crossed: true, leftTheBank: true, offPlan: true},
+		MovementDividendPayout:    {crossed: true, leftTheBank: true, offPlan: true},
+		MovementOwnerContribution: {crossed: true, leftTheBank: true, offPlan: true},
+		MovementCorporateTax:      {crossed: false, leftTheBank: true, offPlan: false},
+		MovementDividendTax:       {crossed: false, leftTheBank: true, offPlan: false},
 	}
 	for _, v := range enumValues_Movement {
 		s, ok := v.(string)
@@ -359,7 +360,7 @@ func TestEveryMovementBelongsToTheSumsItActuallyMoves(t *testing.T) {
 		}
 		want, decided := answers[Movement(s)]
 		if !decided {
-			t.Errorf("movement %q is in the schema but nothing decides whether it settles the loan or leaves the bank", s)
+			t.Errorf("movement %q is in the schema but nothing decides which of the three sums it moves", s)
 			continue
 		}
 		p := Part{Movement: Movement(s)}
@@ -369,6 +370,28 @@ func TestEveryMovementBelongsToTheSumsItActuallyMoves(t *testing.T) {
 		if p.MovedCompanyCash() != want.leftTheBank {
 			t.Errorf("%s moved company cash = %v, want %v", s, p.MovedCompanyCash(), want.leftTheBank)
 		}
+		if p.CrossedOutsidePayroll() != want.offPlan {
+			t.Errorf("%s crossed outside payroll = %v, want %v", s, p.CrossedOutsidePayroll(), want.offPlan)
+		}
+		// The third set is the second minus the one crossing the plan already
+		// assumed, so it can never hold a value the first does not.
+		if p.CrossedOutsidePayroll() && !p.Crossed() {
+			t.Errorf("%s reaches the owner outside payroll but does not settle the loan", s)
+		}
+	}
+}
+
+// TestOnlyTheSalaryTransferIsAssumedToHaveArrived is the asymmetry the private
+// side rests on. §10: a salary is settled every month by a transfer, so the
+// figures are right to expect it and counting the transfer as well would credit
+// it twice; a distribution is settled irregularly or never in cash, which is
+// the whole reason a director's loan exists for it and not for salary.
+func TestOnlyTheSalaryTransferIsAssumedToHaveArrived(t *testing.T) {
+	if (Part{Movement: MovementSalaryTransfer}).CrossedOutsidePayroll() {
+		t.Error("a salary transfer is counted as arriving on top of the net salary the plan already assumed")
+	}
+	if !(Part{Movement: MovementDividendPayout}).CrossedOutsidePayroll() {
+		t.Error("a distribution actually paid out reaches no private figure, so a dividend never settled in cash reads as if it had been")
 	}
 }
 

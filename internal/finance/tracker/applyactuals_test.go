@@ -364,8 +364,13 @@ func TestTheCurrentMonthShowsSpentAndProjectedTogether(t *testing.T) {
 	if !f.ShowActualBalance {
 		t.Fatal("the current month showed only one balance")
 	}
-	if want := f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents - f.PrivateActualCents; f.ActualBalanceCents != want {
-		t.Errorf("ActualBalanceCents = %d, want %d (opening + net income - what the bank has seen)", f.ActualBalanceCents, want)
+	if want := f.ActualAvailableCents - f.PrivateActualCents; f.ActualBalanceCents != want {
+		t.Errorf("ActualBalanceCents = %d, want %d (what there was to spend, less what the bank has seen spent)", f.ActualBalanceCents, want)
+	}
+	// Nothing crossed this month and no dividend is declared, so what there was
+	// to spend is the same figure in both columns and the whole gap is spending.
+	if f.ActualAvailableCents != f.AvailableCents {
+		t.Fatalf("the fixture has money crossing it (%d), so the gap below is not spending alone", f.ArrivedPrivatelyCents)
 	}
 	if want := f.PrivateTotalPlannedCents - f.PrivateActualCents; f.ActualBalanceCents-f.BalanceCents != want {
 		t.Errorf("the two balances differ by %d, want %d — the gap is the planned spending not yet on a statement",
@@ -389,8 +394,8 @@ func TestAClosedMonthAlsoShowsWhatTheBankSaw(t *testing.T) {
 	if !f.ShowActualBalance {
 		t.Fatal("a closed month with statements showed the plan alone")
 	}
-	if want := f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents - f.PrivateActualCents; f.ActualBalanceCents != want {
-		t.Errorf("ActualBalanceCents = %d, want %d (opening + net income - what the bank saw)", f.ActualBalanceCents, want)
+	if want := f.ActualAvailableCents - f.PrivateActualCents; f.ActualBalanceCents != want {
+		t.Errorf("ActualBalanceCents = %d, want %d (what there was to spend, less what the bank saw spent)", f.ActualBalanceCents, want)
 	}
 	if f.BalanceCents != f.OpeningBalanceCents+f.FundingPersonal.NetIncomeCents-f.PrivateTotalPlannedCents {
 		t.Error("the planned balance stopped being the plan")
@@ -516,6 +521,18 @@ func TestBothFiguresReachThePage(t *testing.T) {
 	for _, want := range []string{formatEuro(f.BalanceCents), formatEuro(f.ActualBalanceCents)} {
 		if !strings.Contains(row[1], want) {
 			t.Errorf("the Balance row %q is missing %q", row[1], want)
+		}
+	}
+
+	// Available to spend carries the same pair, for the same reason: a draw the
+	// plan knows nothing about only shows up in one of the two columns.
+	avail := regexp.MustCompile(`<div class="row net gap-above[^"]*"><span class="label">Available to spend</span>(.*?)</div>`).FindStringSubmatch(body)
+	if avail == nil {
+		t.Fatalf("no Available to spend row on the page:\n%s", body)
+	}
+	for _, want := range []string{formatEuro(f.AvailableCents), formatEuro(f.ActualAvailableCents)} {
+		if !strings.Contains(avail[1], want) {
+			t.Errorf("the Available to spend row %q is missing %q", avail[1], want)
 		}
 	}
 }

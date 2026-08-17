@@ -39,11 +39,9 @@ type SpendingView struct {
 }
 
 // SpendingMovementGroup lists the lines that moved money between the owner
-// and the company. It is on the page to be seen and reaches no figure on it —
-// the same standing as Untracked and Not budget expenses.
+// and the company, under the heading its movement earns it.
 type SpendingMovementGroup struct {
 	Name         string
-	Note         string
 	Cents        int
 	Transactions []SpendingTx
 }
@@ -53,14 +51,13 @@ type SpendingMovementGroup struct {
 var movementNames = []struct {
 	Movement actualsdata.Movement
 	Name     string
-	Note     string
 }{
-	{actualsdata.MovementSalaryTransfer, "Salary paid across", "The salary the cascade above already accounts for, leaving the company for your own account."},
-	{actualsdata.MovementOwnerDraw, "Owner draw", "Money taken out of the company outside payroll."},
-	{actualsdata.MovementDividendPayout, "Dividend paid out", "A distribution reaching your account."},
-	{actualsdata.MovementOwnerContribution, "Paid into the company", "Money you put in, which the company then owes you."},
-	{actualsdata.MovementCorporateTax, "Company profit tax paid", "Left the company for the state, so it settles nothing between you and it."},
-	{actualsdata.MovementDividendTax, "Dividend tax paid", "Left the company for the state, so it settles nothing between you and it."},
+	{actualsdata.MovementSalaryTransfer, "Salary paid across"},
+	{actualsdata.MovementOwnerDraw, "Owner draw"},
+	{actualsdata.MovementDividendPayout, "Dividend paid out"},
+	{actualsdata.MovementOwnerContribution, "Paid into the company"},
+	{actualsdata.MovementCorporateTax, "Company profit tax paid"},
+	{actualsdata.MovementDividendTax, "Dividend tax paid"},
 }
 
 func movementGroups(byMovement map[actualsdata.Movement][]SpendingTx) []SpendingMovementGroup {
@@ -70,7 +67,7 @@ func movementGroups(byMovement map[actualsdata.Movement][]SpendingTx) []Spending
 		if len(rows) == 0 {
 			continue
 		}
-		group := SpendingMovementGroup{Name: m.Name, Note: m.Note, Transactions: rows}
+		group := SpendingMovementGroup{Name: m.Name, Transactions: rows}
 		for _, row := range rows {
 			group.Cents += row.Cents
 		}

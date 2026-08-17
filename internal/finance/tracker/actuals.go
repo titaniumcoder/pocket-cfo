@@ -65,6 +65,14 @@ type ActualsView struct {
 	// taxes leave the bank without ever reaching the owner.
 	CompanyCashOutCents int
 
+	// ArrivedPrivatelyCents is the third question over the same six values:
+	// what the owner got hold of that the plan had not already assumed. It is
+	// CrossedCents without the salary transfer, because the private side is
+	// already sized on net salary arriving, and adding the transfer would
+	// credit it twice. Same signs: a draw of +5000 is 5000 more to spend, a
+	// contribution of -500 is 500 less.
+	ArrivedPrivatelyCents int
+
 	ByMovementRow []MovementTotal
 
 	// DoubleMarked is the one double count the sign rule cannot catch: two
@@ -248,6 +256,9 @@ func viewOf(af actualsdata.ActualsFile, year int, month time.Month) ActualsView 
 				}
 				if part.MovedCompanyCash() {
 					v.CompanyCashOutCents += eurToCents(part.Amount)
+				}
+				if part.CrossedOutsidePayroll() {
+					v.ArrivedPrivatelyCents += eurToCents(part.Amount)
 				}
 				key := fmt.Sprintf("%s|%s|%d", tx.Date, part.Movement, eurToCents(part.Amount))
 				if markedOnce[key] {

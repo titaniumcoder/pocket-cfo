@@ -101,11 +101,12 @@ func TestTheDirectorLoanIsNotAFigureOfZeroWhenUnknown(t *testing.T) {
 	}
 }
 
-// TestTheDirectorLoanFeedsNeitherBalanceNorAvailableToSpend is the whole point
-// of the design: the private roll-forward still assumes net income lands in
-// the account, and the loan is precisely the figure saying by how much that
-// assumption is currently out.
-func TestTheDirectorLoanFeedsNeitherBalanceNorAvailableToSpend(t *testing.T) {
+// TestADrawMovesTheActualPrivateFigureAndLeavesThePlanAlone is where the two
+// columns earn their keep. A draw is money the owner now has, so the Actual
+// column rises by it; a draw is in no plan, so the planned column may not know
+// it happened at all. Marking the line is what tells the page which of the two
+// it is, and it must move exactly one of them.
+func TestADrawMovesTheActualPrivateFigureAndLeavesThePlanAlone(t *testing.T) {
 	const withDraw = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
 		"transactions":[{"id":"d1","date":"2026-08-06","description":"To Rico","amount":5000,"account":"Company Checking","ignored":"owner draw","movement":"owner_draw"}]}`
 	const same = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
@@ -126,11 +127,120 @@ func TestTheDirectorLoanFeedsNeitherBalanceNorAvailableToSpend(t *testing.T) {
 		{"company closing", marked.FundingPersonal.CompanyClosingCents, unmarked.FundingPersonal.CompanyClosingCents},
 	} {
 		if same.got != same.other {
-			t.Errorf("%s moved from %d to %d because a line was marked", same.name, same.other, same.got)
+			t.Errorf("planned %s moved from %d to %d because a line was marked", same.name, same.other, same.got)
 		}
+	}
+	for _, moved := range []struct {
+		name       string
+		got, other int
+	}{
+		{"Available to spend", marked.ActualAvailableCents, unmarked.ActualAvailableCents},
+		{"Balance", marked.ActualBalanceCents, unmarked.ActualBalanceCents},
+	} {
+		if moved.got-moved.other != 500000 {
+			t.Errorf("actual %s moved by %d when the owner drew 5000", moved.name, moved.got-moved.other)
+		}
+	}
+	if marked.ArrivedPrivatelyCents != 500000 {
+		t.Errorf("the draw reached the owner by %d, want 5000", marked.ArrivedPrivatelyCents)
 	}
 	if marked.LoanMovementCents == unmarked.LoanMovementCents {
 		t.Error("marking the line changed nothing at all, so this test proves nothing")
+	}
+}
+
+// TestADrawIsBothAnAssetAndALiabilityAndTheTwoAgree: the owner is 5000 richer
+// and owes the company 5000 more, which is one transaction with two sides and
+// not two competing accounts of it. Booking only the liability, which this page
+// used to do, is what made Available to spend read low by every draw taken.
+func TestADrawIsBothAnAssetAndALiabilityAndTheTwoAgree(t *testing.T) {
+	f := loanTracker(t, "2026-07-31", 12400, map[string]string{
+		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+			"transactions":[{"id":"d1","date":"2026-08-06","description":"To Rico","amount":5000,"account":"Company Checking","ignored":"owner draw","movement":"owner_draw"}]}`,
+	}).ComputeMonth(context.Background(), 2026, time.August)
+
+	if f.ArrivedPrivatelyCents != 500000 {
+		t.Fatalf("the asset side is %d, want the 5000 drawn", f.ArrivedPrivatelyCents)
+	}
+	if f.LoanMovementCents != -500000 {
+		t.Fatalf("the liability side is %d, want the 5000 drawn", f.LoanMovementCents)
+	}
+	if f.ArrivedPrivatelyCents != -f.LoanMovementCents {
+		t.Errorf("the two sides of one draw disagree: %d reached the owner, %d settled the loan",
+			f.ArrivedPrivatelyCents, f.LoanMovementCents)
+	}
+}
+
+// TestTheTwoColumnsAgreeExactlyWhenTheMonthWentToPlan is the invariant that
+// holds the exclusion set honest. The planned column assumes net income
+// arrived; the actual one assumes only the net salary and counts everything
+// else from the statements. So a month where the company transferred precisely
+// the net salary the plan sized, and nothing else crossed, must read the same
+// figure twice — and a draw on top must move exactly one of them.
+//
+// Nothing in the type system ties CrossedOutsidePayroll to the internals of
+// NetIncomeCents. If somebody adds a component to net income — a bonus, a
+// reimbursement, a second kind of distribution — without giving it a movement
+// of its own, the two columns part company here and this test says so.
+func TestTheTwoColumnsAgreeExactlyWhenTheMonthWentToPlan(t *testing.T) {
+	// What the plan says will arrive, read off the page rather than restated.
+	planned := loanTracker(t, "2026-07-31", 12400, nil).ComputeMonth(context.Background(), 2026, time.August)
+	netSalary := planned.FundingPersonal.NetSalaryCents()
+	if netSalary == 0 {
+		t.Fatal("the fixture pays no salary, so this test would hold for the wrong reason")
+	}
+
+	month := func(extra string) Figures {
+		return loanTracker(t, "2026-07-31", 12400, map[string]string{
+			"actuals/2026-08.json": fmt.Sprintf(`{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+				"transactions":[
+					{"id":"s1","date":"2026-08-05","description":"To Rico","amount":%.2f,"account":"Company Checking","ignored":"salary paid across","movement":"salary_transfer"}%s]}`,
+				float64(netSalary)/100, extra),
+		}).ComputeMonth(context.Background(), 2026, time.August)
+	}
+
+	toPlan := month("")
+	if toPlan.ActualAvailableCents != toPlan.AvailableCents {
+		t.Errorf("the month went exactly to plan and the columns still read %d planned against %d actual — the exclusion set has drifted from net income",
+			toPlan.AvailableCents, toPlan.ActualAvailableCents)
+	}
+
+	andADraw := month(`,
+					{"id":"d1","date":"2026-08-06","description":"To Rico","amount":5000,"account":"Company Checking","ignored":"owner draw","movement":"owner_draw"}`)
+	if got := andADraw.ActualAvailableCents - andADraw.AvailableCents; got != 500000 {
+		t.Errorf("with the salary paid to plan and 5000 drawn on top, the columns differ by %d, want the draw alone", got)
+	}
+}
+
+// TestADistributionReachesThePrivateSideOnlyWhenItIsPaidAndASalaryAlways:
+// §10 says a salary is settled every month by a transfer while a distribution
+// is settled irregularly or never in cash, which is the whole reason a loan
+// exists for one and not the other. So the private side may assume the salary
+// arrived and must be shown the distribution. Counting the salary transfer too
+// would credit it twice.
+func TestADistributionReachesThePrivateSideOnlyWhenItIsPaidAndASalaryAlways(t *testing.T) {
+	const coverage = `"coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}]`
+
+	quiet := loanTracker(t, "2026-07-31", 12400, map[string]string{
+		"actuals/2026-08.json": `{"month":"2026-08",` + coverage + `,"transactions":[]}`,
+	}).ComputeMonth(context.Background(), 2026, time.August)
+
+	salary := loanTracker(t, "2026-07-31", 12400, map[string]string{
+		"actuals/2026-08.json": `{"month":"2026-08",` + coverage + `,
+			"transactions":[{"id":"s1","date":"2026-08-05","description":"To Rico","amount":2400,"account":"Company Checking","ignored":"salary paid across","movement":"salary_transfer"}]}`,
+	}).ComputeMonth(context.Background(), 2026, time.August)
+
+	paidOut := loanTracker(t, "2026-07-31", 12400, map[string]string{
+		"actuals/2026-08.json": `{"month":"2026-08",` + coverage + `,
+			"transactions":[{"id":"p1","date":"2026-08-05","description":"To Rico","amount":900,"account":"Company Checking","ignored":"dividend paid out","movement":"dividend_payout"}]}`,
+	}).ComputeMonth(context.Background(), 2026, time.August)
+
+	if salary.ActualAvailableCents != quiet.ActualAvailableCents {
+		t.Errorf("marking the salary transfer moved Available to spend from %d to %d — the plan already assumed it arrived",
+			quiet.ActualAvailableCents, salary.ActualAvailableCents)
+	}
+	if got := paidOut.ActualAvailableCents - quiet.ActualAvailableCents; got != 90000 {
+		t.Errorf("a distribution actually paid moved Available to spend by %d, want the 900 that crossed", got)
 	}
 }
 
@@ -217,29 +327,6 @@ func TestTheYearViewShowsNoDirectorLoanBecauseItReadsNoBalances(t *testing.T) {
 	}
 }
 
-// TestADirectorLoanOverAMonthNobodyImportedSaysSoRatherThanLookingSettled: an
-// unimported month settles nothing, so the figure is optimistically high by
-// whatever crossed in it. That is honest only if the page says so.
-func TestADirectorLoanOverAMonthNobodyImportedSaysSoRatherThanLookingSettled(t *testing.T) {
-	// The loan opens in January; nothing is imported for the months between.
-	quiet := loanTracker(t, "2025-12-31", 12400, nil).ComputeMonth(context.Background(), 2026, time.August)
-	if len(quiet.DirectorLoanNotes) == 0 {
-		t.Fatal("seven unimported months and the page says nothing")
-	}
-	if !strings.Contains(quiet.DirectorLoanNotes[0], "not fully imported") {
-		t.Errorf("note = %q, want it to name what is missing", quiet.DirectorLoanNotes[0])
-	}
-
-	// A loan anchored on the month before the one being read has walked
-	// nothing, so there is nothing to caveat.
-	current := loanTracker(t, "2026-07-31", 12400, nil).ComputeMonth(context.Background(), 2026, time.August)
-	for _, note := range current.DirectorLoanNotes {
-		if strings.Contains(note, "not fully imported") {
-			t.Errorf("a loan with no months to walk still warns: %q", note)
-		}
-	}
-}
-
 // TestTwoLinesMarkedAsTheSameMovementOnOneDaySaySoWithoutFailingTheMonth: the
 // sign rule cannot catch a transfer marked twice on the company side. Refusing
 // it would take the whole month off the dashboard for a heuristic with real
@@ -293,9 +380,15 @@ func TestAnOwnerDrawLeavesTheCompanyInTheFigureTheBankSaw(t *testing.T) {
 	if marked.FundingPersonal.CompanyClosingCents != plain.FundingPersonal.CompanyClosingCents {
 		t.Error("marking a draw moved the planned closing figure, which knows nothing of draws")
 	}
-	// And no private figure moves either — that half is unchanged.
+	// And the other half of the same movement: what the company lost, the owner
+	// got. Both figures claim to say what really happened, so they have to agree
+	// on the amount and disagree only on the direction.
+	if got := marked.ActualAvailableCents - plain.ActualAvailableCents; got != 500000 {
+		t.Errorf("the owner's side rose by %d while the company's fell by 5000", got)
+	}
+	// The planned private figures know nothing of draws either.
 	if marked.BalanceCents != plain.BalanceCents || marked.AvailableCents != plain.AvailableCents {
-		t.Error("marking a draw moved a private figure")
+		t.Error("marking a draw moved a planned private figure")
 	}
 }
 
@@ -373,6 +466,91 @@ func TestAHalfImportedMonthCarriesThePlanRatherThanHalfOfEach(t *testing.T) {
 	if partial.FundingPersonal.CompanyOpeningCents != none.FundingPersonal.CompanyOpeningCents {
 		t.Errorf("a half-imported August carried %d into September and an unimported one carried %d — a half-read month closes on the plan, whole",
 			partial.FundingPersonal.CompanyOpeningCents, none.FundingPersonal.CompanyOpeningCents)
+	}
+}
+
+// TestWhatReachedTheOwnerIsARowRatherThanArithmeticToDoInYourHead: the whole
+// complaint was a figure that did not add up on the page. Available to spend
+// jumping by 5000 with nothing beside it saying why would be the same fault the
+// other way round, so the row is shown and its label turns over with the
+// direction rather than reading "drawn" for money paid in.
+func TestWhatReachedTheOwnerIsARowRatherThanArithmeticToDoInYourHead(t *testing.T) {
+	drawn := Figures{Currency: "€", ShowOpeningBalance: true, ShowActualBalance: true,
+		OpeningBalanceCents: 420000, ArrivedPrivatelyCents: 500000, AvailableCents: 660000, ActualAvailableCents: 1160000}
+	paidIn := drawn
+	paidIn.ArrivedPrivatelyCents = -50000
+	paidIn.ActualAvailableCents = 610000
+
+	rec := httptest.NewRecorder()
+	RenderPage(rec, drawn)
+	body := rec.Body.String()
+	if !strings.Contains(body, "Drawn from the company") {
+		t.Error("Available to spend rose and the page does not say what raised it")
+	}
+	if !strings.Contains(body, "+5,000") {
+		t.Error("the row lost its sign, so the direction is only in the colour")
+	}
+	// Both columns, so the planned figure stays readable beside it.
+	if !strings.Contains(body, "planned 6,600") || !strings.Contains(body, "11,600") {
+		t.Errorf("Available to spend does not show both columns:\n%s", body)
+	}
+
+	rec = httptest.NewRecorder()
+	RenderPage(rec, paidIn)
+	if got := rec.Body.String(); !strings.Contains(got, "Paid into the company") {
+		t.Error("money paid into the company still reads as drawn out of it")
+	}
+
+	// A month with nothing crossing it earns no row at all.
+	quiet := drawn
+	quiet.ArrivedPrivatelyCents = 0
+	rec = httptest.NewRecorder()
+	RenderPage(rec, quiet)
+	if strings.Contains(rec.Body.String(), "Drawn from the company") {
+		t.Error("a month where nothing crossed still shows an empty row for it")
+	}
+}
+
+// TestAnImportedMonthCarriesTheDrawIntoTheNextPrivateOpening is the twin of
+// the company case above, on the other side of the same movement. A draw the
+// owner still holds on the first of September is money September opens with, so
+// forgetting it as the page turned would put the figure straight back where it
+// was before any of this.
+func TestAnImportedMonthCarriesTheDrawIntoTheNextPrivateOpening(t *testing.T) {
+	const drawn = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+		"transactions":[{"id":"d1","date":"2026-08-06","description":"To Rico","amount":5000,"account":"Company Checking","ignored":"owner draw","movement":"owner_draw"}]}`
+	const unmarked = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+		"transactions":[{"id":"d1","date":"2026-08-06","description":"To Rico","amount":5000,"account":"Company Checking","ignored":"owner draw"}]}`
+
+	marked := loanTracker(t, "2026-07-31", 12400, map[string]string{"actuals/2026-08.json": drawn}).
+		ComputeMonth(context.Background(), 2026, time.September)
+	plain := loanTracker(t, "2026-07-31", 12400, map[string]string{"actuals/2026-08.json": unmarked}).
+		ComputeMonth(context.Background(), 2026, time.September)
+
+	if got := marked.OpeningBalanceCents - plain.OpeningBalanceCents; got != 500000 {
+		t.Errorf("September's private opening rose by %d for August's draw, want the 5000 drawn", got)
+	}
+}
+
+// TestAHalfImportedMonthCarriesThePlanIntoThePrivateOpeningToo: partial
+// coverage is exactly as untrustworthy for what reached the owner as for what
+// he spent, and this figure is carried until the next bank reading. Folding
+// half a month's draws into an otherwise planned figure would make it drift
+// every time another week was imported, which is the mixture the company side
+// already refuses. The viewed month is ungated on purpose — it is shown beside
+// its planned twin rather than carried into anything.
+func TestAHalfImportedMonthCarriesThePlanIntoThePrivateOpeningToo(t *testing.T) {
+	// Coverage stops on the 9th, so the month is present but not complete.
+	const half = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-09","imported_at":"2026-08-10"}],
+		"transactions":[{"id":"d1","date":"2026-08-06","description":"To Rico","amount":5000,"account":"Company Checking","ignored":"owner draw","movement":"owner_draw"}]}`
+
+	partial := loanTracker(t, "2026-07-31", 12400, map[string]string{"actuals/2026-08.json": half}).
+		ComputeMonth(context.Background(), 2026, time.September)
+	none := loanTracker(t, "2026-07-31", 12400, nil).ComputeMonth(context.Background(), 2026, time.September)
+
+	if partial.OpeningBalanceCents != none.OpeningBalanceCents {
+		t.Errorf("a half-imported August opened September at %d and an unimported one at %d — a half-read month closes on the plan, whole",
+			partial.OpeningBalanceCents, none.OpeningBalanceCents)
 	}
 }
 

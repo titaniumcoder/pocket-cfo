@@ -4,6 +4,12 @@
 # app — client-portal links and all — to anyone who asked.
 export ENV=development
 
+# Which data checkout is mounted, shown under the title in the header. Both
+# optional; unset shows nothing. Your data repo's deploy sets these, since the
+# data is bind-mounted and only it knows the commit.
+export DATA_UPDATED_AT=
+export DATA_COMMIT=
+
 export API2PDF_KEY=
 # Shared bearer token for the Hermes API. Unset means /api/ is never
 # registered at all — the endpoints do not exist rather than returning 401.

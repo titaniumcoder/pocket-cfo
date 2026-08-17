@@ -124,13 +124,13 @@ var templates = `
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PocketCFO — Login</title>
+<title>Pocket CFO — Login</title>
 ` + favicon + `
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <main class="login">
-  <h1>PocketCFO</h1>
+  <h1>Pocket CFO</h1>
   <a class="button-outline" href="/auth/login">` + githubMark + `Continue with GitHub</a>
   {{if .ShowEmailLogin}}<p class="login-alt"><a class="link" href="/auth/email">or continue with email</a></p>{{end}}
   {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
@@ -143,13 +143,13 @@ var templates = `
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PocketCFO — Login</title>
+<title>Pocket CFO — Login</title>
 ` + favicon + `
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <main class="login">
-  <h1>PocketCFO</h1>
+  <h1>Pocket CFO</h1>
   <form method="post" action="/auth/email">
     <input type="email" name="email" placeholder="you@example.com" required autofocus>
     <button class="button" type="submit">Email me a login link</button>
@@ -165,13 +165,13 @@ var templates = `
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PocketCFO — Login</title>
+<title>Pocket CFO — Login</title>
 ` + favicon + `
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <main class="login">
-  <h1>PocketCFO</h1>
+  <h1>Pocket CFO</h1>
   <p>If that address is authorized, a login link is on its way — check your inbox.</p>
   <p>The link expires shortly, so use it soon.</p>
   <p><a class="link" href="/">&larr; Back</a></p>
@@ -184,13 +184,13 @@ var templates = `
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PocketCFO — Spending {{.Month}}{{if .UntrackedCount}} &bull;{{end}}</title>
+<title>Pocket CFO — Spending {{.Month}}{{if .UntrackedCount}} &bull;{{end}}</title>
 ` + favicon + `
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <main>
-  <h1 class="print-title">PocketCFO — Spending {{.Month}}</h1>
+  <h1 class="print-title">Pocket CFO — Spending {{.Month}}</h1>
   {{template "sitehead" .Header}}
 
   <nav class="periodnav no-print">
@@ -358,13 +358,13 @@ var templates = `
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 {{if .TogglPending}}<meta http-equiv="refresh" content="` + pendingRefresh + `">{{end}}
-<title>PocketCFO — Finance</title>
+<title>Pocket CFO — Finance</title>
 ` + favicon + `
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <main>
-  <h1 class="print-title">PocketCFO — Finance {{.Month}}{{if .UntrackedCount}} &bull;{{end}}</h1>
+  <h1 class="print-title">Pocket CFO — Finance {{.Month}}{{if .UntrackedCount}} &bull;{{end}}</h1>
   {{template "sitehead" .Header}}
 
   <div class="layout">

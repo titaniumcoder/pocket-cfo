@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/titaniumcoder/pocket-cfo/internal/buildinfo"
 	financeconfig "github.com/titaniumcoder/pocket-cfo/internal/finance/config"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
@@ -91,6 +92,16 @@ func loadConfig() config {
 		githubAPIURL:     os.Getenv("GITHUB_API_URL"),
 		finance:          financeconfig.Load(financeFileConfig),
 	}
+	// Which data checkout is mounted. Only the deployment knows — the data is
+	// bind-mounted at run time, not baked into the image — so it comes in
+	// through the environment. Neither is required, and neither is validated:
+	// this is a line in the header, and an app that refuses to start over a
+	// cosmetic variable would be the wrong trade.
+	buildinfo.Data = buildinfo.DataStamp{
+		UpdatedAt: os.Getenv("DATA_UPDATED_AT"),
+		Commit:    os.Getenv("DATA_COMMIT"),
+	}
+
 	if err := requireKnownEnv(c.env); err != nil {
 		log.Fatalf("pocketcfo: %v", err)
 	}

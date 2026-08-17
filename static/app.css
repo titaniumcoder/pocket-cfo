@@ -94,6 +94,11 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 h1 { font-size: 1.6rem; margin: 0 0 1.5rem; }
 h1 small { font-weight: 400; opacity: .6; font-size: 1rem; }
 header h1 { margin: 0; font-size: 1.5rem; }
+/* The brand stacks the title over the data stamp, and takes the h1's place as
+   the header's flex child so the row still distributes over three children. */
+.brand { display: flex; flex-direction: column; gap: .1rem; }
+.version { font-size: .75rem; font-weight: 400; color: var(--muted); }
+.data-stamp { font-size: .68rem; color: var(--muted); }
 /* Lives inside .main-col, so its thirds measure against the content box —
    the holidays sidebar must not pull the centre off-centre. */
 .periodnav { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: .75rem; margin: 0 0 1.5rem; }

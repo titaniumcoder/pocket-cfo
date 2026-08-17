@@ -4,6 +4,8 @@ import (
 	htmltemplate "html/template"
 	"strings"
 	"testing"
+
+	"github.com/titaniumcoder/pocket-cfo/internal/buildinfo"
 )
 
 // TestNavOrder pins the menu order. Spending sits next to the dashboard it
@@ -124,4 +126,74 @@ func TestAvatarFallsBackWhenTheImageFails(t *testing.T) {
 	if strings.Contains(b.String(), "<img") {
 		t.Error("an image is rendered for a session with no avatar")
 	}
+}
+
+func renderHeader(t *testing.T, h Header) string {
+	t.Helper()
+	tmpl := htmltemplate.Must(htmltemplate.New("t").Parse(HeaderTemplate + `{{template "sitehead" .}}`))
+	var b strings.Builder
+	if err := tmpl.Execute(&b, h); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
+}
+
+// The version and the data stamp are read from the process, not carried on the
+// Header, so they render the same whoever built it — including the two places
+// that build one without knowing either exists.
+func TestBrandShowsVersionAndDataStamp(t *testing.T) {
+	defer restoreBuildInfo(t)()
+	buildinfo.Version = "v9.9.9"
+	buildinfo.Data = buildinfo.DataStamp{UpdatedAt: "2026-08-17", Commit: "a1b2c3d4e5"}
+
+	body := renderHeader(t, Header{Login: "octocat"})
+	for _, want := range []string{
+		"Pocket CFO",
+		`<span class="version">v9.9.9</span>`,
+		`<div class="data-stamp">Last Data Update: 17.08.2026 - a1b2c3d</div>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the header does not contain %q:\n%s", want, body)
+		}
+	}
+}
+
+// Neither is required, and an absent one must leave no markup behind — an
+// empty span or a stray "Last Data Update:" would be worse than nothing.
+func TestBrandOmitsWhatItWasNotGiven(t *testing.T) {
+	defer restoreBuildInfo(t)()
+	buildinfo.Version = ""
+	buildinfo.Data = buildinfo.DataStamp{}
+
+	body := renderHeader(t, Header{Login: "octocat"})
+	if !strings.Contains(body, "Pocket CFO") {
+		t.Error("the header lost its title")
+	}
+	for _, unwanted := range []string{`class="version"`, "data-stamp", "Last Data Update"} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("an unset value still rendered %q:\n%s", unwanted, body)
+		}
+	}
+}
+
+// The data stamp is supplied by the deployment and the version by the build,
+// so one can be present without the other.
+func TestBrandShowsAVersionWithNoDataStamp(t *testing.T) {
+	defer restoreBuildInfo(t)()
+	buildinfo.Version = "dev"
+	buildinfo.Data = buildinfo.DataStamp{}
+
+	body := renderHeader(t, Header{})
+	if !strings.Contains(body, `<span class="version">dev</span>`) {
+		t.Errorf("the version is missing:\n%s", body)
+	}
+	if strings.Contains(body, "data-stamp") {
+		t.Errorf("an unset data stamp still rendered:\n%s", body)
+	}
+}
+
+func restoreBuildInfo(t *testing.T) func() {
+	t.Helper()
+	version, data := buildinfo.Version, buildinfo.Data
+	return func() { buildinfo.Version, buildinfo.Data = version, data }
 }

@@ -206,7 +206,7 @@ func (s *Service) registerTools(server *mcp.Server) {
 	})
 
 	mcp.AddTool(server, tool("get_budget",
-		"The plan for a period, with overrides already applied. period is YYYY-MM for one month or YYYY for twelve month buckets. A category with a date is a one-off counted only in that month. A move_planned_expense you made is reflected at once; a budget.json edited directly appears only after that commit has deployed.",
+		"The plan for a period, with overrides already applied. period is YYYY-MM for one month or YYYY for twelve month buckets. A category with a date is a one-off counted only in that month. dividends lists any distribution planned for the month with both taxes already worked out — the gross, the company profit tax it costs the company, the dividend tax withheld and what actually reaches the owner. Read those figures rather than recomputing them from get_finance_config, which is easy to resolve to the wrong month. A move_planned_expense you made is reflected at once; a budget.json edited directly appears only after that commit has deployed.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, a periodArgs) (*mcp.CallToolResult, any, error) {
 		if len(a.Period) == 4 {
 			return result(s.BudgetForYear(ctx, a.Period))
@@ -250,6 +250,18 @@ func (s *Service) registerTools(server *mcp.Server) {
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
 		out, err := s.AccountsList(ctx)
 		return result(accountsResult{Accounts: out}, err)
+	})
+
+	mcp.AddTool(server, tool("get_finance_config",
+		"The dated rules every figure on the finance pages is computed from: the legislation in force period by period — minimum wage, both contribution schedules, income tax, company profit tax and dividend tax — plus the salary plan and the target balance. Read this before explaining any figure rather than assuming a rate: a month before the earliest entry has nothing in force and is charged nothing, which is not the same as a rate of zero. READ ONLY, and deliberately so: this is deployment configuration, changed by editing config.json and redeploying. There is no tool that writes it, because a past payslip has to stay reproducible against the rates it was actually computed under.",
+		true), func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
+		return result(s.FinanceConfig(ctx))
+	})
+
+	mcp.AddTool(server, tool("get_director_loan",
+		"What the company owes its owner at the end of one month, or what the owner owes the company — the running balance between them. It opens on the figure stated in accounts.json, accrues that month's net income (which includes a dividend, net of its dividend tax), and is settled by the lines you marked with a movement. Positive means the company owes the owner. A month before every stated figure answers known:false — that is 'nobody has said', not 'nothing is owed', and the fix is a reading in the data repo rather than a tool here. It reaches no other figure: the private balance still assumes net income lands in the account, and this is the number saying by how much that is currently out. Read notes: they say when a month is unimported (so the figure reads high) or when one transfer looks marked twice.",
+		true), func(ctx context.Context, _ *mcp.CallToolRequest, a monthArgs) (*mcp.CallToolResult, any, error) {
+		return result(s.DirectorLoanFor(ctx, a.Month))
 	})
 
 	mcp.AddTool(server, tool("add_transactions",

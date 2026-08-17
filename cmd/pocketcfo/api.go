@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/api"
+	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
 
 const apiRequestTimeout = 30 * time.Second
@@ -27,6 +28,8 @@ func (s *server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/actuals/{month}", s.apiActuals)
 	mux.HandleFunc("GET /api/transactions", s.apiTransactions)
 	mux.HandleFunc("GET /api/reconciliation", s.apiReconciliation)
+	mux.HandleFunc("GET /api/config", s.apiFinanceConfig)
+	mux.HandleFunc("GET /api/director-loan/{month}", s.apiDirectorLoan)
 	mux.HandleFunc("POST /api/actuals/add", s.apiAddActuals)
 	mux.HandleFunc("POST /api/actuals/edit", s.apiEditActuals)
 	mux.HandleFunc("POST /api/accounts/balance", s.apiRecordAccountBalance)
@@ -70,6 +73,16 @@ func (s *server) apiService() *api.Service {
 	if s.tracker != nil {
 		svc.Budget, svc.Accounts, svc.Actuals = s.tracker.Budget, s.tracker.Accounts, s.tracker.Actuals
 		svc.Start = s.tracker.Start
+		svc.Personal = s.tracker.Personal
+		// The same computation the dashboard renders, invoices and all, so a
+		// figure this API reports and a figure on the page cannot drift.
+		svc.Figures = func(ctx context.Context, year int, month time.Month) (tracker.Figures, error) {
+			trk, err := s.trackerForRequest()
+			if err != nil {
+				return tracker.Figures{}, err
+			}
+			return trk.ComputeMonth(ctx, year, month), nil
+		}
 	}
 	if s.cfg.githubDataToken != "" {
 		svc.Store = &api.ContentsClient{
@@ -169,6 +182,19 @@ func (s *server) apiBudgetPeriod(w http.ResponseWriter, r *http.Request) {
 			return svc.BudgetForYear(ctx, period)
 		}
 		return svc.BudgetForMonth(ctx, period)
+	})
+}
+
+func (s *server) apiFinanceConfig(w http.ResponseWriter, r *http.Request) {
+	s.serveAPI(w, r, func(ctx context.Context, svc *api.Service) (any, error) {
+		return svc.FinanceConfig(ctx)
+	})
+}
+
+func (s *server) apiDirectorLoan(w http.ResponseWriter, r *http.Request) {
+	month := r.PathValue("month")
+	s.serveAPI(w, r, func(ctx context.Context, svc *api.Service) (any, error) {
+		return svc.DirectorLoanFor(ctx, month)
 	})
 }
 

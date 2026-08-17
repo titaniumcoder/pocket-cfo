@@ -12,6 +12,7 @@ type Dividend struct {
 	On        yearMonth
 	Day       string
 	AmountEUR float64
+	Note      string
 }
 
 type Dividends []Dividend
@@ -39,6 +40,7 @@ func dividendsIn(bf budgetdata.BudgetFile) Dividends {
 			On:        yearMonth{day.Year(), day.Month()},
 			Day:       entry.Date,
 			AmountEUR: entry.Amount,
+			Note:      derefNote(entry.Note),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -88,6 +90,13 @@ func (d dividendDue) dividendRows() []DividendRow {
 	return rows
 }
 
+func derefNote(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 func (d Dividends) dueIn(ym yearMonth) dividendDue {
 	var due dividendDue
 	for _, entry := range d {
@@ -98,4 +107,44 @@ func (d Dividends) dueIn(ym yearMonth) dividendDue {
 		due.Entries = append(due.Entries, entry)
 	}
 	return due
+}
+
+// DividendReport is one planned distribution with both taxes already worked
+// out. The agent reads the arithmetic rather than recomputing it from rates
+// it might resolve to the wrong month.
+type DividendReport struct {
+	Date                  string `json:"date"`
+	GrossCents            int    `json:"gross_cents"`
+	CompanyProfitTaxCents int    `json:"company_profit_tax_cents"`
+	DividendTaxCents      int    `json:"dividend_tax_cents"`
+	NetToOwnerCents       int    `json:"net_to_owner_cents"`
+	CostToCompanyCents    int    `json:"cost_to_company_cents"`
+	Note                  string `json:"note,omitempty"`
+}
+
+// DividendsIn reports the distributions a month holds, charged at the rates in
+// force for it.
+func (p PersonalParams) DividendsIn(d Dividends, year int, month time.Month) []DividendReport {
+	ym := yearMonth{year, month}
+	r := p.rulesFor(ym)
+	var out []DividendReport
+	for _, entry := range d {
+		if entry.On != ym {
+			continue
+		}
+		gross := toCent(entry.AmountEUR)
+		profitTax := round(toCent(r.CompanyProfitTax.on(gross)) * 100)
+		dividendTax := round(toCent(r.DividendTax.on(gross)) * 100)
+		grossCents := round(gross * 100)
+		out = append(out, DividendReport{
+			Date:                  entry.Day,
+			GrossCents:            grossCents,
+			CompanyProfitTaxCents: profitTax,
+			DividendTaxCents:      dividendTax,
+			NetToOwnerCents:       grossCents - dividendTax,
+			CostToCompanyCents:    grossCents + profitTax,
+			Note:                  entry.Note,
+		})
+	}
+	return out
 }

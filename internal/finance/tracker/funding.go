@@ -28,6 +28,10 @@ func (ym yearMonth) configForm() string {
 	return fmt.Sprintf("%04d-%02d", ym.Year, int(ym.Month))
 }
 
+// ConfigForm is configForm for the agent-facing read surface, which reports
+// the dated rules in the same spelling config.json states them.
+func (ym yearMonth) ConfigForm() string { return ym.configForm() }
+
 func monthsBetween(start, end yearMonth) []yearMonth {
 	const safetyCap = 36
 	months := make([]yearMonth, 0, 12)

@@ -6,6 +6,11 @@
 
 **Totals:** 1 critical · 7 high · 17 medium · 41 low.
 
+> **Status: acted on.** Every finding was re-verified against the code before being fixed;
+> the corrections are recorded in "Verification notes" at the end of this file. Two findings
+> were wrong, four materially overstated, and one prescribed a fix that would have broken
+> what it repaired. Everything that survived verification has been fixed.
+
 **Executive summary:** The computation cores (money arithmetic, salary cascade, roll-forward) are correct, internally consistent, and pinned by tests that assert documented invariants. The recurring failure pattern is at the boundaries: JSON-schema keywords the generator silently ignores, validators that fail open, and docs (§4.3, §5.1, §6, HERMES.md) promising enforcement the code doesn't deliver. Nothing requires redesign — the fixes are enforcement, fail-closed error handling, and schema constraints.
 
 ---
@@ -298,3 +303,65 @@ Coverage is checked for real dates, `to >= from`, and containment in the month �
 6. **Batch 6 — API contract alignment** (M-14, M-15, M-16, M-17) + web hardening (M-10, M-11).
 7. **Test gaps** (any batch): stacked-10%+10% discount test (H-7), per-group vs per-line VAT rounding test (M-3).
 </content>
+
+
+---
+
+## Verification notes
+
+Added after the review was worked through. Each finding was re-checked against the code
+before anything was changed, and not all of them held.
+
+**Wrong as written**
+
+- **H-2 / M-2 — the generator is less blind than claimed.** go-jsonschema v0.24.1 *does*
+  emit `pattern`, `enum`, `minLength`, `minimum`/`maximum` and string `const` checks, so
+  `"number": "GARBAGE"`, `"status": "issuedd"`, `"currency": "eor"` and `"vat_rate": 250`
+  already failed. The genuinely unenforced set is `additionalProperties: false`,
+  `oneOf`/`not`, `propertyNames`, `uniqueItems`, and a non-string `const`
+  (`schema_version`). The review contradicts itself here — its own "Verified clean"
+  section says those keywords *are* supported. The §4.3 *business-rule* gaps were all
+  real, and are now implemented.
+- **H-2 — `validate` was not "CI step 1".** It was in no workflow at all, which made the
+  gap larger than described rather than smaller. It runs in `build.yml` now.
+- **H-6 — the central claim is refuted.** `Movement.UnmarshalJSON` enforces the enum, so a
+  typo'd marker could not be committed through any JSON path and was never "silently
+  inert". The real residue was one raw cast in the MCP adapter, and its effect was a hard
+  parse failure poisoning the month for every reader — the opposite of silent. Fixed at
+  the validator, which is the shared gate.
+- **M-4 — one cited call site was already correct.** `cmd/pocketcfo/finance.go` skips
+  uncomputable invoices rather than propagating.
+- **M-9 — the prescribed fix would have broken the flag.** `splitFlags` is value-blind, so
+  applying it verbatim would have sorted `HEAD` into the positionals and left
+  `--base-ref` with no value. A value-aware split was needed.
+- **L-15 — invalid.** `minLength: 1` *is* enforced at unmarshal, so `"bg": ""` never
+  reaches the template.
+- **L-35 — invalid.** The byte-slice in `Header.Initials` is reachable only when every
+  rune is one of five ASCII separators; every other branch already uses `[]rune`.
+
+**Right, with a wrong detail**
+
+- **H-5** — real, and worse than described. With the loan anchored at 2025-12-31 and the
+  bank at 2026-07-31, the director's loan closed **38 489 euros** too high. The
+  parenthetical about the fixtures is wrong (`directorloan_test.go` anchors the loan
+  *later* in one case), but the conclusion held: no test covered this ordering.
+- **§9's shallow-clone prediction is wrong**, which surfaced while implementing M-6. A
+  `--depth 1` clone does not return empty timestamps; it attributes every file to the one
+  grafted commit, so all timestamps are identical and nothing ever looks newer than
+  anything. The failure is quieter than predicted, not louder. `render` now refuses to
+  reason from a shallow clone at all.
+- **M-10** — real, though the 60-second cooldown narrows it to one probe per address per
+  minute, and `users.Load` runs on both branches, so the timing gap is smaller than
+  "~1 ms vs 100–500 ms".
+- **L-36** — real but reachable only by hand-editing the data repo, since the generated
+  unmarshaler rejects an empty `balances` array on load. That path exists precisely
+  because `validate` was not in CI.
+- **L-13** — the doc contradicts *itself* on the draft filename (`-DRAFT.pdf` in two
+  places, `-draft.pdf` in one); the code is consistent. The doc was corrected, and the
+  font mismatch was resolved in favour of what actually ships.
+
+**Deliberately not done**
+
+- **The catalog has no `domestic_standard` entry.** The catalog check is scoped to regimes
+  invoices actually use. The wording has to come from the accountant before the first
+  BG-domestic invoice can be issued; it is not something to invent here.

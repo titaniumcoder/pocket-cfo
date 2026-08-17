@@ -204,7 +204,7 @@ func TestFinanceSession_UnauthenticatedShowsLogin(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200 (the login page itself)", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "PocketCFO") {
+	if !strings.Contains(w.Body.String(), "Pocket CFO") {
 		t.Error("want the login page body, got something else")
 	}
 }
@@ -279,7 +279,7 @@ func TestFinanceCurrentMonth_RendersForAuthorizedSession(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "PocketCFO") {
+	if !strings.Contains(w.Body.String(), "Pocket CFO") {
 		t.Error("want the finance dashboard body")
 	}
 }

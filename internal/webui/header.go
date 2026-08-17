@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/titaniumcoder/pocket-cfo/internal/buildinfo"
 )
 
 const (
@@ -128,9 +130,21 @@ func (h Header) HasNav() bool {
 
 func (h Header) IsActive(page string) bool { return h.Active == page }
 
+// Version and DataStamp are read from the process rather than carried as
+// fields, because the header is built in two places and Figures.Header() has
+// no way to reach the server. A field would have to be threaded through and
+// set at every construction site, and the one that was forgotten would render
+// blank rather than fail.
+func (h Header) Version() string { return buildinfo.Version }
+
+func (h Header) DataStamp() string { return buildinfo.Data.String() }
+
 const HeaderTemplate = `
 {{define "sitehead"}}<header class="no-print">
-  <h1>PocketCFO</h1>
+  <div class="brand">
+    <h1>Pocket CFO{{with .Version}} <span class="version">{{.}}</span>{{end}}</h1>
+    {{with .DataStamp}}<div class="data-stamp">Last Data Update: {{.}}</div>{{end}}
+  </div>
   {{if .HasNav}}
   <nav class="topnav">
     {{if .ShowFinance}}<a{{if .IsActive "finance"}} class="active"{{end}} href="{{.Period.FinanceHref}}">Finance</a>{{end}}

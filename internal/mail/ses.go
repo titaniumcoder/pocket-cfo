@@ -28,9 +28,9 @@ func SendLoginLink(ctx context.Context, httpClient *http.Client, cfg Config, toE
 		return fmt.Errorf("load aws config: %w", err)
 	}
 
-	subject := "Your PocketCFO login link"
+	subject := "Your Pocket CFO login link"
 	body := fmt.Sprintf(
-		"Click the link below to log in to PocketCFO. It expires shortly, so use it soon.\n\n%s\n\nIf you didn't request this, you can ignore this email.\n",
+		"Click the link below to log in to Pocket CFO. It expires shortly, so use it soon.\n\n%s\n\nIf you didn't request this, you can ignore this email.\n",
 		link,
 	)
 

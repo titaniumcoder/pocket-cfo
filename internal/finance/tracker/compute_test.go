@@ -261,7 +261,7 @@ func TestRenderPage(t *testing.T) {
 	body := rec.Body.String()
 	// The full page — chrome, nav, and the ledger data — renders in one shot,
 	// no separate loading step.
-	for _, want := range []string{"PocketCFO", "Alpha", "Tracked", "Personal income (Bulgaria)", "Josephstag"} {
+	for _, want := range []string{"Pocket CFO", "Alpha", "Tracked", "Personal income (Bulgaria)", "Josephstag"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page missing %q", want)
 		}

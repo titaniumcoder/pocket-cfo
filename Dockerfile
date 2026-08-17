@@ -6,7 +6,11 @@ COPY go.mod go.sum ./
 RUN go mod download && go mod verify
 COPY . .
 RUN go generate ./...
-RUN go build -o /out/pocketcfo ./cmd/pocketcfo
+# The version shown in the header. Passed by release.yml as the pushed tag;
+# an unstamped build says "dev", which is what a local `go build` produces.
+ARG VERSION=dev
+RUN go build -ldflags "-X github.com/titaniumcoder/pocket-cfo/internal/buildinfo.Version=${VERSION}" \
+      -o /out/pocketcfo ./cmd/pocketcfo
 RUN go build -o /out/pocket-cfo-ctl ./cmd/pocket-cfo-ctl
 
 FROM debian:bookworm as runtime
@@ -35,4 +39,10 @@ COPY --from=builder /usr/src/app/config.json ./config.json
 #   docker run -v /path/to/real/data:/app/data ... pocketcfo
 COPY --from=builder /usr/src/app/data ./data
 COPY --from=builder /usr/src/app/build ./build
+# Which data checkout is mounted, shown under the title. The data is
+# bind-mounted at run time (see above), so only whoever deploys knows its date
+# and commit — set these there. Unset renders nothing at all.
+ENV DATA_UPDATED_AT=""
+ENV DATA_COMMIT=""
+
 CMD ["pocketcfo"]

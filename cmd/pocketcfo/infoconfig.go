@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/titaniumcoder/pocket-cfo/internal/buildinfo"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
 
@@ -46,6 +47,8 @@ func (s *server) configGroups() []configGroup {
 
 	return []configGroup{
 		{Name: "Application", Rows: []configRow{
+			{Name: "Version", Value: buildinfo.Version},
+			{Name: "Data updated", Value: orUnset(buildinfo.Data.String())},
 			{Name: "ENV", Value: orUnset(c.env)},
 			{Name: "PORT", Value: orUnset(c.port)},
 			{Name: "PUBLIC_BASE_URL", Value: orUnset(c.baseURL)},

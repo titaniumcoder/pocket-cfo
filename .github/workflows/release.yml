@@ -34,6 +34,11 @@ jobs:
         with:
           context: .
           push: true
+          # On a tag push this is the tag itself, which is what git describe
+          # would report for the commit — without needing git in the builder,
+          # where the checkout is shallow.
+          build-args: |
+            VERSION=${{ github.ref_name }}
           tags: |
             ghcr.io/${{ github.repository }}:${{ github.ref_name }}
             ghcr.io/${{ github.repository }}:latest

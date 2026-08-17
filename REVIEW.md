@@ -339,6 +339,21 @@ before anything was changed, and not all of them held.
 - **L-35 — invalid.** The byte-slice in `Header.Initials` is reachable only when every
   rune is one of five ASCII separators; every other branch already uses `[]rune`.
 
+**Acted on, and wrong**
+
+- **M-5 — the fix broke rendering, and the finding's premise was only half true.** Sending
+  `outputBinary: true` is harmless, but api2pdf *ignores* it on the Chrome HTML endpoint and
+  still answers with its JSON envelope. v0.26.0 required a `%PDF-` body and rejected the
+  envelope, so every render failed the first time it met the real service — caught only
+  because `--base-ref`/`fetch-depth: 0` finally made the paid-PDF re-stamp path execute.
+  Fixed in v0.27.1 by handling both shapes. The finding is not wrong that the file store is
+  an exposure; it is wrong that the flag avoids it.
+
+  The deeper lesson is about the test, not the code: the two-hop test that encoded the real
+  contract was *replaced* by one asserting the flag was sent and returning a fake `%PDF-`
+  body. A mock rewritten to agree with the change under test cannot contradict it, which is
+  the only thing a mock of a third party is for.
+
 **Right, with a wrong detail**
 
 - **H-5** — real, and worse than described. With the loan anchored at 2025-12-31 and the

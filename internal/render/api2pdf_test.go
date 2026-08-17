@@ -27,6 +27,71 @@ func newResponse(status int, body string) *http.Response {
 	}
 }
 
+// TestAPI2PDF_Render_FileURLEnvelope is the shape api2pdf actually returns.
+// It ignores outputBinary on this endpoint and answers with its usual JSON
+// envelope carrying a FileUrl, so this — not the inline form below — is the
+// path every real render takes.
+//
+// This test existed before v0.26.0 and was replaced by one that asserted the
+// flag and handed back a fake %PDF- body. That mock agreed with the change
+// rather than with the service, so CI passed and the first real render failed.
+func TestAPI2PDF_Render_FileURLEnvelope(t *testing.T) {
+	const fileURL = "https://files.example/out.pdf"
+	var posted, downloaded bool
+	var downloadAuth string
+
+	renderer := &API2PDF{
+		APIKey: "test-key",
+		Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.String() {
+			case api2pdfEndpoint:
+				posted = true
+				resp, _ := json.Marshal(api2pdfResponse{Success: true, FileUrl: fileURL})
+				return newResponse(http.StatusOK, string(resp)), nil
+			case fileURL:
+				downloaded = true
+				downloadAuth = req.Header.Get("Authorization")
+				return newResponse(http.StatusOK, "%PDF-1.4 fake"), nil
+			}
+			t.Fatalf("unexpected request to %s", req.URL)
+			return nil, nil
+		})},
+	}
+
+	pdf, err := renderer.Render(context.Background(), []byte("<html/>"))
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if !posted || !downloaded {
+		t.Errorf("posted=%v downloaded=%v, want both — the envelope must be followed", posted, downloaded)
+	}
+	if !strings.HasPrefix(string(pdf), "%PDF-") {
+		t.Errorf("Render returned non-PDF bytes: %q", pdf)
+	}
+	// The file-store URL is its own credential; sending the API key to it
+	// would hand the key to whatever host api2pdf named.
+	if downloadAuth != "" {
+		t.Errorf("the download carried an Authorization header (%q)", downloadAuth)
+	}
+}
+
+// An envelope with neither bytes nor a URL is a real failure and must not be
+// mistaken for either shape.
+func TestAPI2PDF_Render_EnvelopeWithNoFileURL(t *testing.T) {
+	renderer := &API2PDF{
+		APIKey: "test-key",
+		Client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			resp, _ := json.Marshal(api2pdfResponse{Success: true})
+			return newResponse(http.StatusOK, string(resp)), nil
+		})},
+	}
+	if _, err := renderer.Render(context.Background(), []byte("<html/>")); err == nil {
+		t.Fatal("want an error when the response carries neither a PDF nor a URL")
+	}
+}
+
+// The inline form, for the day api2pdf honours the flag. Asking for it costs
+// nothing; requiring it is what broke.
 func TestAPI2PDF_Render_Success(t *testing.T) {
 	var gotAuth, gotContentType, gotMethod string
 	var gotHTML string

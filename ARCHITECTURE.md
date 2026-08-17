@@ -532,8 +532,16 @@ type Renderer interface { Render(ctx context.Context, html []byte) ([]byte, erro
 
 **PDF — api2pdf.** `POST https://v2.api2pdf.com/chrome/pdf/html`, key in the
 `Authorization` header. Use the **Chrome** endpoint, not wkhtmltopdf — Cyrillic shaping
-is where wkhtmltopdf falls over. `outputBinary: true` to get bytes back inline and skip
-their 24-hour file store. Retry with backoff on 5xx.
+is where wkhtmltopdf falls over. Retry with backoff on 5xx.
+
+`outputBinary: true` is sent, and **api2pdf ignores it on this endpoint** — it answers with
+its usual JSON envelope carrying a `FileUrl`, so the document does sit in their 24-hour
+file store behind a link that is its own bearer token (the URL is fetched with no
+Authorization header, because sending the key to a host api2pdf named would be worse).
+Both response shapes are therefore handled: bytes inline if they ever arrive, the file
+store otherwise. v0.26.0 required the inline form and every render failed on first contact
+with the real service — if you are tempted to tighten this again, mock the *envelope*,
+which is what the service actually returns.
 
 **Fonts — Google Fonts, with two required settings.**
 

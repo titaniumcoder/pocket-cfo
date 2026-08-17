@@ -14,7 +14,9 @@
         "employer": { "bands": [ { "from": 0, "rate": 0.1892 }, { "from": 2112, "rate": 0 } ] },
         "employee": { "bands": [ { "from": 0, "rate": 0.1378 }, { "from": 2112, "rate": 0 } ] }
       },
-      "incomeTax": { "bands": [ { "from": 0, "rate": 0.10 } ] }
+      "incomeTax": { "bands": [ { "from": 0, "rate": 0.10 } ] },
+      "companyProfitTax": { "bands": [ { "from": 0, "rate": 0.10 } ] },
+      "dividendTax": { "bands": [ { "from": 0, "rate": 0.05 } ] }
     },
     { "from": "2026-07", "minimumWage": 1077 }
   ],

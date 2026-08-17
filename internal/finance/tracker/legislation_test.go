@@ -251,6 +251,99 @@ func TestParseLegislation(t *testing.T) {
 	}
 }
 
+// TestParseDividendRates: the two rates a distribution is charged at are
+// dated legislation like every other government-set figure, so last year's
+// dividend stays reproducible when this year's rate moves.
+func TestParseDividendRates(t *testing.T) {
+	ok, err := ParseLegislation([]LegislationEntry{
+		{From: "2026-01",
+			CompanyProfitTax: &TaxEntry{Bands: []BandEntry{{From: 0, Rate: f64(0.10)}}},
+			DividendTax:      &TaxEntry{Bands: []BandEntry{{From: 0, Rate: f64(0.05)}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ok[0].CompanyProfitTax, Bands{{From: 0, Rate: 0.10}}) {
+		t.Errorf("companyProfitTax = %v, want a flat 10%%", ok[0].CompanyProfitTax)
+	}
+	if !reflect.DeepEqual(ok[0].DividendTax, Bands{{From: 0, Rate: 0.05}}) {
+		t.Errorf("dividendTax = %v, want a flat 5%%", ok[0].DividendTax)
+	}
+
+	bad := map[string][]LegislationEntry{
+		"a profit tax naming no bands": {{From: "2026-01", CompanyProfitTax: &TaxEntry{}}},
+		"a dividend tax naming no bands": {{From: "2026-01",
+			DividendTax: &TaxEntry{}}},
+		"a band with no rate": {{From: "2026-01",
+			DividendTax: &TaxEntry{Bands: []BandEntry{{From: 0}}}}},
+		"a band opening above zero": {{From: "2026-01",
+			CompanyProfitTax: &TaxEntry{Bands: []BandEntry{{From: 100, Rate: f64(0.1)}}}}},
+	}
+	for name, entries := range bad {
+		if _, err := ParseLegislation(entries); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+}
+
+// TestALegislationEntryOfOnlyDividendRatesIsNotEmpty: an entry that states
+// nothing is refused, and the two new schedules are things it can state.
+func TestALegislationEntryOfOnlyDividendRatesIsNotEmpty(t *testing.T) {
+	if _, err := ParseLegislation([]LegislationEntry{
+		{From: "2026-01", DividendTax: &TaxEntry{Bands: []BandEntry{{From: 0, Rate: f64(0.05)}}}},
+	}); err != nil {
+		t.Errorf("an entry naming only a dividend rate was refused as stating nothing: %v", err)
+	}
+}
+
+// TestDividendRatesCarryForwardLikeEveryOtherRate: an entry states what
+// changed. A later package that moves the minimum wage must not silently
+// un-state the dividend rates it never mentioned.
+func TestDividendRatesCarryForwardLikeEveryOtherRate(t *testing.T) {
+	l := Legislation{
+		{From: yearMonth{2026, time.January},
+			CompanyProfitTax: Bands{{From: 0, Rate: 0.10}},
+			DividendTax:      Bands{{From: 0, Rate: 0.05}}},
+		{From: yearMonth{2027, time.January}, MinimumWage: f64(1150)},
+		{From: yearMonth{2028, time.January}, DividendTax: Bands{{From: 0, Rate: 0.07}}},
+	}
+
+	if before := l.rulesAt(yearMonth{2025, time.December}); before.DividendTax != nil {
+		t.Errorf("December 2025 has a dividend rate of %v — nothing was in force yet", before.DividendTax)
+	}
+	after := l.rulesAt(yearMonth{2027, time.June})
+	if !reflect.DeepEqual(after.DividendTax, Bands{{From: 0, Rate: 0.05}}) {
+		t.Errorf("June 2027 dividend tax = %v, want the 2026 rate carried forward", after.DividendTax)
+	}
+	if !reflect.DeepEqual(after.CompanyProfitTax, Bands{{From: 0, Rate: 0.10}}) {
+		t.Errorf("June 2027 company profit tax = %v, want the 2026 rate carried forward", after.CompanyProfitTax)
+	}
+	later := l.rulesAt(yearMonth{2028, time.June})
+	if !reflect.DeepEqual(later.DividendTax, Bands{{From: 0, Rate: 0.07}}) {
+		t.Errorf("June 2028 dividend tax = %v, want 2028's rate", later.DividendTax)
+	}
+	if !reflect.DeepEqual(later.CompanyProfitTax, Bands{{From: 0, Rate: 0.10}}) {
+		t.Errorf("2028 reset the profit tax it never mentioned: %v", later.CompanyProfitTax)
+	}
+}
+
+// TestNoLegislationStillMeansNoSalaryLegislation: the "nothing is contributed
+// or taxed" banner is a statement about the payroll side. A period that names
+// only dividend rates must not suppress it, or the banner disappears in
+// exactly the month where gross salary, both contributions and income tax are
+// all silently zero.
+func TestNoLegislationStillMeansNoSalaryLegislation(t *testing.T) {
+	r := Legislation{
+		{From: yearMonth{2026, time.January},
+			CompanyProfitTax: Bands{{From: 0, Rate: 0.10}},
+			DividendTax:      Bands{{From: 0, Rate: 0.05}}},
+	}.rulesAt(yearMonth{2026, time.August})
+
+	if !r.nothingInForce() {
+		t.Error("a period of dividend rates alone reads as salary legislation being in force, so the banner would vanish")
+	}
+}
+
 func TestEnforcedMinimumIsVisible(t *testing.T) {
 	f := Figures{
 		Currency: "€",

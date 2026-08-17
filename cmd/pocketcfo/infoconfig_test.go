@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
 
 func TestMaskSecret(t *testing.T) {
@@ -111,6 +113,30 @@ func TestConfigGroupsMasksEverySecret(t *testing.T) {
 		}
 	}
 }
+
+// TestTheInfoPageNamesTheDividendRates: a rate that charges a real
+// distribution has to be inspectable on the running deployment, the same way
+// every other dated figure in config.json already is — /info is the only place
+// that says which package is actually loaded.
+func TestTheInfoPageNamesTheDividendRates(t *testing.T) {
+	periods, err := tracker.ParseLegislation([]tracker.LegislationEntry{
+		{From: "2026-01",
+			CompanyProfitTax: &tracker.TaxEntry{Bands: []tracker.BandEntry{{From: 0, Rate: ratePtr(0.10)}}},
+			DividendTax:      &tracker.TaxEntry{Bands: []tracker.BandEntry{{From: 0, Rate: ratePtr(0.05)}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	summary := legislationSummary(periods)
+	for _, want := range []string{"company profit tax 10%", "dividend tax 5%"} {
+		if !strings.Contains(summary, want) {
+			t.Errorf("the /info legislation summary %q never says %q", summary, want)
+		}
+	}
+}
+
+func ratePtr(v float64) *float64 { return &v }
 
 func TestOrUnset(t *testing.T) {
 	if got := orUnset(""); got != unsetLabel {

@@ -88,11 +88,13 @@ type PartySchedule struct {
 }
 
 type LegislationPeriod struct {
-	From        yearMonth
-	MinimumWage *float64
-	Employer    *PartySchedule
-	Employee    *PartySchedule
-	IncomeTax   Bands
+	From             yearMonth
+	MinimumWage      *float64
+	Employer         *PartySchedule
+	Employee         *PartySchedule
+	IncomeTax        Bands
+	CompanyProfitTax Bands
+	DividendTax      Bands
 }
 
 type Legislation []LegislationPeriod
@@ -103,10 +105,12 @@ type PartyRules struct {
 }
 
 type Rules struct {
-	MinimumEUR float64
-	Employer   PartyRules
-	Employee   PartyRules
-	IncomeTax  Bands
+	MinimumEUR       float64
+	Employer         PartyRules
+	Employee         PartyRules
+	IncomeTax        Bands
+	CompanyProfitTax Bands
+	DividendTax      Bands
 }
 
 func (r Rules) nothingInForce() bool {
@@ -135,10 +139,12 @@ type TaxEntry struct {
 }
 
 type LegislationEntry struct {
-	From          string              `json:"from"`
-	MinimumWage   *float64            `json:"minimumWage"`
-	Contributions *ContributionsEntry `json:"contributions"`
-	IncomeTax     *TaxEntry           `json:"incomeTax"`
+	From             string              `json:"from"`
+	MinimumWage      *float64            `json:"minimumWage"`
+	Contributions    *ContributionsEntry `json:"contributions"`
+	IncomeTax        *TaxEntry           `json:"incomeTax"`
+	CompanyProfitTax *TaxEntry           `json:"companyProfitTax"`
+	DividendTax      *TaxEntry           `json:"dividendTax"`
 
 	SocialMaxInsurableMonthly *float64 `json:"socialMaxInsurableMonthly"`
 	SocialEmployerRate        *float64 `json:"socialEmployerRate"`
@@ -171,13 +177,14 @@ func ParseLegislation(entries []LegislationEntry) (Legislation, error) {
 				return nil, err
 			}
 		}
-		if e.IncomeTax != nil {
-			if p.IncomeTax, err = parseBands(i, ym, "incomeTax", e.IncomeTax.Bands); err != nil {
-				return nil, err
-			}
-			if p.IncomeTax == nil {
-				return nil, fmt.Errorf("legislation[%d] (%s): incomeTax names no bands, so it states nothing", i, ym)
-			}
+		if p.IncomeTax, err = parseTax(i, ym, "incomeTax", e.IncomeTax); err != nil {
+			return nil, err
+		}
+		if p.CompanyProfitTax, err = parseTax(i, ym, "companyProfitTax", e.CompanyProfitTax); err != nil {
+			return nil, err
+		}
+		if p.DividendTax, err = parseTax(i, ym, "dividendTax", e.DividendTax); err != nil {
+			return nil, err
 		}
 		if p.empty() {
 			return nil, fmt.Errorf("legislation[%d] (%s) changes nothing — an entry that states no figure is a date nobody can act on", i, ym)
@@ -243,6 +250,20 @@ func parseParty(i int, ym yearMonth, name string, e *PartyEntry) (*PartySchedule
 	return &PartySchedule{MinBase: e.MinBase, Bands: bands}, nil
 }
 
+func parseTax(i int, ym yearMonth, name string, e *TaxEntry) (Bands, error) {
+	if e == nil {
+		return nil, nil
+	}
+	bands, err := parseBands(i, ym, name, e.Bands)
+	if err != nil {
+		return nil, err
+	}
+	if bands == nil {
+		return nil, fmt.Errorf("legislation[%d] (%s): %s names no bands, so it states nothing", i, ym, name)
+	}
+	return bands, nil
+}
+
 func parseBands(i int, ym yearMonth, where string, entries []BandEntry) (Bands, error) {
 	if len(entries) == 0 {
 		return nil, nil
@@ -267,7 +288,8 @@ func parseBands(i int, ym yearMonth, where string, entries []BandEntry) (Bands, 
 }
 
 func (p LegislationPeriod) empty() bool {
-	return p.MinimumWage == nil && p.Employer == nil && p.Employee == nil && p.IncomeTax == nil
+	return p.MinimumWage == nil && p.Employer == nil && p.Employee == nil &&
+		p.IncomeTax == nil && p.CompanyProfitTax == nil && p.DividendTax == nil
 }
 
 func (p LegislationPeriod) String() string {
@@ -289,8 +311,13 @@ func (p LegislationPeriod) String() string {
 			parts = append(parts, f.name+" "+f.s.Bands.String())
 		}
 	}
-	if p.IncomeTax != nil {
-		parts = append(parts, "tax "+p.IncomeTax.String())
+	for _, f := range []struct {
+		name  string
+		bands Bands
+	}{{"tax", p.IncomeTax}, {"company profit tax", p.CompanyProfitTax}, {"dividend tax", p.DividendTax}} {
+		if f.bands != nil {
+			parts = append(parts, f.name+" "+f.bands.String())
+		}
 	}
 	return fmt.Sprintf("%s: %s", p.From.configForm(), strings.Join(parts, ", "))
 }
@@ -317,6 +344,12 @@ func (l Legislation) rulesAt(ym yearMonth) Rules {
 		applyParty(&r.Employee, period.Employee)
 		if period.IncomeTax != nil {
 			r.IncomeTax = period.IncomeTax
+		}
+		if period.CompanyProfitTax != nil {
+			r.CompanyProfitTax = period.CompanyProfitTax
+		}
+		if period.DividendTax != nil {
+			r.DividendTax = period.DividendTax
 		}
 	}
 	return r

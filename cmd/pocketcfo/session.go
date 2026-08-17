@@ -13,11 +13,15 @@ import (
 const sessionCookie = "pocketcfo_session"
 
 func (s *server) isProd() bool {
-	return s.cfg.env == "prod"
+	return s.cfg.env == envProd
+}
+
+func (s *server) authDisabled() bool {
+	return s.cfg.env == envDevelopment
 }
 
 func (s *server) currentSession(r *http.Request) (auth.Session, bool) {
-	if !s.isProd() {
+	if s.authDisabled() {
 		return auth.Session{Login: "local-dev", Permission: "admin"}, true
 	}
 

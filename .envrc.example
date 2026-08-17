@@ -1,6 +1,8 @@
-# cmd/pocketcfo only enforces GitHub OAuth login when this is exactly "prod" —
-# anything else (including unset) skips auth entirely for local development.
-export ENV=
+# cmd/pocketcfo enforces GitHub OAuth login when this is "prod", and skips auth
+# entirely when it is "development". There is no third value: anything else,
+# unset included, refuses to boot, because a typo here used to serve the whole
+# app — client-portal links and all — to anyone who asked.
+export ENV=development
 
 export API2PDF_KEY=
 # Shared bearer token for the Hermes API. Unset means /api/ is never

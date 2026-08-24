@@ -76,7 +76,7 @@
         "amount": {
           "type": "number",
           "minimum": 0,
-          "description": "Euros, decimals allowed (e.g. 427.42). Counted every month when date is absent (a recurring cost). When date is set, this is a one-off cost counted only in that specific month."
+          "description": "Euros, decimals allowed (e.g. 427.42). Counted every month when the category is recurring, i.e. when date, from and until are all absent (unbounded in both directions), or when the month falls inside the from/until window. When date is set, this is a one-off cost counted only in that specific month."
         },
         "minimal_amount": {
           "type": "number",
@@ -86,7 +86,17 @@
         "date": {
           "type": "string",
           "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
-          "description": "Only for a one-off cost: the month it's due (day is informational, e.g. \"2026-09-01\"). Present -> amount is counted only in that YYYY-MM, shown as a grayed-out estimate before it's due and dropped after. Absent -> amount recurs every month."
+          "description": "Only for a one-off cost: the month it's due (day is informational, e.g. \"2026-09-01\"). Present -> amount is counted only in that YYYY-MM, shown as a grayed-out estimate before it's due and dropped after. Mutually exclusive with both from and until."
+        },
+        "from": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "The inclusive first month of a recurring cost's window (day is informational, e.g. \"2026-10-01\"). Present -> amount is counted only in YYYY-MM months at or after this one, and never before. Absent with until present -> recurring from the start of time. Mutually exclusive with date."
+        },
+        "until": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "The inclusive last month of a recurring cost's window (day is informational, e.g. \"2026-08-01\"). Present -> amount is counted only in YYYY-MM months up to and including this one, and never after — so a subscription that ended in August is \"until\": \"2026-08-01\" and drops starting September. Absent with from present -> recurring forever. Mutually exclusive with date."
         },
         "overrides": {
           "type": "array",

@@ -13,6 +13,14 @@ func validateDate(field, date string) error {
 	return nil
 }
 
+// monthOrdinal returns a comparable integer (YYYY*12+M) for the month a date
+// names, so two bounds can be ordered by year-and-month, ignoring the day, the
+// way the rest of the module reads a window month.
+func monthOrdinal(date string) int {
+	d, _ := time.Parse("2006-01-02", date)
+	return d.Year()*12 + int(d.Month())
+}
+
 func ValidateBudget(f BudgetFile) error {
 	categoryClaimingID := map[string]string{}
 	for _, g := range f.Groups {
@@ -54,6 +62,22 @@ func ValidateBudget(f BudgetFile) error {
 				if err := validateDate("category date", *c.Date); err != nil {
 					return err
 				}
+				if c.From != nil || c.Until != nil {
+					return fmt.Errorf("category %q has both a one-off date and a from/until window — a cost is either planned once in one month or recurring inside a window, never both", c.Name)
+				}
+			}
+			if c.From != nil {
+				if err := validateDate("category from", *c.From); err != nil {
+					return err
+				}
+			}
+			if c.Until != nil {
+				if err := validateDate("category until", *c.Until); err != nil {
+					return err
+				}
+			}
+			if c.From != nil && c.Until != nil && monthOrdinal(*c.From) > monthOrdinal(*c.Until) {
+				return fmt.Errorf("category %q has from %s after its until %s", c.Name, *c.From, *c.Until)
 			}
 			if c.Url != nil && !strings.HasPrefix(*c.Url, "http://") && !strings.HasPrefix(*c.Url, "https://") {
 				return fmt.Errorf("category %q has a url that isn't http(s): %q", c.Name, *c.Url)

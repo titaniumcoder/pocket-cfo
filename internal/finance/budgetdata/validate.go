@@ -21,6 +21,41 @@ func monthOrdinal(date string) int {
 	return d.Year()*12 + int(d.Month())
 }
 
+// validateAmountChanges lets the deliberate case through and refuses the
+// copy-paste, the way the overrides check does: a change is a price in force
+// from a month on, so it needs a parseable, non-duplicated month, and a
+// minimal_amount that does not exceed its own period's amount.
+func validateAmountChanges(c Category) error {
+	if len(c.AmountChanges) == 0 {
+		return nil
+	}
+	if c.Date != nil {
+		return fmt.Errorf("category %q has both a one-off date and amount_changes — a one-off is a single price, full stop", c.Name)
+	}
+	seen := map[string]bool{}
+	for _, ch := range c.AmountChanges {
+		d, err := time.Parse("2006-01-02", ch.From)
+		if err != nil {
+			return fmt.Errorf("field category amount_changes: invalid date %q", ch.From)
+		}
+		month := d.Format("2006-01")
+		if seen[month] {
+			return fmt.Errorf("category %q has two amount_changes entries for %s (day is ignored) — which amount is in force then is a coin toss", c.Name, month)
+		}
+		seen[month] = true
+		if ch.MinimalAmount != nil && *ch.MinimalAmount > ch.Amount {
+			return fmt.Errorf("category %q's amount_changes entry for %s has a minimal_amount greater than its own amount", c.Name, month)
+		}
+		if c.From != nil && monthOrdinal(ch.From) < monthOrdinal(*c.From) {
+			return fmt.Errorf("category %q's amount_changes entry for %s starts before its own from %s, so it could never take effect", c.Name, month, *c.From)
+		}
+		if c.Until != nil && monthOrdinal(ch.From) > monthOrdinal(*c.Until) {
+			return fmt.Errorf("category %q's amount_changes entry for %s starts after its own until %s, so it could never take effect", c.Name, month, *c.Until)
+		}
+	}
+	return nil
+}
+
 func ValidateBudget(f BudgetFile) error {
 	categoryClaimingID := map[string]string{}
 	for _, g := range f.Groups {
@@ -78,6 +113,9 @@ func ValidateBudget(f BudgetFile) error {
 			}
 			if c.From != nil && c.Until != nil && monthOrdinal(*c.From) > monthOrdinal(*c.Until) {
 				return fmt.Errorf("category %q has from %s after its until %s", c.Name, *c.From, *c.Until)
+			}
+			if verr := validateAmountChanges(c); verr != nil {
+				return verr
 			}
 			if c.Url != nil && !strings.HasPrefix(*c.Url, "http://") && !strings.HasPrefix(*c.Url, "https://") {
 				return fmt.Errorf("category %q has a url that isn't http(s): %q", c.Name, *c.Url)

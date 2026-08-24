@@ -313,10 +313,35 @@ func categoryAmount(c budgetdata.Category, key string, minimal bool) float64 {
 	if amt, ok := overrideFor(c, key); ok {
 		return amt
 	}
-	if minimal && c.MinimalAmount != nil {
-		return *c.MinimalAmount
+	amount, minimalAmount := c.Amount, c.MinimalAmount
+	if ch, ok := amountChangeInForce(c, key); ok {
+		amount, minimalAmount = ch.Amount, ch.MinimalAmount
 	}
-	return c.Amount
+	if minimal && minimalAmount != nil {
+		return *minimalAmount
+	}
+	return amount
+}
+
+// amountChangeInForce picks the latest amount_changes entry whose from month
+// is at or before key, the way a dated legislation period is picked for a
+// month. Entries are compared by their zero-padded YYYY-MM key, so string
+// order is month order; validation already refused duplicates, so no tie is
+// possible.
+func amountChangeInForce(c budgetdata.Category, key string) (budgetdata.AmountChange, bool) {
+	bestKey := ""
+	var best budgetdata.AmountChange
+	for _, ch := range c.AmountChanges {
+		d, err := time.Parse("2006-01-02", ch.From)
+		if err != nil {
+			continue
+		}
+		fromKey := monthKey(d.Year(), d.Month())
+		if fromKey <= key && fromKey > bestKey {
+			best, bestKey = ch, fromKey
+		}
+	}
+	return best, bestKey != ""
 }
 
 const nextNonZeroMonthLookahead = 24

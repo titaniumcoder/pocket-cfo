@@ -324,6 +324,12 @@ const nextNonZeroMonthLookahead = 24
 func nextNonZeroMonth(c budgetdata.Category, ref time.Time, minimal bool) (time.Time, bool) {
 	for i := 1; i <= nextNonZeroMonthLookahead; i++ {
 		d := time.Date(ref.Year(), ref.Month(), 1, 0, 0, 0, 0, ref.Location()).AddDate(0, i, 0)
+		if c.Until != nil {
+			until, err := time.Parse("2006-01-02", *c.Until)
+			if err == nil && (d.Year() > until.Year() || (d.Year() == until.Year() && d.Month() > until.Month())) {
+				return time.Time{}, false
+			}
+		}
 		if categoryAmount(c, monthKey(d.Year(), d.Month()), minimal) > 0 {
 			return d, true
 		}
@@ -339,7 +345,28 @@ func categoryRowFor(c budgetdata.Category, plannedCents int, overridden bool, re
 			return preview, true
 		}
 	}
+
+	// A bounded recurring cost whose window is already over is gone — a
+	// 0,00 row for a subscription that ended would just be noise.
+	if c.Date == nil && c.Until != nil {
+		until, err := time.Parse("2006-01-02", *c.Until)
+		if err == nil && (until.Year() < ref.Year() || (until.Year() == ref.Year() && until.Month() < ref.Month())) {
+			return CategoryRow{}, false
+		}
+	}
+
 	if plannedCents > 0 || c.Date == nil {
+		// A recurring cost that has not started yet is shown as an upcoming
+		// estimate from its from month, the way a future one-off is.
+		if c.Date == nil && c.From != nil && plannedCents == 0 {
+			if d, err := time.Parse("2006-01-02", *c.From); err == nil && (d.Year() > ref.Year() || (d.Year() == ref.Year() && d.Month() > ref.Month())) {
+				fromKey := monthKey(d.Year(), d.Month())
+				row.UpcomingCents = eurToCents(categoryAmount(c, fromKey, minimal))
+				_, row.Overridden = overrideFor(c, fromKey)
+				row.UpcomingMonth = d.Format("January 2006")
+				return row, true
+			}
+		}
 		return normalRow(row, plannedCents, overridden), true
 	}
 	return datedCategoryRow(c, row, plannedCents, overridden, ref, minimal)

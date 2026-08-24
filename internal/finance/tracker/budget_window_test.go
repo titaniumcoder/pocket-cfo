@@ -159,3 +159,86 @@ func TestWindowedCategoryWithZeroedMonthInsideWindow(t *testing.T) {
 		t.Errorf("Ended in August = %d, want %d", rowByName(aug, "Ended").PlannedCents, want)
 	}
 }
+
+// TestEndedCategoryDisappearsFromMonthView: after a recurring cost's window
+// is over it must not surface as a visible 0,00 row — the row is gone, not
+// blank. rowByName returns a zero row for an absent category, so its Name is
+// empty exactly when the row was dropped.
+func TestEndedCategoryDisappearsFromMonthView(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWindowed})
+
+	inside, err := b.ForMonth(context.Background(), 2026, time.August, testNow, false)
+	if err != nil {
+		t.Fatalf("ForMonth August: %v", err)
+	}
+	if r := rowByName(inside, "Ended"); r.Name == "" {
+		t.Error("Ended was hidden in its final month August")
+	}
+
+	after, err := b.ForMonth(context.Background(), 2026, time.September, testNow, false)
+	if err != nil {
+		t.Fatalf("ForMonth September: %v", err)
+	}
+	if r := rowByName(after, "Ended"); r.Name != "" {
+		t.Errorf("Ended still shows in September as a row: %+v", r)
+	}
+}
+
+// TestNotYetStartedCategoryShowsUpcomingEstimate: before its from month a
+// recurring cost appears as the grey future estimate rather than a 0 row.
+func TestNotYetStartedCategoryShowsUpcomingEstimate(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWindowed})
+
+	before, err := b.ForMonth(context.Background(), 2026, time.September, testNow, false)
+	if err != nil {
+		t.Fatalf("ForMonth September: %v", err)
+	}
+	r := rowByName(before, "Starts")
+	if r.Name == "" {
+		t.Fatal("Starts was hidden in the month before its from month")
+	}
+	if r.PlannedCents != 0 {
+		t.Errorf("Starts planned in September = %d, want 0", r.PlannedCents)
+	}
+	if want := eurToCents(90); r.UpcomingCents != want {
+		t.Errorf("Starts upcoming = %d, want %d", r.UpcomingCents, want)
+	}
+	if r.UpcomingMonth != "October 2026" {
+		t.Errorf("Starts upcoming month = %q, want October 2026", r.UpcomingMonth)
+	}
+
+	first, err := b.ForMonth(context.Background(), 2026, time.October, testNow, false)
+	if err != nil {
+		t.Fatalf("ForMonth October: %v", err)
+	}
+	started := rowByName(first, "Starts")
+	if started.PlannedCents != eurToCents(90) {
+		t.Errorf("Starts planned in October = %d, want 90", started.PlannedCents)
+	}
+	if started.UpcomingMonth != "" {
+		t.Errorf("Starts still carried an upcoming month once active: %q", started.UpcomingMonth)
+	}
+}
+
+// TestEndedCategoryNeverReturnsAsUpcoming: nextNonZeroMonth must not look
+// past the until month, so an ended subscription does not resurface as a
+// zeroed-recurring preview in month 25.
+func TestEndedCategoryNeverReturnsAsUpcoming(t *testing.T) {
+	const endedWithZeroOverride = `{
+  "groups": [
+    { "name": "Subscriptions", "kind": "private", "categories": [
+      { "id": "00000000-0000-4000-8000-000000000041", "name": "Ended", "amount": 180, "until": "2026-08-01",
+        "overrides": [ { "month": "2026-07-01", "amount": 0 } ] }
+    ]}
+  ]
+}`
+	b := newTestBudget(t, map[string]string{"budget.json": endedWithZeroOverride})
+
+	view, err := b.ForMonth(context.Background(), 2028, time.March, testNow, false)
+	if err != nil {
+		t.Fatalf("ForMonth: %v", err)
+	}
+	if r := rowByName(view, "Ended"); r.Name != "" {
+		t.Errorf("two years after ending, Ended resurfaced as a preview row: %+v", r)
+	}
+}

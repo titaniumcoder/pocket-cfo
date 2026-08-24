@@ -177,6 +177,16 @@ type moveArgs struct {
 	BaseSHA    string `json:"base_sha" jsonschema:"the sha of budget.json this edit is based on, as get_budget reports it in its sha field. A stale one comes back as a conflict carrying the current sha, so re-read and try again"`
 }
 
+type amountChangeArgs struct {
+	CategoryID    string   `json:"category_id" jsonschema:"the budget category to change, from list_budget_categories"`
+	FromMonth     string   `json:"from_month" jsonschema:"the month the new amount takes effect, YYYY-MM. Must be a future month — a month that is already in force cannot be re-planned here"`
+	Amount        *float64 `json:"amount,omitempty" jsonschema:"euros, decimals allowed. The category's amount from from_month on, until a later scheduled change supersedes it. Required unless remove is set"`
+	MinimalAmount *float64 `json:"minimal_amount,omitempty" jsonschema:"optional reduced amount minimal-budget mode uses for the months this change is in force. Absent, minimal mode falls back to this change's own amount"`
+	Remove        bool     `json:"remove,omitempty" jsonschema:"set instead of amount to undo the scheduled change for from_month. Never set both"`
+	Reason        string   `json:"reason" jsonschema:"why the price changes (or the change was called off); lands in the commit message"`
+	BaseSHA       string   `json:"base_sha" jsonschema:"the sha of budget.json this edit is based on, as get_budget reports it in its sha field. A stale one comes back as a conflict carrying the current sha, so re-read and try again"`
+}
+
 type categoriesResult struct {
 	Categories []Category `json:"categories"`
 }
@@ -199,14 +209,14 @@ func (s *Service) registerTools(server *mcp.Server) {
 	}
 
 	mcp.AddTool(server, tool("list_budget_categories",
-		"Every budget category id, with its group, name and kind, under a categories key. A category with a date is a one-off counted only in that month; one with from/until is a recurring cost bounded to that window (both optional). These ids are the ONLY legal value for a transaction's category field — never invent one, and never parse budget.json yourself. If the category you need is not listed it does not exist yet: ask for it to be created rather than guessing an id.",
+		"Every budget category id, with its group, name and kind, under a categories key. A category with a date is a one-off counted only in that month; one with from/until is a recurring cost bounded to that window (both optional); one with amount_changes steps its recurring price at the listed months, and the whole scheduled list is reported so you can see which months are already spoken for before calling schedule_amount_change. These ids are the ONLY legal value for a transaction's category field — never invent one, and never parse budget.json yourself. If the category you need is not listed it does not exist yet: ask for it to be created rather than guessing an id.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
 		out, err := s.Categories(ctx)
 		return result(categoriesResult{Categories: out}, err)
 	})
 
 	mcp.AddTool(server, tool("get_budget",
-		"The plan for a period, with overrides already applied. period is YYYY-MM for one month or YYYY for twelve month buckets. A category with a date is a one-off counted only in that month; one with from/until is a recurring cost counted inside that window (either bound optional), so it contributes nothing before from or after until. dividends lists any distribution planned for the month with both taxes already worked out — the gross, the company profit tax it costs the company, the dividend tax withheld and what actually reaches the owner. Read those figures rather than recomputing them from get_finance_config, which is easy to resolve to the wrong month. A move_planned_expense you made is reflected at once; a budget.json edited directly appears only after that commit has deployed. For a month, sha is budget.json's current sha — that is the base_sha move_planned_expense needs.",
+		"The plan for a period, with overrides already applied. period is YYYY-MM for one month or YYYY for twelve month buckets. A category with a date is a one-off counted only in that month; one with from/until is a recurring cost counted inside that window (either bound optional), so it contributes nothing before from or after until. A category with amount_changes pays the latest scheduled change at or before the month — so a month bucket already reflects a price that steps in, and each category's whole amount_changes list is reported for you to read. dividends lists any distribution planned for the month with both taxes already worked out — the gross, the company profit tax it costs the company, the dividend tax withheld and what actually reaches the owner. Read those figures rather than recomputing them from get_finance_config, which is easy to resolve to the wrong month. A move_planned_expense or schedule_amount_change you made is reflected at once; a budget.json edited directly appears only after that commit has deployed. For a month, sha is budget.json's current sha — that is the base_sha move_planned_expense and schedule_amount_change need.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, a periodArgs) (*mcp.CallToolResult, any, error) {
 		if len(a.Period) == 4 {
 			return result(s.BudgetForYear(ctx, a.Period))
@@ -307,6 +317,22 @@ func (s *Service) registerTools(server *mcp.Server) {
 		false), func(ctx context.Context, _ *mcp.CallToolRequest, a moveArgs) (*mcp.CallToolResult, any, error) {
 		return result(s.MovePlannedExpense(ctx, MoveRequest{
 			CategoryID: a.CategoryID, FromMonth: a.FromMonth, ToMonth: a.ToMonth,
+			Reason: a.Reason, BaseSHA: a.BaseSHA,
+		}))
+	})
+
+	mcp.AddTool(server, tool("schedule_amount_change",
+		"Change the recurring price a budget category pays, from a future month on — the tool for a rent or subscription that rises next January. "+
+			"from_month is YYYY-MM and must be in the future: a month that is already in force cannot be re-planned here, an already closed budget is fixed in budget.json. "+
+			"Send amount (euros, decimals allowed) plus optionally minimal_amount to set the category's amount from that month on until a later change supersedes it; sending the same from_month again corrects the scheduled price. "+
+			"Send remove instead of amount to undo a scheduled change for that month. "+
+			"It refuses one-offs (a single price, full stop) and a change outside the category's own from/until window, which could never take effect. "+
+			"Read the category's amount_changes from list_budget_categories or get_budget first — it is the whole scheduled list, so you know which months are already spoken for and which sha to base the edit on. "+
+			"reason is required and lands in the commit message; each accepted call is a git commit that redeploys the app, and the new price is in force from the moment the change's month arrives.",
+		false), func(ctx context.Context, _ *mcp.CallToolRequest, a amountChangeArgs) (*mcp.CallToolResult, any, error) {
+		return result(s.ScheduleAmountChange(ctx, ScheduleAmountChangeRequest{
+			CategoryID: a.CategoryID, FromMonth: a.FromMonth,
+			Amount: a.Amount, MinimalAmount: a.MinimalAmount, Remove: a.Remove,
 			Reason: a.Reason, BaseSHA: a.BaseSHA,
 		}))
 	})

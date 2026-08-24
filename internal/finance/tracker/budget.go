@@ -263,17 +263,37 @@ func buildBudgetView(bf budgetdata.BudgetFile, privatePlanned, companyPlanned fu
 }
 
 func categoryCents(c budgetdata.Category, key string, minimal bool) int {
-	if c.Date == nil {
-		return eurToCents(categoryAmount(c, key, minimal))
-	}
-	d, err := time.Parse("2006-01-02", *c.Date)
-	if err != nil {
+	if !categoryActiveIn(c, key) {
 		return 0
 	}
-	if monthKey(d.Year(), d.Month()) == key {
-		return eurToCents(categoryAmount(c, key, minimal))
+	return eurToCents(categoryAmount(c, key, minimal))
+}
+
+// categoryActiveIn reports whether a category counts toward month key: a
+// one-off only in its own month, and a recurring cost whenever key falls
+// inside its from/until window (either bound open-ended, so both absent
+// means every month). The zero-padded YYYY-MM keys compare as strings.
+func categoryActiveIn(c budgetdata.Category, key string) bool {
+	if c.Date != nil {
+		d, err := time.Parse("2006-01-02", *c.Date)
+		if err != nil {
+			return false
+		}
+		return monthKey(d.Year(), d.Month()) == key
 	}
-	return 0
+	if c.From != nil {
+		d, err := time.Parse("2006-01-02", *c.From)
+		if err == nil && monthKey(d.Year(), d.Month()) > key {
+			return false
+		}
+	}
+	if c.Until != nil {
+		d, err := time.Parse("2006-01-02", *c.Until)
+		if err == nil && monthKey(d.Year(), d.Month()) < key {
+			return false
+		}
+	}
+	return true
 }
 
 func overrideFor(c budgetdata.Category, key string) (float64, bool) {

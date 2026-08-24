@@ -8,15 +8,16 @@ import (
 )
 
 type PlannedCategory struct {
-	ID           string
-	Group        string
-	Name         string
-	Kind         string
-	PlannedCents int
-	Overridden   bool
-	Date         string
-	From         string
-	Until        string
+	ID            string
+	Group         string
+	Name          string
+	Kind          string
+	PlannedCents  int
+	Overridden    bool
+	Date          string
+	From          string
+	Until         string
+	AmountChanges []budgetdata.AmountChange
 }
 
 func (b *Budget) PlannedForMonth(ctx context.Context, year int, month time.Month) ([]PlannedCategory, error) {
@@ -48,7 +49,7 @@ func (b *Budget) CategoryIndex(ctx context.Context) (map[string]PlannedCategory,
 	out := make(map[string]PlannedCategory)
 	for _, g := range bf.Groups {
 		for _, c := range g.Categories {
-			out[c.Id] = PlannedCategory{ID: c.Id, Group: g.Name, Name: c.Name, Kind: string(g.Kind), Date: derefStr(c.Date), From: derefStr(c.From), Until: derefStr(c.Until)}
+			out[c.Id] = PlannedCategory{ID: c.Id, Group: g.Name, Name: c.Name, Kind: string(g.Kind), Date: derefStr(c.Date), From: derefStr(c.From), Until: derefStr(c.Until), AmountChanges: c.AmountChanges}
 		}
 	}
 	return out, nil
@@ -60,15 +61,16 @@ func plannedFrom(bf budgetdata.BudgetFile, key string) []PlannedCategory {
 		for _, c := range g.Categories {
 			_, overridden := overrideFor(c, key)
 			out = append(out, PlannedCategory{
-				ID:           c.Id,
-				Group:        g.Name,
-				Name:         c.Name,
-				Kind:         string(g.Kind),
-				PlannedCents: categoryCents(c, key, false),
-				Overridden:   overridden,
-				Date:         derefStr(c.Date),
-				From:         derefStr(c.From),
-				Until:        derefStr(c.Until),
+				ID:            c.Id,
+				Group:         g.Name,
+				Name:          c.Name,
+				Kind:          string(g.Kind),
+				PlannedCents:  categoryCents(c, key, false),
+				Overridden:    overridden,
+				Date:          derefStr(c.Date),
+				From:          derefStr(c.From),
+				Until:         derefStr(c.Until),
+				AmountChanges: c.AmountChanges,
 			})
 		}
 	}

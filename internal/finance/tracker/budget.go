@@ -346,9 +346,13 @@ func categoryRowFor(c budgetdata.Category, plannedCents int, overridden bool, re
 		}
 	}
 
-	// A bounded recurring cost whose window is already over is gone — a
-	// 0,00 row for a subscription that ended would just be noise.
-	if c.Date == nil && c.Until != nil {
+	// A bounded recurring cost whose window is already over disappears, but
+	// only when it contributes nothing here: month views pass the viewed month
+	// as ref (an ended cost is 0 anyway), while year views pass now, so
+	// plannedCents is the real in-window sum for that year — a company cost or
+	// a past year sums all twelve months, and must not be rewritten out of its
+	// own record.
+	if c.Date == nil && c.Until != nil && plannedCents == 0 {
 		until, err := time.Parse("2006-01-02", *c.Until)
 		if err == nil && (until.Year() < ref.Year() || (until.Year() == ref.Year() && until.Month() < ref.Month())) {
 			return CategoryRow{}, false

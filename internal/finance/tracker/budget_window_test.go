@@ -242,3 +242,72 @@ func TestEndedCategoryNeverReturnsAsUpcoming(t *testing.T) {
 		t.Errorf("two years after ending, Ended resurfaced as a preview row: %+v", r)
 	}
 }
+
+// TestEndedCompanyCategoryStillShowsInYearView pins the year-view shape the
+// ended-drop used to break: ForYear passes now (not the viewed period) as ref,
+// so a company cost — which the year view sums across all twelve months — that
+// ended mid-year must keep its real in-window contribution rather than vanish
+// with its row. before neither the row nor the company total showed August's
+// subscription at all.
+func TestEndedCompanyCategoryStillShowsInYearView(t *testing.T) {
+	const companyWindowed = `{
+  "groups": [
+    { "name": "Office", "kind": "company", "categories": [
+      { "id": "00000000-0000-4000-8000-000000000051", "name": "Agent", "amount": 200, "until": "2026-08-01" }
+    ]}
+  ]
+}`
+	b := newTestBudget(t, map[string]string{"budget.json": companyWindowed})
+	// now is September 2026 — after the category's until month. The year view
+	// of 2026 must still count the January–August it was active.
+	now := time.Date(2026, time.September, 15, 0, 0, 0, 0, time.UTC)
+	view, err := b.ForYear(context.Background(), 2026, now, time.Time{})
+	if err != nil {
+		t.Fatalf("ForYear: %v", err)
+	}
+	want := eurToCents(200) * 8
+	if view.CompanyTotalPlannedCents != want {
+		t.Errorf("CompanyTotalPlannedCents = %d, want %d (8 in-window months)", view.CompanyTotalPlannedCents, want)
+	}
+	var found bool
+	for _, g := range view.CompanyGroups {
+		for _, r := range g.Rows {
+			if r.Name == "Agent" {
+				found = true
+				if r.PlannedCents != want {
+					t.Errorf("Agent row PlannedCents = %d, want %d", r.PlannedCents, want)
+				}
+			}
+		}
+	}
+	if !found {
+		t.Error("an ended company category disappeared from the year view")
+	}
+}
+
+// TestEndedCategoryStillShowsInPastYearView: a private category that ended
+// mid-2025 is part of 2025's record. the 2025 year page (now 2026) sums all
+// twelve months, so its January–June contribution must survive even though
+// now is well past the until month.
+func TestEndedCategoryStillShowsInPastYearView(t *testing.T) {
+	const pastWindowed = `{
+  "groups": [
+    { "name": "Subscriptions", "kind": "private", "categories": [
+      { "id": "00000000-0000-4000-8000-000000000061", "name": "Old Sub", "amount": 100, "until": "2025-06-01" }
+    ]}
+  ]
+}`
+	b := newTestBudget(t, map[string]string{"budget.json": pastWindowed})
+	now := time.Date(2026, time.July, 15, 0, 0, 0, 0, time.UTC)
+	view, err := b.ForYear(context.Background(), 2025, now, time.Time{})
+	if err != nil {
+		t.Fatalf("ForYear: %v", err)
+	}
+	r := rowByName(view, "Old Sub")
+	if r.Name == "" {
+		t.Fatal("an ended mid-2025 category vanished from the 2025 year view")
+	}
+	if want := eurToCents(100) * 6; r.PlannedCents != want {
+		t.Errorf("Old Sub PlannedCents in 2025 = %d, want %d (Jan-Jun)", r.PlannedCents, want)
+	}
+}

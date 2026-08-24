@@ -164,10 +164,13 @@ func TestMCPWriteToolsDescribeTheirContract(t *testing.T) {
 			"closing balance", "opens", "appended", "never creates an account",
 		},
 		// That only a future month may be planned — an already closed budget
-		// is fixed in the file — and that one-offs are out of reach.
+		// is fixed in the file — that one-offs are out of reach, that a
+		// correction is a wholesale replacement, and that no negative figure
+		// or an over-tall minimal can sneak in.
 		"schedule_amount_change": {
 			"must be in the future", "already closed budget is fixed in budget.json",
-			"refuses one-offs", "amount_changes",
+			"refuses one-offs", "amount_changes", "replaces that month's entry as a whole",
+			"never negative", "cannot exceed the amount it reduces",
 		},
 	}
 	desc := map[string]string{}

@@ -324,7 +324,8 @@ func (s *Service) registerTools(server *mcp.Server) {
 	mcp.AddTool(server, tool("schedule_amount_change",
 		"Change the recurring price a budget category pays, from a future month on — the tool for a rent or subscription that rises next January. "+
 			"from_month is YYYY-MM and must be in the future: a month that is already in force cannot be re-planned here, an already closed budget is fixed in budget.json. "+
-			"Send amount (euros, decimals allowed) plus optionally minimal_amount to set the category's amount from that month on until a later change supersedes it; sending the same from_month again corrects the scheduled price. "+
+			"Send amount (euros, decimals allowed) plus optionally minimal_amount to set the category's amount from that month on until a later change supersedes it; sending the same from_month again corrects the scheduled price. A correction replaces that month's entry as a whole, so a minimal_amount you do not resend is dropped. "+
+			"Amounts are never negative, and minimal_amount cannot exceed the amount it reduces — both come back as a refusal. "+
 			"Send remove instead of amount to undo a scheduled change for that month. "+
 			"It refuses one-offs (a single price, full stop) and a change outside the category's own from/until window, which could never take effect. "+
 			"Read the category's amount_changes from list_budget_categories or get_budget first — it is the whole scheduled list, so you know which months are already spoken for and which sha to base the edit on. "+

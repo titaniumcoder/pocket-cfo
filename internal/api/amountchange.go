@@ -50,6 +50,18 @@ func (s *Service) ScheduleAmountChange(ctx context.Context, req ScheduleAmountCh
 		}
 		return nil, errorf(CodeInvalidRequest, "send amount (and optionally minimal_amount), or set remove to undo a scheduled change")
 	}
+	if req.Amount != nil && *req.Amount < 0 {
+		return nil, errorf(CodeInvalidRequest, "amount is %s — a price is never negative", formatAmount(*req.Amount))
+	}
+	if req.MinimalAmount != nil {
+		if *req.MinimalAmount < 0 {
+			return nil, errorf(CodeInvalidRequest, "minimal_amount is %s — a price is never negative", formatAmount(*req.MinimalAmount))
+		}
+		if req.Amount != nil && *req.MinimalAmount > *req.Amount {
+			return nil, errorf(CodeInvalidRequest,
+				"minimal_amount %s is above the amount %s it is meant to reduce", formatAmount(*req.MinimalAmount), formatAmount(*req.Amount))
+		}
+	}
 	if s.Store == nil {
 		return nil, errorf(CodeWriteNotConfigured, "writes are not configured")
 	}
@@ -242,7 +254,7 @@ func spliceOneCategory(dec *json.Decoder, src []byte, categoryID, fromMonth stri
 	lastValueEnd := catStart
 
 	for dec.More() {
-		keyStart := keyStartOffset(src, int(dec.InputOffset()))
+		keyStart := keyStart(src, int(dec.InputOffset()))
 		key, kerr := objectKey(dec)
 		if kerr != nil {
 			return nil, false, errorf(CodeUpstream, "budget.json: %v", kerr)
@@ -318,18 +330,10 @@ func spliceOneCategory(dec *json.Decoder, src []byte, categoryID, fromMonth stri
 		e := els[entryIndexFor(src, els, fromMonth)]
 		return splice(src, e.start, e.end, elText), true, nil
 	default:
-		last := els[len(els)-1]
-		return splice(src, last.end, last.end, ","+string(src[last.end:acArrEnd])+elText), true, nil
+		// The new entry takes the indent the first one has, so a multi-line
+		// list keeps its shape and a one-line one stays one line.
+		return splice(src, els[len(els)-1].end, els[len(els)-1].end, ","+string(src[acArrStart:els[0].start])+elText), true, nil
 	}
-}
-
-func keyStartOffset(src []byte, from int) int {
-	for i := from; i < len(src); i++ {
-		if src[i] == '"' {
-			return i
-		}
-	}
-	return from
 }
 
 func entryIndexFor(src []byte, els []changeEntry, fromMonth string) int {
@@ -358,7 +362,9 @@ func insertKey(src []byte, lastValueEnd int, keyIndent, elText string) []byte {
 }
 
 // dropWholeKey removes the "amount_changes" key and its value, plus exactly
-// one adjacent comma, whichever side the comma lives on.
+// one adjacent comma, whichever side the comma lives on. On the comma-after
+// side it also swallows the whitespace run the key sat in, so a multi-line
+// file loses the line rather than a value and a gap.
 func dropWholeKey(src []byte, keyStart, arrEnd int) []byte {
 	lo := keyStart
 	hi := arrEnd + 1
@@ -368,6 +374,7 @@ func dropWholeKey(src []byte, keyStart, arrEnd int) []byte {
 	}
 	if k < len(src) && src[k] == ',' {
 		hi = k + 1
+		lo = whitespaceStart(src, keyStart)
 	} else {
 		k = lo - 1
 		for k > 0 && isSpaceByte(src[k]) {
@@ -392,6 +399,9 @@ func dropEntry(src []byte, els []changeEntry, idx int) []byte {
 			lo = k
 		}
 	} else {
+		// Take the comma after, and the whitespace run the entry sat in before,
+		// so a multi-line list loses the entry's line rather than the value
+		// and a blank line.
 		k := hi
 		for k < len(src) && isSpaceByte(src[k]) {
 			k++
@@ -399,8 +409,19 @@ func dropEntry(src []byte, els []changeEntry, idx int) []byte {
 		if k < len(src) && src[k] == ',' {
 			hi = k + 1
 		}
+		lo = whitespaceStart(src, lo)
 	}
 	return splice(src, lo, hi, "")
+}
+
+// whitespaceStart is the first position of the whitespace run immediately
+// before at, or at where at is not preceded by whitespace.
+func whitespaceStart(src []byte, at int) int {
+	k := at
+	for k > 0 && isSpaceByte(src[k-1]) {
+		k--
+	}
+	return k
 }
 
 func isSpaceByte(b byte) bool { return b == ' ' || b == '\t' || b == '\r' || b == '\n' }
@@ -408,7 +429,7 @@ func isSpaceByte(b byte) bool { return b == ' ' || b == '\t' || b == '\r' || b =
 func verifyOnlyAmountChangesChanged(before, after []byte, categoryID string) error {
 	var bf budgetdata.BudgetFile
 	if err := json.Unmarshal(after, &bf); err != nil {
-		return errorf(CodeInternal, "the result does not satisfy budget.schema.json: %v", err)
+		return errorf(CodeInternal, "the result does not parse: %v", err)
 	}
 	if err := budgetdata.ValidateBudget(bf); err != nil {
 		return errorf(CodeInternal, "the result fails validation: %v", err)

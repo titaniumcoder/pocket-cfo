@@ -90,3 +90,33 @@ func TestCategoryRowFlatAmountHasNoArrow(t *testing.T) {
 		t.Errorf("a flat category carries an arrow: %q", r.ScheduledChangeURL)
 	}
 }
+
+// TestCategoryRowTooltipSpeaksTheShownMode: in minimal mode the arrow names
+// the price minimal mode pays from the change on, not the full price.
+func TestCategoryRowTooltipSpeaksTheShownMode(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": `{
+  "groups": [
+    { "name": "Housing", "kind": "private", "categories": [
+      { "id": "00000000-0000-4000-9000-000000000201", "name": "Rent", "amount": 900,
+        "amount_changes": [ { "from": "2027-01-01", "amount": 950, "minimal_amount": 800 } ]}
+    ]}
+  ]
+}`})
+
+	view, err := b.ForMonth(context.Background(), 2026, time.December, testNow, true)
+	if err != nil {
+		t.Fatalf("ForMonth December 2026 minimal: %v", err)
+	}
+	if r := rowByName(view, "Rent"); r.ScheduledChangeTooltip != "800 from January 2027" {
+		t.Errorf("tooltip = %q, want the minimal price in minimal mode", r.ScheduledChangeTooltip)
+	}
+
+	// And the same row in normal mode names the full price again.
+	view, err = b.ForMonth(context.Background(), 2026, time.December, testNow, false)
+	if err != nil {
+		t.Fatalf("ForMonth December 2026: %v", err)
+	}
+	if r := rowByName(view, "Rent"); r.ScheduledChangeTooltip != "950 from January 2027" {
+		t.Errorf("tooltip = %q, want the full price in normal mode", r.ScheduledChangeTooltip)
+	}
+}

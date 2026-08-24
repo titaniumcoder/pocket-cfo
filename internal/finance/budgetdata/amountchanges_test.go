@@ -66,6 +66,28 @@ func TestAmountChangesMinimalAboveOwnAmountRefused(t *testing.T) {
 	}
 }
 
+func TestAmountChangesNegativeAmountRefused(t *testing.T) {
+	f := changeFile("rent", []AmountChange{{From: "2027-01-01", Amount: -50}})
+	err := ValidateBudget(f)
+	if err == nil {
+		t.Fatal("a change with a negative amount was accepted")
+	}
+	if !strings.Contains(err.Error(), "negative amount") {
+		t.Errorf("error = %q, want it to name the negative amount", err)
+	}
+}
+
+func TestAmountChangesNegativeMinimalRefused(t *testing.T) {
+	f := changeFile("rent", []AmountChange{{From: "2027-01-01", Amount: 950, MinimalAmount: f64Or(-50)}})
+	err := ValidateBudget(f)
+	if err == nil {
+		t.Fatal("a change with a negative minimal_amount was accepted")
+	}
+	if !strings.Contains(err.Error(), "negative minimal_amount") {
+		t.Errorf("error = %q, want it to name the negative minimal_amount", err)
+	}
+}
+
 func TestAmountChangesBeforeOwnFromRefused(t *testing.T) {
 	from := "2026-10-01"
 	f := BudgetFile{Groups: []Group{{Name: "A", Categories: []Category{{

@@ -139,7 +139,10 @@ reads work and writes return `write_not_configured`.
     tool for a rent that rises next January. Send `category_id`, `from_month` (YYYY-MM),
     `amount`, and optionally `minimal_amount`, which minimal-budget mode uses for the
     months the change is in force; sending the same `from_month` again corrects the
-    scheduled price. Send `remove` instead of `amount` to call a scheduled change off.
+    scheduled price — the correction replaces that month's entry as a whole, so resend
+    `minimal_amount` if it should stay. Amounts are never negative, and `minimal_amount`
+    cannot exceed the amount it reduces. Send `remove` instead of `amount` to call a
+    scheduled change off.
     Only a future month may be planned: a month that is already in force cannot be
     re-planned here — an already closed budget is fixed in `budget.json`, so say so and
     stop. It refuses one-offs (a single price, full stop) and a change outside the

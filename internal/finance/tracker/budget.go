@@ -400,8 +400,15 @@ func nextAmountChange(c budgetdata.Category, ref time.Time) (*budgetdata.AmountC
 func categoryRowFor(c budgetdata.Category, plannedCents int, overridden bool, ref time.Time, minimal bool) (CategoryRow, bool) {
 	row := baseCategoryRow(c)
 	if ch, when := nextAmountChange(c, ref); ch != nil {
+		// The tooltip names the price in the mode the page is showing: minimal
+		// mode shows minimal figures, so a step with its own minimal_amount
+		// speaks with that one here.
+		price := ch.Amount
+		if minimal && ch.MinimalAmount != nil {
+			price = *ch.MinimalAmount
+		}
 		row.ScheduledChangeURL = monthURL(when.Year(), when.Month())
-		row.ScheduledChangeTooltip = fmt.Sprintf("%s from %s", formatEuro(eurToCents(ch.Amount)), when.Format("January 2006"))
+		row.ScheduledChangeTooltip = fmt.Sprintf("%s from %s", formatEuro(eurToCents(price)), when.Format("January 2006"))
 	}
 
 	if plannedCents == 0 && c.Date == nil && overridden {

@@ -43,6 +43,12 @@ func validateAmountChanges(c Category) error {
 			return fmt.Errorf("category %q has two amount_changes entries for %s (day is ignored) — which amount is in force then is a coin toss", c.Name, month)
 		}
 		seen[month] = true
+		if ch.Amount < 0 {
+			return fmt.Errorf("category %q's amount_changes entry for %s has a negative amount — a price is never negative", c.Name, month)
+		}
+		if ch.MinimalAmount != nil && *ch.MinimalAmount < 0 {
+			return fmt.Errorf("category %q's amount_changes entry for %s has a negative minimal_amount", c.Name, month)
+		}
 		if ch.MinimalAmount != nil && *ch.MinimalAmount > ch.Amount {
 			return fmt.Errorf("category %q's amount_changes entry for %s has a minimal_amount greater than its own amount", c.Name, month)
 		}

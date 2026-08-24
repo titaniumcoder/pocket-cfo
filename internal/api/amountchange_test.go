@@ -317,6 +317,80 @@ func TestScheduleAmountChangeRefusesOutsideTheWindow(t *testing.T) {
 	}
 }
 
+func TestScheduleAmountChangeRefusesANegativeAmount(t *testing.T) {
+	gh := newFakeGitHub(map[string]string{budgetRepoPath: changeBudget})
+	s := changeService(t, gh)
+
+	_, err := schedule(t, s, ScheduleAmountChangeRequest{
+		CategoryID: idRent, FromMonth: "2027-06", Amount: f64Ptr(-50),
+		Reason:  "a discount, somehow",
+		BaseSHA: shaOf([]byte(changeBudget)),
+	})
+	e, ok := err.(*Error)
+	if !ok || e.Code != CodeInvalidRequest {
+		t.Fatalf("err = %v, want %s", err, CodeInvalidRequest)
+	}
+	if !strings.Contains(e.Message, "never negative") {
+		t.Errorf("message = %q, want the negative-price refusal", e.Message)
+	}
+	if gh.puts != 0 {
+		t.Errorf("a refused change still committed (PUTs = %d)", gh.puts)
+	}
+}
+
+// TestScheduleAmountChangeRefusesMinimalAboveAmount: the validator holds this
+// in the file, but a caller mistake must come back as a refusal, not as an
+// internal failure out of the diff guard.
+func TestScheduleAmountChangeRefusesMinimalAboveAmount(t *testing.T) {
+	gh := newFakeGitHub(map[string]string{budgetRepoPath: changeBudget})
+	s := changeService(t, gh)
+
+	_, err := schedule(t, s, ScheduleAmountChangeRequest{
+		CategoryID: idRent, FromMonth: "2027-06", Amount: f64Ptr(100), MinimalAmount: f64Ptr(200),
+		Reason:  "the minimum is bigger than the price",
+		BaseSHA: shaOf([]byte(changeBudget)),
+	})
+	e, ok := err.(*Error)
+	if !ok || e.Code != CodeInvalidRequest {
+		t.Fatalf("err = %v, want %s", err, CodeInvalidRequest)
+	}
+	if !strings.Contains(e.Message, "above the amount") {
+		t.Errorf("message = %q, want the minimal-above-amount refusal", e.Message)
+	}
+	if gh.puts != 0 {
+		t.Errorf("a refused change still committed (PUTs = %d)", gh.puts)
+	}
+}
+
+// TestScheduleAmountChangeRefusesBeforeTheWindow: the dead-change guard has a
+// from side as well as an until one.
+func TestScheduleAmountChangeRefusesBeforeTheWindow(t *testing.T) {
+	late := strings.Replace(changeBudget,
+		`"amount": 900,
+          "amount_changes": [ { "from": "2027-01-01", "amount": 930 } ]`,
+		`"amount": 900,
+          "from": "2026-12-01",
+          "amount_changes": [ { "from": "2027-01-01", "amount": 930 } ]`, 1)
+	gh := newFakeGitHub(map[string]string{budgetRepoPath: late})
+	s := changeService(t, gh)
+
+	_, err := schedule(t, s, ScheduleAmountChangeRequest{
+		CategoryID: idRent, FromMonth: "2026-11", Amount: f64Ptr(910),
+		Reason:  "a change before the category starts",
+		BaseSHA: shaOf([]byte(late)),
+	})
+	e, ok := err.(*Error)
+	if !ok || e.Code != CodeInvalidRequest {
+		t.Fatalf("err = %v, want %s", err, CodeInvalidRequest)
+	}
+	if !strings.Contains(e.Message, "could never take effect") {
+		t.Errorf("message = %q, want the dead-change refusal", e.Message)
+	}
+	if gh.puts != 0 {
+		t.Errorf("a refused change still committed (PUTs = %d)", gh.puts)
+	}
+}
+
 func TestScheduleAmountChangeRemovalOfAnUnknownMonthIsNotFound(t *testing.T) {
 	gh := newFakeGitHub(map[string]string{budgetRepoPath: changeBudget})
 	s := changeService(t, gh)
@@ -351,6 +425,97 @@ func TestScheduleAmountChangeRefusesAStaleSHA(t *testing.T) {
 	dets, ok := e.Details.(map[string]string)
 	if !ok || dets["current_sha"] != shaOf([]byte(changeBudget)) {
 		t.Errorf("the conflict does not carry the current sha: %+v", e.Details)
+	}
+}
+
+// TestScheduleAmountChangeAppendsIndentedToAMultiLineList: a hand-written
+// list that spans several lines keeps its shape — the new entry lands on its
+// own line at the list's indent.
+func TestScheduleAmountChangeAppendsIndentedToAMultiLineList(t *testing.T) {
+	multi := strings.Replace(changeBudget,
+		`"amount_changes": [ { "from": "2027-01-01", "amount": 930 } ]`,
+		`"amount_changes": [
+            { "from": "2027-01-01", "amount": 930 }
+          ]`, 1)
+	gh := newFakeGitHub(map[string]string{budgetRepoPath: multi})
+	s := changeService(t, gh)
+
+	_, err := schedule(t, s, ScheduleAmountChangeRequest{
+		CategoryID: idRent, FromMonth: "2028-01", Amount: f64Ptr(990),
+		Reason:  "and again in 2028",
+		BaseSHA: shaOf([]byte(multi)),
+	})
+	if err != nil {
+		t.Fatalf("ScheduleAmountChange: %v", err)
+	}
+	out := string(gh.lastBody)
+	if !strings.Contains(out, "\"amount_changes\": [\n            { \"from\": \"2027-01-01\", \"amount\": 930 },\n            { \"from\": \"2028-01-01\", \"amount\": 990 }\n          ]") {
+		t.Errorf("the multi-line list lost its shape:\n%s", out)
+	}
+	var bf budgetdata.BudgetFile
+	if err := json.Unmarshal(gh.lastBody, &bf); err != nil {
+		t.Fatalf("committed budget does not parse: %v", err)
+	}
+}
+
+// TestScheduleAmountChangeRemovalOfTheFirstEntryLeavesNoBlankLine: dropping
+// an entry from a multi-line list loses the entry's line, not the value and
+// a gap.
+func TestScheduleAmountChangeRemovalOfTheFirstEntryLeavesNoBlankLine(t *testing.T) {
+	multi := strings.Replace(changeBudget,
+		`"amount_changes": [ { "from": "2027-01-01", "amount": 930 } ]`,
+		`"amount_changes": [
+            { "from": "2027-01-01", "amount": 930 },
+            { "from": "2028-01-01", "amount": 990 }
+          ]`, 1)
+	gh := newFakeGitHub(map[string]string{budgetRepoPath: multi})
+	s := changeService(t, gh)
+
+	_, err := schedule(t, s, ScheduleAmountChangeRequest{
+		CategoryID: idRent, FromMonth: "2027-01", Remove: true,
+		Reason:  "the first rise was called off",
+		BaseSHA: shaOf([]byte(multi)),
+	})
+	if err != nil {
+		t.Fatalf("ScheduleAmountChange: %v", err)
+	}
+	out := string(gh.lastBody)
+	if !strings.Contains(out, "\"amount_changes\": [\n            { \"from\": \"2028-01-01\", \"amount\": 990 }\n          ]") {
+		t.Errorf("removing the first entry left the list misshapen:\n%s", out)
+	}
+}
+
+// TestScheduleAmountChangeDroppingTheKeyAsFirstKeyLeavesNoBlankLine: a key
+// that opens its category is gone with its whole line.
+func TestScheduleAmountChangeDroppingTheKeyAsFirstKeyLeavesNoBlankLine(t *testing.T) {
+	first := strings.Replace(changeBudget,
+		`"id": "`+idRent+`",
+          "name": "Rent",
+          "amount": 900,
+          "amount_changes": [ { "from": "2027-01-01", "amount": 930 } ]`,
+		`"amount_changes": [ { "from": "2027-01-01", "amount": 930 } ],
+          "id": "`+idRent+`",
+          "name": "Rent",
+          "amount": 900`, 1)
+	gh := newFakeGitHub(map[string]string{budgetRepoPath: first})
+	s := changeService(t, gh)
+
+	_, err := schedule(t, s, ScheduleAmountChangeRequest{
+		CategoryID: idRent, FromMonth: "2027-01", Remove: true,
+		Reason:  "the rise was called off",
+		BaseSHA: shaOf([]byte(first)),
+	})
+	if err != nil {
+		t.Fatalf("ScheduleAmountChange: %v", err)
+	}
+	out := string(gh.lastBody)
+	want := `{
+          "id": "` + idRent + `",
+          "name": "Rent",
+          "amount": 900
+        },`
+	if !strings.Contains(out, want) {
+		t.Errorf("dropping the key as first key left a blank line:\n%s", out)
 	}
 }
 
@@ -391,9 +556,10 @@ func assertOnlyThatCategoryChanged(t *testing.T, before, after string, categoryI
 	// The rewrite touches exactly one category's amount_changes. Line by line
 	// that is at most: the category's amount line gains or loses its trailing
 	// comma (one edit), plus the amount_changes line added, edited or dropped.
-	// So relative to the original, at most two lines disappear and at most one
-	// appears; everything else survives verbatim and in order. An LCS check
-	// states exactly that, and anything else means the file was reformatted.
+	// So relative to the original, at most two lines disappear and at most
+	// two appear; everything else survives verbatim and in order. An LCS
+	// check states exactly that, and anything else means the file was
+	// reformatted.
 	oldLines, newLines := strings.Split(before, "\n"), strings.Split(after, "\n")
 	common := lcsLen(oldLines, newLines)
 	if deleted := len(oldLines) - common; deleted > 2 {

@@ -17,7 +17,9 @@ reads work and writes return `write_not_configured`.
 
 1. **`list_budget_categories`** — that list is the only legal set of `category` values.
    Never invent an id, and never parse `budget.json` yourself. The ids are UUIDs
-   precisely so they survive a category being renamed.
+   precisely so they survive a category being renamed. A category that carries a `date`
+   is a one-off counted only in that month; one carrying `from`/`until` recurs only
+   inside that window (either bound optional) and is not a one-off.
 
 2. **`get_actuals`** for the month. The committed file is the source of truth. Your own
    memory of recurring merchants is a starting point for *proposing*, never for
@@ -126,7 +128,8 @@ reads work and writes return `write_not_configured`.
 9. **`get_reconciliation_status`** reports how much is still `untracked` and any one-off
    charged in a month other than the one it is budgeted for. When it reports a mistimed
    charge, **`move_planned_expense`** shifts the plan to match — it changes that category's
-   date and nothing else, and needs a reason and a `base_sha`. That sha is the `sha` field
+   `date` and nothing else, never touches anything that recurs monthly or is bounded to a
+   `from`/`until` window, and needs a reason and a `base_sha`. That sha is the `sha` field
    `get_budget` returns; sending a stale one comes back as a conflict carrying the current
    value, so you can re-read and try again.
 

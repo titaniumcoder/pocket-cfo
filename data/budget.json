@@ -113,6 +113,20 @@
           "id": "88764526-b073-4495-9d34-502a7ffd48d7",
           "name": "Cloud Hosting",
           "amount": 40
+        },
+        {
+          "id": "0f66c747-2127-410e-bfc0-2f2919d8a1c4",
+          "name": "Neural API (ended)",
+          "amount": 120,
+          "until": "2026-08-01",
+          "note": "A recurring cost that ended: counted through August, absent from September onward"
+        },
+        {
+          "id": "b81e0d16-9d0c-4c91-953a-d012c634dda4",
+          "name": "Domain Registry (starts)",
+          "amount": 25,
+          "from": "2026-11-01",
+          "note": "A recurring cost that started: shown as an estimate until November, then counted"
         }
       ]
     },

@@ -887,6 +887,25 @@ with, noise on every other visit, and not worth the machinery of threading a pro
 record through the roll to render it. What the reader has instead is the read date on the
 spending page, which answers the question that actually prompts the doubt.
 
+**A budget category is recurring, a one-off, or bounded.** `budget.json` has three
+shapes for a category's amount. Plain `amount` recurs every month, unbounded in both
+directions — a rent, a fixed subscription. An `amount` plus a `date` is a one-off, counted
+only in that single month, shown as a grey estimate before it is due and dropped after;
+a one-off is the only shape `move_planned_expense` can move. An `amount` plus `from` and/or
+`until` is a recurring cost bounded to a window: it is counted in every month from `from`
+onward (if present), up to and including `until` (if present), and nowhere else. The two
+bounds are inclusive of their own month and the day on them is informational, matching the
+`date` and `overrides[].month` convention, and `date` is mutually exclusive with both.
+
+That window is deliberately not spelled by overloading `date`. A subscription that ended in
+August is "counted in every month through August, then gone", which is a different fact
+from "a one-off that only ever existed in August": dating it rewrites every earlier month's
+plan to zero, flips its genuine earlier charges to `unbudgeted`, and makes a retired
+recurring cost look movable. So a bounded cost keeps its history through its `until` month,
+vanishes after it, and — like one that recurs monthly — is refused by
+`move_planned_expense`. A not-yet-started cost is the same shape from the other side, and
+month view shows it as a grey estimate from its `from` month until it begins.
+
 **An imported month has two balances.** The plan charges the whole month on the first, so
 the plan and the statements answer different questions — where the month was meant to end
 up, and what the account actually holds. Both are shown, in the Planned-against-Actual

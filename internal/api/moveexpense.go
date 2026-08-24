@@ -82,6 +82,9 @@ func (s *Service) MovePlannedExpense(ctx context.Context, req MoveRequest) (*Mov
 		return nil, errorf(CodeInvalidRequest, "no category %q in %s", req.CategoryID, path)
 	}
 	if cat.Date == nil || *cat.Date == "" {
+		if cat.From != nil || cat.Until != nil {
+			return nil, errorf(CodeInvalidRequest, "%q is bounded to a from/until window; only a one-off has a month to move", cat.Name)
+		}
 		return nil, errorf(CodeInvalidRequest, "%q recurs monthly; only a one-off has a month to move", cat.Name)
 	}
 	if got := monthOf(*cat.Date); got != req.FromMonth {

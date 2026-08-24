@@ -199,14 +199,14 @@ func (s *Service) registerTools(server *mcp.Server) {
 	}
 
 	mcp.AddTool(server, tool("list_budget_categories",
-		"Every budget category id, with its group, name and kind, under a categories key. These ids are the ONLY legal value for a transaction's category field — never invent one, and never parse budget.json yourself. If the category you need is not listed it does not exist yet: ask for it to be created rather than guessing an id.",
+		"Every budget category id, with its group, name and kind, under a categories key. A category with a date is a one-off counted only in that month; one with from/until is a recurring cost bounded to that window (both optional). These ids are the ONLY legal value for a transaction's category field — never invent one, and never parse budget.json yourself. If the category you need is not listed it does not exist yet: ask for it to be created rather than guessing an id.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
 		out, err := s.Categories(ctx)
 		return result(categoriesResult{Categories: out}, err)
 	})
 
 	mcp.AddTool(server, tool("get_budget",
-		"The plan for a period, with overrides already applied. period is YYYY-MM for one month or YYYY for twelve month buckets. A category with a date is a one-off counted only in that month. dividends lists any distribution planned for the month with both taxes already worked out — the gross, the company profit tax it costs the company, the dividend tax withheld and what actually reaches the owner. Read those figures rather than recomputing them from get_finance_config, which is easy to resolve to the wrong month. A move_planned_expense you made is reflected at once; a budget.json edited directly appears only after that commit has deployed. For a month, sha is budget.json's current sha — that is the base_sha move_planned_expense needs.",
+		"The plan for a period, with overrides already applied. period is YYYY-MM for one month or YYYY for twelve month buckets. A category with a date is a one-off counted only in that month; one with from/until is a recurring cost counted inside that window (either bound optional), so it contributes nothing before from or after until. dividends lists any distribution planned for the month with both taxes already worked out — the gross, the company profit tax it costs the company, the dividend tax withheld and what actually reaches the owner. Read those figures rather than recomputing them from get_finance_config, which is easy to resolve to the wrong month. A move_planned_expense you made is reflected at once; a budget.json edited directly appears only after that commit has deployed. For a month, sha is budget.json's current sha — that is the base_sha move_planned_expense needs.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, a periodArgs) (*mcp.CallToolResult, any, error) {
 		if len(a.Period) == 4 {
 			return result(s.BudgetForYear(ctx, a.Period))
@@ -303,7 +303,7 @@ func (s *Service) registerTools(server *mcp.Server) {
 	})
 
 	mcp.AddTool(server, tool("move_planned_expense",
-		"Move one one-off cost to the month it was actually charged in, when get_reconciliation_status reports it as mistimed. Changes that category's date and nothing else — it cannot alter an amount or touch anything that recurs monthly. reason is required and lands in the commit message.",
+		"Move one one-off cost to the month it was actually charged in, when get_reconciliation_status reports it as mistimed. Changes that category's date and nothing else — it cannot alter an amount, cannot touch anything that recurs monthly, and cannot move a category that is bounded to a from/until window. reason is required and lands in the commit message.",
 		false), func(ctx context.Context, _ *mcp.CallToolRequest, a moveArgs) (*mcp.CallToolResult, any, error) {
 		return result(s.MovePlannedExpense(ctx, MoveRequest{
 			CategoryID: a.CategoryID, FromMonth: a.FromMonth, ToMonth: a.ToMonth,

@@ -57,6 +57,10 @@ type Category struct {
 	Name  string `json:"name"`
 	Kind  string `json:"kind"`
 	Date  string `json:"date,omitempty"`
+	// From/Until mark a recurring cost bounded to a window; either may be
+	// empty. A category with Date is a one-off, never bounded.
+	From  string `json:"from,omitempty"`
+	Until string `json:"until,omitempty"`
 }
 
 func (s *Service) Categories(ctx context.Context) ([]Category, error) {
@@ -66,7 +70,7 @@ func (s *Service) Categories(ctx context.Context) ([]Category, error) {
 	}
 	out := make([]Category, 0, len(idx))
 	for _, c := range idx {
-		out = append(out, Category{ID: c.ID, Group: c.Group, Name: c.Name, Kind: c.Kind, Date: c.Date})
+		out = append(out, Category{ID: c.ID, Group: c.Group, Name: c.Name, Kind: c.Kind, Date: c.Date, From: c.From, Until: c.Until})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
@@ -150,7 +154,7 @@ func monthBudgetOf(month string, planned []tracker.PlannedCategory) *MonthBudget
 	mb := &MonthBudget{Month: month, Categories: make([]PlannedCategory, 0, len(planned))}
 	for _, c := range planned {
 		mb.Categories = append(mb.Categories, PlannedCategory{
-			Category:     Category{ID: c.ID, Group: c.Group, Name: c.Name, Kind: c.Kind, Date: c.Date},
+			Category:     Category{ID: c.ID, Group: c.Group, Name: c.Name, Kind: c.Kind, Date: c.Date, From: c.From, Until: c.Until},
 			PlannedCents: c.PlannedCents,
 			Overridden:   c.Overridden,
 		})

@@ -15,6 +15,8 @@ type PlannedCategory struct {
 	PlannedCents int
 	Overridden   bool
 	Date         string
+	From         string
+	Until        string
 }
 
 func (b *Budget) PlannedForMonth(ctx context.Context, year int, month time.Month) ([]PlannedCategory, error) {
@@ -46,7 +48,7 @@ func (b *Budget) CategoryIndex(ctx context.Context) (map[string]PlannedCategory,
 	out := make(map[string]PlannedCategory)
 	for _, g := range bf.Groups {
 		for _, c := range g.Categories {
-			out[c.Id] = PlannedCategory{ID: c.Id, Group: g.Name, Name: c.Name, Kind: string(g.Kind), Date: derefStr(c.Date)}
+			out[c.Id] = PlannedCategory{ID: c.Id, Group: g.Name, Name: c.Name, Kind: string(g.Kind), Date: derefStr(c.Date), From: derefStr(c.From), Until: derefStr(c.Until)}
 		}
 	}
 	return out, nil
@@ -65,6 +67,8 @@ func plannedFrom(bf budgetdata.BudgetFile, key string) []PlannedCategory {
 				PlannedCents: categoryCents(c, key, false),
 				Overridden:   overridden,
 				Date:         derefStr(c.Date),
+				From:         derefStr(c.From),
+				Until:        derefStr(c.Until),
 			})
 		}
 	}

@@ -19,15 +19,17 @@ reads work and writes return `write_not_configured`.
    Never invent an id, and never parse `budget.json` yourself. The ids are UUIDs
    precisely so they survive a category being renamed. A category that carries a `date`
    is a one-off counted only in that month; one carrying `from`/`until` recurs only
-   inside that window (either bound optional) and is not a one-off.
+   inside that window (either bound optional) and is not a one-off; one carrying
+   `amount_changes` steps its recurring price at the listed months, and the whole
+   scheduled list is reported so you can see which months are already spoken for.
 
 2. **`get_actuals`** for the month. The committed file is the source of truth. Your own
    memory of recurring merchants is a starting point for *proposing*, never for
    overriding it. Read it so you know what is already recorded and send only what is
    missing. A month that has never been reconciled comes back `not_found`. There is no
    `sha` to keep: neither actuals write takes a `base_sha`, because neither replaces the
-   file. (`move_planned_expense` still does — it rewrites `budget.json`, which is a
-   different kind of edit.)
+   file. (The budget writers — `move_planned_expense` and `schedule_amount_change` — still
+   do: they rewrite `budget.json`, which is a different kind of edit.)
 
 3. For each statement line you can't place immediately, **`search_transactions`** on the
    description. A past match with an assigned category is a strong answer; no match means
@@ -133,19 +135,36 @@ reads work and writes return `write_not_configured`.
    `get_budget` returns; sending a stale one comes back as a conflict carrying the current
    value, so you can re-read and try again.
 
-10. When a month closes, **`record_account_balance`** for each account the user reads off
+10. **`schedule_amount_change`** steps a recurring price from a future month on — the
+    tool for a rent that rises next January. Send `category_id`, `from_month` (YYYY-MM),
+    `amount`, and optionally `minimal_amount`, which minimal-budget mode uses for the
+    months the change is in force; sending the same `from_month` again corrects the
+    scheduled price — the correction replaces that month's entry as a whole, so resend
+    `minimal_amount` if it should stay. Amounts are never negative, and `minimal_amount`
+    cannot exceed the amount it reduces. Send `remove` instead of `amount` to call a
+    scheduled change off.
+    Only a future month may be planned: a month that is already in force cannot be
+    re-planned here — an already closed budget is fixed in `budget.json`, so say so and
+    stop. It refuses one-offs (a single price, full stop) and a change outside the
+    category's own `from`/`until` window, which could never take effect. Read the
+    category's `amount_changes` from `list_budget_categories` or `get_budget` first — it
+    is the whole scheduled list — and the `sha` `get_budget` returns is the `base_sha`;
+    a stale one comes back as a conflict carrying the current value, so re-read and try
+    again.
+
+11. When a month closes, **`record_account_balance`** for each account the user reads off
     the bank. `list_accounts` shows the `as_of` of the newest reading each one has, so an
     account still sitting on an older month is one to ask about. See below — the date rule
     is not negotiable.
 
-11. **`get_director_loan`** is where the markers land: what the company owes the owner at
+12. **`get_director_loan`** is where the markers land: what the company owes the owner at
     the end of a month, or what the owner owes the company. Read it to check a marker you
     just wrote did what you meant, and read its `notes` — they say when a month is not
     fully imported, so the figure reads high, and when one transfer looks marked twice. A
     month before any figure has been stated answers `known: false`, which means *nobody has
     said*, not *nothing is owed*.
 
-12. **`get_finance_config`** is the dated rules every figure is computed from — both
+13. **`get_finance_config`** is the dated rules every figure is computed from — both
     contribution schedules, income tax, company profit tax, dividend tax, the salary plan
     and the target balance. Read it before explaining a figure rather than assuming a rate.
     A month before the earliest entry has nothing in force and is charged nothing, which is
@@ -159,7 +178,10 @@ Three things are readable here and only editable in the data repo, deliberately:
   payslip has to stay reproducible against the rates it was actually computed under.
 - **A dividend** (`budget.json`). A distribution is a decision taken with the accountant,
   and it moves both the company's balance and the owner's income. `get_budget` reports any
-  planned for a month with both taxes already worked out, so you never recompute them.
+  planned for a month with both taxes already worked out, so you never recompute them. The
+  one exception is a recurring category's *future* step: `schedule_amount_change` (step 10)
+  can schedule, correct, or call off a month's amount — but only in a month that has not
+  arrived yet, and never on a one-off, a dividend, or a month that is already in force.
 - **The director's loan's opening figure** (`accounts.json`). Unlike a bank balance there
   is nothing to read it off; it is a year-end restatement from the accountant. Appending a
   reading corrects everything after it without rewriting what was true before.
@@ -217,7 +239,9 @@ takes a few minutes. In between, the app serves what you just committed from mem
 `get_reconciliation_status` and `search_transactions` all reflect it, and so does the
 spending page. Call `get_reconciliation_status` straight after a write to check it landed.
 A balance you recorded is in force the same way — `list_accounts` reports the new `as_of`
-at once, and the dashboard opens the next month on the new figure.
+at once, and the dashboard opens the next month on the new figure. A scheduled amount
+change reads back the same way — `get_budget` reports the new step at once, and the
+categories page shows it as an arrow on the category.
 
 Two limits worth knowing. A change made somewhere other than this app — a hand edit in the
 data repo, or another instance — appears only once it has deployed, *except* through
@@ -239,6 +263,9 @@ so no balance ever written is written over.
 So a line recorded by mistake is not your problem to undo. Say so, and leave it: a wrong
 line that is visible is worth more than a clean file that quietly lost something. A real
 repair is a human editing the data repo, where the change gets reviewed like any other.
+Calling a *scheduled* amount change off (`schedule_amount_change` with `remove`) is not a
+removal in this sense: it only takes down a future step before it has taken effect, and a
+month that is already in force it cannot touch at all.
 
 Coverage follows the same rule — it can be extended but never shortened, because claiming
 to have read fewer days than are recorded would reopen a month the dashboard has already
@@ -256,13 +283,17 @@ stopped withholding judgement on.
 - No line may be left undecided. `untracked` counts as decided; blank does not.
 - A balance's `as_of` is the **last day of its month**. Any other day is refused, as is a
   month that has not ended yet, and a month that already has a reading.
+- A scheduled amount change may only start in a **future month**. A month that is already
+  in force is an already closed budget — it is refused, and the answer is to fix
+  `budget.json`, not to re-plan it here.
 - An account is never created by a write. An unrecognised name is refused with the names
   that do exist.
 
 ## What a write actually does
 
-Each accepted `add_transactions`, `edit_transactions`, `move_planned_expense` or
-`record_account_balance` is a **git commit** to the data repo, which redeploys the app — one commit per month touched. That is
+Each accepted `add_transactions`, `edit_transactions`, `move_planned_expense`,
+`schedule_amount_change` or `record_account_balance` is a **git commit** to the data
+repo, which redeploys the app — one commit per month touched. That is
 what makes handing an agent an API tolerable: it isn't trusted, it's audited. Every change
 is one you can read in `git log` and revert.
 

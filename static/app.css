@@ -177,6 +177,9 @@ button.minimal-toggle { background: none; border: 0; padding: 0; font: inherit; 
 .note a { color: inherit; text-decoration: underline; }
 .note a:hover { opacity: .7; }
 .link-icon { vertical-align: -1px; margin-left: .1em; }
+.chg-icon { opacity: .45; }
+.chg-icon:hover { opacity: 1; }
+.chg-icon svg { vertical-align: -1px; margin-left: .1em; }
 .row.acct .label { padding-left: 2rem; opacity: .7; font-weight: 400; }
 .row.planned { opacity: .5; }
 .row.planned .mid { font-style: italic; }

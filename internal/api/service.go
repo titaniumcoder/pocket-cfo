@@ -12,6 +12,7 @@ import (
 
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/accountsdata"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/actualsdata"
+	"github.com/titaniumcoder/pocket-cfo/internal/finance/budgetdata"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
 
@@ -61,6 +62,10 @@ type Category struct {
 	// empty. A category with Date is a one-off, never bounded.
 	From  string `json:"from,omitempty"`
 	Until string `json:"until,omitempty"`
+	// AmountChanges carries the category's whole dated step list, so an agent
+	// can see which future months are already spoken for before it schedules
+	// another change. Empty for a category with a flat amount.
+	AmountChanges []budgetdata.AmountChange `json:"amount_changes,omitempty"`
 }
 
 func (s *Service) Categories(ctx context.Context) ([]Category, error) {
@@ -70,7 +75,7 @@ func (s *Service) Categories(ctx context.Context) ([]Category, error) {
 	}
 	out := make([]Category, 0, len(idx))
 	for _, c := range idx {
-		out = append(out, Category{ID: c.ID, Group: c.Group, Name: c.Name, Kind: c.Kind, Date: c.Date, From: c.From, Until: c.Until})
+		out = append(out, Category{ID: c.ID, Group: c.Group, Name: c.Name, Kind: c.Kind, Date: c.Date, From: c.From, Until: c.Until, AmountChanges: c.AmountChanges})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
@@ -154,7 +159,7 @@ func monthBudgetOf(month string, planned []tracker.PlannedCategory) *MonthBudget
 	mb := &MonthBudget{Month: month, Categories: make([]PlannedCategory, 0, len(planned))}
 	for _, c := range planned {
 		mb.Categories = append(mb.Categories, PlannedCategory{
-			Category:     Category{ID: c.ID, Group: c.Group, Name: c.Name, Kind: c.Kind, Date: c.Date, From: c.From, Until: c.Until},
+			Category:     Category{ID: c.ID, Group: c.Group, Name: c.Name, Kind: c.Kind, Date: c.Date, From: c.From, Until: c.Until, AmountChanges: c.AmountChanges},
 			PlannedCents: c.PlannedCents,
 			Overridden:   c.Overridden,
 		})

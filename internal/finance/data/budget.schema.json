@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/titaniumcoder/pocket-cfo/internal/finance/data/budget.schema.json",
   "title": "Budget",
-  "description": "The whole budget in one file: spending categories grouped for display, plus loans. A flat monthly plan, not envelope budgeting — no logged entries, no balances. Every category is just a name and an amount; a category with a date is a one-off cost counted only in that specific month instead of recurring. A category's overrides can replace its amount for specific months with a known real price (or 0, to skip that month entirely). Hand-edited and committed via git.",
+  "description": "The whole budget in one file: spending categories grouped for display, plus loans. A flat monthly plan, not envelope budgeting — no logged entries, no balances. Every category is just a name and an amount; a category with a date is a one-off cost counted only in that specific month instead of recurring. A category's overrides can replace its amount for specific months with a known real price (or 0, to skip that month entirely). A recurring category's amount_changes step its amount to a new figure at given months, so a rent that rises every January stays one category with one line per new price, instead of twelve overrides a year. Hand-edited and committed via git.",
   "type": "object",
   "required": ["groups"],
   "additionalProperties": false,
@@ -76,7 +76,7 @@
         "amount": {
           "type": "number",
           "minimum": 0,
-          "description": "Euros, decimals allowed (e.g. 427.42). Counted every month when the category is recurring, i.e. when date, from and until are all absent (unbounded in both directions), or when the month falls inside the from/until window. When date is set, this is a one-off cost counted only in that specific month."
+          "description": "Euros, decimals allowed (e.g. 427.42). Counted every month when the category is recurring, i.e. when date, from and until are all absent (unbounded in both directions), or when the month falls inside the from/until window. When date is set, this is a one-off cost counted only in that specific month. With amount_changes present, this is the amount in force before the first change, so an old file without any changes means exactly what it always meant."
         },
         "minimal_amount": {
           "type": "number",
@@ -102,6 +102,11 @@
           "type": "array",
           "items": { "$ref": "#/$defs/override" },
           "description": "Optional list of per-month overrides: for the listed month, use that override's amount verbatim instead of amount/minimal_amount — including 0, which zeroes the month out entirely (e.g. a recurring cost skipped that month, such as a trip not happening). Wins unconditionally over minimal-budget mode. No duplicate months per category."
+        },
+        "amount_changes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/amount_change" },
+          "description": "Optional list of dated step-changes to this recurring category's amount: from each entry's month onward the category costs that entry's amount, until a later entry supersedes it — the newest entry with a from at or before the month is the one in force, exactly the way a dated period in config.json's legislation works. amount is what is charged before the first change. For an entry whose from month falls inside the category's own from/until window only: a change that could never take effect is dead configuration. Mutually exclusive with date — a one-off is a single price, full stop. An overrides entry still wins over everything for its own month."
         },
         "note": {
           "type": "string",
@@ -144,6 +149,28 @@
           "type": "number",
           "minimum": 0,
           "description": "Euros, decimals allowed. Replaces the category's amount/minimal_amount for this month verbatim — 0 means the category contributes nothing this month."
+        }
+      }
+    },
+    "amount_change": {
+      "type": "object",
+      "required": ["from", "amount"],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "The month this amount takes effect, inclusive (day is informational, e.g. \"2027-01-01\", same convention as date, from and until). In force until a later amount_changes entry supersedes it."
+        },
+        "amount": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Euros, decimals allowed. The category's recurring amount from this month on, replacing amount (and the superseded change's amount) for every month until a later entry."
+        },
+        "minimal_amount": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Optional reduced amount minimal-budget mode uses for the months this entry is in force, instead of the category's top-level minimal_amount. Absent -> minimal mode falls back to this entry's own amount, the same rule the top-level pair already follows."
         }
       }
     }

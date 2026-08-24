@@ -108,6 +108,13 @@ type CategoryRow struct {
 	URL           string
 	Overridden    bool
 
+	// ScheduledChange* carry the category's nearest future amount change,
+	// so the page can point at the month the price moves rather than making
+	// the reader diff budget.json. Empty when no change is due within the
+	// same horizon the upcoming-estimate previews use.
+	ScheduledChangeURL     string
+	ScheduledChangeTooltip string
+
 	ActualCents  int
 	HasActual    bool
 	ActualStatus string
@@ -313,10 +320,35 @@ func categoryAmount(c budgetdata.Category, key string, minimal bool) float64 {
 	if amt, ok := overrideFor(c, key); ok {
 		return amt
 	}
-	if minimal && c.MinimalAmount != nil {
-		return *c.MinimalAmount
+	amount, minimalAmount := c.Amount, c.MinimalAmount
+	if ch, ok := amountChangeInForce(c, key); ok {
+		amount, minimalAmount = ch.Amount, ch.MinimalAmount
 	}
-	return c.Amount
+	if minimal && minimalAmount != nil {
+		return *minimalAmount
+	}
+	return amount
+}
+
+// amountChangeInForce picks the latest amount_changes entry whose from month
+// is at or before key, the way a dated legislation period is picked for a
+// month. Entries are compared by their zero-padded YYYY-MM key, so string
+// order is month order; validation already refused duplicates, so no tie is
+// possible.
+func amountChangeInForce(c budgetdata.Category, key string) (budgetdata.AmountChange, bool) {
+	bestKey := ""
+	var best budgetdata.AmountChange
+	for _, ch := range c.AmountChanges {
+		d, err := time.Parse("2006-01-02", ch.From)
+		if err != nil {
+			continue
+		}
+		fromKey := monthKey(d.Year(), d.Month())
+		if fromKey <= key && fromKey > bestKey {
+			best, bestKey = ch, fromKey
+		}
+	}
+	return best, bestKey != ""
 }
 
 const nextNonZeroMonthLookahead = 24
@@ -337,8 +369,47 @@ func nextNonZeroMonth(c budgetdata.Category, ref time.Time, minimal bool) (time.
 	return time.Time{}, false
 }
 
+// nextAmountChange finds the earliest amount change whose month is strictly
+// after ref — a change landing in the viewed month is already the price the
+// row shows — within the same horizon the upcoming-estimate previews look
+// ahead. Nothing beyond it is news the reader needs this visit.
+func nextAmountChange(c budgetdata.Category, ref time.Time) (*budgetdata.AmountChange, time.Time) {
+	base := time.Date(ref.Year(), ref.Month(), 1, 0, 0, 0, 0, ref.Location())
+	baseKey := monthKey(base.Year(), base.Month())
+	horizon := base.AddDate(0, nextNonZeroMonthLookahead, 0)
+	horizonKey := monthKey(horizon.Year(), horizon.Month())
+	var bestKey string
+	var best *budgetdata.AmountChange
+	var bestWhen time.Time
+	for i := range c.AmountChanges {
+		d, err := time.Parse("2006-01-02", c.AmountChanges[i].From)
+		if err != nil {
+			continue
+		}
+		key := monthKey(d.Year(), d.Month())
+		if key <= baseKey || key > horizonKey {
+			continue
+		}
+		if best == nil || key < bestKey {
+			best, bestKey, bestWhen = &c.AmountChanges[i], key, d
+		}
+	}
+	return best, bestWhen
+}
+
 func categoryRowFor(c budgetdata.Category, plannedCents int, overridden bool, ref time.Time, minimal bool) (CategoryRow, bool) {
 	row := baseCategoryRow(c)
+	if ch, when := nextAmountChange(c, ref); ch != nil {
+		// The tooltip names the price in the mode the page is showing: minimal
+		// mode shows minimal figures, so a step with its own minimal_amount
+		// speaks with that one here.
+		price := ch.Amount
+		if minimal && ch.MinimalAmount != nil {
+			price = *ch.MinimalAmount
+		}
+		row.ScheduledChangeURL = monthURL(when.Year(), when.Month())
+		row.ScheduledChangeTooltip = fmt.Sprintf("%s from %s", formatEuro(eurToCents(price)), when.Format("January 2006"))
+	}
 
 	if plannedCents == 0 && c.Date == nil && overridden {
 		if preview, ok := zeroedRecurringPreview(c, row, ref, minimal); ok {

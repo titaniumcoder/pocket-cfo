@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // These drive /mcp over raw HTTP with hand-written JSON-RPC rather than
@@ -113,8 +114,8 @@ func TestMCPToolsList(t *testing.T) {
 		"list_budget_categories": true, "get_budget": true, "get_actuals": true,
 		"search_transactions": true, "get_reconciliation_status": true,
 		"list_accounts": true, "add_transactions": true, "edit_transactions": true,
-		"move_planned_expense": true, "record_account_balance": true,
-		"get_finance_config": true, "get_director_loan": true,
+		"move_planned_expense": true, "schedule_amount_change": true,
+		"record_account_balance": true, "get_finance_config": true, "get_director_loan": true,
 	}
 	got := map[string]bool{}
 	for _, raw := range tools {
@@ -161,6 +162,15 @@ func TestMCPWriteToolsDescribeTheirContract(t *testing.T) {
 		"record_account_balance": {
 			"mid-month balances are not allowed", "last day of its month",
 			"closing balance", "opens", "appended", "never creates an account",
+		},
+		// That only a future month may be planned — an already closed budget
+		// is fixed in the file — that one-offs are out of reach, that a
+		// correction is a wholesale replacement, and that no negative figure
+		// or an over-tall minimal can sneak in.
+		"schedule_amount_change": {
+			"must be in the future", "already closed budget is fixed in budget.json",
+			"refuses one-offs", "amount_changes", "replaces that month's entry as a whole",
+			"never negative", "cannot exceed the amount it reduces",
 		},
 	}
 	desc := map[string]string{}
@@ -546,7 +556,8 @@ func TestReadToolsStateTheirConsistency(t *testing.T) {
 	}
 
 	// Reads over data add_transactions, edit_transactions,
-	// move_planned_expense or record_account_balance can change.
+	// move_planned_expense, schedule_amount_change or record_account_balance
+	// can change.
 	for _, name := range []string{"get_actuals", "get_budget", "search_transactions", "get_reconciliation_status", "list_accounts"} {
 		if !strings.Contains(desc[name], "deployed") {
 			t.Errorf("%s never says when a change becomes visible:\n%s", name, desc[name])
@@ -685,5 +696,93 @@ func TestMCPRecordsABalanceThroughTheWholeStack(t *testing.T) {
 	written := string(gh.files["data/accounts.json"])
 	if !strings.Contains(written, `{ "as_of": "2026-06-30", "balance": 90.5, "note": "read late" }`) {
 		t.Errorf("the reading was not committed as written:\n%s", written)
+	}
+}
+
+// changeBudgetJSON is the file the GitHub stub serves: a flat rent, so the
+// call has a plain category to step, plus a one-off a mistake could bite on.
+const changeBudgetJSON = `{
+  "$schema": "../internal/finance/data/budget.schema.json",
+  "groups": [
+    { "name": "Housing", "kind": "private", "categories": [
+      { "id": "00000000-0000-4000-8000-000000000001", "name": "Rent", "amount": 900 }
+    ]}
+  ]
+}`
+
+func changeServer(t *testing.T) (*server, *fakeContents) {
+	return writingServer(t, map[string]string{"data/budget.json": changeBudgetJSON})
+}
+
+// TestMCPAndRESTAgreeOnRefusingAStepOnAClosedMonth: the future-only rule is
+// the whole safety case of schedule_amount_change, so both surfaces have to
+// hold it in our words. A month that is already in force is a closed budget;
+// the answer points at budget.json rather than offering to fix it here.
+func TestMCPAndRESTAgreeOnRefusingAStepOnAClosedMonth(t *testing.T) {
+	s, _ := changeServer(t)
+	thisMonth := time.Now().UTC().Format("2006-01")
+	body := `{"category_id":"00000000-0000-4000-8000-000000000001","from_month":` +
+		`"` + thisMonth + `","amount":999,"reason":"late raise","base_sha":"sha-data/budget.json"}`
+
+	r := httptest.NewRequest(http.MethodPost, "/api/budget/schedule-amount-change", strings.NewReader(body))
+	r.Header.Set("Authorization", "Bearer "+apiTestToken)
+	r.Header.Set("Content-Type", "application/json")
+	rest := httptest.NewRecorder()
+	s.routes().ServeHTTP(rest, r)
+	if rest.Code != http.StatusBadRequest {
+		t.Errorf("REST status = %d, want 400: %s", rest.Code, rest.Body)
+	}
+
+	w := mcpCall(t, s, apiTestToken,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"schedule_amount_change","arguments":`+body+`}}`)
+
+	const reason = "already in force"
+	if !strings.Contains(rest.Body.String(), reason) {
+		t.Errorf("REST said %s, want the closed-month refusal", rest.Body)
+	}
+	if !strings.Contains(w.Body.String(), reason) {
+		t.Errorf("MCP said %s, want the closed-month refusal", w.Body)
+	}
+}
+
+// TestMCPSchedulesAnAmountChangeThroughTheWholeStack: the accepted path over
+// the wire — the tool is reachable, the arguments survive the SDK's
+// decoding, and the committed budget.json carries the new step while every
+// other line of the file stays where it was.
+func TestMCPSchedulesAnAmountChangeThroughTheWholeStack(t *testing.T) {
+	s, gh := changeServer(t)
+	nextJanuary := time.Now().UTC().AddDate(1, 0, 0).Format("2006-01")
+
+	w := mcpCall(t, s, apiTestToken,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"schedule_amount_change","arguments":`+
+			`{"category_id":"00000000-0000-4000-8000-000000000001","from_month":"`+nextJanuary+`"`+
+			`,"amount":950,"minimal_amount":900,"reason":"the landlord put the rent up","base_sha":"sha-data/budget.json"}}}`)
+	resp := decodeRPC(t, w.Body.String())
+	result, ok := resp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("no result: %s", w.Body)
+	}
+	sc, ok := result["structuredContent"].(map[string]any)
+	if !ok {
+		t.Fatalf("structuredContent is %T, want an object", result["structuredContent"])
+	}
+	if sc["name"] != "Rent" || sc["from"] != nextJanuary || sc["amount"] != 950.0 {
+		t.Errorf("result = %v, want Rent stepping to 950 in %s", sc, nextJanuary)
+	}
+	if sc["sha"] != "sha-written" {
+		t.Errorf("sha = %v, want sha-written", sc["sha"])
+	}
+
+	written := string(gh.files["data/budget.json"])
+	entry := `{ "from": "` + nextJanuary + `-01", "amount": 950, "minimal_amount": 900 }`
+	if !strings.Contains(written, `"amount_changes": [ `+entry+` ]`) {
+		t.Errorf("the step was not committed as written:\n%s", written)
+	}
+	if !strings.Contains(written, `{ "id": "00000000-0000-4000-8000-000000000001", "name": "Rent", "amount": 900,`) {
+		t.Errorf("the base amount or the category's other lines moved:\n%s", written)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(gh.files["data/budget.json"], &doc); err != nil {
+		t.Fatalf("the committed budget.json does not parse: %v", err)
 	}
 }

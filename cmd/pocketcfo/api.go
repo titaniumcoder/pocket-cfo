@@ -34,6 +34,7 @@ func (s *server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/actuals/edit", s.apiEditActuals)
 	mux.HandleFunc("POST /api/accounts/balance", s.apiRecordAccountBalance)
 	mux.HandleFunc("POST /api/budget/move-planned-expense", s.apiMovePlannedExpense)
+	mux.HandleFunc("POST /api/budget/schedule-amount-change", s.apiScheduleAmountChange)
 
 	mcpHandler := s.requireBearer(capBody(maxMCPBody, s.apiService().MCPHandler(mcpServerVersion)))
 	mux.Handle("POST /mcp", mcpHandler)
@@ -363,6 +364,26 @@ func (s *server) apiMovePlannedExpense(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	out, err := s.apiService().MovePlannedExpense(ctx, req)
+	if err != nil {
+		writeAPIError(w, err, apiStatus(err))
+		return
+	}
+	writeAPIJSON(w, http.StatusOK, out)
+}
+
+func (s *server) apiScheduleAmountChange(w http.ResponseWriter, r *http.Request) {
+	if !s.apiAuthorized(w, r) {
+		return
+	}
+	var req api.ScheduleAmountChangeRequest
+	if !decodeAPIBody(w, r, &req) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
+	defer cancel()
+
+	out, err := s.apiService().ScheduleAmountChange(ctx, req)
 	if err != nil {
 		writeAPIError(w, err, apiStatus(err))
 		return

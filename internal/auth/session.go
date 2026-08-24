@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const TTL = 10 * time.Minute
+const TTL = 30 * 24 * time.Hour
 
 const ReadOnlyTTL = 7 * 24 * time.Hour
 

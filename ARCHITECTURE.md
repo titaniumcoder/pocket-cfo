@@ -887,8 +887,8 @@ with, noise on every other visit, and not worth the machinery of threading a pro
 record through the roll to render it. What the reader has instead is the read date on the
 spending page, which answers the question that actually prompts the doubt.
 
-**A budget category is recurring, a one-off, or bounded.** `budget.json` has three
-shapes for a category's amount. Plain `amount` recurs every month, unbounded in both
+**A budget category is recurring, a one-off, bounded, or stepped.** `budget.json` has
+four shapes for a category's amount. Plain `amount` recurs every month, unbounded in both
 directions — a rent, a fixed subscription. An `amount` plus a `date` is a one-off, counted
 only in that single month, shown as a grey estimate before it is due and dropped after;
 a one-off is the only shape `move_planned_expense` can move. An `amount` plus `from` and/or
@@ -896,6 +896,10 @@ a one-off is the only shape `move_planned_expense` can move. An `amount` plus `f
 onward (if present), up to and including `until` (if present), and nowhere else. The two
 bounds are inclusive of their own month and the day on them is informational, matching the
 `date` and `overrides[].month` convention, and `date` is mutually exclusive with both.
+An `amount` plus an `amount_changes` list is a stepped recurring cost: the same category,
+but its amount moves on the dated months the list spells out — a rent that rises every
+January. The list is mutually exclusive with `date`, but not with `from`/`until`: a stepped
+cost can also be bounded, and it obeys the window like an unstepped one.
 
 That window is deliberately not spelled by overloading `date`. A subscription that ended in
 August is "counted in every month through August, then gone", which is a different fact
@@ -905,6 +909,23 @@ recurring cost look movable. So a bounded cost keeps its history through its `un
 vanishes after it, and — like one that recurs monthly — is refused by
 `move_planned_expense`. A not-yet-started cost is the same shape from the other side, and
 month view shows it as a grey estimate from its `from` month until it begins.
+
+**A stepped amount resolves the latest entry at or before the month.** The top-level
+`amount` is the first, unnamed period, and each `amount_changes` entry — `{from, amount,
+minimal_amount?}` — opens a new one on its month: a month pays the latest entry whose
+`from` is on or before it, the top-level amount where none is. That is the same reading
+as `legislation` and `target_balance`, and it keeps every month's figure reproducible
+from the file alone. `minimal_amount` is per entry and falls back to the entry's own
+`amount` for the months that entry is in force — the top-level rule, repeated at the
+level that owns the months. An `overrides` entry still wins over everything, including a
+step, and month view shows the usual override marker. Two things a step is not, enforced
+in `ValidateBudget`: a step on a one-off (a single price, full stop, has no months to
+change in), and an entry outside the category's own window — before its `from` or after
+its `until` it could never take effect, so it is dead config and is refused rather than
+silently ignored. Duplicating a month is refused for the same reason: two prices in force
+at once is a contradiction, not a schedule. The web view points at the change: a category
+with a step inside the horizon shows a small arrow beside its name, and following it
+opens the month the price moves.
 
 **An imported month has two balances.** The plan charges the whole month on the first, so
 the plan and the statements answer different questions — where the month was meant to end
@@ -1079,12 +1100,15 @@ for a rules file: an agent asks how a merchant was treated last time and gets th
 from what was actually recorded, rather than from a list that drifts out of sync with it.
 
 Writes are narrow by construction. Transactions can be **added** and **re-attributed**, a
-planned one-off can be **moved** to the month it was really charged in, and an account
+planned one-off can be **moved** to the month it was really charged in, the recurring
+amount of a category can be **scheduled to step** from a future month on, and an account
 balance can be **recorded** for a month that has closed. Nothing can be removed — there is
 no flag, no override and no reason that unlocks it, and each write path checks its own
 output before committing rather than trusting itself to stay append-only. A line recorded
 in error is repaired by a human editing the data repo, where the change is reviewed like
-any other.
+any other. Calling a *scheduled* step off is not a removal in this sense: it takes down a
+future change before it has taken effect, and a month that is already in force it cannot
+touch at all — an already closed budget is fixed in the file.
 
 **A balance closes a month, so `as_of` is a month end and anything else is refused.**
 The reading is that month's closing figure and therefore the next month's opening one, and
@@ -1098,6 +1122,17 @@ says why, instead of anchoring every month after it on half a month's spending. 
 history is what lets a past month keep the figure that was true then. Accounts themselves
 are not created here, because an account declares which pot it belongs to and that decides
 which side of the payroll cascade the money sits on.
+
+**A step may only start in a future month, so an in-force `from_month` is refused.** A
+month that is already in force is an already closed budget, and the answer to fixing it is
+the data repo, not a tool that re-plans the past — so the refusal says exactly that and
+points at `budget.json`. The same guard is why a one-off is out of reach at all: it has
+one price and no months, and a step outside the category's own window could never take
+effect. The write itself is the byte-surgery `move_planned_expense` uses: one category's
+`amount_changes` is spliced in place, the diff guard refuses a result that differs from
+the original by more than that one field, and the result must survive
+`ValidateBudget` before it is committed — the file is hand-maintained and the commit
+diff has to stay a few lines a reviewer can read.
 
 Every accepted write is a **commit to the data repo through the GitHub Contents API**,
 which redeploys the app. Nothing is written to the running container's own data directory:

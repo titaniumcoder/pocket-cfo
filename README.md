@@ -51,7 +51,7 @@ enforced by a schema. Keep the layout: the app's defaults point at these exact p
 | `data/invoices/INV-*.json` | one per invoice; never edited after issue | `schemas/invoice.json` |
 | `data/paid-invoices.json` | which invoices are paid, and when | `schemas/paid-invoices.json` |
 | `data/users.json` | who may read which part, by email | `schemas/users.json` |
-| `data/budget.json` | planned expenses; every category has a stable UUID, and is recurring, a one-off (`date`), or bounded to a `from`/`until` month window | `internal/finance/data/budget.schema.json` |
+| `data/budget.json` | planned expenses; every category has a stable UUID, and is recurring, a one-off (`date`), bounded to a `from`/`until` month window, or stepped through dated `amount_changes` | `internal/finance/data/budget.schema.json` |
 | `data/actuals/YYYY-MM.json` | what was actually spent, per month | `internal/finance/data/actuals.schema.json` |
 | `data/accounts.json` | real account balances, read at month end — `as_of` is always the last day of a month, and mid-month readings are refused; every reading is kept, and each account declares `kind` — `company` or `private` | `internal/finance/data/accounts.schema.json` |
 | `config.json` | non-secret tunables and payroll law | `internal/finance/config` |

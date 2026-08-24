@@ -390,10 +390,10 @@ var templates = `
       <h2>Expected</h2>
       {{if .ExpectedErr}}<div class="row"><span class="error">{{.ExpectedErr}}</span></div>
       {{else}}
-      <div class="row"><span class="label">{{.ExpectedRange}}</span><span class="mid">{{.ExpectedHours}} &times; {{.ExpectedRate}}</span><span class="amt">{{eur .ExpectedCents}}<span class="stack-m">({{.ExpectedHours}}h)</span></span></div>
+      <div class="row"><span class="label">{{.ExpectedRange}}</span><span class="mid">{{.ExpectedHours}} h &times; {{.ExpectedRate}}</span><span class="amt">{{eur .ExpectedCents}}<span class="stack-m">({{.ExpectedHours}}h)</span></span></div>
       {{if .ShowVacation}}
-      <div class="row"><span class="label">Vacation</span><span class="mid">{{.VacationHoursDeducted}} &times; {{.ExpectedRate}}</span><span class="amt neg">&minus;{{eur .VacationCentsDeducted}}<span class="stack-m">({{.VacationHoursDeducted}}h)</span></span></div>
-      <div class="row sub"><span class="label">Expected total</span><span class="mid">{{.ExpectedNetHours}} &times; {{.ExpectedRate}}</span><span class="amt goodamt">{{eur .ExpectedNetCents}}<span class="stack-m">({{.ExpectedNetHours}}h)</span></span></div>
+      <div class="row"><span class="label">Vacation</span><span class="mid">{{.VacationHoursDeducted}} h &times; {{.ExpectedRate}}</span><span class="amt neg">&minus;{{eur .VacationCentsDeducted}}<span class="stack-m">({{.VacationHoursDeducted}}h)</span></span></div>
+      <div class="row sub"><span class="label">Expected total</span><span class="mid">{{.ExpectedNetHours}} h &times; {{.ExpectedRate}}</span><span class="amt goodamt">{{eur .ExpectedNetCents}}<span class="stack-m">({{.ExpectedNetHours}}h)</span></span></div>
       {{end}}
       {{end}}
       {{end}}

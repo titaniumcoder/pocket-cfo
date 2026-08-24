@@ -441,7 +441,7 @@ func (f *Figures) computeExpected(t *Tracker, year int, start, end, today time.T
 
 func (f *Figures) computeTotal(trackedHours float64, trackedCents int, expectedNetHours float64, expectedOK bool, rateCents int) {
 	if f.TrackedErr == "" && expectedOK {
-		f.TotalHours = formatHM(trackedHours + expectedNetHours)
+		f.TotalHours = formatCompactHours(trackedHours + expectedNetHours)
 		f.TotalRate = formatNum(float64(rateCents) / 100)
 		f.TotalCents = trackedCents + f.ExpectedNetCents
 	} else {

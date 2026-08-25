@@ -108,6 +108,11 @@ type CategoryRow struct {
 	URL           string
 	Overridden    bool
 
+	// ordinal is the row's position among its group's categories in
+	// budget.json, so a row deferred for being outside its window returns to
+	// its original place when actuals restore it (ApplyActuals).
+	ordinal int
+
 	// ScheduledChange* carry the category's nearest future amount change,
 	// so the page can point at the month the price moves rather than making
 	// the reader diff budget.json. Empty when no change is due within the
@@ -131,6 +136,11 @@ type CategoryGroupView struct {
 	Rows         []CategoryRow
 	PlannedCents int
 
+	// ordinal is the group's position among the same-kind groups of
+	// budget.json, so a group emptied by deferred rows returns to its
+	// original place when actuals restore one of them.
+	ordinal int
+
 	ActualCents int
 	HasActual   bool
 	HasMistimed bool
@@ -150,6 +160,32 @@ type BudgetView struct {
 	// picks its own out, the way the salary plan and the target balance are
 	// already read by month rather than filtered by the caller.
 	Dividends Dividends
+
+	// deferredRows carries the categories whose from/until window excludes
+	// the viewed period. They are invisible in the plan — an out-of-window
+	// cost is neither announced nor a 0,00 row — and are held back only so a
+	// mistaken charge recorded against them in actuals can restore the row
+	// under its own name (ApplyActuals) instead of landing in the nameless
+	// "not in this month's plan" figure.
+	deferredRows []deferredRow
+}
+
+// deferredRow is an out-of-window category's sleeping row, with everything
+// needed to put it back where budget.json had it: the group it belongs to,
+// by name and by position among its own kind, and its position among that
+// group's categories.
+type deferredRow struct {
+	groupOrdinal int
+	rowOrdinal   int
+	groupName    string
+	company      bool
+	row          CategoryRow
+}
+
+// monthSpan is the inclusive range of months a view sums over: one month for
+// month view, the summed part of a year for year view.
+type monthSpan struct {
+	first, last yearMonth
 }
 
 func (b *Budget) ForMonth(ctx context.Context, year int, month time.Month, now time.Time, minimal bool) (BudgetView, error) {
@@ -163,7 +199,8 @@ func (b *Budget) ForMonth(ctx context.Context, year int, month time.Month, now t
 		return categoryCents(c, key, minimal), overridden
 	}
 	viewed := time.Date(year, month, 1, 0, 0, 0, 0, now.Location())
-	return buildBudgetView(bf, plannedFor, plannedFor, viewed, minimal), nil
+	span := monthSpan{yearMonth{year, month}, yearMonth{year, month}}
+	return buildBudgetView(bf, plannedFor, plannedFor, span, span, viewed, minimal), nil
 }
 
 func privateExpenseStartMonth(year int, now time.Time, floor yearMonth) time.Month {
@@ -215,7 +252,9 @@ func (b *Budget) ForYear(ctx context.Context, year int, now, start time.Time) (B
 		}
 		return sum, false
 	}
-	return buildBudgetView(bf, privatePlanned, companyPlanned, now, false), nil
+	privateSpan := monthSpan{yearMonth{year, privateStart}, yearMonth{year, time.December}}
+	companySpan := monthSpan{yearMonth{year, companyFirst}, yearMonth{year, time.December}}
+	return buildBudgetView(bf, privatePlanned, companyPlanned, privateSpan, companySpan, now, false), nil
 }
 
 func (b *Budget) CompanyExpensesByMonth(ctx context.Context, year int, start time.Time) (map[time.Month]int, error) {
@@ -237,21 +276,38 @@ func (b *Budget) CompanyExpensesByMonth(ctx context.Context, year int, start tim
 	return result, nil
 }
 
-func buildBudgetView(bf budgetdata.BudgetFile, privatePlanned, companyPlanned func(budgetdata.Category) (int, bool), ref time.Time, minimal bool) BudgetView {
+func buildBudgetView(bf budgetdata.BudgetFile, privatePlanned, companyPlanned func(budgetdata.Category) (int, bool), privateSpan, companySpan monthSpan, ref time.Time, minimal bool) BudgetView {
 	view := BudgetView{Dividends: dividendsIn(bf)}
+	privateOrdinal, companyOrdinal := 0, 0
 	for _, g := range bf.Groups {
-		plannedFor := privatePlanned
+		plannedFor, span := privatePlanned, privateSpan
 		isCompany := g.Kind == budgetdata.GroupKindCompany
+		groupOrdinal := privateOrdinal
 		if isCompany {
-			plannedFor = companyPlanned
+			plannedFor, span = companyPlanned, companySpan
+			groupOrdinal = companyOrdinal
+			companyOrdinal++
+		} else {
+			privateOrdinal++
 		}
-		gv := CategoryGroupView{Name: g.Name}
-		for _, c := range g.Categories {
+		gv := CategoryGroupView{Name: g.Name, ordinal: groupOrdinal}
+		for ci, c := range g.Categories {
 			plannedCents, overridden := plannedFor(c)
+			if c.Date == nil && !categoryActiveInSpan(c, span) {
+				view.deferredRows = append(view.deferredRows, deferredRow{
+					groupOrdinal: groupOrdinal,
+					rowOrdinal:   ci,
+					groupName:    g.Name,
+					company:      isCompany,
+					row:          baseCategoryRow(c),
+				})
+				continue
+			}
 			row, ok := categoryRowFor(c, plannedCents, overridden, ref, minimal)
 			if !ok {
 				continue
 			}
+			row.ordinal = ci
 			gv.Rows = append(gv.Rows, row)
 			gv.PlannedCents += row.PlannedCents
 		}
@@ -297,6 +353,30 @@ func categoryActiveIn(c budgetdata.Category, key string) bool {
 	if c.Until != nil {
 		d, err := time.Parse("2006-01-02", *c.Until)
 		if err == nil && monthKey(d.Year(), d.Month()) < key {
+			return false
+		}
+	}
+	return true
+}
+
+// categoryActiveInSpan reports whether a recurring category's from/until
+// window overlaps the span a view sums over at all. A window the period
+// never reaches — a cost that has ended or one that has not begun — defers
+// the row rather than rendering it: the plan neither announces it nor
+// carries it as a 0,00 row, and only money actually moving on it
+// (ApplyActuals) brings it back.
+func categoryActiveInSpan(c budgetdata.Category, span monthSpan) bool {
+	first := monthKey(span.first.Year, span.first.Month)
+	last := monthKey(span.last.Year, span.last.Month)
+	if c.From != nil {
+		d, err := time.Parse("2006-01-02", *c.From)
+		if err != nil || monthKey(d.Year(), d.Month()) > last {
+			return false
+		}
+	}
+	if c.Until != nil {
+		d, err := time.Parse("2006-01-02", *c.Until)
+		if err != nil || monthKey(d.Year(), d.Month()) < first {
 			return false
 		}
 	}
@@ -417,31 +497,10 @@ func categoryRowFor(c budgetdata.Category, plannedCents int, overridden bool, re
 		}
 	}
 
-	// A bounded recurring cost whose window is already over disappears, but
-	// only when it contributes nothing here: month views pass the viewed month
-	// as ref (an ended cost is 0 anyway), while year views pass now, so
-	// plannedCents is the real in-window sum for that year — a company cost or
-	// a past year sums all twelve months, and must not be rewritten out of its
-	// own record.
-	if c.Date == nil && c.Until != nil && plannedCents == 0 {
-		until, err := time.Parse("2006-01-02", *c.Until)
-		if err == nil && (until.Year() < ref.Year() || (until.Year() == ref.Year() && until.Month() < ref.Month())) {
-			return CategoryRow{}, false
-		}
-	}
-
+	// A recurring cost outside its from/until window never reaches here:
+	// buildBudgetView defers it before the row is built. What is left is a
+	// cost inside its window this period, shown with whatever it plans.
 	if plannedCents > 0 || c.Date == nil {
-		// A recurring cost that has not started yet is shown as an upcoming
-		// estimate from its from month, the way a future one-off is.
-		if c.Date == nil && c.From != nil && plannedCents == 0 {
-			if d, err := time.Parse("2006-01-02", *c.From); err == nil && (d.Year() > ref.Year() || (d.Year() == ref.Year() && d.Month() > ref.Month())) {
-				fromKey := monthKey(d.Year(), d.Month())
-				row.UpcomingCents = eurToCents(categoryAmount(c, fromKey, minimal))
-				_, row.Overridden = overrideFor(c, fromKey)
-				row.UpcomingMonth = d.Format("January 2006")
-				return row, true
-			}
-		}
 		return normalRow(row, plannedCents, overridden), true
 	}
 	return datedCategoryRow(c, row, plannedCents, overridden, ref, minimal)

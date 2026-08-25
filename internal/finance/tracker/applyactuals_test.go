@@ -246,6 +246,187 @@ func augustActuals(from, to string) map[string]string {
 	}
 }
 
+// deferredSeptemberActuals charges an out-of-window category in September
+// 2026, after the "Ended" subscription's until month of August — the
+// mistake the deferred rows exist to keep visible.
+func deferredSeptemberActuals(categoryID string) ActualsView {
+	return ActualsView{
+		Present: true, Complete: true,
+		ByCategory: map[string]int{categoryID: eurToCents(180)},
+		TotalCents: eurToCents(180),
+	}
+}
+
+// TestAMistimedChargeRestoresAnOutOfWindowCategory: a category outside its
+// from/until window is invisible in the plan, but money that moves on it is
+// a mistake the reader can only fix by seeing it — so the row comes back
+// under its own name, planned at 0 and flagged unbudgeted, and the money no
+// longer lands in the nameless "not in this month's plan" figure.
+func TestAMistimedChargeRestoresAnOutOfWindowCategory(t *testing.T) {
+	const ended = "00000000-0000-4000-8000-000000000011"
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWindowed})
+	bv, err := b.ForMonth(context.Background(), 2026, time.September, testNow, false)
+	if err != nil {
+		t.Fatalf("ForMonth September: %v", err)
+	}
+	if r := rowByName(bv, "Ended"); r.Name != "" {
+		t.Fatalf("the fixture is wrong: Ended shows in September before its window ended: %+v", r)
+	}
+
+	av := deferredSeptemberActuals(ended)
+	ApplyActuals(&bv, av, 2026, time.September, nil)
+
+	r := rowByName(bv, "Ended")
+	if r.Name == "" {
+		t.Fatal("a charge against the ended category did not restore its row")
+	}
+	if r.PlannedCents != 0 {
+		t.Errorf("restored row planned = %d, want 0 (the window is over)", r.PlannedCents)
+	}
+	if r.ActualCents != eurToCents(180) || !r.HasActual {
+		t.Errorf("restored row actual = %d (has %v), want 180", r.ActualCents, r.HasActual)
+	}
+	if r.ActualStatus != ActualUnbudgeted {
+		t.Errorf("restored row status = %q, want unbudgeted — the plan says nothing this month", r.ActualStatus)
+	}
+	if len(bv.Groups) != 1 || bv.Groups[0].Name != "Subscriptions" {
+		t.Fatalf("the restored row did not bring its group back by name: %+v", bv.Groups)
+	}
+	if got := bv.Groups[0].ActualCents; got != eurToCents(180) {
+		t.Errorf("group actual = %d, want the restored row's amount", got)
+	}
+	if got := bv.Groups[0].PlannedCents; got != 0 {
+		t.Errorf("group planned = %d, want 0 — a restored row must not move the plan", got)
+	}
+	private, company := UnmatchedCents(bv, av, nil)
+	if private != 0 || company != 0 {
+		t.Errorf("restored money still counted as unmatched: private %d, company %d", private, company)
+	}
+}
+
+// TestAnOutOfWindowCategoryStaysHiddenWithoutMovement: the restore is keyed
+// to money moving on that category. A month whose statements name other
+// categories leaves the out-of-window row invisible.
+func TestAnOutOfWindowCategoryStaysHiddenWithoutMovement(t *testing.T) {
+	const ended = "00000000-0000-4000-8000-000000000011"
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWindowed})
+	bv, err := b.ForMonth(context.Background(), 2026, time.September, testNow, false)
+	if err != nil {
+		t.Fatalf("ForMonth September: %v", err)
+	}
+
+	av := ActualsView{Present: true, Complete: true, ByCategory: map[string]int{"other": 5000}}
+	ApplyActuals(&bv, av, 2026, time.September, nil)
+
+	if r := rowByName(bv, "Ended"); r.Name != "" {
+		t.Errorf("Ended was restored although no money moved on it: %+v", r)
+	}
+	if len(bv.Groups) != 0 {
+		t.Errorf("a group with only unmoved out-of-window categories came back: %+v", bv.Groups)
+	}
+}
+
+// TestANetZeroRefundStillRestoresTheRow: presence in ByCategory, not the
+// netted amount, is the trigger. A charge and an equal refund on an
+// out-of-window category net the month to nothing, but money moved — and a
+// refund against a category the plan has retired is exactly the kind of
+// mistake the row exists to show.
+func TestANetZeroRefundStillRestoresTheRow(t *testing.T) {
+	const ended = "00000000-0000-4000-8000-000000000011"
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWindowed})
+	bv, err := b.ForMonth(context.Background(), 2026, time.September, testNow, false)
+	if err != nil {
+		t.Fatalf("ForMonth September: %v", err)
+	}
+
+	av := ActualsView{Present: true, Complete: true, ByCategory: map[string]int{ended: 0}}
+	ApplyActuals(&bv, av, 2026, time.September, nil)
+
+	r := rowByName(bv, "Ended")
+	if r.Name == "" {
+		t.Fatal("a net-zero movement did not restore the row")
+	}
+	if !r.HasActual {
+		t.Error("the restored row does not carry its (netted) actual")
+	}
+}
+
+// TestARestoredRowKeepsItsPlaceInTheGroup: the row returns to its original
+// position among its siblings and its group to its original position among
+// the other groups, so the page does not reshuffle itself when a mistake is
+// made visible.
+func TestARestoredRowKeepsItsPlaceInTheGroup(t *testing.T) {
+	const mixed = `{
+  "groups": [
+    { "name": "Housing", "kind": "private", "categories": [
+      { "id": "00000000-0000-4000-8000-0000000000a1", "name": "Rent", "amount": 1000 },
+      { "id": "00000000-0000-4000-8000-0000000000a2", "name": "Ended", "amount": 180, "until": "2026-08-01" },
+      { "id": "00000000-0000-4000-8000-0000000000a3", "name": "Groceries", "amount": 300 }
+    ]},
+    { "name": "Subscriptions", "kind": "private", "categories": [
+      { "id": "00000000-0000-4000-8000-0000000000a4", "name": "Starts", "amount": 90, "from": "2026-10-01" }
+    ]}
+  ]
+}`
+	const ended = "00000000-0000-4000-8000-0000000000a2"
+	b := newTestBudget(t, map[string]string{"budget.json": mixed})
+	bv, err := b.ForMonth(context.Background(), 2026, time.September, testNow, false)
+	if err != nil {
+		t.Fatalf("ForMonth September: %v", err)
+	}
+
+	av := ActualsView{Present: true, Complete: true, ByCategory: map[string]int{ended: 12345}}
+	ApplyActuals(&bv, av, 2026, time.September, nil)
+
+	if len(bv.Groups) != 1 {
+		t.Fatalf("groups = %+v, want only Housing — Subscriptions has not begun and nothing moved on it", bv.Groups)
+	}
+	rows := bv.Groups[0].Rows
+	if len(rows) != 3 {
+		t.Fatalf("Housing carries %d rows, want Rent, the restored Ended, and Groceries", len(rows))
+	}
+	for i, want := range []string{"Rent", "Ended", "Groceries"} {
+		if rows[i].Name != want {
+			t.Errorf("row %d = %q, want %q — the restored row lost its place", i, rows[i].Name, want)
+		}
+	}
+}
+
+// TestARestoredCompanyCategoryLandsInCompanyGroups: promotion follows the
+// category's group kind, so a company cost charged outside its window
+// reappears on the company side, not among the private groups.
+func TestARestoredCompanyCategoryLandsInCompanyGroups(t *testing.T) {
+	const companyWindowed = `{
+  "groups": [
+    { "name": "Housing", "kind": "private", "categories": [
+      { "id": "00000000-0000-4000-8000-0000000000b1", "name": "Rent", "amount": 1000 }
+    ]},
+    { "name": "Office", "kind": "company", "categories": [
+      { "id": "00000000-0000-4000-8000-0000000000b2", "name": "Agent", "amount": 200, "until": "2026-08-01" }
+    ]}
+  ]
+}`
+	const agent = "00000000-0000-4000-8000-0000000000b2"
+	b := newTestBudget(t, map[string]string{"budget.json": companyWindowed})
+	bv, err := b.ForMonth(context.Background(), 2026, time.September, testNow, false)
+	if err != nil {
+		t.Fatalf("ForMonth September: %v", err)
+	}
+
+	av := ActualsView{Present: true, Complete: true, ByCategory: map[string]int{agent: 20000}}
+	ApplyActuals(&bv, av, 2026, time.September, nil)
+
+	if len(bv.CompanyGroups) != 1 || bv.CompanyGroups[0].Name != "Office" {
+		t.Fatalf("the company group was not restored: %+v", bv.CompanyGroups)
+	}
+	if r := bv.CompanyGroups[0].Rows[0]; r.Name != "Agent" || r.ActualCents != 20000 {
+		t.Errorf("restored company row = %+v", r)
+	}
+	if len(bv.Groups) != 1 || bv.Groups[0].Name != "Housing" {
+		t.Errorf("the private side changed: %+v", bv.Groups)
+	}
+}
+
 // TestAClosedMonthClosesOnItsActuals is the point of letting actuals reach the
 // roll-forward. The balance opens at 2 000 on the 31 July read; August plans
 // 1 000 of private spending but the bank says 400 was spent.

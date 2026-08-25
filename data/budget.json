@@ -126,7 +126,7 @@
           "name": "Domain Registry (starts)",
           "amount": 25,
           "from": "2026-11-01",
-          "note": "A recurring cost that started: shown as an estimate until November, then counted"
+          "note": "A recurring cost that started: hidden until November, then counted"
         }
       ]
     },

@@ -906,9 +906,14 @@ August is "counted in every month through August, then gone", which is a differe
 from "a one-off that only ever existed in August": dating it rewrites every earlier month's
 plan to zero, flips its genuine earlier charges to `unbudgeted`, and makes a retired
 recurring cost look movable. So a bounded cost keeps its history through its `until` month,
-vanishes after it, and — like one that recurs monthly — is refused by
-`move_planned_expense`. A not-yet-started cost is the same shape from the other side, and
-month view shows it as a grey estimate from its `from` month until it begins.
+and — like one that recurs monthly — is refused by `move_planned_expense`. Outside its
+window the category is simply not shown: no announcement of the cost a `from` month will
+bring, no 0,00 row for the one an `until` month retired, and an emptied group goes with
+them. The one exception is a charge recorded against such a category — a mistake, since the
+plan counts nothing there — which `ApplyActuals` restores the row for, under its own name
+and at its original place in its group, planned at 0 and flagged `unbudgeted`, so the money
+is visible where it can be fixed rather than swallowed by the nameless "not in this
+month's plan" figure.
 
 **A stepped amount resolves the latest entry at or before the month.** The top-level
 `amount` is the first, unnamed period, and each `amount_changes` entry — `{from, amount,

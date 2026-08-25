@@ -189,7 +189,7 @@ func TestAmountChangeFeedsTheUpcomingPreview(t *testing.T) {
 	}
 }
 
-func TestAmountChangeNotYetStartedShowsItsFirstPrice(t *testing.T) {
+func TestANotYetStartedSteppedCategoryIsHiddenUntilItBegins(t *testing.T) {
 	const startsLater = `{
   "groups": [
     { "name": "Subscriptions", "kind": "private", "categories": [
@@ -201,18 +201,14 @@ func TestAmountChangeNotYetStartedShowsItsFirstPrice(t *testing.T) {
 }`
 	b := newTestBudget(t, map[string]string{"budget.json": startsLater})
 
-	// Before it starts, the estimate is its from month's price — 90, not the
-	// later 110, because the change has not taken effect yet.
+	// Before it starts there is no announcement at all: no row, no estimate
+	// of its from month's price — the window simply has not opened yet.
 	view, err := b.ForMonth(context.Background(), 2027, time.April, testNow, false)
 	if err != nil {
 		t.Fatalf("ForMonth April 2027: %v", err)
 	}
-	r := rowByName(view, "Agent")
-	if r.PlannedCents != 0 {
-		t.Fatalf("Agent before its from month = %d, want 0", r.PlannedCents)
-	}
-	if r.UpcomingCents != eurToCents(90) {
-		t.Errorf("upcoming estimate = %d, want %d (the from month's price)", r.UpcomingCents, eurToCents(90))
+	if r := rowByName(view, "Agent"); r.Name != "" {
+		t.Errorf("Agent was announced in April 2027, before its from month: %+v", r)
 	}
 
 	view, err = b.ForMonth(context.Background(), 2027, time.August, testNow, false)

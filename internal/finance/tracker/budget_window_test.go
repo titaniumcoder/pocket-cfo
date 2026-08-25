@@ -184,27 +184,19 @@ func TestEndedCategoryDisappearsFromMonthView(t *testing.T) {
 	}
 }
 
-// TestNotYetStartedCategoryShowsUpcomingEstimate: before its from month a
-// recurring cost appears as the grey future estimate rather than a 0 row.
-func TestNotYetStartedCategoryShowsUpcomingEstimate(t *testing.T) {
+// TestNotYetStartedCategoryIsHiddenUntilItBegins: a cost whose window has
+// not opened is not announced — no row, no grey estimate, nothing — until
+// its from month arrives. Money that moves on it before then is the one
+// thing that restores it (see applyactuals_test.go).
+func TestNotYetStartedCategoryIsHiddenUntilItBegins(t *testing.T) {
 	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWindowed})
 
 	before, err := b.ForMonth(context.Background(), 2026, time.September, testNow, false)
 	if err != nil {
 		t.Fatalf("ForMonth September: %v", err)
 	}
-	r := rowByName(before, "Starts")
-	if r.Name == "" {
-		t.Fatal("Starts was hidden in the month before its from month")
-	}
-	if r.PlannedCents != 0 {
-		t.Errorf("Starts planned in September = %d, want 0", r.PlannedCents)
-	}
-	if want := eurToCents(90); r.UpcomingCents != want {
-		t.Errorf("Starts upcoming = %d, want %d", r.UpcomingCents, want)
-	}
-	if r.UpcomingMonth != "October 2026" {
-		t.Errorf("Starts upcoming month = %q, want October 2026", r.UpcomingMonth)
+	if r := rowByName(before, "Starts"); r.Name != "" {
+		t.Errorf("Starts was announced in September, before its from month: %+v", r)
 	}
 
 	first, err := b.ForMonth(context.Background(), 2026, time.October, testNow, false)
@@ -240,6 +232,30 @@ func TestEndedCategoryNeverReturnsAsUpcoming(t *testing.T) {
 	}
 	if r := rowByName(view, "Ended"); r.Name != "" {
 		t.Errorf("two years after ending, Ended resurfaced as a preview row: %+v", r)
+	}
+}
+
+// TestGroupWithOnlyOutOfWindowCategoriesIsHidden: the parent group follows
+// its rows. A group whose every category sits outside its window must not
+// survive as an empty header — it comes back only when money movement
+// restores one of its rows (see applyactuals_test.go).
+func TestGroupWithOnlyOutOfWindowCategoriesIsHidden(t *testing.T) {
+	b := newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWindowed})
+
+	before, err := b.ForMonth(context.Background(), 2026, time.September, testNow, false)
+	if err != nil {
+		t.Fatalf("ForMonth September: %v", err)
+	}
+	if len(before.Groups) != 0 {
+		t.Errorf("September (Ended is over, Starts has not begun) still carries groups: %+v", before.Groups)
+	}
+
+	inside, err := b.ForMonth(context.Background(), 2026, time.August, testNow, false)
+	if err != nil {
+		t.Fatalf("ForMonth August: %v", err)
+	}
+	if len(inside.Groups) != 1 || inside.Groups[0].Name != "Subscriptions" {
+		t.Errorf("August (Ended active) should carry the Subscriptions group, got %+v", inside.Groups)
 	}
 }
 

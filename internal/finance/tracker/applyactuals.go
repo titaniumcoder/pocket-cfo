@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -23,8 +24,54 @@ func ApplyActuals(bv *BudgetView, av ActualsView, viewedYear int, viewed time.Mo
 	if bv == nil || !av.Present {
 		return
 	}
+	promoteDeferredRows(bv, av)
 	applyToGroups(bv.Groups, av, viewedYear, viewed, charged)
 	applyToGroups(bv.CompanyGroups, av, viewedYear, viewed, charged)
+}
+
+// promoteDeferredRows restores the out-of-window categories money actually
+// moved on. A charge against a category whose from/until window excludes the
+// viewed period is a mistake, but an invisible one: without the row, the
+// money lands in the nameless "not in this month's plan" figure with nothing
+// naming the category to fix. ByCategory's presence, not its amount, is the
+// trigger, so a refund that nets the month to zero still restores the row —
+// money moved, and the reader should see where.
+func promoteDeferredRows(bv *BudgetView, av ActualsView) {
+	if len(bv.deferredRows) == 0 {
+		return
+	}
+	var kept []deferredRow
+	for _, d := range bv.deferredRows {
+		if _, moved := av.ByCategory[d.row.CategoryID]; !moved {
+			kept = append(kept, d)
+			continue
+		}
+		insertDeferredRow(bv, d)
+	}
+	bv.deferredRows = kept
+}
+
+// insertDeferredRow puts a promoted row back where budget.json had it: the
+// group it came from, recreated in its original position if the window had
+// emptied it entirely, and the row at its original place among its siblings.
+func insertDeferredRow(bv *BudgetView, d deferredRow) {
+	groups := &bv.Groups
+	if d.company {
+		groups = &bv.CompanyGroups
+	}
+	gi := 0
+	for gi < len(*groups) && (*groups)[gi].ordinal < d.groupOrdinal {
+		gi++
+	}
+	if gi == len(*groups) || (*groups)[gi].ordinal != d.groupOrdinal {
+		*groups = slices.Insert(*groups, gi, CategoryGroupView{Name: d.groupName, ordinal: d.groupOrdinal})
+	}
+	g := &(*groups)[gi]
+	ri := 0
+	for ri < len(g.Rows) && g.Rows[ri].ordinal < d.rowOrdinal {
+		ri++
+	}
+	g.Rows = slices.Insert(g.Rows, ri, d.row)
 }
 
 func applyToGroups(groups []CategoryGroupView, av ActualsView, viewedYear int, viewed time.Month, charged map[string][]time.Month) {

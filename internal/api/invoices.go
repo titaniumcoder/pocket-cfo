@@ -142,9 +142,15 @@ func (s *Service) SetInvoicePaid(ctx context.Context, req InvoicePaymentRequest)
 		}
 	}
 
-	updated, err := applyPayment(pf, number, req, paidOn)
+	updated, changed, err := applyPayment(pf, number, req, paidOn)
 	if err != nil {
 		return nil, err
+	}
+	if !changed {
+		return &InvoicePaymentResult{
+			Invoice: number, Paid: req.Paid, Date: paidOn,
+			SHA: sha, DeployPending: false,
+		}, nil
 	}
 
 	out, err := marshalPaid(updated, pf.Schema)
@@ -168,26 +174,43 @@ func (s *Service) SetInvoicePaid(ctx context.Context, req InvoicePaymentRequest)
 	}, nil
 }
 
-func applyPayment(pf paidinvoices.PaidInvoicesJson, number string, req InvoicePaymentRequest, paidOn string) ([]paidinvoices.Payment, error) {
+func applyPayment(pf paidinvoices.PaidInvoicesJson, number string, req InvoicePaymentRequest, paidOn string) ([]paidinvoices.Payment, bool, error) {
 	out := make([]paidinvoices.Payment, 0, len(pf.Paid)+1)
-	listed := false
+	listed, changed := false, false
 	for _, p := range pf.Paid {
 		if p.Invoice == number {
 			listed = true
-			if req.Paid {
-				out = append(out, paymentFor(number, req, paidOn))
+			if !req.Paid {
+				changed = true
+				continue
 			}
+			if samePayment(p, req, paidOn) {
+				out = append(out, p)
+				continue
+			}
+			changed = true
+			out = append(out, paymentFor(number, req, paidOn))
 			continue
 		}
 		out = append(out, p)
 	}
 	if req.Paid && !listed {
 		out = append(out, paymentFor(number, req, paidOn))
+		changed = true
 	}
-	if !req.Paid && !listed {
-		return nil, errorf(CodeInvalidRequest, "%s is not marked paid, so there is no payment to remove", number)
+	return out, changed, nil
+}
+
+func sameNote(note *string, sent string) bool {
+	held := ""
+	if note != nil {
+		held = strings.TrimSpace(*note)
 	}
-	return out, nil
+	return held == strings.TrimSpace(sent)
+}
+
+func samePayment(p paidinvoices.Payment, req InvoicePaymentRequest, paidOn string) bool {
+	return p.Date.Format("2006-01-02") == paidOn && sameNote(p.Note, req.Note)
 }
 
 func paymentFor(number string, req InvoicePaymentRequest, paidOn string) paidinvoices.Payment {

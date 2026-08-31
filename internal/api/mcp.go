@@ -52,7 +52,7 @@ type invoicesArgs struct {
 
 type setInvoicePaidArgs struct {
 	Invoice string `json:"invoice" jsonschema:"the invoice number exactly as list_invoices spells it, e.g. INV-0000000002"`
-	Paid    bool   `json:"paid" jsonschema:"true records the payment, false removes the payment record again — the usual way to undo a payment recorded in error"`
+	Paid    bool   `json:"paid" jsonschema:"true records the payment, false removes the payment record again (a no-op when there is none)"`
 	Date    string `json:"date,omitempty" jsonschema:"the day the money arrived, YYYY-MM-DD, as the bank shows it. Required when paid is true, and never in the future — a payment is read off the bank, not projected"`
 	Note    string `json:"note,omitempty" jsonschema:"optional free text carried on the payment entry — there is deliberately no account or method field, so put 'received on the company account at Bank X' here if it matters"`
 	Reason  string `json:"reason,omitempty" jsonschema:"why the payment is recorded, corrected or removed; lands in the commit message"`
@@ -289,7 +289,7 @@ func (s *Service) registerTools(server *mcp.Server) {
 	mcp.AddTool(server, tool("set_invoice_paid",
 		"Record that an invoice was paid, or take the record back — the one mutable thing about an invoice, kept deliberately OUTSIDE the invoice document (which is write-once once issued) in data/paid-invoices.json. "+
 			"\"paid\": true requires date, the day the money arrived, YYYY-MM-DD, as the bank shows it — never a future date, and never 'when the invoice was issued'. "+
-			"Recording it again with a different date corrects the record; paid false removes the entry outright. "+
+			"Recording it again with a different date corrects the record; paid false removes the entry. Both directions are IDEMPOTENT: re-sending an identical payment, or unmarking an invoice that was never marked, changes nothing and commits nothing. "+
 			"There is no amount and no account field BY DESIGN (see ARCHITECTURE.md §3.6): payment is one date per invoice, and the optional note is where a bank reference or which account it landed on goes, as free text. "+
 			"A draft is refused — a draft is never paid — and so is an invoice that does not exist; list_invoices is the source of numbers. "+
 			"reason is optional and lands in the commit message. Each accepted call is a git commit that redeploys the app, and list_invoices reports the payment immediately.",

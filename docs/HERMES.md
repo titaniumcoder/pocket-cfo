@@ -184,7 +184,9 @@ is write-once once issued:
 
 - `paid: true` needs `date`, the day the money arrived, as the bank shows it — never a
   future date, and never the issue date by default. Recording it again with a different
-  date corrects the record; `paid: false` removes the entry outright.
+  date corrects the record; `paid: false` removes the entry. Both directions are
+  **idempotent**: re-sending an identical payment, or unmarking an invoice that was never
+  marked, changes nothing and commits nothing — repeating a call is always safe.
 - There is no amount and no account field, by design (ARCHITECTURE.md §3.6): one date per
   invoice. The optional `note` is where a bank reference, or which account the money
   landed on, goes as free text.

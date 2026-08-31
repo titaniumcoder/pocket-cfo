@@ -238,16 +238,67 @@ func TestUnmarkingAPaymentRemovesOnlyThatEntry(t *testing.T) {
 	}
 }
 
-func TestUnmarkingAnUnpaidInvoiceIsRefused(t *testing.T) {
+// TestUnmarkingAnUnpaidInvoiceIsANoOp: paid false on an invoice that was
+// never marked commits nothing, and answers paid:false all the same — the
+// repeat of an unmark must be as safe as repeating the mark.
+func TestUnmarkingAnUnpaidInvoiceIsANoOp(t *testing.T) {
 	gh := newFakeGitHub(map[string]string{DefaultPaidInvoicesPath: paidInvoicesFixture})
 	s := invoiceService(t, gh)
 
-	_, err := setPaid(t, s, InvoicePaymentRequest{Invoice: "INV-0000000002", Paid: false})
-	if err == nil || !strings.Contains(err.Error(), "not marked paid") {
-		t.Fatalf("err = %v, want a refusal", err)
+	got, err := setPaid(t, s, InvoicePaymentRequest{Invoice: "INV-0000000002", Paid: false})
+	if err != nil {
+		t.Fatalf("SetInvoicePaid: %v", err)
+	}
+	if got.Paid || got.Date != "" || got.DeployPending {
+		t.Errorf("result = %+v, want an unpaid result that deploys nothing", got)
 	}
 	if gh.puts != 0 {
-		t.Errorf("a refusal committed a write")
+		t.Errorf("a no-op committed a write")
+	}
+	if after := string(gh.files[DefaultPaidInvoicesPath]); after != paidInvoicesFixture {
+		t.Errorf("a no-op changed the file:\n%s", after)
+	}
+}
+
+// TestAnIdenticalPaymentCommitsNothing: re-sending the same payment must be a
+// no-op, the way repeating a statement import is.
+func TestAnIdenticalPaymentCommitsNothing(t *testing.T) {
+	gh := newFakeGitHub(map[string]string{DefaultPaidInvoicesPath: paidInvoicesFixture})
+	s := invoiceService(t, gh)
+
+	got, err := setPaid(t, s, InvoicePaymentRequest{
+		Invoice: "INV-0000000001", Paid: true, Date: "2026-02-01",
+	})
+	if err != nil {
+		t.Fatalf("SetInvoicePaid: %v", err)
+	}
+	if got.DeployPending || got.Date != "2026-02-01" {
+		t.Errorf("result = %+v, want an unchanged result with no deploy pending", got)
+	}
+	if gh.puts != 0 {
+		t.Errorf("an identical re-send committed a write")
+	}
+	if after := string(gh.files[DefaultPaidInvoicesPath]); after != paidInvoicesFixture {
+		t.Errorf("the file was rewritten by a no-op:\n%s", after)
+	}
+}
+
+// TestTheSameDateWithANewNoteIsACorrection: only an exact match is a no-op; a
+// note that differs is a correction worth a commit.
+func TestTheSameDateWithANewNoteIsACorrection(t *testing.T) {
+	gh := newFakeGitHub(map[string]string{DefaultPaidInvoicesPath: paidInvoicesFixture})
+	s := invoiceService(t, gh)
+
+	if _, err := setPaid(t, s, InvoicePaymentRequest{
+		Invoice: "INV-0000000001", Paid: true, Date: "2026-02-01", Note: "received on the company account",
+	}); err != nil {
+		t.Fatalf("SetInvoicePaid: %v", err)
+	}
+	if gh.puts != 1 {
+		t.Fatalf("puts = %d, want the note to land as a correction", gh.puts)
+	}
+	if after := string(gh.files[DefaultPaidInvoicesPath]); !strings.Contains(after, "received on the company account") {
+		t.Errorf("the note did not land:\n%s", after)
 	}
 }
 

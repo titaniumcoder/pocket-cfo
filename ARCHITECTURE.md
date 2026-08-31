@@ -298,11 +298,11 @@ no draft is marked paid.
 
 Recording a payment is also the one invoicing write the Hermes API offers
 (`set_invoice_paid`, with `list_invoices` beside it): `paid: true` with the day the money
-arrived replaces a wrong date as a correction, `paid: false` removes the entry, and the
-optional free-text `note` is where a bank reference — or which account the money landed
-on — goes. There is deliberately no account or method field to record it in; if the
-date-plus-note ever stops being enough, the schema grows a field and nothing else
-changes.
+arrived replaces a wrong date as a correction, `paid: false` removes the entry, an
+identical re-send is a no-op that commits nothing, and the optional free-text `note` is
+where a bank reference — or which account the money landed on — goes. There is
+deliberately no account or method field to record it in; if the date-plus-note ever
+stops being enough, the schema grows a field and nothing else changes.
 
 Partial payments are deliberately unsupported. If that ever changes, this field becomes
 an array and the derived rules in §3.7 grow one line; nothing else in the design cares.

@@ -170,6 +170,30 @@ reads work and writes return `write_not_configured`.
     A month before the earliest entry has nothing in force and is charged nothing, which is
     not the same as a rate of zero.
 
+## Invoices
+
+`list_invoices` (or `GET /api/invoices?year=YYYY`) reports every invoice the dashboard
+shows — issued and draft alike — with number, title, recipient, issue and due dates, the
+total in cents, and a state: `draft`, `issued`, `overdue` (due date passed unpaid), or
+`paid` with the date it was paid on. `years` lists the years invoices exist for. The
+numbers it lists are the only legal values for `set_invoice_paid`'s `invoice` field.
+
+**`set_invoice_paid`** (or `POST /api/invoices/paid`) is the one invoicing write. It
+records a payment in `data/paid-invoices.json` — never inside the invoice document, which
+is write-once once issued:
+
+- `paid: true` needs `date`, the day the money arrived, as the bank shows it — never a
+  future date, and never the issue date by default. Recording it again with a different
+  date corrects the record; `paid: false` removes the entry outright.
+- There is no amount and no account field, by design (ARCHITECTURE.md §3.6): one date per
+  invoice. The optional `note` is where a bank reference, or which account the money
+  landed on, goes as free text.
+- A draft is refused — a draft is never paid — and so is an invoice that does not exist;
+  `list_invoices` is the source of numbers.
+
+The dashboard's staleness badge does the rest: listing an invoice in `paid-invoices.json`
+renders its `-paid.pdf`, and a corrected date stales the paid copy again.
+
 ## What you cannot write, and why
 
 Three things are readable here and only editable in the data repo, deliberately:
@@ -292,8 +316,8 @@ stopped withholding judgement on.
 ## What a write actually does
 
 Each accepted `add_transactions`, `edit_transactions`, `move_planned_expense`,
-`schedule_amount_change` or `record_account_balance` is a **git commit** to the data
-repo, which redeploys the app — one commit per month touched. That is
+`schedule_amount_change`, `record_account_balance` or `set_invoice_paid` is a **git
+commit** to the data repo, which redeploys the app — one commit per month touched. That is
 what makes handing an agent an API tolerable: it isn't trusted, it's audited. Every change
 is one you can read in `git log` and revert.
 

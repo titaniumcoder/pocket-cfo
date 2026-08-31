@@ -16,7 +16,7 @@ import (
 
 const apiRequestTimeout = 30 * time.Second
 
-const mcpServerVersion = "3"
+const mcpServerVersion = "4"
 
 func (s *server) registerAPI(mux *http.ServeMux) {
 	if s.cfg.hermesAPIToken == "" {
@@ -30,6 +30,8 @@ func (s *server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/reconciliation", s.apiReconciliation)
 	mux.HandleFunc("GET /api/config", s.apiFinanceConfig)
 	mux.HandleFunc("GET /api/director-loan/{month}", s.apiDirectorLoan)
+	mux.HandleFunc("GET /api/invoices", s.apiInvoices)
+	mux.HandleFunc("POST /api/invoices/paid", s.apiSetInvoicePaid)
 	mux.HandleFunc("POST /api/actuals/add", s.apiAddActuals)
 	mux.HandleFunc("POST /api/actuals/edit", s.apiEditActuals)
 	mux.HandleFunc("POST /api/accounts/balance", s.apiRecordAccountBalance)
@@ -75,6 +77,8 @@ func (s *server) apiService() *api.Service {
 		svc.Budget, svc.Accounts, svc.Actuals = s.tracker.Budget, s.tracker.Accounts, s.tracker.Actuals
 		svc.Start = s.tracker.Start
 		svc.Personal = s.tracker.Personal
+		svc.InvoicesDir = invoicesDir
+		svc.PaidInvoicesPath = paidInvoicesPath
 		// The same computation the dashboard renders, invoices and all, so a
 		// figure this API reports and a figure on the page cannot drift.
 		svc.Figures = func(ctx context.Context, year int, month time.Month) (tracker.Figures, error) {
@@ -329,6 +333,33 @@ func writeAPIJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
+}
+
+func (s *server) apiInvoices(w http.ResponseWriter, r *http.Request) {
+	year := r.URL.Query().Get("year")
+	s.serveAPI(w, r, func(ctx context.Context, svc *api.Service) (any, error) {
+		return svc.Invoices(ctx, year)
+	})
+}
+
+func (s *server) apiSetInvoicePaid(w http.ResponseWriter, r *http.Request) {
+	if !s.apiAuthorized(w, r) {
+		return
+	}
+	var req api.InvoicePaymentRequest
+	if !decodeAPIBody(w, r, &req) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
+	defer cancel()
+
+	out, err := s.apiService().SetInvoicePaid(ctx, req)
+	if err != nil {
+		writeAPIError(w, err, apiStatus(err))
+		return
+	}
+	writeAPIJSON(w, http.StatusOK, out)
 }
 
 func (s *server) apiRecordAccountBalance(w http.ResponseWriter, r *http.Request) {

@@ -296,6 +296,14 @@ attached later without a schema break. `pocket-cfo-ctl validate` enforces what J
 can't: no duplicate invoice numbers, every number resolves to an invoice that exists, and
 no draft is marked paid.
 
+Recording a payment is also the one invoicing write the Hermes API offers
+(`set_invoice_paid`, with `list_invoices` beside it): `paid: true` with the day the money
+arrived replaces a wrong date as a correction, `paid: false` removes the entry, and the
+optional free-text `note` is where a bank reference — or which account the money landed
+on — goes. There is deliberately no account or method field to record it in; if the
+date-plus-note ever stops being enough, the schema grows a field and nothing else
+changes.
+
 Partial payments are deliberately unsupported. If that ever changes, this field becomes
 an array and the derived rules in §3.7 grow one line; nothing else in the design cares.
 
@@ -695,13 +703,13 @@ must be requested first.
 
 Deploy: single Go binary, any host, scale-to-zero fine — no local state.
 
-**Later, if hand-editing gets tiresome**: `POST /invoices/{n}/paid` appending to
-`data/paid-invoices.json` through the GitHub Contents API using the visitor's own OAuth
-token. Splitting payment out of the invoice document is what makes this a small, additive
-write rather than a rewrite of an issued invoice.
-No database appears, the commit is attributed to the actual person, and GitHub enforces
-write permission for you. That's the only write path worth adding — one-click payment
-marking is what keeps the statistics honest.
+**Payment through the API, added since**: `set_invoice_paid` (and `list_invoices`) under
+the Hermes surface — `POST /api/invoices/paid`, appending to `data/paid-invoices.json`
+through the GitHub Contents API under `GITHUB_DATA_TOKEN`, rather than the visitor's OAuth
+token sketched here first. Splitting payment out of the invoice document is what makes
+this a small, additive write rather than a rewrite of an issued invoice. No database
+appears, the commit is attributed through the token's identity, and GitHub enforces write
+permission for you.
 
 ---
 

@@ -46,6 +46,18 @@ type reconciliationArgs struct {
 	Year int `json:"year,omitempty" jsonschema:"the year to report, defaults to the current one"`
 }
 
+type invoicesArgs struct {
+	Year string `json:"year,omitempty" jsonschema:"the year to report, YYYY; omit for every year at once"`
+}
+
+type setInvoicePaidArgs struct {
+	Invoice string `json:"invoice" jsonschema:"the invoice number exactly as list_invoices spells it, e.g. INV-0000000002"`
+	Paid    bool   `json:"paid" jsonschema:"true records the payment, false removes the payment record again — the usual way to undo a payment recorded in error"`
+	Date    string `json:"date,omitempty" jsonschema:"the day the money arrived, YYYY-MM-DD, as the bank shows it. Required when paid is true, and never in the future — a payment is read off the bank, not projected"`
+	Note    string `json:"note,omitempty" jsonschema:"optional free text carried on the payment entry — there is deliberately no account or method field, so put 'received on the company account at Bank X' here if it matters"`
+	Reason  string `json:"reason,omitempty" jsonschema:"why the payment is recorded, corrected or removed; lands in the commit message"`
+}
+
 type splitArg struct {
 	Amount    float64 `json:"amount" jsonschema:"euros for this part, same sign convention as the line. Never 0, and the parts must add up to the line's own amount"`
 	Category  string  `json:"category,omitempty" jsonschema:"the budget category id this part belongs to"`
@@ -199,6 +211,11 @@ type reconciliationResult struct {
 	Months []MonthStatus `json:"months"`
 }
 
+type invoiceListResult struct {
+	Years    []int     `json:"years"`
+	Invoices []Invoice `json:"invoices"`
+}
+
 func (s *Service) registerTools(server *mcp.Server) {
 	tool := func(name, desc string, readOnly bool) *mcp.Tool {
 		return &mcp.Tool{
@@ -261,6 +278,25 @@ func (s *Service) registerTools(server *mcp.Server) {
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
 		out, err := s.AccountsList(ctx)
 		return result(accountsResult{Accounts: out}, err)
+	})
+
+	mcp.AddTool(server, tool("list_invoices",
+		"Every invoice the dashboard shows, under an invoices key — issued and draft alike, each with its number, title, recipient, issue and due date, grand total in cents, and a state: draft, issued, overdue (due date passed unpaid), or paid with the date it was paid on. years lists the years invoices exist for; pass one as year to see only that year. The same numbers the invoicing page renders, and the ONLY source of invoice numbers — spell set_invoice_paid's invoice field exactly as listed here. Drafts cannot be paid; an invoice you do not see does not exist yet. A payment recorded through set_invoice_paid is reflected here at once, since the paid list is read live; the invoice documents themselves lag until a commit has deployed.",
+		true), func(ctx context.Context, _ *mcp.CallToolRequest, a invoicesArgs) (*mcp.CallToolResult, any, error) {
+		return result(s.Invoices(ctx, a.Year))
+	})
+
+	mcp.AddTool(server, tool("set_invoice_paid",
+		"Record that an invoice was paid, or take the record back — the one mutable thing about an invoice, kept deliberately OUTSIDE the invoice document (which is write-once once issued) in data/paid-invoices.json. "+
+			"\"paid\": true requires date, the day the money arrived, YYYY-MM-DD, as the bank shows it — never a future date, and never 'when the invoice was issued'. "+
+			"Recording it again with a different date corrects the record; paid false removes the entry outright. "+
+			"There is no amount and no account field BY DESIGN (see ARCHITECTURE.md §3.6): payment is one date per invoice, and the optional note is where a bank reference or which account it landed on goes, as free text. "+
+			"A draft is refused — a draft is never paid — and so is an invoice that does not exist; list_invoices is the source of numbers. "+
+			"reason is optional and lands in the commit message. Each accepted call is a git commit that redeploys the app, and list_invoices reports the payment immediately.",
+		false), func(ctx context.Context, _ *mcp.CallToolRequest, a setInvoicePaidArgs) (*mcp.CallToolResult, any, error) {
+		return result(s.SetInvoicePaid(ctx, InvoicePaymentRequest{
+			Invoice: a.Invoice, Paid: a.Paid, Date: a.Date, Note: a.Note, Reason: a.Reason,
+		}))
 	})
 
 	mcp.AddTool(server, tool("get_finance_config",

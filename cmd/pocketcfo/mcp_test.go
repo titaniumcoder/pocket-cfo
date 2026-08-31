@@ -116,6 +116,7 @@ func TestMCPToolsList(t *testing.T) {
 		"list_accounts": true, "add_transactions": true, "edit_transactions": true,
 		"move_planned_expense": true, "schedule_amount_change": true,
 		"record_account_balance": true, "get_finance_config": true, "get_director_loan": true,
+		"list_invoices": true, "set_invoice_paid": true,
 	}
 	got := map[string]bool{}
 	for _, raw := range tools {

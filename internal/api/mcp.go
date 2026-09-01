@@ -50,6 +50,21 @@ type invoicesArgs struct {
 	Year string `json:"year,omitempty" jsonschema:"the year to report, YYYY; omit for every year at once"`
 }
 
+type invoiceNumberArgs struct {
+	Number string `json:"number" jsonschema:"the invoice number exactly as list_invoices spells it, e.g. INV-0000000002"`
+}
+
+type saveDraftArgs struct {
+	Document string `json:"document" jsonschema:"the complete invoice document as a JSON string, exactly as get_invoice_document returned it in its document field, with your edits"`
+	BaseSHA  string `json:"base_sha,omitempty" jsonschema:"the sha get_invoice_document reported, for uploads to an existing draft. A stale one comes back as a conflict carrying the current sha, so re-read and try again"`
+	Reason   string `json:"reason,omitempty" jsonschema:"why the draft is created or changed; lands in the commit message"`
+}
+
+type issueInvoiceArgs struct {
+	Invoice string `json:"invoice" jsonschema:"the invoice number exactly as list_invoices spells it, e.g. INV-0000000002"`
+	Reason  string `json:"reason" jsonschema:"why the invoice is ready to be issued — required, because issuing freezes the document forever"`
+}
+
 type setInvoicePaidArgs struct {
 	Invoice string `json:"invoice" jsonschema:"the invoice number exactly as list_invoices spells it, e.g. INV-0000000002"`
 	Paid    bool   `json:"paid" jsonschema:"true records the payment, false removes the payment record again (a no-op when there is none)"`
@@ -216,6 +231,13 @@ type invoiceListResult struct {
 	Invoices []Invoice `json:"invoices"`
 }
 
+type invoiceDocumentResult struct {
+	Number   string          `json:"number"`
+	Status   string          `json:"status"`
+	SHA      string          `json:"sha,omitempty"`
+	Document json.RawMessage `json:"document"`
+}
+
 func (s *Service) registerTools(server *mcp.Server) {
 	tool := func(name, desc string, readOnly bool) *mcp.Tool {
 		return &mcp.Tool{
@@ -281,9 +303,43 @@ func (s *Service) registerTools(server *mcp.Server) {
 	})
 
 	mcp.AddTool(server, tool("list_invoices",
-		"Every invoice the dashboard shows, under an invoices key — issued and draft alike, each with its number, title, recipient, issue and due date, grand total in cents, and a state: draft, issued, overdue (due date passed unpaid), or paid with the date it was paid on. years lists the years invoices exist for; pass one as year to see only that year. The same numbers the invoicing page renders, and the ONLY source of invoice numbers — spell set_invoice_paid's invoice field exactly as listed here. Drafts cannot be paid; an invoice you do not see does not exist yet. A payment recorded through set_invoice_paid is reflected here at once, since the paid list is read live; the invoice documents themselves lag until a commit has deployed.",
+		"Every invoice the dashboard shows, under an invoices key — issued and draft alike, each with its number, title, recipient, issue and due date, grand total in cents, a state: draft, issued, overdue (due date passed unpaid), or paid with the date it was paid on, and the pdfs its state can serve — draft, original, paid — which GET /api/invoices/{number}/pdf?variant=… downloads (REST only, never through MCP). years lists the years invoices exist for; pass one as year to see only that year. The same numbers the invoicing page renders, and the ONLY source of invoice numbers — spell set_invoice_paid's and issue_invoice's invoice field exactly as listed here. Drafts cannot be paid; an invoice you do not see does not exist yet. To read or edit the invoice itself, get_invoice_document serves the whole document, save_draft_invoice edits a draft and issue_invoice freezes it. A payment recorded through set_invoice_paid is reflected here at once, since the paid list is read live; the invoice documents themselves lag until a commit has deployed.",
 		true), func(ctx context.Context, _ *mcp.CallToolRequest, a invoicesArgs) (*mcp.CallToolResult, any, error) {
 		return result(s.Invoices(ctx, a.Year))
+	})
+
+	mcp.AddTool(server, tool("get_invoice_document",
+		"The complete invoice document, exactly as committed, for any invoice — draft or issued alike — under a document key, beside its number, status and sha. This is how you download an invoice: list_invoices reports only the summary. Read through the data repo whenever writes are configured, so a draft saved through save_draft_invoice reads back immediately; a document changed by hand in the data repo appears only after that commit has deployed. The sha is what a later save_draft_invoice bases its conflict check on — keep it alongside your edits.",
+		true), func(ctx context.Context, _ *mcp.CallToolRequest, a invoiceNumberArgs) (*mcp.CallToolResult, any, error) {
+		out, err := s.InvoiceDocumentFor(ctx, a.Number)
+		if err != nil {
+			return result[*InvoiceDocument](nil, err)
+		}
+		return result(invoiceDocumentResult{Number: out.Number, Status: out.Status, SHA: out.SHA, Document: out.Document}, nil)
+	})
+
+	mcp.AddTool(server, tool("save_draft_invoice",
+		"Upload an invoice as a draft — the only way this API writes an invoice document, and a draft is the only thing it will ever write. "+
+			"document is the complete invoice JSON as a string, exactly as get_invoice_document returned it, with your edits; whatever status it carries is overwritten with draft, so there is no way to create or flip to issued here. "+
+			"Leave the number OUT to create: the next number is assigned (max + 1, so the sequence stays gapless), and a base_sha makes no sense for a new invoice and is refused. Give the number of an EXISTING DRAFT to replace it — as many times as you like, it is a working document. "+
+			"An issued invoice is refused forever: once the draft flag is gone the document is write-once, and a correction is a new invoice, not an edit. "+
+			"base_sha is the sha get_invoice_document reported; a stale one comes back as a conflict carrying the current value, so re-read and try again. An upload identical to what is committed changes nothing and commits nothing. "+
+			"The document must satisfy invoice.json's schema and pass the real validators — computable totals, every de string with its bg sibling, the tax regime cross-checked against the parties the document snapshots, the mandatory wording present — before anything is committed. "+
+			"reason is optional and lands in the commit message. Each accepted call is a git commit that redeploys the app; the DRAFT pdf is re-rendered by the build that follows.",
+		false), func(ctx context.Context, _ *mcp.CallToolRequest, a saveDraftArgs) (*mcp.CallToolResult, any, error) {
+		return result[*DraftSaveResult](s.SaveDraftInvoice(ctx, SaveDraftRequest{
+			Document: json.RawMessage(a.Document), BaseSHA: a.BaseSHA, Reason: a.Reason,
+		}))
+	})
+
+	mcp.AddTool(server, tool("issue_invoice",
+		"Flip a draft to issued — the one way the draft flag ever comes off through this API, and it works only in that direction. The commit changes the status line and nothing else, byte for byte, so the diff is one line. "+
+			"reason is required: issuing freezes the document forever, so say why it is ready. "+
+			"An invoice that does not exist is refused — list_invoices is the source of numbers — and one that is already issued is an idempotent no-op that commits nothing. "+
+			"Once issued, save_draft_invoice refuses the number: an issued invoice is never edited again, and payment is recorded beside it with set_invoice_paid. "+
+			"Each accepted call is a git commit that redeploys the app; the build then renders the original PDF once and never overwrites it.",
+		false), func(ctx context.Context, _ *mcp.CallToolRequest, a issueInvoiceArgs) (*mcp.CallToolResult, any, error) {
+		return result[*IssueInvoiceResult](s.IssueInvoice(ctx, IssueInvoiceRequest{Invoice: a.Invoice, Reason: a.Reason}))
 	})
 
 	mcp.AddTool(server, tool("set_invoice_paid",

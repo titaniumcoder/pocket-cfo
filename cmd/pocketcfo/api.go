@@ -19,7 +19,7 @@ import (
 
 const apiRequestTimeout = 30 * time.Second
 
-const mcpServerVersion = "4"
+const mcpServerVersion = "5"
 
 func (s *server) registerAPI(mux *http.ServeMux) {
 	if s.cfg.hermesAPIToken == "" {

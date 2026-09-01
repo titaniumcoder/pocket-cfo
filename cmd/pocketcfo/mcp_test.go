@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -117,6 +118,7 @@ func TestMCPToolsList(t *testing.T) {
 		"move_planned_expense": true, "schedule_amount_change": true,
 		"record_account_balance": true, "get_finance_config": true, "get_director_loan": true,
 		"list_invoices": true, "set_invoice_paid": true,
+		"get_invoice_document": true, "save_draft_invoice": true, "issue_invoice": true,
 	}
 	got := map[string]bool{}
 	for _, raw := range tools {
@@ -172,6 +174,19 @@ func TestMCPWriteToolsDescribeTheirContract(t *testing.T) {
 			"must be in the future", "already closed budget is fixed in budget.json",
 			"refuses one-offs", "amount_changes", "replaces that month's entry as a whole",
 			"never negative", "cannot exceed the amount it reduces",
+		},
+		// That the upload is always a draft, that the number is assigned on
+		// creation, that an issued invoice is out of reach forever, and that a
+		// re-send is safe.
+		"save_draft_invoice": {
+			"overwritten with draft", "no way to create or flip to issued",
+			"number is assigned", "refused forever", "write-once", "commits nothing",
+		},
+		// That issuing is the one direction the flag moves, that the diff is
+		// the status line alone, and that the freeze is permanent.
+		"issue_invoice": {
+			"only in that direction", "the status line and nothing else",
+			"freezes the document forever", "idempotent no-op",
 		},
 	}
 	desc := map[string]string{}
@@ -794,5 +809,116 @@ func TestMCPSchedulesAnAmountChangeThroughTheWholeStack(t *testing.T) {
 	var doc map[string]any
 	if err := json.Unmarshal(gh.files["data/budget.json"], &doc); err != nil {
 		t.Fatalf("the committed budget.json does not parse: %v", err)
+	}
+}
+
+// draftInvoiceMCP is a valid invoice document for the draft tools: a Swiss
+// business recipient under outside_eu_place_of_supply, like the reference
+// invoices, so it passes the real validators with the real catalog.
+func draftInvoiceForMCP(number, status, title string) string {
+	numberField := ""
+	if number != "" {
+		numberField = `"number": "` + number + `",`
+	}
+	return `{
+  "schema_version": 1,
+  ` + numberField + `
+  "status": "` + status + `",
+  "type": "invoice",
+  "title": "` + title + `",
+  "issue_date": "2026-01-15",
+  "due_date": "2026-02-15",
+  "currency": "EUR",
+  "language": "de",
+  "issuer": {
+    "legal_name": "Example Issuer EOOD",
+    "address": { "line1": "Musterstraße 1", "postal_code": "9000", "city": "Varna", "country_code": "BG" },
+    "tax_id": "000000000",
+    "vat_id": "BG000000000",
+    "bank": { "name": "Example Bank", "iban": "DE89370400440532013000", "bic": "COBADEFFXXX" },
+    "default_currency": "EUR"
+  },
+  "recipient": {
+    "number": 7,
+    "legal_name": "Musterfirma GmbH",
+    "address": { "line1": "Musterweg 1", "postal_code": "8000", "city": "Zürich", "country_code": "CH" },
+    "is_business": true,
+    "language": "de",
+    "payment_terms_days": 30,
+    "email": "buchhaltung@musterfirma.example"
+  },
+  "lines": [
+    { "description": { "de": "Beratung", "bg": "Консултации" }, "unit_price": 15000, "vat_rate": 0 }
+  ],
+  "tax": {
+    "regime": "outside_eu_place_of_supply",
+    "citations": ["ЗДДС чл. 69 ал. 2"],
+    "note": { "de": "Hinweis", "bg": "Бележка" }
+  }
+}`
+}
+
+// TestMCPSavesADraftThroughTheWholeStack: the draft loop over the wire — the
+// document survives the SDK's decoding as a string argument, the number is
+// assigned by the service, and the committed file is the uploaded bytes with
+// the status alone rewritten to draft.
+func TestMCPSavesADraftThroughTheWholeStack(t *testing.T) {
+	withRealCatalog(t)
+	s, gh := writingServer(t, nil)
+
+	w := mcpCall(t, s, apiTestToken,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"save_draft_invoice","arguments":{"document":`+
+			strconv.Quote(draftInvoiceForMCP("", "draft", "January support"))+`,"reason":"January support"}}}`)
+	resp := decodeRPC(t, w.Body.String())
+	sc, ok := resp["result"].(map[string]any)["structuredContent"].(map[string]any)
+	if !ok {
+		t.Fatalf("no structuredContent in %s", w.Body)
+	}
+	if sc["number"] != "INV-0000000001" || sc["created"] != true {
+		t.Fatalf("result = %v, want INV-0000000001 created", sc)
+	}
+	written := string(gh.files["data/invoices/INV-0000000001.json"])
+	if !strings.Contains(written, `"status": "draft"`) {
+		t.Errorf("the committed file is not a draft:\n%s", written)
+	}
+	// And the read tool serves it back with the same bytes the service wrote.
+	w = mcpCall(t, s, apiTestToken,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_invoice_document","arguments":{"number":"INV-0000000001"}}}`)
+	sc = decodeRPC(t, w.Body.String())["result"].(map[string]any)["structuredContent"].(map[string]any)
+	if sc["status"] != "draft" {
+		t.Errorf("read-back status = %v", sc["status"])
+	}
+	doc, _ := json.Marshal(sc["document"])
+	if !strings.Contains(string(doc), "January support") {
+		t.Errorf("the document did not survive the read-back: %.200s", doc)
+	}
+}
+
+// TestMCPIsuesAnInvoiceThroughTheWholeStack: the commit carries the issued
+// status and every other byte of the file is untouched, and a further upload
+// to the number is refused for good.
+func TestMCPIsuesAnInvoiceThroughTheWholeStack(t *testing.T) {
+	withRealCatalog(t)
+	s, gh := writingServer(t, map[string]string{
+		"data/invoices/INV-0000000001.json": draftInvoiceForMCP("INV-0000000001", "draft", "The draft"),
+	})
+
+	w := mcpCall(t, s, apiTestToken,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"issue_invoice","arguments":{"invoice":"INV-0000000001","reason":"sent to the client"}}}`)
+	resp := decodeRPC(t, w.Body.String())
+	if _, ok := resp["result"].(map[string]any)["structuredContent"].(map[string]any); !ok {
+		t.Fatalf("no structuredContent in %s", w.Body)
+	}
+	before := draftInvoiceForMCP("INV-0000000001", "draft", "The draft")
+	after := string(gh.files["data/invoices/INV-0000000001.json"])
+	if after != strings.Replace(before, `"status": "draft"`, `"status": "issued"`, 1) {
+		t.Errorf("issuing rewrote more than the status line:\n%s", after)
+	}
+
+	w = mcpCall(t, s, apiTestToken,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"save_draft_invoice","arguments":{"document":`+
+			strconv.Quote(draftInvoiceForMCP("INV-0000000001", "draft", "One more edit"))+`}}}`)
+	if !strings.Contains(w.Body.String(), "never edited again") {
+		t.Errorf("post-issue upload = %s, want the write-once refusal", w.Body)
 	}
 }

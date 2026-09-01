@@ -384,7 +384,7 @@ func withInvoiceNumber(raw []byte, number string) ([]byte, error) {
 	}
 	first := invoiceMember{
 		key:     "number",
-		keyText: []byte("\n  "),
+		keyText: []byte("\n  \"number\""),
 		sep:     []byte(": "),
 		value:   []byte(strconv.Quote(number)),
 	}

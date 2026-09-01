@@ -27,7 +27,9 @@ type Service struct {
 	AccountsPath  string
 
 	InvoicesDir      string
+	InvoicesPrefix   string
 	PaidInvoicesPath string
+	CatalogPath      string
 
 	Now func() time.Time
 

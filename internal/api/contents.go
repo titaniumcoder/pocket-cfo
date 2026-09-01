@@ -17,6 +17,7 @@ var ErrNotFound = errors.New("not found")
 type Store interface {
 	Get(ctx context.Context, path string) (content []byte, sha string, err error)
 	Put(ctx context.Context, path string, content []byte, baseSHA, message string) (sha string, err error)
+	List(ctx context.Context, path string) (names []string, err error)
 }
 
 type ContentsClient struct {
@@ -84,6 +85,39 @@ func (c *ContentsClient) Get(ctx context.Context, path string) ([]byte, string, 
 		return nil, "", fmt.Errorf("github GET %s: decoding content: %w", path, err)
 	}
 	return decoded, body.SHA, nil
+}
+
+type contentsEntry struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+func (c *ContentsClient) List(ctx context.Context, path string) ([]string, error) {
+	url := fmt.Sprintf("%s/repos/%s/contents/%s", c.baseURL(), c.Repo, path)
+	resp, err := c.do(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return []string{}, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github GET %s: %s", path, resp.Status)
+	}
+
+	var entries []contentsEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		return nil, fmt.Errorf("github GET %s: %w", path, err)
+	}
+	var out []string
+	for _, e := range entries {
+		if e.Type == "file" {
+			out = append(out, e.Name)
+		}
+	}
+	return out, nil
 }
 
 type putRequest struct {

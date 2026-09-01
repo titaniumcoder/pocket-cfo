@@ -57,15 +57,24 @@ func (f *fakeGitHub) server(t *testing.T) *httptest.Server {
 
 		switch r.Method {
 		case http.MethodGet:
-			body, ok := f.files[path]
-			if !ok {
-				w.WriteHeader(http.StatusNotFound)
+			if body, ok := f.files[path]; ok {
+				json.NewEncoder(w).Encode(map[string]string{
+					"content": base64.StdEncoding.EncodeToString(body),
+					"sha":     shaOf(body),
+				})
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]string{
-				"content": base64.StdEncoding.EncodeToString(body),
-				"sha":     shaOf(body),
-			})
+			var entries []map[string]string
+			for name := range f.files {
+				if rel, ok := strings.CutPrefix(name, path+"/"); ok && !strings.Contains(rel, "/") {
+					entries = append(entries, map[string]string{"name": rel, "type": "file"})
+				}
+			}
+			if entries != nil {
+				json.NewEncoder(w).Encode(entries)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
 		case http.MethodPut:
 			f.puts++
 			raw, _ := io.ReadAll(r.Body)

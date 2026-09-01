@@ -24,14 +24,15 @@ const DefaultPaidInvoicesPath = "data/paid-invoices.json"
 var invoiceNumberRE = regexp.MustCompile(`^INV-\d{10}$`)
 
 type Invoice struct {
-	Number     string `json:"number"`
-	Title      string `json:"title"`
-	Recipient  string `json:"recipient"`
-	IssueDate  string `json:"issue_date"`
-	DueDate    string `json:"due_date"`
-	TotalCents int64  `json:"total_cents"`
-	State      string `json:"state"`
-	PaidOn     string `json:"paid_on,omitempty"`
+	Number     string   `json:"number"`
+	Title      string   `json:"title"`
+	Recipient  string   `json:"recipient"`
+	IssueDate  string   `json:"issue_date"`
+	DueDate    string   `json:"due_date"`
+	TotalCents int64    `json:"total_cents"`
+	State      string   `json:"state"`
+	PaidOn     string   `json:"paid_on,omitempty"`
+	PDFs       []string `json:"pdfs"`
 }
 
 type InvoiceList struct {
@@ -70,9 +71,21 @@ func (s *Service) Invoices(ctx context.Context, year string) (*InvoiceList, erro
 		if r.Paid != nil {
 			inv.PaidOn = r.Paid.Format("2006-01-02")
 		}
+		inv.PDFs = pdfVariantsFor(r.State)
 		out.Invoices = append(out.Invoices, inv)
 	}
 	return out, nil
+}
+
+func pdfVariantsFor(state string) []string {
+	switch state {
+	case "draft":
+		return []string{"draft"}
+	case "paid":
+		return []string{"original", "paid"}
+	default:
+		return []string{"original"}
+	}
 }
 
 type InvoicePaymentRequest struct {

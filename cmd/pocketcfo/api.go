@@ -5,7 +5,10 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -31,7 +34,11 @@ func (s *server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/config", s.apiFinanceConfig)
 	mux.HandleFunc("GET /api/director-loan/{month}", s.apiDirectorLoan)
 	mux.HandleFunc("GET /api/invoices", s.apiInvoices)
+	mux.HandleFunc("GET /api/invoices/{number}/document", s.apiInvoiceDocument)
+	mux.HandleFunc("GET /api/invoices/{number}/pdf", s.apiInvoicePDF)
 	mux.HandleFunc("POST /api/invoices/paid", s.apiSetInvoicePaid)
+	mux.HandleFunc("POST /api/invoices/draft", s.apiSaveInvoiceDraft)
+	mux.HandleFunc("POST /api/invoices/issue", s.apiIssueInvoice)
 	mux.HandleFunc("POST /api/actuals/add", s.apiAddActuals)
 	mux.HandleFunc("POST /api/actuals/edit", s.apiEditActuals)
 	mux.HandleFunc("POST /api/accounts/balance", s.apiRecordAccountBalance)
@@ -79,6 +86,7 @@ func (s *server) apiService() *api.Service {
 		svc.Personal = s.tracker.Personal
 		svc.InvoicesDir = invoicesDir
 		svc.PaidInvoicesPath = paidInvoicesPath
+		svc.CatalogPath = catalogNotesPath()
 		// The same computation the dashboard renders, invoices and all, so a
 		// figure this API reports and a figure on the page cannot drift.
 		svc.Figures = func(ctx context.Context, year int, month time.Month) (tracker.Figures, error) {
@@ -355,6 +363,83 @@ func (s *server) apiSetInvoicePaid(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	out, err := s.apiService().SetInvoicePaid(ctx, req)
+	if err != nil {
+		writeAPIError(w, err, apiStatus(err))
+		return
+	}
+	writeAPIJSON(w, http.StatusOK, out)
+}
+
+func (s *server) apiInvoiceDocument(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	s.serveAPI(w, r, func(ctx context.Context, svc *api.Service) (any, error) {
+		return svc.InvoiceDocumentFor(ctx, number)
+	})
+}
+
+func (s *server) apiInvoicePDF(w http.ResponseWriter, r *http.Request) {
+	if !s.apiAuthorized(w, r) {
+		return
+	}
+	number := r.PathValue("number")
+	variant := r.URL.Query().Get("variant")
+
+	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
+	defer cancel()
+
+	target, err := s.apiService().InvoicePDFTarget(ctx, number, variant)
+	if err != nil {
+		writeAPIError(w, err, apiStatus(err))
+		return
+	}
+	path := filepath.Join(buildDir, target.Filename)
+	f, err := os.Open(path)
+	if err != nil {
+		writeAPIError(w, &api.Error{
+			Code:    api.CodeNotFound,
+			Message: target.Filename + " is not in the build output yet — the CI build that renders PDFs runs on the data repo after the commit deploys",
+		}, http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", target.Filename))
+	http.ServeContent(w, r, target.Filename, time.Time{}, f)
+}
+
+func (s *server) apiSaveInvoiceDraft(w http.ResponseWriter, r *http.Request) {
+	if !s.apiAuthorized(w, r) {
+		return
+	}
+	var req api.SaveDraftRequest
+	if !decodeAPIBody(w, r, &req) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
+	defer cancel()
+
+	out, err := s.apiService().SaveDraftInvoice(ctx, req)
+	if err != nil {
+		writeAPIError(w, err, apiStatus(err))
+		return
+	}
+	writeAPIJSON(w, http.StatusOK, out)
+}
+
+func (s *server) apiIssueInvoice(w http.ResponseWriter, r *http.Request) {
+	if !s.apiAuthorized(w, r) {
+		return
+	}
+	var req api.IssueInvoiceRequest
+	if !decodeAPIBody(w, r, &req) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
+	defer cancel()
+
+	out, err := s.apiService().IssueInvoice(ctx, req)
 	if err != nil {
 		writeAPIError(w, err, apiStatus(err))
 		return

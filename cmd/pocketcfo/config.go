@@ -5,6 +5,7 @@ import (
 	"log"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -26,6 +27,12 @@ var (
 	staticDir          = getenv("STATIC_DIR", "static")
 	budgetDir          = dataDir
 )
+
+// catalogNotesPath is read per call rather than at init, so tests can point
+// CATALOG_DIR at a fixture catalog with t.Setenv.
+func catalogNotesPath() string {
+	return filepath.Join(getenv("CATALOG_DIR", "catalog"), "notes.json")
+}
 
 func getenv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {

@@ -199,6 +199,10 @@ flip `status` to `issued` when you're happy.
 
 status `draft` leads to rendering into .......-DRAFT.pdf, the only one that will always gets overwritten during CI CD
 
+The same loop exists through the agent API (§11): a draft is created, edited and
+re-uploaded there any number of times, and `issue_invoice` is the only way the flag
+comes off — an issued document is exactly as write-once over the API as it is by hand.
+
 ### 3.4 Computation
 
 All of it derived, all of it in `internal/money`, all in integer minor units with
@@ -1122,6 +1126,32 @@ in error is repaired by a human editing the data repo, where the change is revie
 any other. Calling a *scheduled* step off is not a removal in this sense: it takes down a
 future change before it has taken effect, and a month that is already in force it cannot
 touch at all — an already closed budget is fixed in the file.
+
+**Invoices have three writes, two of them about drafts.** `set_invoice_paid` records a
+payment beside the document (§3.6). `save_draft_invoice` uploads a whole invoice document
+**as a draft, always** — whatever `status` it carries is overwritten with `draft`, so
+creating or flipping to issued is not expressible. A `number` left out creates: the next
+number is assigned as max + 1 through a directory listing (`Store.List`), which keeps the
+gapless-sequence check (§4.3) true without trusting the caller to count; a `number` that
+names an existing draft replaces it, as often as the agent likes, because a draft is a
+working document; a number that names an issued invoice is refused forever — the §3.3
+write-once rule holds across the API, and a correction is a new invoice rather than an
+edit. `issue_invoice` is the one way the flag ever moves: it splices `"draft"` →
+`"issued"` in the raw bytes and nothing else, so the committed diff is one line however
+the file is formatted — the same readable-diff discipline the budget byte-surgery uses —
+and the result must still pass the schema and the §4.3 validators before it is committed.
+Both write paths run the full invoice validators, including the regime cross-check and
+the mandatory wording of the note catalog, and **refuse to commit when the catalog cannot
+be loaded** rather than skipping a legal content requirement in silence. An upload
+identical to what is committed changes nothing and commits nothing.
+
+**A draft saved through the API reads back at once; its PDF does not.**
+`get_invoice_document` reads the data repo through the store, so it is current the
+moment the commit lands; the `-DRAFT.pdf` is rendered by the CI build that runs after
+the deploy, so `GET /api/invoices/{number}/pdf` can answer 404 for a few minutes —
+it says so, and the answer is to retry after the deploy rather than re-upload. The
+variants are guarded by state, not by file presence: an issued invoice's `-DRAFT.pdf`
+may still be on disk from before it was issued, and it must not be served.
 
 **A balance closes a month, so `as_of` is a month end and anything else is refused.**
 The reading is that month's closing figure and therefore the next month's opening one, and

@@ -196,6 +196,58 @@ is write-once once issued:
 The dashboard's staleness badge does the rest: listing an invoice in `paid-invoices.json`
 renders its `-paid.pdf`, and a corrected date stales the paid copy again.
 
+## The draft loop
+
+Invoices are created and edited as drafts through two tools, and frozen with a third:
+
+1. **`get_invoice_document`** (or `GET /api/invoices/{number}/document`) serves the
+   **complete invoice JSON** of any invoice — draft or issued — under a `document` key,
+   beside its `number`, `status` and `sha`. This is how you download an invoice:
+   `list_invoices` carries only the summary. Keep the `sha` alongside your edits; it is
+   what the next write bases its conflict check on.
+2. **`save_draft_invoice`** (or `POST /api/invoices/draft`) uploads a document **as a
+   draft, always**: whatever `status` the document carries is overwritten with `draft`,
+   so there is no way to create or flip to issued through it.
+   - **`number` left out creates**: the next number is assigned (max + 1, keeping the
+     gapless sequence). A `base_sha` makes no sense for a new invoice and is refused.
+   - **`number` of an existing draft replaces it** — as many times as you like; a draft
+     is a working document, and a re-send of exactly what is committed changes nothing
+     and commits nothing.
+   - **An issued invoice is refused forever.** Once the draft flag is gone the document
+     is write-once (§1 above); a correction is a new invoice, not an edit.
+   - The document must pass the same validators a hand edit would: the embedded schema,
+     computable totals, every `de` string with its `bg` sibling, the tax regime
+     cross-checked against the parties the document itself snapshotted, and the
+     mandatory wording from the note catalog. A refusal is `validation_failed` and
+     commits nothing.
+   - `base_sha` is the `sha` from `get_invoice_document`; a stale one comes back as a
+     conflict carrying the current value. `reason` lands in the commit message.
+3. **`issue_invoice`** (or `POST /api/invoices/issue`) is the one direction the draft
+   flag ever moves: `draft → issued`, never back. The commit changes the `status` line
+   and nothing else — byte for byte, so the diff is one line. `reason` is required,
+   because issuing freezes the document forever. An invoice that is already issued is an
+   idempotent no-op; after issuing, `save_draft_invoice` refuses the number and payment
+   goes through `set_invoice_paid` instead.
+
+**PDF downloads are REST only** — there is no PDF through MCP. `GET
+/api/invoices/{number}/pdf?variant=…` serves one of three artifacts, each only in the
+state that renders it:
+
+| Variant | Renders while | Refused otherwise with |
+|---|---|---|
+| `draft` | the invoice is a draft (the `-DRAFT.pdf` the build overwrites each run) | "not a draft anymore — download the original" |
+| `original` | the invoice is issued (the write-once `INV-….pdf`) | "is a draft — issue it first" |
+| `paid` | a payment is recorded in `paid-invoices.json` | "no payment is recorded…" |
+
+A variant whose state allows it but whose file is not in `build/` yet answers 404 with
+"not in the build output yet": the CI build that renders PDFs runs on the data repo after
+the commit deploys, so a draft saved a minute ago has no PDF for a few minutes. Retry
+after the deploy; do not re-upload.
+
+A draft you saved reads back immediately through `get_invoice_document`, which reads the
+data repo directly; `list_invoices` lags until the commit has deployed, like every read
+over the invoice documents.
+
 ## What you cannot write, and why
 
 Three things are readable here and only editable in the data repo, deliberately:

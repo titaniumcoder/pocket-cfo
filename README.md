@@ -72,6 +72,12 @@ COPY build ./build
 COPY config.json ./config.json
 ```
 
+The image already ships this repo's sample `catalog/notes.json` — the accountant-owned
+catalog the invoice validators check the mandatory wording against, without which the
+agent API's draft uploads refuse every commit. If your data repo carries its own
+catalog, copy it over the sample in the same Dockerfile —
+`COPY catalog ./catalog` — or point `CATALOG_DIR` at wherever it lives.
+
 Point Dependabot at that `FROM` line and new releases arrive as pull requests.
 
 **3. Set the secrets** your deployment needs — see [Configuration](#configuration).
@@ -171,6 +177,7 @@ Secrets and deployment-specific paths come from the environment. Copy `.envrc.ex
 | `BUILD_DIR` | both binaries, optional | default `build` — rendered PDFs, kept apart from hand-edited data |
 | `CONFIG_FILE` | `cmd/pocketcfo`, optional | default `config.json` |
 | `TEMPLATES_DIR` / `STATIC_DIR` | `cmd/pocketcfo`; `TEMPLATES_DIR` also for `render` | default `templates` / `static` |
+| `CATALOG_DIR` | both binaries, optional | default `catalog` — the note catalog the invoice validators check mandatory wording against |
 
 ### `config.json`
 

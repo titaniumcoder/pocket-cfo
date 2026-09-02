@@ -27,6 +27,13 @@ COPY --from=builder /out/pocket-cfo-ctl /usr/local/bin/pocket-cfo-ctl
 COPY --from=builder /usr/src/app/templates ./templates
 COPY --from=builder /usr/src/app/static ./static
 COPY --from=builder /usr/src/app/config.json ./config.json
+# The note catalog the invoice validators check the mandatory wording against
+# (ARCHITECTURE.md §4.2) — accountant-owned text that ships with the app like
+# templates/ and static/ do. Without it, save_draft_invoice refuses every
+# upload: a wording check that cannot run is refused, never skipped. A
+# deployment with its own catalog points CATALOG_DIR at it or copies over
+# this path (see README).
+COPY --from=builder /usr/src/app/catalog ./catalog
 # ./data/ (recipients/, invoices/, issuer.json, users.json, budget.json) and
 # ./build/ (rendered PDFs) ship this repo's own fabricated sample data, so
 # the image runs standalone out of the box -- try it with no setup at all.

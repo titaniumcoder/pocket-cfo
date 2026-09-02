@@ -206,8 +206,10 @@ Invoices are created and edited as drafts through two tools, and frozen with a t
    `list_invoices` carries only the summary. Keep the `sha` alongside your edits; it is
    what the next write bases its conflict check on.
 2. **`save_draft_invoice`** (or `POST /api/invoices/draft`) uploads a document **as a
-   draft, always**: whatever `status` the document carries is overwritten with `draft`,
-   so there is no way to create or flip to issued through it.
+   draft, always**: the document must carry `"status": "draft"` — **an upload never
+   changes an invoice's state.** A draft stays a draft however often it is re-uploaded;
+   an upload claiming `issued` is refused with a pointer here; and the only way the flag
+   ever moves is `issue_invoice`.
    - **`number` left out creates**: the next number is assigned (max + 1, keeping the
      gapless sequence). A `base_sha` makes no sense for a new invoice and is refused.
    - **`number` of an existing draft replaces it** — as many times as you like; a draft

@@ -61,10 +61,15 @@ func (s *Service) SaveDraftInvoice(ctx context.Context, req SaveDraftRequest) (*
 		return nil, errorf(CodeInvalidRequest, "document is required — the complete invoice JSON, exactly as get_invoice_document returned it, edited")
 	}
 
-	draft, err := withInvoiceStatus(req.Document, draftStatus)
+	sentStatus, err := invoiceStatusField(req.Document)
 	if err != nil {
 		return nil, errorf(CodeInvalidRequest, "%v", err)
 	}
+	if sentStatus != draftStatus {
+		return nil, errorf(CodeInvalidRequest,
+			"the document carries status %q — an upload never changes an invoice's state: a draft stays a draft, and the only way to issue is issue_invoice", sentStatus)
+	}
+	draft := []byte(req.Document)
 	sentNumber, err := invoiceNumberField(draft)
 	if err != nil {
 		return nil, errorf(CodeInvalidRequest, "%v", err)
@@ -356,6 +361,19 @@ func parseInvoice(raw []byte) (*invoice.InvoiceJson, error) {
 		return nil, errorf(CodeValidationFailed, "the document does not parse as an invoice: %v", err)
 	}
 	return &inv, nil
+}
+
+// invoiceStatusField reads just the status member, without the generated
+// unmarshaller's enum checks — a refusal can name what was sent even when it
+// is not a legal value.
+func invoiceStatusField(raw []byte) (string, error) {
+	var probe struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(probe.Status), nil
 }
 
 // invoiceNumberField reads just the number member, without the generated

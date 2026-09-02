@@ -210,18 +210,19 @@ func SaveDraftInvoiceRequestFor(doc *InvoiceDocument) SaveDraftRequest {
 	return SaveDraftRequest{Document: doc.Document}
 }
 
-func TestAnUploadClaimingIssuedIsCommittedAsADraft(t *testing.T) {
+func TestAnUploadClaimingIssuedIsRefusedRatherThanRewritten(t *testing.T) {
 	s, gh := draftService(t, draftRepoInvoices())
 
-	if _, err := saveDraft(t, s, "INV-0000000003", "issued", "Sneaky", ""); err != nil {
-		t.Fatalf("SaveDraftInvoice: %v", err)
+	_, err := saveDraft(t, s, "INV-0000000003", "issued", "Sneaky", "")
+	if e, ok := err.(*Error); !ok || !strings.Contains(e.Message, "never changes an invoice's state") || !strings.Contains(e.Message, "issue_invoice") {
+		t.Fatalf("err = %v, want the state-change refusal naming issue_invoice", err)
+	}
+	if gh.puts != 0 {
+		t.Errorf("%d commits were made", gh.puts)
 	}
 	written := string(gh.files["data/invoices/INV-0000000003.json"])
-	if !strings.Contains(written, `"status": "draft"`) {
-		t.Errorf("the upload issued itself:\n%s", written)
-	}
-	if !strings.Contains(written, "Sneaky") {
-		t.Errorf("the rest of the document did not survive:\n%s", written)
+	if strings.Contains(written, "Sneaky") {
+		t.Errorf("the refused upload was committed:\n%s", written)
 	}
 }
 

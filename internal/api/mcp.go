@@ -320,7 +320,7 @@ func (s *Service) registerTools(server *mcp.Server) {
 
 	mcp.AddTool(server, tool("save_draft_invoice",
 		"Upload an invoice as a draft — the only way this API writes an invoice document, and a draft is the only thing it will ever write. "+
-			"document is the complete invoice JSON as a string, exactly as get_invoice_document returned it, with your edits; whatever status it carries is overwritten with draft, so there is no way to create or flip to issued here. "+
+			"document is the complete invoice JSON as a string, exactly as get_invoice_document returned it, with your edits, and it must carry status \"draft\": AN UPLOAD NEVER CHANGES AN INVOICE'S STATE — a draft stays a draft however often it is re-uploaded, an upload claiming issued is refused, and the only way the flag ever moves is issue_invoice. "+
 			"Leave the number OUT to create: the next number is assigned (max + 1, so the sequence stays gapless), and a base_sha makes no sense for a new invoice and is refused. Give the number of an EXISTING DRAFT to replace it — as many times as you like, it is a working document. "+
 			"An issued invoice is refused forever: once the draft flag is gone the document is write-once, and a correction is a new invoice, not an edit. "+
 			"base_sha is the sha get_invoice_document reported; a stale one comes back as a conflict carrying the current value, so re-read and try again. An upload identical to what is committed changes nothing and commits nothing. "+

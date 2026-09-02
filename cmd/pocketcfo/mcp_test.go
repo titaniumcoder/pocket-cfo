@@ -175,11 +175,11 @@ func TestMCPWriteToolsDescribeTheirContract(t *testing.T) {
 			"refuses one-offs", "amount_changes", "replaces that month's entry as a whole",
 			"never negative", "cannot exceed the amount it reduces",
 		},
-		// That the upload is always a draft, that the number is assigned on
-		// creation, that an issued invoice is out of reach forever, and that a
-		// re-send is safe.
+		// That the upload can never change an invoice's state, that the number
+		// is assigned on creation, that an issued invoice is out of reach
+		// forever, and that a re-send is safe.
 		"save_draft_invoice": {
-			"overwritten with draft", "no way to create or flip to issued",
+			"never changes an invoice's state", "a draft stays a draft",
 			"number is assigned", "refused forever", "write-once", "commits nothing",
 		},
 		// That issuing is the one direction the flag moves, that the diff is

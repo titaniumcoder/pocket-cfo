@@ -1129,8 +1129,9 @@ touch at all — an already closed budget is fixed in the file.
 
 **Invoices have three writes, two of them about drafts.** `set_invoice_paid` records a
 payment beside the document (§3.6). `save_draft_invoice` uploads a whole invoice document
-**as a draft, always** — whatever `status` it carries is overwritten with `draft`, so
-creating or flipping to issued is not expressible. A `number` left out creates: the next
+**as a draft, always** — the upload must carry `status: draft` and can never change an
+invoice's state: a draft stays a draft, an upload claiming `issued` is refused rather
+than rewritten, so creating or flipping to issued is not expressible. A `number` left out creates: the next
 number is assigned as max + 1 through a directory listing (`Store.List`), which keeps the
 gapless-sequence check (§4.3) true without trusting the caller to count; a `number` that
 names an existing draft replaces it, as often as the agent likes, because a draft is a

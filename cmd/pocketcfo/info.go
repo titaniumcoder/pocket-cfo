@@ -144,7 +144,7 @@ func cacheStatsRows(s tracker.CacheStats, q tracker.QuotaStatus, now time.Time) 
 		if t.IsZero() {
 			return "—"
 		}
-		return t.In(now.Location()).Format("02 Jan 15:04:05")
+		return t.In(now.Location()).Format("02 Jan 2006 15:04:05")
 	}
 	rows := []configRow{
 		{Name: "Months cached", Value: fmt.Sprintf("%d (%d stale, waiting for a refresh)", s.Months, s.StaleMonths)},

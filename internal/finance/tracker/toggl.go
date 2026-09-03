@@ -29,6 +29,7 @@ type Toggl struct {
 	mu         sync.Mutex
 	persistMu  sync.Mutex
 	restored   bool
+	generation int
 	cache      map[string]cacheEntry
 	inflight   map[string]*fetchCall
 	breaker    map[string]breakerState
@@ -50,6 +51,7 @@ type HoursSource interface {
 	markStale(start, end time.Time, olderThan time.Duration)
 	KeyStatus(today time.Time) KeyStatus
 	Quota(now time.Time) QuotaStatus
+	Reset()
 	Mode() Mode
 }
 
@@ -90,6 +92,7 @@ func (t *Toggl) backend() togglAPI {
 type fetchCall struct {
 	done       chan struct{}
 	start, end time.Time
+	generation int
 	val        any
 	err        error
 }
@@ -181,7 +184,7 @@ func (t *Toggl) joinLocked(key string, start, end time.Time) (call *fetchCall, l
 	if call, running := t.inflight[key]; running {
 		return call, false
 	}
-	call = &fetchCall{done: make(chan struct{}), start: start, end: end}
+	call = &fetchCall{done: make(chan struct{}), start: start, end: end, generation: t.generation}
 	if t.inflight == nil {
 		t.inflight = map[string]*fetchCall{}
 	}
@@ -198,25 +201,32 @@ func (t *Toggl) fill(ctx context.Context, key string, fn func(context.Context) (
 	elapsed := time.Since(t0).Round(time.Millisecond)
 
 	t.lock()
-	delete(t.inflight, key)
-	if err != nil {
+	if t.inflight[key] == call {
+		delete(t.inflight, key)
+	}
+	stored := false
+	switch {
+	case err != nil:
 		if !isQuotaExhausted(err) {
 			t.recordFailureLocked(key)
 		}
 		if isUnauthorized(err) {
 			t.rejectedAt, t.rejection = time.Now(), err.Error()
 		}
-	} else {
+	case call.generation != t.generation:
+		log.Printf("toggl: %s — discarded, the cache was reset while it was fetching", key)
+	default:
 		delete(t.breaker, key)
 		t.rejectedAt, t.rejection = time.Time{}, ""
 		if t.cache == nil {
 			t.cache = map[string]cacheEntry{}
 		}
 		store(val, time.Now())
+		stored = true
 	}
 	call.val, call.err = val, err
 	t.mu.Unlock()
-	if err == nil {
+	if stored {
 		t.persist()
 	}
 	close(call.done)
@@ -266,6 +276,21 @@ func (t *Toggl) EvictRange(start, end time.Time) {
 	clear(t.breaker)
 	t.mu.Unlock()
 	t.persist()
+}
+
+func (t *Toggl) Reset() {
+	if t == nil {
+		return
+	}
+	t.lock()
+	defer t.mu.Unlock()
+	t.generation++
+	clear(t.cache)
+	clear(t.breaker)
+	clear(t.inflight)
+	t.rejectedAt, t.rejection = time.Time{}, ""
+	t.removeSnapshotLocked()
+	log.Printf("toggl: %s cache reset — every month, project and rate is fetched afresh", t.backend().cacheScope())
 }
 
 func (t *Toggl) markStale(start, end time.Time, olderThan time.Duration) {

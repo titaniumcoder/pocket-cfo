@@ -78,6 +78,14 @@
     {{else}}{{template "toggl2ids" .Focus}}{{if not .Focus.KeyOnly}}{{template "togglpanel" .Focus}}{{end}}{{end}}
   </section>
 
+  {{if or .Track.Configured .Focus.Configured}}
+  <section class="panel">
+    <h2 class="section-title">Toggl cache</h2>
+    <p class="section-note">Tracked hours are cached per month, the last 45 days refreshed on every <code>TOGGL_REFRESH_INTERVAL</code>, older months once a day or on Reload. Resetting throws away every cached month, project and rate — in memory and, with <code>TOGGL_CACHE_DIR</code>, on disk — and the next page view fetches the year afresh, within the hourly quota.</p>
+    <form class="inline-form" method="post" action="/toggl/reset"><button class="link" type="submit">Reset Toggl cache</button></form>
+  </section>
+  {{end}}
+
   <section class="panel">
     <h2 class="section-title">Holiday API (OpenHolidays)</h2>
     <p class="section-note">Countries and subdivisions — for picking config.json's <code>holidayCountry</code> (required) and <code>holidaySubdivision</code> (optional).</p>

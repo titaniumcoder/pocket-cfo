@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"sort"
 	"time"
@@ -94,6 +95,22 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	if err := s.infoTmpl.Execute(w, view); err != nil {
 		serverError(w, r, "loading data", err)
 	}
+}
+
+func (s *server) handleTogglReset(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.currentSession(r)
+	if !ok || !s.authenticated(sess) {
+		http.Redirect(w, r, "/auth/login", http.StatusFound)
+		return
+	}
+	if !s.authorized(sess) {
+		http.Error(w, "you don't have access to this page", http.StatusForbidden)
+		return
+	}
+	s.togglTrack.Reset()
+	s.togglFocus.Reset()
+	log.Printf("toggl: cache reset by %s", sess.Login)
+	http.Redirect(w, r, "/info", http.StatusSeeOther)
 }
 
 func togglPanel(ctx context.Context, tg *tracker.Toggl, active bool) infoTogglPanel {

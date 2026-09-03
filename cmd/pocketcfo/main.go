@@ -378,6 +378,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /info", s.handleInfo)
 
 	mux.HandleFunc("POST /refresh", s.handleRefresh)
+	mux.HandleFunc("POST /toggl/reset", s.handleTogglReset)
 	mux.HandleFunc("POST /minimal", s.handleMinimalToggle)
 
 	mux.HandleFunc("GET /{$}", s.financeCurrentMonth)

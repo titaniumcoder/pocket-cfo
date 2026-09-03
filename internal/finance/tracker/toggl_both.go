@@ -101,6 +101,11 @@ func (c *Combined) KeyStatus(today time.Time) KeyStatus {
 	return c.Track.KeyStatus(today)
 }
 
+func (c *Combined) Reset() {
+	c.Track.Reset()
+	c.Focus.Reset()
+}
+
 func (c *Combined) Quota(now time.Time) QuotaStatus {
 	focus, track := c.Focus.Quota(now), c.Track.Quota(now)
 	switch {

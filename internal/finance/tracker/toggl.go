@@ -40,6 +40,8 @@ type Toggl struct {
 	quotaRemaining int
 	quotaResetAt   time.Time
 	quotaGateUntil time.Time
+	headersSeen    map[string]bool
+	quotaHeaders   map[string]string
 
 	counters cacheCounters
 }
@@ -406,12 +408,13 @@ func (t *Toggl) noteQuota(resp *http.Response) {
 	remaining, hasRemaining := headerInt(resp, "X-Toggl-Quota-Remaining")
 	resetsIn, hasReset := headerInt(resp, "X-Toggl-Quota-Resets-In")
 	exhausted := resp.StatusCode == http.StatusPaymentRequired
-	if !hasRemaining && !hasReset && !exhausted {
-		return
-	}
 	now := time.Now()
 	t.lock()
 	defer t.mu.Unlock()
+	t.noteHeadersLocked(resp.Header)
+	if !hasRemaining && !hasReset && !exhausted {
+		return
+	}
 	if hasRemaining {
 		t.quotaKnown, t.quotaRemaining = true, remaining
 	}
@@ -419,7 +422,7 @@ func (t *Toggl) noteQuota(resp *http.Response) {
 	if hasReset {
 		window = time.Duration(resetsIn) * time.Second
 	}
-	if hasReset || exhausted {
+	if hasReset || exhausted || t.quotaResetAt.Before(now) {
 		t.quotaResetAt = now.Add(window)
 	}
 	if exhausted {
@@ -427,6 +430,23 @@ func (t *Toggl) noteQuota(resp *http.Response) {
 		t.quotaGateUntil = now.Add(window + quotaGateSlack)
 		log.Printf("toggl: hourly quota used up (HTTP 402) — no requests before %s", t.quotaGateUntil.Format(time.RFC3339))
 	}
+}
+
+func (t *Toggl) noteHeadersLocked(h http.Header) {
+	if t.headersSeen == nil {
+		t.headersSeen, t.quotaHeaders = map[string]bool{}, map[string]string{}
+	}
+	for name, values := range h {
+		t.headersSeen[name] = true
+		if looksLikeQuota(name) && len(values) > 0 {
+			t.quotaHeaders[name] = values[0]
+		}
+	}
+}
+
+func looksLikeQuota(name string) bool {
+	lower := strings.ToLower(name)
+	return strings.Contains(lower, "quota") || strings.Contains(lower, "limit") || strings.Contains(lower, "reset") || strings.Contains(lower, "retry")
 }
 
 func headerInt(resp *http.Response, name string) (int, bool) {

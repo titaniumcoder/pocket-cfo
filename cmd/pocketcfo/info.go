@@ -156,6 +156,7 @@ func cacheStatsRows(s tracker.CacheStats, q tracker.QuotaStatus, now time.Time) 
 		{Name: "Last fetch", Value: lastFetch(s, at)},
 		{Name: "In flight now", Value: fmt.Sprintf("%d fetches, %d breakers open", s.InFlight, s.OpenBreakers)},
 		{Name: "Hourly quota", Value: strings.TrimPrefix(describeQuota(q, now), "Hourly request quota: ")},
+		{Name: "Quota headers in Toggl's answers", Value: describeQuotaHeaders(s)},
 	}
 	switch {
 	case s.SnapshotPath == "":
@@ -166,6 +167,25 @@ func cacheStatsRows(s tracker.CacheStats, q tracker.QuotaStatus, now time.Time) 
 		rows = append(rows, configRow{Name: "Snapshot", Value: fmt.Sprintf("%s — %d bytes, written %s", s.SnapshotPath, s.SnapshotBytes, at(s.SnapshotWrittenAt))})
 	}
 	return rows
+}
+
+func describeQuotaHeaders(s tracker.CacheStats) string {
+	if len(s.HeadersSeen) == 0 {
+		return "no answer received yet"
+	}
+	if len(s.QuotaHeaders) == 0 {
+		return "none — the headers seen so far are " + strings.Join(s.HeadersSeen, ", ")
+	}
+	names := make([]string, 0, len(s.QuotaHeaders))
+	for name := range s.QuotaHeaders {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	parts := make([]string, len(names))
+	for i, name := range names {
+		parts[i] = name + ": " + s.QuotaHeaders[name]
+	}
+	return strings.Join(parts, ", ")
 }
 
 func lastFetch(s tracker.CacheStats, at func(time.Time) string) string {

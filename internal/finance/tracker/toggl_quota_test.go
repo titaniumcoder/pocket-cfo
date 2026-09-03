@@ -165,3 +165,26 @@ func TestBothReportsTheTighterQuota(t *testing.T) {
 		t.Error("an exhausted side must win")
 	}
 }
+
+func TestARemainingCountWithoutAResetHeaderStillCounts(t *testing.T) {
+	calls := 0
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		return jsonResponse(`[]`, map[string]string{"X-Toggl-Quota-Remaining": "17", "X-Request-Id": "abc"}), nil
+	})}
+	tg := &Toggl{WorkspaceID: "ws", HTTP: client}
+	if _, err := tg.Projects(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if q := tg.Quota(now); q.Remaining != 17 {
+		t.Errorf("Remaining = %d, want 17 even though Toggl named no reset", q.Remaining)
+	}
+	if q := tg.Quota(now.Add(defaultQuotaWindow + time.Minute)); q.Remaining != -1 {
+		t.Errorf("an hour later Remaining = %d, want unknown again", q.Remaining)
+	}
+	s := tg.Stats(now)
+	if len(s.HeadersSeen) != 3 || s.QuotaHeaders["X-Toggl-Quota-Remaining"] != "17" || s.QuotaHeaders["X-Request-Id"] != "" {
+		t.Errorf("headers seen = %v, quota headers = %v", s.HeadersSeen, s.QuotaHeaders)
+	}
+}

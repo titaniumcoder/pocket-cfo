@@ -280,7 +280,7 @@ func (a *focusAPI) workspaceRates(ctx context.Context) ([]rateSpan, error) {
 }
 
 func (a *focusAPI) cachedRates(ctx context.Context, key, path string) ([]rateSpan, error) {
-	v, err := a.t.getCached(ctx, key, everSince, everUntil, func(fetchCtx context.Context) (any, error) {
+	v, err := a.t.getCachedAs(ctx, key, kindRates, everSince, everUntil, func(fetchCtx context.Context) (any, error) {
 		var spans []rateSpan
 		err := a.getJSON(fetchCtx, path, nil, &spans)
 		if isNotFound(err) {

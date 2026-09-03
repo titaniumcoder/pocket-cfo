@@ -31,6 +31,7 @@ type infoTogglPanel struct {
 	KeyNote    string
 	KeyExpired bool
 	Quota      string
+	Snapshot   string
 	Workspaces []infoWorkspaceView
 }
 
@@ -105,7 +106,22 @@ func togglPanel(ctx context.Context, tg *tracker.Toggl, active bool) infoTogglPa
 	ks := tg.KeyStatus(now)
 	panel.KeyNote, panel.KeyExpired = ks.Warning, ks.Expired
 	panel.Quota = describeQuota(tg.Quota(now), now)
+	panel.Snapshot = describeSnapshot(tg.Snapshot(), now)
 	return panel
+}
+
+func describeSnapshot(s tracker.SnapshotStatus, now time.Time) string {
+	if s.Path == "" {
+		return "Cache: in process memory only — a restart starts cold. Set TOGGL_CACHE_DIR to keep it on disk."
+	}
+	if s.Entries == 0 {
+		return fmt.Sprintf("Cache on disk: %s — nothing fetched yet.", s.Path)
+	}
+	span := ""
+	if !s.Oldest.IsZero() {
+		span = fmt.Sprintf(", months fetched between %s and %s", s.Oldest.In(now.Location()).Format("02 Jan 15:04"), s.Newest.In(now.Location()).Format("02 Jan 15:04"))
+	}
+	return fmt.Sprintf("Cache on disk: %s — %d entries%s.", s.Path, s.Entries, span)
 }
 
 func describeQuota(q tracker.QuotaStatus, now time.Time) string {

@@ -119,6 +119,7 @@
 {{define "togglpanel"}}
     {{if .KeyNote}}<p class="{{if .KeyExpired}}error{{else}}stale-note{{end}}">{{.KeyNote}}</p>{{end}}
     {{if .Quota}}<p class="section-note">{{.Quota}}</p>{{end}}
+    {{if .Snapshot}}<p class="section-note">{{.Snapshot}}</p>{{end}}
     {{if .Err}}
     <p class="error">{{.Err}}</p>
     {{else}}

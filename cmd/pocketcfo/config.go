@@ -26,6 +26,7 @@ var (
 	templatesDir       = getenv("TEMPLATES_DIR", "templates")
 	staticDir          = getenv("STATIC_DIR", "static")
 	budgetDir          = dataDir
+	togglCacheDir      = os.Getenv("TOGGL_CACHE_DIR")
 )
 
 // catalogNotesPath is read per call rather than at init, so tests can point

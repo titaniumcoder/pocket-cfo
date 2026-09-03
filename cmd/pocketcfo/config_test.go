@@ -123,13 +123,13 @@ func TestLoadConfig_DevelopmentDefaults(t *testing.T) {
 
 func TestBuildTogglClients(t *testing.T) {
 	t.Run("nothing without credentials", func(t *testing.T) {
-		track, focus := buildTogglClients(financeconfig.Config{}, &http.Client{})
+		track, focus := buildTogglClients(financeconfig.Config{}, &http.Client{}, "")
 		if track != nil || focus != nil {
 			t.Error("want no clients when no credentials are set")
 		}
 	})
 	t.Run("track from its pair", func(t *testing.T) {
-		track, focus := buildTogglClients(financeconfig.Config{TogglToken: "tok", TogglWorkspace: "ws"}, &http.Client{})
+		track, focus := buildTogglClients(financeconfig.Config{TogglToken: "tok", TogglWorkspace: "ws"}, &http.Client{}, "")
 		if track == nil || track.Token != "tok" || track.WorkspaceID != "ws" {
 			t.Errorf("track = %+v, want Token=tok WorkspaceID=ws", track)
 		}
@@ -138,7 +138,7 @@ func TestBuildTogglClients(t *testing.T) {
 		}
 	})
 	t.Run("2.0 from its triple", func(t *testing.T) {
-		track, focus := buildTogglClients(financeconfig.Config{Toggl2Key: "k", Toggl2Organization: "1", Toggl2Workspace: "2"}, &http.Client{})
+		track, focus := buildTogglClients(financeconfig.Config{Toggl2Key: "k", Toggl2Organization: "1", Toggl2Workspace: "2"}, &http.Client{}, "")
 		if track != nil {
 			t.Error("want no Track client without TOGGL_API_TOKEN")
 		}
@@ -147,7 +147,7 @@ func TestBuildTogglClients(t *testing.T) {
 		}
 	})
 	t.Run("2.0 from the key alone, for /info", func(t *testing.T) {
-		if _, focus := buildTogglClients(financeconfig.Config{Toggl2Key: "k"}, &http.Client{}); focus == nil {
+		if _, focus := buildTogglClients(financeconfig.Config{Toggl2Key: "k"}, &http.Client{}, ""); focus == nil {
 			t.Error("a key alone must still build a client so /info can ask it for the ids")
 		}
 	})

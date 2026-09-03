@@ -21,11 +21,14 @@ type Toggl struct {
 	ProjectIDs  string
 	HTTP        *http.Client
 	Loc         *time.Location
+	CacheDir    string
 
 	api          togglAPI
 	keyExpiresAt time.Time
 
 	mu         sync.Mutex
+	persistMu  sync.Mutex
+	restored   bool
 	cache      map[string]cacheEntry
 	inflight   map[string]*fetchCall
 	breaker    map[string]breakerState
@@ -106,8 +109,10 @@ var (
 type entryKind string
 
 const (
-	kindMonth entryKind = "month"
-	kindOther entryKind = ""
+	kindMonth    entryKind = "month"
+	kindProjects entryKind = "projects"
+	kindRates    entryKind = "rates"
+	kindOther    entryKind = ""
 )
 
 type cacheEntry struct {
@@ -119,7 +124,11 @@ type cacheEntry struct {
 }
 
 func (t *Toggl) getCached(ctx context.Context, key string, start, end time.Time, fn func(context.Context) (any, error)) (any, error) {
-	t.mu.Lock()
+	return t.getCachedAs(ctx, key, kindOther, start, end, fn)
+}
+
+func (t *Toggl) getCachedAs(ctx context.Context, key string, kind entryKind, start, end time.Time, fn func(context.Context) (any, error)) (any, error) {
+	t.lock()
 	cached, hit := t.cache[key]
 	if hit && !cached.stale {
 		t.mu.Unlock()
@@ -141,7 +150,7 @@ func (t *Toggl) getCached(ctx context.Context, key string, start, end time.Time,
 
 	if leader {
 		go t.fill(ctx, key, fn, call, func(val any, at time.Time) {
-			t.cache[key] = cacheEntry{val: val, kind: kindOther, start: start, end: end, fetchedAt: at}
+			t.cache[key] = cacheEntry{val: val, kind: kind, start: start, end: end, fetchedAt: at}
 		})
 	} else {
 		log.Printf("toggl: %s — waiting on the fetch already in flight", key)
@@ -188,7 +197,7 @@ func (t *Toggl) fill(ctx context.Context, key string, fn func(context.Context) (
 	val, err := fn(fetchCtx)
 	elapsed := time.Since(t0).Round(time.Millisecond)
 
-	t.mu.Lock()
+	t.lock()
 	delete(t.inflight, key)
 	if err != nil {
 		if !isQuotaExhausted(err) {
@@ -207,6 +216,9 @@ func (t *Toggl) fill(ctx context.Context, key string, fn func(context.Context) (
 	}
 	call.val, call.err = val, err
 	t.mu.Unlock()
+	if err == nil {
+		t.persist()
+	}
 	close(call.done)
 
 	if err != nil {
@@ -241,8 +253,7 @@ func (t *Toggl) EvictRange(start, end time.Time) {
 	if t == nil {
 		return
 	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.lock()
 	for k, e := range t.cache {
 		if e.start.IsZero() && e.end.IsZero() {
 			continue
@@ -253,6 +264,8 @@ func (t *Toggl) EvictRange(start, end time.Time) {
 		}
 	}
 	clear(t.breaker)
+	t.mu.Unlock()
+	t.persist()
 }
 
 func (t *Toggl) markStale(start, end time.Time, olderThan time.Duration) {
@@ -260,7 +273,7 @@ func (t *Toggl) markStale(start, end time.Time, olderThan time.Duration) {
 		return
 	}
 	cutoff := time.Now().Add(-olderThan)
-	t.mu.Lock()
+	t.lock()
 	defer t.mu.Unlock()
 	for k, e := range t.cache {
 		if e.kind == kindMonth && overlaps(e.start, e.end, start, end) && e.fetchedAt.Before(cutoff) {
@@ -278,7 +291,7 @@ func (t *Toggl) Pending(start, end time.Time) bool {
 	if t == nil {
 		return false
 	}
-	t.mu.Lock()
+	t.lock()
 	defer t.mu.Unlock()
 	for _, call := range t.inflight {
 		if !overlaps(call.start, call.end, start, end) {
@@ -297,7 +310,7 @@ func (t *Toggl) Status(start, end time.Time) (fetchedAt time.Time, stale bool) {
 	if t == nil {
 		return time.Time{}, false
 	}
-	t.mu.Lock()
+	t.lock()
 	defer t.mu.Unlock()
 	for _, e := range t.cache {
 		if e.kind != kindMonth || !overlaps(e.start, e.end, start, end) {
@@ -328,7 +341,7 @@ func (t *Toggl) Quota(now time.Time) QuotaStatus {
 	if t == nil {
 		return QuotaStatus{Remaining: -1}
 	}
-	t.mu.Lock()
+	t.lock()
 	defer t.mu.Unlock()
 	s := QuotaStatus{Remaining: -1, ResetAt: t.quotaResetAt}
 	if t.quotaKnown && now.Before(t.quotaResetAt) {
@@ -355,7 +368,7 @@ func (t *Toggl) noteQuota(resp *http.Response) {
 		return
 	}
 	now := time.Now()
-	t.mu.Lock()
+	t.lock()
 	defer t.mu.Unlock()
 	if hasRemaining {
 		t.quotaKnown, t.quotaRemaining = true, remaining
@@ -418,7 +431,7 @@ func (t *Toggl) KeyStatus(today time.Time) KeyStatus {
 	if t == nil {
 		return KeyStatus{}
 	}
-	t.mu.Lock()
+	t.lock()
 	s := KeyStatus{Rejected: !t.rejectedAt.IsZero(), RejectedAt: t.rejectedAt, Rejection: t.rejection, ExpiresAt: t.keyExpiresAt}
 	t.mu.Unlock()
 	s.Expired = s.Rejected || (!s.ExpiresAt.IsZero() && daysUntil(today, s.ExpiresAt) < 0)
@@ -534,7 +547,7 @@ func (t *Toggl) runKey(r monthRun) string {
 }
 
 func (t *Toggl) staleRuns(year int) []monthRun {
-	t.mu.Lock()
+	t.lock()
 	defer t.mu.Unlock()
 	var runs []monthRun
 	for month := time.December; month >= time.January; month-- {
@@ -553,7 +566,7 @@ func (t *Toggl) staleRuns(year int) []monthRun {
 
 func (t *Toggl) fetchRun(ctx context.Context, run monthRun) error {
 	key := t.runKey(run)
-	t.mu.Lock()
+	t.lock()
 	if until, gated := t.gatedLocked(); gated {
 		t.mu.Unlock()
 		log.Printf("toggl: %s — hourly quota used up, not asking before %s", key, until.Format(time.RFC3339))
@@ -617,7 +630,7 @@ func splitMonths(yd *YearData, months []monthRange) map[monthRange]*YearData {
 }
 
 func (t *Toggl) assembleYear(year int, fetchErr error) (*YearData, error) {
-	t.mu.Lock()
+	t.lock()
 	defer t.mu.Unlock()
 	parts := make([]*YearData, 0, 12)
 	for _, m := range monthsIn(monthOf(year, time.January, t.location()).start, monthOf(year, time.December, t.location()).end, t.location()) {
@@ -666,7 +679,7 @@ func (t *Toggl) Projects(ctx context.Context) (map[int]Project, error) {
 	if t == nil {
 		return map[int]Project{}, nil
 	}
-	v, err := t.getCached(ctx, "projects", time.Time{}, time.Time{}, func(fetchCtx context.Context) (any, error) {
+	v, err := t.getCachedAs(ctx, "projects", kindProjects, time.Time{}, time.Time{}, func(fetchCtx context.Context) (any, error) {
 		return t.backend().fetchProjects(fetchCtx)
 	})
 	if err != nil {

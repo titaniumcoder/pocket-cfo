@@ -44,7 +44,7 @@ type server struct {
 	emailGlobal      hourlyLimiter
 }
 
-func buildTogglClients(cfg financeconfig.Config, httpClient *http.Client) (track, focus *tracker.Toggl) {
+func buildTogglClients(cfg financeconfig.Config, httpClient *http.Client, cacheDir string) (track, focus *tracker.Toggl) {
 	if cfg.TogglToken != "" && cfg.TogglWorkspace != "" {
 		track = &tracker.Toggl{
 			Token:       cfg.TogglToken,
@@ -52,6 +52,7 @@ func buildTogglClients(cfg financeconfig.Config, httpClient *http.Client) (track
 			ProjectIDs:  cfg.TogglProjects,
 			HTTP:        togglHTTPClient(httpClient),
 			Loc:         time.Local,
+			CacheDir:    cacheDir,
 		}
 	}
 	if cfg.Toggl2Key != "" {
@@ -63,6 +64,7 @@ func buildTogglClients(cfg financeconfig.Config, httpClient *http.Client) (track
 			KeyExpiresAt:   cfg.Toggl2KeyExpiresAt,
 		}, togglHTTPClient(httpClient))
 		focus.Loc = time.Local
+		focus.CacheDir = cacheDir
 	}
 	return track, focus
 }
@@ -114,7 +116,7 @@ func main() {
 	cfg := loadConfig()
 
 	httpClient := &http.Client{Timeout: 15 * time.Second}
-	track, focus := buildTogglClients(cfg.finance, httpClient)
+	track, focus := buildTogglClients(cfg.finance, httpClient, togglCacheDir)
 	if track != nil && focus != nil {
 		log.Printf("pocketcfo: %s feeds the dashboard (TOGGL_MODE=%q)", togglModeLabel(cfg.togglMode), cfg.finance.TogglMode)
 	}

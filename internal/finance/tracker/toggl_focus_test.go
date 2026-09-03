@@ -328,8 +328,20 @@ func TestFocusDiscoverExplainsARefusedOrganization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.WorkspaceID != 20 || d.OrganizationKnown || !strings.Contains(d.OrganizationNote, "403") {
-		t.Errorf("Discovery = %+v, want the workspace and a note about the refused context", d)
+	if d.WorkspaceID != 20 || d.OrganizationKnown || d.OrganizationNote != "" {
+		t.Errorf("Discovery = %+v, want the workspace, no organization, and no note: a 403 is the documented answer to an API key", d)
+	}
+}
+
+func TestFocusDiscoverReportsAnUnexpectedContextError(t *testing.T) {
+	f := &fakeFocus{settings: `{"current_workspace_id":20}`, contextStatus: http.StatusInternalServerError}
+	tg := NewFocus(FocusConfig{Key: "toggl_sk"}, (&fakeBackend{focus: f}).transport())
+	d, err := tg.Discover(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.OrganizationKnown || !strings.Contains(d.OrganizationNote, "500") {
+		t.Errorf("Discovery = %+v, want a note carrying the unexpected status", d)
 	}
 }
 

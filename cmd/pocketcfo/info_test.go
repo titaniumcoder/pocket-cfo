@@ -259,7 +259,6 @@ func TestHandleInfo_KeyOnlyToggl2ShowsTheIdsItCanSee(t *testing.T) {
 		`<td class="code">20</td>`,
 		"not answered for an API key",
 		"/organizations/&lt;id&gt;/workspaces/",
-		"status 403",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
@@ -267,6 +266,9 @@ func TestHandleInfo_KeyOnlyToggl2ShowsTheIdsItCanSee(t *testing.T) {
 	}
 	if strings.Contains(body, "Feeds the dashboard") || strings.Contains(body, "Not configured (TOGGL2_API_KEY") {
 		t.Error("a key-only panel is neither active nor unconfigured")
+	}
+	if strings.Contains(body, "status 403") {
+		t.Error("the documented refusal is shown as a raw error")
 	}
 }
 

@@ -338,10 +338,16 @@ func (a *focusAPI) discover(ctx context.Context) (Discovery, error) {
 		d.OrganizationID, d.OrganizationKnown = context.OrganizationID, true
 	case err == nil:
 		d.OrganizationNote = "the workspace context names no organization"
+	case isForbidden(err):
 	default:
 		d.OrganizationNote = err.Error()
 	}
 	return d, nil
+}
+
+func isForbidden(err error) bool {
+	var se *statusError
+	return errors.As(err, &se) && se.Status == http.StatusForbidden
 }
 
 func (a *focusAPI) fetchWorkspaces(context.Context) ([]Workspace, error) {

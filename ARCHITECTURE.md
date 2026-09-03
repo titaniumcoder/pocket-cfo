@@ -786,13 +786,16 @@ records the rejection itself, and `KeyStatus` turns it, or an optional
 the pending and stale notes. It offers **no call that lists the caller's organizations or
 workspaces**, so both ids are configuration — but a key alone is enough to boot and to
 ask: `/info` reads the account's current workspace from `/users/me/settings` and tries the
-workspace's `/context` for the organization, which the spec says is refused to API keys,
-so the page also says where in the focus.toggl.com address the id sits. A key without its
+workspace's `/context` for the organization, which answers a browser session only — an API
+key gets a 403 "this endpoint requires session authentication", confirmed live — so the
+page says where in the focus.toggl.com address the id sits instead. A key without its
 ids never reaches the dashboard; it only feeds that panel. And it is **quota-limited per hour** (30
 requests on Free, 240 on Starter, 600 on Premium, answered with 402 beyond that), which is
 why rate timelines are cached until Reload rather than refetched on every 15-minute refresh,
 and why a Free plan wants a longer `TOGGL_REFRESH_INTERVAL`. Confirmed against the live
-API: an unknown key gets a 401 with a JSON error body. Read from the published OpenAPI
+API: an unknown key gets a 401 with a JSON error body, `per_page=200` is refused with a
+validation 400 (the client asks for 50 and halves on that error), and the workspace
+`/context` call answers 403 to an API key. Read from the published OpenAPI
 spec and still to be confirmed with a real key: `duration` is in seconds, `date_from` and
 `date_to` accept RFC 3339 timestamps, `hourly_rate` on the billable-rates endpoints is in
 hundredths of the currency, and `per_page=200` is honoured.

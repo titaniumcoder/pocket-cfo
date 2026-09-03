@@ -35,6 +35,10 @@ func (a trackAPI) mode() Mode {
 	return ModeTrack
 }
 
+func (a trackAPI) keyVar() string {
+	return "TOGGL_API_TOKEN"
+}
+
 func (a trackAPI) authorize(req *http.Request) {
 	auth := base64.StdEncoding.EncodeToString([]byte(a.t.Token + ":api_token"))
 	req.Header.Set("Authorization", "Basic "+auth)

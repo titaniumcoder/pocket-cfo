@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -20,12 +21,15 @@ type Toggl struct {
 	ProjectIDs  string
 	HTTP        *http.Client
 
-	api togglAPI
+	api          togglAPI
+	keyExpiresAt time.Time
 
-	mu       sync.Mutex
-	cache    map[string]cacheEntry
-	inflight map[string]*fetchCall
-	breaker  map[string]breakerState
+	mu         sync.Mutex
+	cache      map[string]cacheEntry
+	inflight   map[string]*fetchCall
+	breaker    map[string]breakerState
+	rejectedAt time.Time
+	rejection  string
 }
 
 type HoursSource interface {
@@ -35,6 +39,7 @@ type HoursSource interface {
 	YearStatus(year int) (fetchedAt time.Time, stale bool)
 	EvictRange(start, end time.Time)
 	markYearStale(year int)
+	KeyStatus(today time.Time) KeyStatus
 	Mode() Mode
 }
 
@@ -56,6 +61,7 @@ func (t *Toggl) Mode() Mode {
 
 type togglAPI interface {
 	mode() Mode
+	keyVar() string
 	authorize(req *http.Request)
 	cacheScope() string
 	fetchYear(ctx context.Context, start, end time.Time) (*YearData, error)
@@ -149,8 +155,12 @@ func (t *Toggl) fill(ctx context.Context, key string, start, end time.Time, fn f
 	delete(t.inflight, key)
 	if err != nil {
 		t.recordFailureLocked(key)
+		if isUnauthorized(err) {
+			t.rejectedAt, t.rejection = time.Now(), err.Error()
+		}
 	} else {
 		delete(t.breaker, key)
+		t.rejectedAt, t.rejection = time.Time{}, ""
 		if t.cache == nil {
 			t.cache = map[string]cacheEntry{}
 		}
@@ -241,6 +251,59 @@ func (t *Toggl) YearStatus(year int) (fetchedAt time.Time, stale bool) {
 		return e.fetchedAt, e.stale
 	}
 	return time.Time{}, false
+}
+
+type KeyStatus struct {
+	Rejected   bool
+	RejectedAt time.Time
+	Rejection  string
+	ExpiresAt  time.Time
+	Expired    bool
+	Warning    string
+}
+
+const keyWarningDays = 7
+
+func (t *Toggl) KeyStatus(today time.Time) KeyStatus {
+	if t == nil {
+		return KeyStatus{}
+	}
+	t.mu.Lock()
+	s := KeyStatus{Rejected: !t.rejectedAt.IsZero(), RejectedAt: t.rejectedAt, Rejection: t.rejection, ExpiresAt: t.keyExpiresAt}
+	t.mu.Unlock()
+	s.Expired = s.Rejected || (!s.ExpiresAt.IsZero() && daysUntil(today, s.ExpiresAt) < 0)
+	s.Warning = keyWarning(s, today, t.backend().keyVar())
+	return s
+}
+
+func daysUntil(today, day time.Time) int {
+	loc := today.Location()
+	from := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, loc)
+	to := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, loc)
+	return int(math.Round(to.Sub(from).Hours() / 24))
+}
+
+func keyWarning(s KeyStatus, today time.Time, keyVar string) string {
+	if s.Rejected {
+		return fmt.Sprintf("Toggl rejected the API key on %s (HTTP 401) — it has expired or been revoked. Create a new key in Toggl and set %s.",
+			s.RejectedAt.In(today.Location()).Format("02 Jan 15:04"), keyVar)
+	}
+	if s.ExpiresAt.IsZero() {
+		return ""
+	}
+	days := daysUntil(today, s.ExpiresAt)
+	date := s.ExpiresAt.Format("02 Jan 2006")
+	switch {
+	case days < 0:
+		return fmt.Sprintf("The Toggl API key expired on %s (%s_EXPIRES_AT) — create a new key in Toggl and set %s.", date, keyVar, keyVar)
+	case days == 0:
+		return fmt.Sprintf("The Toggl API key expires today, %s — create a new key in Toggl and set %s.", date, keyVar)
+	case days == 1:
+		return fmt.Sprintf("The Toggl API key expires tomorrow, %s — create a new key in Toggl and set %s before then.", date, keyVar)
+	case days <= keyWarningDays:
+		return fmt.Sprintf("The Toggl API key expires in %d days, on %s — create a new key in Toggl and set %s before then.", days, date, keyVar)
+	}
+	return ""
 }
 
 func (t *Toggl) yearKey(year int) string {

@@ -39,6 +39,10 @@ func (a trackAPI) keyVar() string {
 	return "TOGGL_API_TOKEN"
 }
 
+func (a trackAPI) discover(context.Context) (Discovery, error) {
+	return Discovery{}, nil
+}
+
 func (a trackAPI) authorize(req *http.Request) {
 	auth := base64.StdEncoding.EncodeToString([]byte(a.t.Token + ":api_token"))
 	req.Header.Set("Authorization", "Basic "+auth)

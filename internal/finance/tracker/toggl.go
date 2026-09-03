@@ -62,6 +62,7 @@ func (t *Toggl) Mode() Mode {
 type togglAPI interface {
 	mode() Mode
 	keyVar() string
+	discover(ctx context.Context) (Discovery, error)
 	authorize(req *http.Request)
 	cacheScope() string
 	fetchYear(ctx context.Context, start, end time.Time) (*YearData, error)
@@ -306,6 +307,26 @@ func keyWarning(s KeyStatus, today time.Time, keyVar string) string {
 	return ""
 }
 
+type Discovery struct {
+	WorkspaceID       int
+	OrganizationID    int
+	OrganizationKnown bool
+	OrganizationNote  string
+}
+
+func (t *Toggl) Discover(ctx context.Context) (Discovery, error) {
+	if t == nil {
+		return Discovery{}, nil
+	}
+	v, err := t.getCached(ctx, "discovery", everSince, everUntil, func(fetchCtx context.Context) (any, error) {
+		return t.backend().discover(fetchCtx)
+	})
+	if err != nil {
+		return Discovery{}, err
+	}
+	return v.(Discovery), nil
+}
+
 func (t *Toggl) yearKey(year int) string {
 	return t.backend().cacheScope() + "|" + strconv.Itoa(year)
 }
@@ -504,7 +525,7 @@ func (e *statusError) Error() string {
 
 func apiError(api string, resp *http.Response) error {
 	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-	return &statusError{API: api, Status: resp.StatusCode, Body: strings.TrimSpace(string(msg))}
+	return &statusError{API: api, Status: resp.StatusCode, Body: strings.Join(strings.Fields(string(msg)), " ")}
 }
 
 func isUnauthorized(err error) bool {

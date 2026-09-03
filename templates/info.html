@@ -100,8 +100,8 @@
     <h2 class="section-title">Toggl 2.0</h2>
     <p class="section-note">The configured workspace and its clients — the 2.0 API cannot list workspaces, so <code>TOGGL2_WORKSPACE_ID</code> is taken as given. Its keys expire; a rejected or expiring key is reported here and on the finance page.{{template "togglrole" .Focus}}</p>
     {{if not .Focus.Configured}}
-    <p class="not-configured">Not configured (TOGGL2_API_KEY / TOGGL2_ORGANIZATION_ID / TOGGL2_WORKSPACE_ID unset).</p>
-    {{else}}{{template "togglpanel" .Focus}}{{end}}
+    <p class="not-configured">Not configured (TOGGL2_API_KEY unset).</p>
+    {{else}}{{template "toggl2ids" .Focus}}{{if not .Focus.KeyOnly}}{{template "togglpanel" .Focus}}{{end}}{{end}}
   </section>
 
   <section class="panel">
@@ -132,6 +132,28 @@
 
 </body>
 </html>
+
+{{define "toggl2ids"}}
+    {{if .KeyOnly}}
+    <p class="stale-note">Only <code>TOGGL2_API_KEY</code> is set. The 2.0 API needs an organization id and a workspace id in every URL, so set <code>TOGGL2_ORGANIZATION_ID</code> and <code>TOGGL2_WORKSPACE_ID</code> from the values below, then <code>TOGGL_MODE=toggl2</code> or <code>both</code>. Until then Toggl 2.0 stays off the dashboard.</p>
+    {{end}}
+    {{if .DiscoveryErr}}
+    {{if .KeyNote}}<p class="{{if .KeyExpired}}error{{else}}stale-note{{end}}">{{.KeyNote}}</p>{{end}}
+    <p class="error">Could not ask Toggl 2.0 what the key sees: {{.DiscoveryErr}}</p>
+    {{else}}
+    <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Seen by the key</th><th class="code">value</th></tr></thead>
+      <tbody>
+        <tr><td>TOGGL2_WORKSPACE_ID <span class="count">— the account's current workspace</span></td><td class="code">{{if .Discovery.WorkspaceID}}{{.Discovery.WorkspaceID}}{{else}}(none){{end}}</td></tr>
+        <tr><td>TOGGL2_ORGANIZATION_ID{{if not .Discovery.OrganizationKnown}} <span class="count">— not answered for an API key: open focus.toggl.com, the address reads <code>/organizations/&lt;id&gt;/workspaces/…</code></span>{{end}}</td><td class="code">{{if .Discovery.OrganizationKnown}}{{.Discovery.OrganizationID}}{{else}}?{{end}}</td></tr>
+      </tbody>
+    </table>
+    </div>
+    {{if and (not .Discovery.OrganizationKnown) .Discovery.OrganizationNote}}<p class="section-note">Toggl answered: {{.Discovery.OrganizationNote}}</p>{{end}}
+    {{if .IDsMismatch}}<p class="stale-note">{{.IDsMismatch}}</p>{{end}}
+    {{end}}
+{{end}}
 
 {{define "togglrole"}}{{if .Configured}} {{if .Active}}<strong>Feeds the dashboard.</strong>{{else}}Configured, but not feeding the dashboard under the current <code>TOGGL_MODE</code>.{{end}}{{end}}{{end}}
 

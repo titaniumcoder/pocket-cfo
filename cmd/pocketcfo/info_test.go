@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -152,17 +153,12 @@ func TestInfoTemplate_SectionOrderAndBalanceFormatting(t *testing.T) {
 
 func TestHandleInfo_ShowsTheToggl2Panel(t *testing.T) {
 	s := newInfoTestServer(t)
-	focusOnly := &http.Client{Transport: oauthRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Host == "focus.toggl.com" && strings.HasSuffix(r.URL.Path, "/workspaces/20/clients") {
-			return jsonResp(http.StatusOK, `{"data":[{"id":5,"name":"Acme"}],"page":1,"per_page":200}`), nil
-		}
-		t.Fatalf("unexpected request: %s %s", r.Method, r.URL)
-		return nil, nil
-	})}
 	yesterday := time.Now().AddDate(0, 0, -1)
-	s.togglFocus = tracker.NewFocus(tracker.FocusConfig{Key: "toggl_sk_x", OrganizationID: "10", WorkspaceID: "20", KeyExpiresAt: yesterday}, focusOnly)
+	s.togglFocus = tracker.NewFocus(tracker.FocusConfig{Key: "toggl_sk_x", OrganizationID: "10", WorkspaceID: "20", KeyExpiresAt: yesterday}, focusTransport(t, 20, 10, http.StatusOK))
 	s.cfg.togglMode = togglModeFocus
 	s.cfg.finance.Toggl2Key = "toggl_sk_x"
+	s.cfg.finance.Toggl2Organization = "10"
+	s.cfg.finance.Toggl2Workspace = "20"
 	s.cfg.finance.TogglMode = togglModeFocus
 	s.tracker.Toggl = s.togglFocus
 
@@ -220,5 +216,76 @@ func TestHandleInfo_RendersTheRulesTimeline(t *testing.T) {
 	}
 	if strings.Contains(body, "No dated rules configured") {
 		t.Error("the empty state shows although legislation is configured")
+	}
+}
+
+// focusTransport answers the three Toggl 2.0 calls /info makes: the clients
+// list, the account settings, and the workspace context (with contextStatus).
+func focusTransport(t *testing.T, workspace, organization, contextStatus int) *http.Client {
+	t.Helper()
+	return &http.Client{Transport: oauthRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "focus.toggl.com" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL)
+		}
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/clients"):
+			return jsonResp(http.StatusOK, `{"data":[{"id":5,"name":"Acme"}],"page":1,"per_page":200}`), nil
+		case strings.HasSuffix(r.URL.Path, "/users/me/settings"):
+			return jsonResp(http.StatusOK, `{"current_workspace_id":`+strconv.Itoa(workspace)+`}`), nil
+		case strings.HasSuffix(r.URL.Path, "/context"):
+			if contextStatus != http.StatusOK {
+				return jsonResp(contextStatus, `{"error":"forbidden","error_description":"session authentication only"}`), nil
+			}
+			return jsonResp(http.StatusOK, `{"workspace_id":`+strconv.Itoa(workspace)+`,"organization_id":`+strconv.Itoa(organization)+`}`), nil
+		}
+		t.Fatalf("unexpected request: %s %s", r.Method, r.URL)
+		return nil, nil
+	})}
+}
+
+func TestHandleInfo_KeyOnlyToggl2ShowsTheIdsItCanSee(t *testing.T) {
+	s := newInfoTestServer(t)
+	s.togglFocus = tracker.NewFocus(tracker.FocusConfig{Key: "toggl_sk_x"}, focusTransport(t, 20, 10, http.StatusForbidden))
+	s.cfg.finance.Toggl2Key = "toggl_sk_x"
+
+	w := httptest.NewRecorder()
+	s.handleInfo(w, authorizedRequest(t, s))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		"Only <code>TOGGL2_API_KEY</code> is set",
+		`<td class="code">20</td>`,
+		"not answered for an API key",
+		"/organizations/&lt;id&gt;/workspaces/",
+		"status 403",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+	if strings.Contains(body, "Feeds the dashboard") || strings.Contains(body, "Not configured (TOGGL2_API_KEY") {
+		t.Error("a key-only panel is neither active nor unconfigured")
+	}
+}
+
+func TestHandleInfo_ConfiguredToggl2ChecksTheIdsAgainstTheKey(t *testing.T) {
+	s := newInfoTestServer(t)
+	s.togglFocus = tracker.NewFocus(tracker.FocusConfig{Key: "toggl_sk_x", OrganizationID: "10", WorkspaceID: "21"}, focusTransport(t, 20, 10, http.StatusOK))
+	s.cfg.togglMode = togglModeFocus
+	s.cfg.finance.Toggl2Key = "toggl_sk_x"
+	s.cfg.finance.Toggl2Organization = "10"
+	s.cfg.finance.Toggl2Workspace = "21"
+	s.tracker.Toggl = s.togglFocus
+
+	w := httptest.NewRecorder()
+	s.handleInfo(w, authorizedRequest(t, s))
+	body := w.Body.String()
+	if !strings.Contains(body, "currently works in workspace 20, not the configured 21") {
+		t.Errorf("no mismatch note on the page:\n%s", body)
+	}
+	if !strings.Contains(body, `<td class="code">10</td>`) {
+		t.Error("the organization id the context returned is missing")
 	}
 }

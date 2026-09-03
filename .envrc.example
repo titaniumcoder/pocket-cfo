@@ -63,10 +63,12 @@ export TOGGL_API_TOKEN=
 export TOGGL_WORKSPACE_ID=
 # Toggl 2.0 (focus.toggl.com): a toggl_sk_… key from its settings page —
 # only one is active per user, and it EXPIRES after the period chosen when
-# it was generated (30 or 90 days, …). The organization and workspace ids
-# come from the app's URL; the 2.0 API has no call to look them up. Once
-# Toggl rejects the key, the finance page and /info say so until a new one
-# is set here.
+# it was generated (30 or 90 days, …). Set it first on its own: /info then
+# shows the workspace and organization ids the key can see (the organization
+# only where Toggl allows an API key to ask; otherwise it is in the
+# focus.toggl.com address, /organizations/<id>/workspaces/<id>/…). A key
+# alone changes nothing on the dashboard. Once Toggl rejects the key, the
+# finance page and /info say so until a new one is set here.
 export TOGGL2_API_KEY=
 export TOGGL2_ORGANIZATION_ID=
 export TOGGL2_WORKSPACE_ID=

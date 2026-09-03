@@ -146,9 +146,9 @@ func TestBuildTogglClients(t *testing.T) {
 			t.Errorf("focus = %+v, want a Toggl 2.0 client", focus)
 		}
 	})
-	t.Run("2.0 needs the ids", func(t *testing.T) {
-		if _, focus := buildTogglClients(financeconfig.Config{Toggl2Key: "k"}, &http.Client{}); focus != nil {
-			t.Error("a key without organization and workspace ids must not build a client")
+	t.Run("2.0 from the key alone, for /info", func(t *testing.T) {
+		if _, focus := buildTogglClients(financeconfig.Config{Toggl2Key: "k"}, &http.Client{}); focus == nil {
+			t.Error("a key alone must still build a client so /info can ask it for the ids")
 		}
 	})
 }
@@ -204,6 +204,8 @@ func TestResolveTogglMode(t *testing.T) {
 		{"explicit both", withMode(both, togglModeBoth), togglModeBoth},
 		{"half a Track pair is ignored", financeconfig.Config{TogglToken: "tok"}, ""},
 		{"both sets without a mode stay on Track", both, togglModeTrack},
+		{"a 2.0 key alone changes nothing", financeconfig.Config{Toggl2Key: "k"}, ""},
+		{"a 2.0 key alone beside Track stays on Track", financeconfig.Config{TogglToken: "tok", TogglWorkspace: "ws", Toggl2Key: "k"}, togglModeTrack},
 	}
 	for _, tt := range ok {
 		t.Run(tt.name, func(t *testing.T) {
@@ -215,11 +217,12 @@ func TestResolveTogglMode(t *testing.T) {
 	}
 
 	refused := map[string]financeconfig.Config{
-		"track mode without track":  withMode(focusOnly, togglModeTrack),
-		"toggl2 mode without a key": withMode(trackOnly, togglModeFocus),
-		"both mode with one set":    withMode(trackOnly, togglModeBoth),
-		"an unknown mode":           withMode(both, "all"),
-		"a key without its ids":     financeconfig.Config{Toggl2Key: "k"},
+		"track mode without track":      withMode(focusOnly, togglModeTrack),
+		"toggl2 mode without a key":     withMode(trackOnly, togglModeFocus),
+		"both mode with one set":        withMode(trackOnly, togglModeBoth),
+		"an unknown mode":               withMode(both, "all"),
+		"toggl2 mode with only the key": withMode(financeconfig.Config{Toggl2Key: "k"}, togglModeFocus),
+		"both mode with only the key":   withMode(financeconfig.Config{TogglToken: "tok", TogglWorkspace: "ws", Toggl2Key: "k"}, togglModeBoth),
 	}
 	for name, cfg := range refused {
 		t.Run(name, func(t *testing.T) {

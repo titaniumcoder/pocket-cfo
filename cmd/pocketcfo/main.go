@@ -53,7 +53,7 @@ func buildTogglClients(cfg financeconfig.Config, httpClient *http.Client) (track
 			HTTP:        togglHTTPClient(httpClient),
 		}
 	}
-	if cfg.Toggl2Key != "" && cfg.Toggl2Organization != "" && cfg.Toggl2Workspace != "" {
+	if cfg.Toggl2Key != "" {
 		focus = tracker.NewFocus(tracker.FocusConfig{
 			Key:            cfg.Toggl2Key,
 			OrganizationID: cfg.Toggl2Organization,

@@ -143,9 +143,9 @@ const (
 
 func resolveTogglMode(f financeconfig.Config) (string, error) {
 	track := f.TogglToken != "" && f.TogglWorkspace != ""
-	focus := f.Toggl2Key != ""
-	if focus && (f.Toggl2Organization == "" || f.Toggl2Workspace == "") {
-		return "", fmt.Errorf("TOGGL2_API_KEY is set but TOGGL2_ORGANIZATION_ID and TOGGL2_WORKSPACE_ID are not — the Toggl 2.0 API needs both in every URL and has no call to look them up (see .envrc.example)")
+	focus := toggl2Complete(f)
+	if f.Toggl2Key != "" && !focus {
+		log.Printf("pocketcfo: TOGGL2_API_KEY is set without TOGGL2_ORGANIZATION_ID and TOGGL2_WORKSPACE_ID — Toggl 2.0 stays off the dashboard; /info shows the ids the key can see")
 	}
 	switch f.TogglMode {
 	case "":
@@ -165,16 +165,20 @@ func resolveTogglMode(f financeconfig.Config) (string, error) {
 		}
 	case togglModeFocus:
 		if !focus {
-			return "", fmt.Errorf("TOGGL_MODE=%s needs TOGGL2_API_KEY", togglModeFocus)
+			return "", fmt.Errorf("TOGGL_MODE=%s needs TOGGL2_API_KEY, TOGGL2_ORGANIZATION_ID and TOGGL2_WORKSPACE_ID — with only the key set, /info shows the ids it can see", togglModeFocus)
 		}
 	case togglModeBoth:
 		if !track || !focus {
-			return "", fmt.Errorf("TOGGL_MODE=%s needs TOGGL_API_TOKEN, TOGGL_WORKSPACE_ID and TOGGL2_API_KEY", togglModeBoth)
+			return "", fmt.Errorf("TOGGL_MODE=%s needs TOGGL_API_TOKEN, TOGGL_WORKSPACE_ID, TOGGL2_API_KEY, TOGGL2_ORGANIZATION_ID and TOGGL2_WORKSPACE_ID — with only the 2.0 key set, /info shows the ids it can see", togglModeBoth)
 		}
 	default:
 		return "", fmt.Errorf("TOGGL_MODE=%q is not a mode — use %s, %s or %s, or leave it unset with one set of Toggl credentials", f.TogglMode, togglModeTrack, togglModeFocus, togglModeBoth)
 	}
 	return f.TogglMode, nil
+}
+
+func toggl2Complete(f financeconfig.Config) bool {
+	return f.Toggl2Key != "" && f.Toggl2Organization != "" && f.Toggl2Workspace != ""
 }
 
 func togglModeLabel(mode string) tracker.Mode {

@@ -3,6 +3,7 @@ package tracker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -178,5 +179,22 @@ func TestDoStopsRetryingWhenContextExpires(t *testing.T) {
 	}
 	if rt.calls != 1 {
 		t.Errorf("made %d attempts, want 1 (no budget for a second)", rt.calls)
+	}
+}
+
+func TestAPIErrorCarriesItsStatus(t *testing.T) {
+	err := apiError("toggl", statusResponse(http.StatusUnauthorized, "unauthorized"))
+
+	if got, want := err.Error(), "toggl: status 401: unauthorized"; got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
+	}
+	if !isUnauthorized(err) {
+		t.Error("a 401 is not recognised as unauthorized")
+	}
+	if isUnauthorized(fmt.Errorf("funding: %w", apiError("toggl", statusResponse(http.StatusNotFound, "nope")))) {
+		t.Error("a 404 counts as unauthorized")
+	}
+	if !isUnauthorized(fmt.Errorf("funding: toggl 2026: %w", err)) {
+		t.Error("wrapping hides the status")
 	}
 }

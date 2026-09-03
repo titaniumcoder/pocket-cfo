@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -585,9 +586,24 @@ func (t *Toggl) client() *http.Client {
 	return http.DefaultClient
 }
 
+type statusError struct {
+	API    string
+	Status int
+	Body   string
+}
+
+func (e *statusError) Error() string {
+	return fmt.Sprintf("%s: status %d: %s", e.API, e.Status, e.Body)
+}
+
 func apiError(api string, resp *http.Response) error {
 	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-	return fmt.Errorf("%s: status %d: %s", api, resp.StatusCode, strings.TrimSpace(string(msg)))
+	return &statusError{API: api, Status: resp.StatusCode, Body: strings.TrimSpace(string(msg))}
+}
+
+func isUnauthorized(err error) bool {
+	var se *statusError
+	return errors.As(err, &se) && se.Status == http.StatusUnauthorized
 }
 
 func derefInt(p *int) int {

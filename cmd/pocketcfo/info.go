@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sort"
 	"time"
@@ -29,6 +30,7 @@ type infoTogglPanel struct {
 	Err        string
 	KeyNote    string
 	KeyExpired bool
+	Quota      string
 	Workspaces []infoWorkspaceView
 }
 
@@ -99,9 +101,21 @@ func togglPanel(ctx context.Context, tg *tracker.Toggl, active bool) infoTogglPa
 	}
 	panel := infoTogglPanel{Configured: true, Active: active}
 	panel.Workspaces, panel.Err = loadTogglInfo(ctx, tg)
-	ks := tg.KeyStatus(time.Now())
+	now := time.Now()
+	ks := tg.KeyStatus(now)
 	panel.KeyNote, panel.KeyExpired = ks.Warning, ks.Expired
+	panel.Quota = describeQuota(tg.Quota(now), now)
 	return panel
+}
+
+func describeQuota(q tracker.QuotaStatus, now time.Time) string {
+	switch {
+	case q.Exhausted:
+		return q.Note
+	case q.Remaining < 0:
+		return "Hourly request quota: not reported yet — Toggl states it on every answer."
+	}
+	return fmt.Sprintf("Hourly request quota: %d requests left, window resets at %s.", q.Remaining, q.ResetAt.In(now.Location()).Format("15:04"))
 }
 
 func loadTogglInfo(ctx context.Context, tg *tracker.Toggl) ([]infoWorkspaceView, string) {

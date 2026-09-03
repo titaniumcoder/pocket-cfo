@@ -101,6 +101,7 @@ type Figures struct {
 
 	TogglPending    bool
 	TogglStaleNote  string
+	TogglQuotaNote  string
 	TogglKeyNote    string
 	TogglKeyExpired bool
 
@@ -313,6 +314,9 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	}
 	if ks := t.hours().KeyStatus(today); ks.Warning != "" {
 		result.TogglKeyNote, result.TogglKeyExpired = ks.Warning, ks.Expired
+	}
+	if q := t.hours().Quota(now); q.Exhausted {
+		result.TogglQuotaNote = q.Note
 	}
 
 	return result

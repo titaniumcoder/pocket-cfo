@@ -46,6 +46,10 @@ func (t *Tracker) warmOnce(parent context.Context, every time.Duration) {
 	defer cancel()
 
 	now := time.Now().In(t.location())
+	if q := t.Toggl.Quota(now); q.BelowReserve() {
+		log.Printf("toggl: background refresh skipped — %d requests left in this hour's quota, keeping them for page views (window resets %s)", q.Remaining, q.ResetAt.Format(time.RFC3339))
+		return
+	}
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, t.location())
 	hotStart := today.AddDate(0, 0, -hotWindowDays)
 	t.Toggl.markStale(everSince, everUntil, fullRefreshInterval)

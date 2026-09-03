@@ -31,6 +31,11 @@ type Toggl struct {
 	breaker    map[string]breakerState
 	rejectedAt time.Time
 	rejection  string
+
+	quotaKnown     bool
+	quotaRemaining int
+	quotaResetAt   time.Time
+	quotaGateUntil time.Time
 }
 
 type HoursSource interface {
@@ -41,6 +46,7 @@ type HoursSource interface {
 	EvictRange(start, end time.Time)
 	markStale(start, end time.Time, olderThan time.Duration)
 	KeyStatus(today time.Time) KeyStatus
+	Quota(now time.Time) QuotaStatus
 	Mode() Mode
 }
 
@@ -120,6 +126,11 @@ func (t *Toggl) getCached(ctx context.Context, key string, start, end time.Time,
 		log.Printf("toggl: %s — served from cache", key)
 		return cached.val, nil
 	}
+	if until, gated := t.gatedLocked(); gated {
+		t.mu.Unlock()
+		log.Printf("toggl: %s — hourly quota used up, not asking before %s", key, until.Format(time.RFC3339))
+		return staleOr(key, cached, hit, &quotaError{resetAt: until})
+	}
 	if until, blocked := t.blockedLocked(key); blocked {
 		t.mu.Unlock()
 		log.Printf("toggl: %s — upstream failing, not retrying before %s", key, until.Format(time.RFC3339))
@@ -153,6 +164,10 @@ func (t *Toggl) blockedLocked(key string) (time.Time, bool) {
 	return until, time.Now().Before(until)
 }
 
+func (t *Toggl) gatedLocked() (time.Time, bool) {
+	return t.quotaGateUntil, time.Now().Before(t.quotaGateUntil)
+}
+
 func (t *Toggl) joinLocked(key string, start, end time.Time) (call *fetchCall, leader bool) {
 	if call, running := t.inflight[key]; running {
 		return call, false
@@ -176,7 +191,9 @@ func (t *Toggl) fill(ctx context.Context, key string, fn func(context.Context) (
 	t.mu.Lock()
 	delete(t.inflight, key)
 	if err != nil {
-		t.recordFailureLocked(key)
+		if !isQuotaExhausted(err) {
+			t.recordFailureLocked(key)
+		}
 		if isUnauthorized(err) {
 			t.rejectedAt, t.rejection = time.Now(), err.Error()
 		}
@@ -292,6 +309,98 @@ func (t *Toggl) Status(start, end time.Time) (fetchedAt time.Time, stale bool) {
 		stale = stale || e.stale
 	}
 	return fetchedAt, stale
+}
+
+type QuotaStatus struct {
+	Remaining int
+	ResetAt   time.Time
+	Exhausted bool
+	Note      string
+}
+
+const (
+	quotaReserve       = 5
+	quotaGateSlack     = 10 * time.Second
+	defaultQuotaWindow = time.Hour
+)
+
+func (t *Toggl) Quota(now time.Time) QuotaStatus {
+	if t == nil {
+		return QuotaStatus{Remaining: -1}
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	s := QuotaStatus{Remaining: -1, ResetAt: t.quotaResetAt}
+	if t.quotaKnown && now.Before(t.quotaResetAt) {
+		s.Remaining = t.quotaRemaining
+	}
+	if now.Before(t.quotaGateUntil) {
+		s.Exhausted = true
+		s.ResetAt = t.quotaGateUntil
+		s.Remaining = 0
+		s.Note = fmt.Sprintf("Toggl's hourly request quota is used up — tracked hours refresh again at %s.", t.quotaGateUntil.In(now.Location()).Format("15:04"))
+	}
+	return s
+}
+
+func (s QuotaStatus) BelowReserve() bool {
+	return s.Exhausted || (s.Remaining >= 0 && s.Remaining < quotaReserve)
+}
+
+func (t *Toggl) noteQuota(resp *http.Response) {
+	remaining, hasRemaining := headerInt(resp, "X-Toggl-Quota-Remaining")
+	resetsIn, hasReset := headerInt(resp, "X-Toggl-Quota-Resets-In")
+	exhausted := resp.StatusCode == http.StatusPaymentRequired
+	if !hasRemaining && !hasReset && !exhausted {
+		return
+	}
+	now := time.Now()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if hasRemaining {
+		t.quotaKnown, t.quotaRemaining = true, remaining
+	}
+	window := defaultQuotaWindow
+	if hasReset {
+		window = time.Duration(resetsIn) * time.Second
+	}
+	if hasReset || exhausted {
+		t.quotaResetAt = now.Add(window)
+	}
+	if exhausted {
+		t.quotaKnown, t.quotaRemaining = true, 0
+		t.quotaGateUntil = now.Add(window + quotaGateSlack)
+		log.Printf("toggl: hourly quota used up (HTTP 402) — no requests before %s", t.quotaGateUntil.Format(time.RFC3339))
+	}
+}
+
+func headerInt(resp *http.Response, name string) (int, bool) {
+	v := strings.TrimSpace(resp.Header.Get(name))
+	if v == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
+}
+
+type quotaError struct {
+	resetAt time.Time
+}
+
+func (e *quotaError) Error() string {
+	return fmt.Sprintf("toggl: hourly request quota used up, next attempt at %s", e.resetAt.Format(time.RFC3339))
+}
+
+func isQuotaExhausted(err error) bool {
+	var qe *quotaError
+	if errors.As(err, &qe) {
+		return true
+	}
+	var se *statusError
+	return errors.As(err, &se) && se.Status == http.StatusPaymentRequired
 }
 
 type KeyStatus struct {
@@ -445,6 +554,11 @@ func (t *Toggl) staleRuns(year int) []monthRun {
 func (t *Toggl) fetchRun(ctx context.Context, run monthRun) error {
 	key := t.runKey(run)
 	t.mu.Lock()
+	if until, gated := t.gatedLocked(); gated {
+		t.mu.Unlock()
+		log.Printf("toggl: %s — hourly quota used up, not asking before %s", key, until.Format(time.RFC3339))
+		return &quotaError{resetAt: until}
+	}
 	if until, blocked := t.blockedLocked(key); blocked {
 		t.mu.Unlock()
 		log.Printf("toggl: %s — upstream failing, not retrying before %s", key, until.Format(time.RFC3339))
@@ -619,6 +733,9 @@ func (t *Toggl) do(ctx context.Context, method, url string, body io.Reader) (*ht
 	var lastErr error
 	for attempt := 1; ; attempt++ {
 		resp, err := t.attempt(ctx, method, url, payload)
+		if err == nil {
+			t.noteQuota(resp)
+		}
 		if err == nil && !retryableStatus(resp.StatusCode) {
 			return resp, nil
 		}

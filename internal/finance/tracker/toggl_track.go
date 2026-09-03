@@ -31,6 +31,10 @@ type detailedRow struct {
 	} `json:"time_entries"`
 }
 
+func (a trackAPI) mode() Mode {
+	return ModeTrack
+}
+
 func (a trackAPI) authorize(req *http.Request) {
 	auth := base64.StdEncoding.EncodeToString([]byte(a.t.Token + ":api_token"))
 	req.Header.Set("Authorization", "Basic "+auth)

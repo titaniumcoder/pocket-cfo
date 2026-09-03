@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	financeconfig "github.com/titaniumcoder/pocket-cfo/internal/finance/config"
+	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
 
 func TestApplyDefaults(t *testing.T) {
@@ -129,11 +130,12 @@ func TestBuildTracker(t *testing.T) {
 	})
 	t.Run("toggl enabled with credentials", func(t *testing.T) {
 		trk := buildTracker(financeconfig.Config{TogglToken: "tok", TogglWorkspace: "ws"}, &http.Client{}, "data")
-		if trk.Toggl == nil {
-			t.Fatal("want Toggl non-nil when both credentials are set")
+		tg, ok := trk.Toggl.(*tracker.Toggl)
+		if !ok || tg == nil {
+			t.Fatal("want a Toggl client when both credentials are set")
 		}
-		if trk.Toggl.Token != "tok" || trk.Toggl.WorkspaceID != "ws" {
-			t.Errorf("Toggl = %+v, want Token=tok WorkspaceID=ws", trk.Toggl)
+		if tg.Token != "tok" || tg.WorkspaceID != "ws" {
+			t.Errorf("Toggl = %+v, want Token=tok WorkspaceID=ws", tg)
 		}
 	})
 	t.Run("budget always configured", func(t *testing.T) {

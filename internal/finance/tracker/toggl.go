@@ -28,7 +28,34 @@ type Toggl struct {
 	breaker  map[string]breakerState
 }
 
+type HoursSource interface {
+	Year(ctx context.Context, year int) (*YearData, error)
+	Projects(ctx context.Context) (map[int]Project, error)
+	YearPending(year int) bool
+	YearStatus(year int) (fetchedAt time.Time, stale bool)
+	EvictRange(start, end time.Time)
+	markYearStale(year int)
+	Mode() Mode
+}
+
+type Mode string
+
+const (
+	ModeOff   Mode = "disabled"
+	ModeTrack Mode = "Toggl Track"
+	ModeFocus Mode = "Toggl 2.0"
+	ModeBoth  Mode = "Toggl Track + Toggl 2.0"
+)
+
+func (t *Toggl) Mode() Mode {
+	if t == nil {
+		return ModeOff
+	}
+	return t.backend().mode()
+}
+
 type togglAPI interface {
+	mode() Mode
 	authorize(req *http.Request)
 	cacheScope() string
 	fetchYear(ctx context.Context, start, end time.Time) (*YearData, error)
@@ -179,12 +206,13 @@ func (t *Toggl) EvictRange(start, end time.Time) {
 	clear(t.breaker)
 }
 
-func (t *Toggl) markStale(key string) {
+func (t *Toggl) markYearStale(year int) {
 	if t == nil {
 		return
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	key := t.yearKey(year)
 	if e, ok := t.cache[key]; ok {
 		e.stale = true
 		t.cache[key] = e

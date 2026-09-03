@@ -111,7 +111,7 @@ func (t *Tracker) fundingLaborIncomeEUR(ctx context.Context, months []yearMonth,
 	togglCtx, cancelToggl := waitBudget(ctx)
 	defer cancelToggl()
 
-	projects, err := t.Toggl.Projects(togglCtx)
+	projects, err := t.hours().Projects(togglCtx)
 	if err != nil {
 		return nil, fmt.Errorf("funding: toggl projects: %w", err)
 	}
@@ -137,7 +137,7 @@ func (t *Tracker) fundingLaborIncomeEUR(ctx context.Context, months []yearMonth,
 func (t *Tracker) fetchYearDataByYear(ctx context.Context, years []int) (map[int]*YearData, error) {
 	ydByYear := map[int]*YearData{}
 	for _, y := range years {
-		yd, err := t.Toggl.Year(ctx, y)
+		yd, err := t.hours().Year(ctx, y)
 		if err != nil {
 			return nil, fmt.Errorf("funding: toggl %d: %w", y, err)
 		}
@@ -203,5 +203,5 @@ func distinctYears(months []yearMonth) []int {
 func (t *Tracker) evictFundingRange(start, end yearMonth) {
 	s := time.Date(start.Year, start.Month, 1, 0, 0, 0, 0, t.Loc)
 	e := time.Date(end.Year, end.Month, 1, 0, 0, 0, 0, t.Loc).AddDate(0, 1, -1)
-	t.Toggl.EvictRange(s, e)
+	t.hours().EvictRange(s, e)
 }

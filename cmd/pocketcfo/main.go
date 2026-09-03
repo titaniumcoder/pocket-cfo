@@ -43,17 +43,7 @@ type server struct {
 }
 
 func buildTracker(cfg financeconfig.Config, httpClient *http.Client, budgetDir string) *tracker.Tracker {
-	var togglClient *tracker.Toggl
-	if cfg.TogglToken != "" && cfg.TogglWorkspace != "" {
-		togglClient = &tracker.Toggl{
-			Token:       cfg.TogglToken,
-			WorkspaceID: cfg.TogglWorkspace,
-			ProjectIDs:  cfg.TogglProjects,
-			HTTP:        togglHTTPClient(httpClient),
-		}
-	}
-	return &tracker.Tracker{
-		Toggl:        togglClient,
+	trk := &tracker.Tracker{
 		Holidays:     &tracker.Holidays{Country: cfg.Country, Subdivision: cfg.Subdivision, HTTP: httpClient},
 		Budget:       &tracker.Budget{FS: os.DirFS(budgetDir)},
 		Accounts:     &tracker.Accounts{FS: os.DirFS(budgetDir)},
@@ -66,6 +56,15 @@ func buildTracker(cfg financeconfig.Config, httpClient *http.Client, budgetDir s
 		Personal:     tracker.PersonalParams{Legislation: cfg.Legislation, Salary: cfg.Salary, Target: cfg.TargetBalance},
 		Start:        cfg.StartMonth,
 	}
+	if cfg.TogglToken != "" && cfg.TogglWorkspace != "" {
+		trk.Toggl = &tracker.Toggl{
+			Token:       cfg.TogglToken,
+			WorkspaceID: cfg.TogglWorkspace,
+			ProjectIDs:  cfg.TogglProjects,
+			HTTP:        togglHTTPClient(httpClient),
+		}
+	}
+	return trk
 }
 
 const togglTimeout = 60 * time.Second

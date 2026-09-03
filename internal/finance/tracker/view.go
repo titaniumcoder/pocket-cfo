@@ -14,7 +14,7 @@ import (
 )
 
 type Tracker struct {
-	Toggl        *Toggl
+	Toggl        HoursSource
 	Holidays     *Holidays
 	Budget       *Budget
 	Accounts     *Accounts
@@ -29,6 +29,13 @@ type Tracker struct {
 	Minimal      bool
 
 	Start time.Time
+}
+
+func (t *Tracker) hours() HoursSource {
+	if t.Toggl == nil {
+		return (*Toggl)(nil)
+	}
+	return t.Toggl
 }
 
 func (t *Tracker) startMonth() yearMonth {
@@ -230,9 +237,9 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	togglCtx, cancelToggl := waitBudget(ctx)
 	defer cancelToggl()
 
-	projects, perr := t.Toggl.Projects(togglCtx)
-	yd, terr := t.Toggl.Year(togglCtx, year)
-	result.TogglPending = terr != nil && t.Toggl.YearPending(year)
+	projects, perr := t.hours().Projects(togglCtx)
+	yd, terr := t.hours().Year(togglCtx, year)
+	result.TogglPending = terr != nil && t.hours().YearPending(year)
 	aggs := aggregatesInRange(yd, start, end)
 	todayErr := terr
 	todayTracked := isCurrentPeriod && terr == nil && yd.Days[today.Format("2006-01-02")]
@@ -294,7 +301,7 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 
 	result.computeDirectorLoan(t, ctx, viewed, months, carried)
 
-	if at, stale := t.Toggl.YearStatus(year); !at.IsZero() {
+	if at, stale := t.hours().YearStatus(year); !at.IsZero() {
 		result.LastUpdated = at.In(t.Loc).Format("02 Jan 15:04")
 		if stale {
 			result.TogglStaleNote = "Toggl didn't answer — tracked hours are the last ones fetched, on " + result.LastUpdated + "."
@@ -778,7 +785,7 @@ func (f *Figures) publishAccountBalances(snap AccountSnapshot, carried openings,
 
 func (t *Tracker) EvictMonth(year int, month time.Month) {
 	start := time.Date(year, month, 1, 0, 0, 0, 0, t.Loc)
-	t.Toggl.EvictRange(start, start.AddDate(0, 1, -1))
+	t.hours().EvictRange(start, start.AddDate(0, 1, -1))
 	fs, fe := fundingRangeForMonth(year, month)
 	t.evictFundingRange(fs, fe)
 	if t.Budget != nil {
@@ -790,7 +797,7 @@ func (t *Tracker) EvictMonth(year int, month time.Month) {
 
 func (t *Tracker) EvictYear(year int) {
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, t.Loc)
-	t.Toggl.EvictRange(start, start.AddDate(1, 0, -1))
+	t.hours().EvictRange(start, start.AddDate(1, 0, -1))
 	fs, fe := fundingRangeForYear(year, time.Now().In(t.Loc), t.startMonth())
 	t.evictFundingRange(fs, fe)
 	if t.Budget != nil {

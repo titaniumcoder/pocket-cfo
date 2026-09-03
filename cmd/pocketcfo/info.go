@@ -67,9 +67,9 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
-	if s.tracker.Toggl != nil {
+	if tg, ok := s.tracker.Toggl.(*tracker.Toggl); ok {
 		view.TogglConfigured = true
-		view.Workspaces, view.TogglErr = loadTogglInfo(ctx, s.tracker.Toggl)
+		view.Workspaces, view.TogglErr = loadTogglInfo(ctx, tg)
 	}
 
 	view.Countries, view.HolidaysErr = loadHolidayInfo(ctx, s.tracker.Holidays)

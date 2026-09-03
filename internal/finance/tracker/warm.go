@@ -44,7 +44,7 @@ func (t *Tracker) warmOnce(parent context.Context) {
 	defer cancel()
 
 	year := time.Now().In(t.location()).Year()
-	t.Toggl.markStale(t.Toggl.yearKey(year))
+	t.Toggl.markYearStale(year)
 	if _, err := t.Toggl.Year(ctx, year); err != nil {
 		log.Printf("toggl: background refresh of %d failed: %v", year, err)
 	}

@@ -176,7 +176,7 @@ func entryAmountCents(seconds, rateCents int) int {
 	return int(math.Round(float64(seconds) * float64(rateCents) / 3600))
 }
 
-func (a *focusAPI) fetchYear(ctx context.Context, start, end time.Time) (*YearData, error) {
+func (a *focusAPI) fetchRange(ctx context.Context, start, end time.Time) (*YearData, error) {
 	q := url.Values{
 		"date_from":        {start.Format(time.RFC3339)},
 		"date_to":          {end.Add(24*time.Hour - time.Second).Format(time.RFC3339)},

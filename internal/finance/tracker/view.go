@@ -241,7 +241,7 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 
 	projects, perr := t.hours().Projects(togglCtx)
 	yd, terr := t.hours().Year(togglCtx, year)
-	result.TogglPending = terr != nil && t.hours().YearPending(year)
+	result.TogglPending = terr != nil && t.hours().Pending(start, end)
 	aggs := aggregatesInRange(yd, start, end)
 	todayErr := terr
 	todayTracked := isCurrentPeriod && terr == nil && yd.Days[today.Format("2006-01-02")]
@@ -303,7 +303,7 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 
 	result.computeDirectorLoan(t, ctx, viewed, months, carried)
 
-	if at, stale := t.hours().YearStatus(year); !at.IsZero() {
+	if at, stale := t.hours().Status(start, end); !at.IsZero() {
 		result.LastUpdated = at.In(t.Loc).Format("02 Jan 15:04")
 		if stale {
 			result.TogglStaleNote = "Toggl didn't answer — tracked hours are the last ones fetched, on " + result.LastUpdated + "."

@@ -36,35 +36,6 @@ func (c *Combined) Year(ctx context.Context, year int) (*YearData, error) {
 	return mergeYearData(track, focus), nil
 }
 
-func mergeYearData(a, b *YearData) *YearData {
-	type key struct {
-		pid, rate int
-		currency  string
-		month     time.Month
-	}
-	acc := map[key]*Aggregate{}
-	var order []key
-	out := &YearData{Months: map[time.Month][]Aggregate{}, Days: map[string]bool{}}
-	for _, yd := range []*YearData{a, b} {
-		for month, aggs := range yd.Months {
-			for _, agg := range aggs {
-				k := key{agg.ProjectID, agg.RateCents, agg.Currency, month}
-				if acc[k] == nil {
-					order = append(order, k)
-				}
-				acc[k] = addAggregate(acc[k], agg.ProjectID, agg.RateCents, agg.Currency, agg.AmountCents, agg.Seconds)
-			}
-		}
-		for day := range yd.Days {
-			out.Days[day] = true
-		}
-	}
-	for _, k := range order {
-		out.Months[k.month] = append(out.Months[k.month], *acc[k])
-	}
-	return out
-}
-
 func (c *Combined) Projects(ctx context.Context) (map[int]Project, error) {
 	track, err := c.Track.Projects(ctx)
 	if err != nil {
@@ -97,13 +68,13 @@ func (c *Combined) noteCollision(id int, track, focus Project) {
 	log.Printf("toggl: project id %d is %q in Toggl Track and %q in Toggl 2.0 — showing the Toggl 2.0 name and adding both projects' hours together", id, track.Name, focus.Name)
 }
 
-func (c *Combined) YearPending(year int) bool {
-	return c.Track.YearPending(year) || c.Focus.YearPending(year)
+func (c *Combined) Pending(start, end time.Time) bool {
+	return c.Track.Pending(start, end) || c.Focus.Pending(start, end)
 }
 
-func (c *Combined) YearStatus(year int) (fetchedAt time.Time, stale bool) {
-	trackAt, trackStale := c.Track.YearStatus(year)
-	focusAt, focusStale := c.Focus.YearStatus(year)
+func (c *Combined) Status(start, end time.Time) (fetchedAt time.Time, stale bool) {
+	trackAt, trackStale := c.Track.Status(start, end)
+	focusAt, focusStale := c.Focus.Status(start, end)
 	if trackAt.IsZero() || focusAt.IsZero() {
 		return time.Time{}, false
 	}
@@ -118,9 +89,9 @@ func (c *Combined) EvictRange(start, end time.Time) {
 	c.Focus.EvictRange(start, end)
 }
 
-func (c *Combined) markYearStale(year int) {
-	c.Track.markYearStale(year)
-	c.Focus.markYearStale(year)
+func (c *Combined) markStale(start, end time.Time, olderThan time.Duration) {
+	c.Track.markStale(start, end, olderThan)
+	c.Focus.markStale(start, end, olderThan)
 }
 
 func (c *Combined) KeyStatus(today time.Time) KeyStatus {

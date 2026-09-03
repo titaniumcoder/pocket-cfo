@@ -203,13 +203,6 @@ func TestDerefInt(t *testing.T) {
 	}
 }
 
-func TestYearKey(t *testing.T) {
-	tg := &Toggl{ProjectIDs: "1,2"}
-	if got, want := tg.yearKey(2026), "detailed|1,2|2026"; got != want {
-		t.Errorf("yearKey = %q, want %q", got, want)
-	}
-}
-
 func TestWorkspaces(t *testing.T) {
 	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if !strings.Contains(r.URL.Path, "/me/workspaces") {

@@ -51,6 +51,7 @@ func buildTogglClients(cfg financeconfig.Config, httpClient *http.Client) (track
 			WorkspaceID: cfg.TogglWorkspace,
 			ProjectIDs:  cfg.TogglProjects,
 			HTTP:        togglHTTPClient(httpClient),
+			Loc:         time.Local,
 		}
 	}
 	if cfg.Toggl2Key != "" {
@@ -61,6 +62,7 @@ func buildTogglClients(cfg financeconfig.Config, httpClient *http.Client) (track
 			ProjectIDs:     cfg.Toggl2Projects,
 			KeyExpiresAt:   cfg.Toggl2KeyExpiresAt,
 		}, togglHTTPClient(httpClient))
+		focus.Loc = time.Local
 	}
 	return track, focus
 }

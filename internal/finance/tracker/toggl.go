@@ -20,6 +20,7 @@ type Toggl struct {
 	WorkspaceID string
 	ProjectIDs  string
 	HTTP        *http.Client
+	Loc         *time.Location
 
 	api          togglAPI
 	keyExpiresAt time.Time
@@ -35,10 +36,10 @@ type Toggl struct {
 type HoursSource interface {
 	Year(ctx context.Context, year int) (*YearData, error)
 	Projects(ctx context.Context) (map[int]Project, error)
-	YearPending(year int) bool
-	YearStatus(year int) (fetchedAt time.Time, stale bool)
+	Pending(start, end time.Time) bool
+	Status(start, end time.Time) (fetchedAt time.Time, stale bool)
 	EvictRange(start, end time.Time)
-	markYearStale(year int)
+	markStale(start, end time.Time, olderThan time.Duration)
 	KeyStatus(today time.Time) KeyStatus
 	Mode() Mode
 }
@@ -64,7 +65,7 @@ type togglAPI interface {
 	keyVar() string
 	authorize(req *http.Request)
 	cacheScope() string
-	fetchYear(ctx context.Context, start, end time.Time) (*YearData, error)
+	fetchRange(ctx context.Context, start, end time.Time) (*YearData, error)
 	fetchProjects(ctx context.Context) (map[int]Project, error)
 	fetchWorkspaces(ctx context.Context) ([]Workspace, error)
 	fetchClients(ctx context.Context, workspaceID int) ([]Client, error)
@@ -78,9 +79,10 @@ func (t *Toggl) backend() togglAPI {
 }
 
 type fetchCall struct {
-	done chan struct{}
-	val  any
-	err  error
+	done       chan struct{}
+	start, end time.Time
+	val        any
+	err        error
 }
 
 type breakerState struct {
@@ -95,8 +97,16 @@ var (
 	togglBreakerCooldown = time.Minute
 )
 
+type entryKind string
+
+const (
+	kindMonth entryKind = "month"
+	kindOther entryKind = ""
+)
+
 type cacheEntry struct {
 	val        any
+	kind       entryKind
 	start, end time.Time
 	fetchedAt  time.Time
 	stale      bool
@@ -110,23 +120,18 @@ func (t *Toggl) getCached(ctx context.Context, key string, start, end time.Time,
 		log.Printf("toggl: %s — served from cache", key)
 		return cached.val, nil
 	}
-	if until := t.breaker[key].openUntil; time.Now().Before(until) {
+	if until, blocked := t.blockedLocked(key); blocked {
 		t.mu.Unlock()
 		log.Printf("toggl: %s — upstream failing, not retrying before %s", key, until.Format(time.RFC3339))
 		return staleOr(key, cached, hit, fmt.Errorf("toggl: %s: upstream unavailable, not retried", key))
 	}
-	call, running := t.inflight[key]
-	if !running {
-		call = &fetchCall{done: make(chan struct{})}
-		if t.inflight == nil {
-			t.inflight = map[string]*fetchCall{}
-		}
-		t.inflight[key] = call
-	}
+	call, leader := t.joinLocked(key, start, end)
 	t.mu.Unlock()
 
-	if !running {
-		go t.fill(ctx, key, start, end, fn, call)
+	if leader {
+		go t.fill(ctx, key, fn, call, func(val any, at time.Time) {
+			t.cache[key] = cacheEntry{val: val, kind: kindOther, start: start, end: end, fetchedAt: at}
+		})
 	} else {
 		log.Printf("toggl: %s — waiting on the fetch already in flight", key)
 	}
@@ -143,7 +148,24 @@ func (t *Toggl) getCached(ctx context.Context, key string, start, end time.Time,
 	return call.val, nil
 }
 
-func (t *Toggl) fill(ctx context.Context, key string, start, end time.Time, fn func(context.Context) (any, error), call *fetchCall) {
+func (t *Toggl) blockedLocked(key string) (time.Time, bool) {
+	until := t.breaker[key].openUntil
+	return until, time.Now().Before(until)
+}
+
+func (t *Toggl) joinLocked(key string, start, end time.Time) (call *fetchCall, leader bool) {
+	if call, running := t.inflight[key]; running {
+		return call, false
+	}
+	call = &fetchCall{done: make(chan struct{}), start: start, end: end}
+	if t.inflight == nil {
+		t.inflight = map[string]*fetchCall{}
+	}
+	t.inflight[key] = call
+	return call, true
+}
+
+func (t *Toggl) fill(ctx context.Context, key string, fn func(context.Context) (any, error), call *fetchCall, store func(val any, at time.Time)) {
 	log.Printf("toggl: %s — fetching…", key)
 	t0 := time.Now()
 	fetchCtx, cancelFetch := context.WithTimeout(context.WithoutCancel(ctx), togglFetchTimeout)
@@ -164,7 +186,7 @@ func (t *Toggl) fill(ctx context.Context, key string, start, end time.Time, fn f
 		if t.cache == nil {
 			t.cache = map[string]cacheEntry{}
 		}
-		t.cache[key] = cacheEntry{val: val, start: start, end: end, fetchedAt: time.Now()}
+		store(val, time.Now())
 	}
 	call.val, call.err = val, err
 	t.mu.Unlock()
@@ -208,7 +230,7 @@ func (t *Toggl) EvictRange(start, end time.Time) {
 		if e.start.IsZero() && e.end.IsZero() {
 			continue
 		}
-		if !e.end.Before(start) && !e.start.After(end) {
+		if overlaps(e.start, e.end, start, end) {
 			e.stale = true
 			t.cache[k] = e
 		}
@@ -216,41 +238,60 @@ func (t *Toggl) EvictRange(start, end time.Time) {
 	clear(t.breaker)
 }
 
-func (t *Toggl) markYearStale(year int) {
+func (t *Toggl) markStale(start, end time.Time, olderThan time.Duration) {
 	if t == nil {
 		return
 	}
+	cutoff := time.Now().Add(-olderThan)
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	key := t.yearKey(year)
-	if e, ok := t.cache[key]; ok {
-		e.stale = true
-		t.cache[key] = e
+	for k, e := range t.cache {
+		if e.kind == kindMonth && overlaps(e.start, e.end, start, end) && e.fetchedAt.Before(cutoff) {
+			e.stale = true
+			t.cache[k] = e
+		}
 	}
 }
 
-func (t *Toggl) YearPending(year int) bool {
+func overlaps(aStart, aEnd, bStart, bEnd time.Time) bool {
+	return !aEnd.Before(bStart) && !aStart.After(bEnd)
+}
+
+func (t *Toggl) Pending(start, end time.Time) bool {
 	if t == nil {
 		return false
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	key := t.yearKey(year)
-	_, fetching := t.inflight[key]
-	_, cached := t.cache[key]
-	return fetching && !cached
+	for _, call := range t.inflight {
+		if !overlaps(call.start, call.end, start, end) {
+			continue
+		}
+		for _, m := range monthsIn(call.start, call.end, t.location()) {
+			if _, cached := t.cache[t.monthKey(m)]; !cached && overlaps(m.start, m.end, start, end) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
-func (t *Toggl) YearStatus(year int) (fetchedAt time.Time, stale bool) {
+func (t *Toggl) Status(start, end time.Time) (fetchedAt time.Time, stale bool) {
 	if t == nil {
 		return time.Time{}, false
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if e, ok := t.cache[t.yearKey(year)]; ok {
-		return e.fetchedAt, e.stale
+	for _, e := range t.cache {
+		if e.kind != kindMonth || !overlaps(e.start, e.end, start, end) {
+			continue
+		}
+		if fetchedAt.IsZero() || e.fetchedAt.Before(fetchedAt) {
+			fetchedAt = e.fetchedAt
+		}
+		stale = stale || e.stale
 	}
-	return time.Time{}, false
+	return fetchedAt, stale
 }
 
 type KeyStatus struct {
@@ -306,10 +347,6 @@ func keyWarning(s KeyStatus, today time.Time, keyVar string) string {
 	return ""
 }
 
-func (t *Toggl) yearKey(year int) string {
-	return t.backend().cacheScope() + "|" + strconv.Itoa(year)
-}
-
 type Aggregate struct {
 	ProjectID   int
 	RateCents   int
@@ -330,17 +367,185 @@ type YearData struct {
 
 func (t *Toggl) Year(ctx context.Context, year int) (*YearData, error) {
 	if t == nil {
-		return &YearData{Months: map[time.Month][]Aggregate{}, Days: map[string]bool{}}, nil
+		return emptyYearData(), nil
 	}
-	start := time.Date(year, time.January, 1, 0, 0, 0, 0, time.UTC)
-	end := time.Date(year, time.December, 31, 0, 0, 0, 0, time.UTC)
-	v, err := t.getCached(ctx, t.yearKey(year), start, end, func(fetchCtx context.Context) (any, error) {
-		return t.backend().fetchYear(fetchCtx, start, end)
-	})
-	if err != nil {
-		return nil, err
+	var fetchErr error
+	for _, run := range t.staleRuns(year) {
+		if err := t.fetchRun(ctx, run); err != nil && fetchErr == nil {
+			fetchErr = err
+		}
 	}
-	return v.(*YearData), nil
+	return t.assembleYear(year, fetchErr)
+}
+
+func emptyYearData() *YearData {
+	return &YearData{Months: map[time.Month][]Aggregate{}, Days: map[string]bool{}}
+}
+
+type monthRange struct {
+	year       int
+	month      time.Month
+	start, end time.Time
+}
+
+func monthOf(year int, month time.Month, loc *time.Location) monthRange {
+	start := time.Date(year, month, 1, 0, 0, 0, 0, loc)
+	return monthRange{year: year, month: month, start: start, end: start.AddDate(0, 1, -1)}
+}
+
+func monthsIn(start, end time.Time, loc *time.Location) []monthRange {
+	var out []monthRange
+	for m := monthOf(start.Year(), start.Month(), loc); !m.start.After(end); m = monthOf(m.start.Year(), m.start.Month()+1, loc) {
+		out = append(out, m)
+	}
+	return out
+}
+
+func (t *Toggl) location() *time.Location {
+	if t.Loc == nil {
+		return time.UTC
+	}
+	return t.Loc
+}
+
+func (t *Toggl) monthKey(m monthRange) string {
+	return t.backend().cacheScope() + "|" + m.start.Format("2006-01")
+}
+
+type monthRun struct {
+	first, last monthRange
+}
+
+func (r monthRun) months(loc *time.Location) []monthRange {
+	return monthsIn(r.first.start, r.last.end, loc)
+}
+
+func (t *Toggl) runKey(r monthRun) string {
+	return t.backend().cacheScope() + "|" + r.first.start.Format("2006-01") + ".." + r.last.start.Format("2006-01")
+}
+
+func (t *Toggl) staleRuns(year int) []monthRun {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var runs []monthRun
+	for month := time.December; month >= time.January; month-- {
+		m := monthOf(year, month, t.location())
+		if e, ok := t.cache[t.monthKey(m)]; ok && !e.stale {
+			continue
+		}
+		if n := len(runs); n > 0 && runs[n-1].first.month == month+1 {
+			runs[n-1].first = m
+			continue
+		}
+		runs = append(runs, monthRun{first: m, last: m})
+	}
+	return runs
+}
+
+func (t *Toggl) fetchRun(ctx context.Context, run monthRun) error {
+	key := t.runKey(run)
+	t.mu.Lock()
+	if until, blocked := t.blockedLocked(key); blocked {
+		t.mu.Unlock()
+		log.Printf("toggl: %s — upstream failing, not retrying before %s", key, until.Format(time.RFC3339))
+		return fmt.Errorf("toggl: %s: upstream unavailable, not retried", key)
+	}
+	call, leader := t.joinLocked(key, run.first.start, run.last.end)
+	t.mu.Unlock()
+
+	if leader {
+		fetch := func(fetchCtx context.Context) (any, error) {
+			return t.backend().fetchRange(fetchCtx, run.first.start, run.last.end)
+		}
+		go t.fill(ctx, key, fetch, call, func(val any, at time.Time) {
+			for m, part := range splitMonths(val.(*YearData), run.months(t.location())) {
+				t.cache[t.monthKey(m)] = cacheEntry{val: part, kind: kindMonth, start: m.start, end: m.end, fetchedAt: at}
+			}
+		})
+	} else {
+		log.Printf("toggl: %s — waiting on the fetch already in flight", key)
+	}
+
+	select {
+	case <-call.done:
+		return call.err
+	case <-ctx.Done():
+		log.Printf("toggl: %s — gave up waiting; the fetch continues", key)
+		return ctx.Err()
+	}
+}
+
+func splitMonths(yd *YearData, months []monthRange) map[monthRange]*YearData {
+	parts := make(map[monthRange]*YearData, len(months))
+	for _, m := range months {
+		parts[m] = emptyYearData()
+	}
+	clamp := func(month time.Month) monthRange {
+		switch {
+		case month < months[0].month:
+			return months[0]
+		case month > months[len(months)-1].month:
+			return months[len(months)-1]
+		}
+		return months[month-months[0].month]
+	}
+	for month, aggs := range yd.Months {
+		parts[clamp(month)].Months[month] = aggs
+	}
+	for day := range yd.Days {
+		month := months[0].month
+		if d, err := time.Parse("2006-01-02", day); err == nil {
+			month = d.Month()
+		}
+		parts[clamp(month)].Days[day] = true
+	}
+	return parts
+}
+
+func (t *Toggl) assembleYear(year int, fetchErr error) (*YearData, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	parts := make([]*YearData, 0, 12)
+	for _, m := range monthsIn(monthOf(year, time.January, t.location()).start, monthOf(year, time.December, t.location()).end, t.location()) {
+		e, ok := t.cache[t.monthKey(m)]
+		if !ok {
+			if fetchErr == nil {
+				fetchErr = fmt.Errorf("toggl: %s: not fetched", t.monthKey(m))
+			}
+			return nil, fetchErr
+		}
+		parts = append(parts, e.val.(*YearData))
+	}
+	return mergeYearData(parts...), nil
+}
+
+func mergeYearData(parts ...*YearData) *YearData {
+	type key struct {
+		pid, rate int
+		currency  string
+		month     time.Month
+	}
+	acc := map[key]*Aggregate{}
+	var order []key
+	out := emptyYearData()
+	for _, yd := range parts {
+		for month, aggs := range yd.Months {
+			for _, agg := range aggs {
+				k := key{agg.ProjectID, agg.RateCents, agg.Currency, month}
+				if acc[k] == nil {
+					order = append(order, k)
+				}
+				acc[k] = addAggregate(acc[k], agg.ProjectID, agg.RateCents, agg.Currency, agg.AmountCents, agg.Seconds)
+			}
+		}
+		for day := range yd.Days {
+			out.Days[day] = true
+		}
+	}
+	for _, k := range order {
+		out.Months[k.month] = append(out.Months[k.month], *acc[k])
+	}
+	return out
 }
 
 func (t *Toggl) Projects(ctx context.Context) (map[int]Project, error) {

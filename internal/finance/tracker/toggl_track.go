@@ -102,7 +102,7 @@ func (a trackAPI) eachDetailedRow(ctx context.Context, start, end time.Time, fn 
 	return nil
 }
 
-func (a trackAPI) fetchYear(ctx context.Context, start, end time.Time) (*YearData, error) {
+func (a trackAPI) fetchRange(ctx context.Context, start, end time.Time) (*YearData, error) {
 	type key struct {
 		pid, rate int
 		month     time.Month

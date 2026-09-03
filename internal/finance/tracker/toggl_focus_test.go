@@ -214,7 +214,7 @@ func TestFocusRatesAreFetchedOncePerProjectAndAgainAfterReload(t *testing.T) {
 		t.Fatalf("first year fetch made %d rate requests, want 1", n)
 	}
 
-	tg.markYearStale(2026)
+	markYearStale(tg, 2026)
 	if _, err := tg.Year(ctx, 2026); err != nil {
 		t.Fatal(err)
 	}
@@ -273,9 +273,9 @@ func TestFocusClientsPaginate(t *testing.T) {
 	}
 }
 
-func TestFocusYearKeyIsScopedByMode(t *testing.T) {
-	if got := focusToggl(&fakeFocus{}, "1,2").yearKey(2026); got != "focus|1,2|2026" {
-		t.Errorf("yearKey = %q, want focus|1,2|2026", got)
+func TestFocusMonthKeyIsScopedByMode(t *testing.T) {
+	if got := focusToggl(&fakeFocus{}, "1,2").monthKey(monthOf(2026, time.March, time.UTC)); got != "focus|1,2|2026-03" {
+		t.Errorf("monthKey = %q, want focus|1,2|2026-03", got)
 	}
 }
 
@@ -339,5 +339,45 @@ func TestFocusGivesUpShrinkingBelowTheMinimum(t *testing.T) {
 	f := &fakeFocus{clients: `[]`, maxPerPage: 1}
 	if _, err := focusToggl(f, "").Clients(context.Background(), 20); err == nil || !strings.Contains(err.Error(), "PerPage") {
 		t.Errorf("err = %v, want Toggl's validation error once no smaller page is left to try", err)
+	}
+}
+
+func TestFocusReloadOfAMonthAsksForThatMonthOnly(t *testing.T) {
+	f := &fakeFocus{}
+	tg := focusToggl(f, "")
+	ctx := context.Background()
+	if _, err := tg.Year(ctx, 2026); err != nil {
+		t.Fatal(err)
+	}
+	tg.EvictRange(time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC))
+	if _, err := tg.Year(ctx, 2026); err != nil {
+		t.Fatal(err)
+	}
+	var entryCalls []string
+	for _, c := range f.calls {
+		if strings.Contains(c, "/time-entries?") {
+			entryCalls = append(entryCalls, c)
+		}
+	}
+	if len(entryCalls) != 2 {
+		t.Fatalf("time-entries calls = %v, want the year and then March", entryCalls)
+	}
+	for _, want := range []string{"date_from=2026-03-01T00%3A00%3A00Z", "date_to=2026-03-31T23%3A59%3A59Z"} {
+		if !strings.Contains(entryCalls[1], want) {
+			t.Errorf("March refetch %q lacks %q", entryCalls[1], want)
+		}
+	}
+}
+
+func TestFocusMonthBoundsFollowTheConfiguredLocation(t *testing.T) {
+	vienna, _ := time.LoadLocation("Europe/Vienna")
+	f := &fakeFocus{}
+	tg := focusToggl(f, "")
+	tg.Loc = vienna
+	if _, err := tg.Year(context.Background(), 2026); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(f.calls[0], "date_from=2026-01-01T00%3A00%3A00%2B01%3A00") || !strings.Contains(f.calls[0], "date_to=2026-12-31T23%3A59%3A59%2B01%3A00") {
+		t.Errorf("request %q should bound the year at Vienna midnight", f.calls[0])
 	}
 }

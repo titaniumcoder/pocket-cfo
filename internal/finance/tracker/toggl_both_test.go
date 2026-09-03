@@ -91,28 +91,28 @@ func TestBothFansOutStalenessAndEviction(t *testing.T) {
 	if _, err := c.Year(ctx, 2026); err != nil {
 		t.Fatal(err)
 	}
-	if at, stale := c.YearStatus(2026); at.IsZero() || stale {
+	if at, stale := yearStatus(c, 2026); at.IsZero() || stale {
 		t.Fatalf("YearStatus = %v/%v after a fetch, want fresh", at, stale)
 	}
-	if c.YearPending(2026) {
+	if yearPending(c, 2026) {
 		t.Error("YearPending after a fetch")
 	}
 
-	c.markYearStale(2026)
-	if _, stale := c.YearStatus(2026); !stale {
+	markYearStale(c, 2026)
+	if _, stale := yearStatus(c, 2026); !stale {
 		t.Error("markYearStale did not reach both sides")
 	}
 	if _, err := c.Year(ctx, 2026); err != nil {
 		t.Fatal(err)
 	}
 	c.EvictRange(time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC))
-	if _, stale := c.YearStatus(2026); !stale {
+	if _, stale := yearStatus(c, 2026); !stale {
 		t.Error("EvictRange did not reach both sides")
 	}
-	if _, trackStale := c.Track.YearStatus(2026); !trackStale {
+	if _, trackStale := yearStatus(c.Track, 2026); !trackStale {
 		t.Error("Track side not evicted")
 	}
-	if _, focusStale := c.Focus.YearStatus(2026); !focusStale {
+	if _, focusStale := yearStatus(c.Focus, 2026); !focusStale {
 		t.Error("Focus side not evicted")
 	}
 }

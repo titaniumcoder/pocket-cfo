@@ -14,7 +14,7 @@ func TestWarmFillsTheCacheWithoutARequest(t *testing.T) {
 	trk, _ := fullTrackerWithBackend()
 	year := time.Now().In(trk.Loc).Year()
 
-	if at, _ := trk.Toggl.YearStatus(year); !at.IsZero() {
+	if at, _ := yearStatus(trk.Toggl, year); !at.IsZero() {
 		t.Fatal("nothing should be cached before Warm runs")
 	}
 
@@ -23,16 +23,23 @@ func TestWarmFillsTheCacheWithoutARequest(t *testing.T) {
 	go trk.Warm(ctx, time.Hour) // one immediate pass, then idle
 
 	waitFor(t, time.Second, func() bool {
-		at, stale := trk.Toggl.YearStatus(year)
+		at, stale := yearStatus(trk.Toggl, year)
 		return !at.IsZero() && !stale
 	}, "the current year to be warmed into the cache")
 }
 
-// Each tick must invalidate and refetch, or the dashboard shows boot-time
-// figures forever.
-func TestWarmRefreshesOnTheTicker(t *testing.T) {
-	trk, _ := fullTrackerWithBackend()
-	year := time.Now().In(trk.Loc).Year()
+// Each tick must invalidate and refetch the recent months, or the dashboard
+// shows boot-time figures forever.
+func TestWarmRefreshesTheHotWindowOnTheTicker(t *testing.T) {
+	trk, b := fullTrackerWithBackend()
+	var ranges []string
+	b.detailedForRange = func(startDate, endDate string) (string, string, string) {
+		ranges = append(ranges, startDate+".."+endDate)
+		return `[]`, "", ""
+	}
+	now := time.Now().In(trk.Loc)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, trk.Loc)
+	hotStart := today.AddDate(0, 0, -hotWindowDays)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -40,15 +47,26 @@ func TestWarmRefreshesOnTheTicker(t *testing.T) {
 
 	var first time.Time
 	waitFor(t, time.Second, func() bool {
-		at, _ := trk.Toggl.YearStatus(year)
+		at, _ := trk.Toggl.Status(hotStart, today)
 		first = at
 		return !at.IsZero()
 	}, "the first warm pass")
 
 	waitFor(t, 2*time.Second, func() bool {
-		at, _ := trk.Toggl.YearStatus(year)
+		at, _ := trk.Toggl.Status(hotStart, today)
 		return at.After(first)
 	}, "a second warm pass to replace the first fetch")
+	cancel()
+
+	if len(ranges) < 2 {
+		t.Fatalf("ranges = %v, want a cold pull and at least one hot-window refresh", ranges)
+	}
+	if want := hotStart.Format("2006-01") + "-01.."; !strings.HasPrefix(ranges[1], want) {
+		t.Errorf("second fetch asked for %q, want it to start with the hot window's month %q", ranges[1], want)
+	}
+	if strings.HasSuffix(ranges[1], "-12-31") && today.Month() != time.December && hotStart.Month() != time.December {
+		t.Errorf("second fetch %q re-pulled the whole year", ranges[1])
+	}
 }
 
 // A nil Toggl must not leave a ticker spinning over nothing.
@@ -140,7 +158,7 @@ func TestComputeRendersPendingRatherThanWaiting(t *testing.T) {
 	}
 
 	// The abandoned fetch must still be running, or the refresh finds nothing.
-	if !trk.Toggl.YearPending(year) {
+	if !yearPending(trk.Toggl, year) {
 		t.Error("giving up on the wait must not have cancelled the fetch")
 	}
 }

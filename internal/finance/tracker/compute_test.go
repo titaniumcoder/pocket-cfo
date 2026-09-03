@@ -616,28 +616,28 @@ func TestComputeSpendableOnlySetWhenHasHours(t *testing.T) {
 func TestEvictMonthAndYear(t *testing.T) {
 	trk := fullTracker()
 	// A month compute now fetches (and caches) the whole year.
-	at, stale := trk.Toggl.YearStatus(2026)
+	at, stale := yearStatus(trk.Toggl, 2026)
 	if !at.IsZero() {
 		t.Fatal("2026 should not be cached before any compute")
 	}
 	trk.ComputeMonth(context.Background(), 2026, time.March)
-	if at, stale = trk.Toggl.YearStatus(2026); at.IsZero() || stale {
+	if at, stale = yearStatus(trk.Toggl, 2026); at.IsZero() || stale {
 		t.Fatalf("after a month compute: %v/%v, want cached and fresh", at, stale)
 	}
 	// Evicting any month in the year invalidates the shared yearly cache.
 	// The entry survives as a stale fallback (see Toggl.EvictRange) — what
 	// matters is that the next read refetches.
 	trk.EvictMonth(2026, time.March)
-	if _, stale = trk.Toggl.YearStatus(2026); !stale {
+	if _, stale = yearStatus(trk.Toggl, 2026); !stale {
 		t.Error("EvictMonth should mark the 2026 cache stale")
 	}
 
 	trk.ComputeYear(context.Background(), 2026)
-	if at, stale = trk.Toggl.YearStatus(2026); at.IsZero() || stale {
+	if at, stale = yearStatus(trk.Toggl, 2026); at.IsZero() || stale {
 		t.Fatalf("after a year compute: %v/%v, want cached and fresh", at, stale)
 	}
 	trk.EvictYear(2026)
-	if _, stale = trk.Toggl.YearStatus(2026); !stale {
+	if _, stale = yearStatus(trk.Toggl, 2026); !stale {
 		t.Error("EvictYear should mark the 2026 cache stale")
 	}
 }

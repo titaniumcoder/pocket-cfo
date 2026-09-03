@@ -109,22 +109,8 @@
 
 {{define "toggl2ids"}}
     {{if .KeyOnly}}
-    <p class="stale-note">Only <code>TOGGL2_API_KEY</code> is set. The 2.0 API needs an organization id and a workspace id in every URL, so set <code>TOGGL2_ORGANIZATION_ID</code> and <code>TOGGL2_WORKSPACE_ID</code> from the values below, then <code>TOGGL_MODE=toggl2</code> or <code>both</code>. Until then Toggl 2.0 stays off the dashboard.</p>
-    {{end}}
-    {{if .DiscoveryErr}}
+    <p class="stale-note">Only <code>TOGGL2_API_KEY</code> is set. The 2.0 API needs an organization id and a workspace id in every URL and has no call to list them: open focus.toggl.com, whose address reads <code>/organizations/&lt;organization id&gt;/workspaces/&lt;workspace id&gt;/…</code>, set <code>TOGGL2_ORGANIZATION_ID</code> and <code>TOGGL2_WORKSPACE_ID</code> from it, then <code>TOGGL_MODE=toggl2</code> or <code>both</code>. Until then Toggl 2.0 stays off the dashboard.</p>
     {{if .KeyNote}}<p class="{{if .KeyExpired}}error{{else}}stale-note{{end}}">{{.KeyNote}}</p>{{end}}
-    <p class="error">Could not ask Toggl 2.0 what the key sees: {{.DiscoveryErr}}</p>
-    {{else}}
-    <div class="table-wrap">
-    <table class="data">
-      <thead><tr><th>Seen by the key</th><th class="code">value</th></tr></thead>
-      <tbody>
-        <tr><td>TOGGL2_WORKSPACE_ID <span class="count">— the account's current workspace</span></td><td class="code">{{if .Discovery.WorkspaceID}}{{.Discovery.WorkspaceID}}{{else}}(none){{end}}</td></tr>
-        <tr><td>TOGGL2_ORGANIZATION_ID{{if not .Discovery.OrganizationKnown}} <span class="count">— not answered for an API key: open focus.toggl.com, the address reads <code>/organizations/&lt;id&gt;/workspaces/…</code></span>{{end}}</td><td class="code">{{if .Discovery.OrganizationKnown}}{{.Discovery.OrganizationID}}{{else}}?{{end}}</td></tr>
-      </tbody>
-    </table>
-    </div>
-    {{if .IDsMismatch}}<p class="stale-note">{{.IDsMismatch}}</p>{{end}}
     {{end}}
 {{end}}
 

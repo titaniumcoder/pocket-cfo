@@ -62,7 +62,6 @@ func (t *Toggl) Mode() Mode {
 type togglAPI interface {
 	mode() Mode
 	keyVar() string
-	discover(ctx context.Context) (Discovery, error)
 	authorize(req *http.Request)
 	cacheScope() string
 	fetchYear(ctx context.Context, start, end time.Time) (*YearData, error)
@@ -305,25 +304,6 @@ func keyWarning(s KeyStatus, today time.Time, keyVar string) string {
 		return fmt.Sprintf("The Toggl API key expires in %d days, on %s — create a new key in Toggl and set %s before then.", days, date, keyVar)
 	}
 	return ""
-}
-
-type Discovery struct {
-	WorkspaceID       int
-	OrganizationID    int
-	OrganizationKnown bool
-}
-
-func (t *Toggl) Discover(ctx context.Context) (Discovery, error) {
-	if t == nil {
-		return Discovery{}, nil
-	}
-	v, err := t.getCached(ctx, "discovery", everSince, everUntil, func(fetchCtx context.Context) (any, error) {
-		return t.backend().discover(fetchCtx)
-	})
-	if err != nil {
-		return Discovery{}, err
-	}
-	return v.(Discovery), nil
 }
 
 func (t *Toggl) yearKey(year int) string {

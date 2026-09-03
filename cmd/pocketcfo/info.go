@@ -4,10 +4,8 @@ import (
 	"context"
 	"net/http"
 	"sort"
-	"strconv"
 	"time"
 
-	financeconfig "github.com/titaniumcoder/pocket-cfo/internal/finance/config"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 	"github.com/titaniumcoder/pocket-cfo/internal/webui"
 )
@@ -32,10 +30,6 @@ type infoTogglPanel struct {
 	KeyNote    string
 	KeyExpired bool
 	Workspaces []infoWorkspaceView
-
-	Discovery    tracker.Discovery
-	DiscoveryErr string
-	IDsMismatch  string
 }
 
 type infoView struct {
@@ -87,8 +81,8 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	view.TogglMode = togglModeLabel(mode)
 	view.Track = togglPanel(ctx, s.togglTrack, mode == togglModeTrack || mode == togglModeBoth)
 	view.Focus = togglPanel(ctx, s.togglFocus, mode == togglModeFocus || mode == togglModeBoth)
-	if s.togglFocus != nil {
-		view.Focus = withDiscovery(ctx, view.Focus, s.togglFocus, s.cfg.finance)
+	if s.togglFocus != nil && !toggl2Complete(s.cfg.finance) {
+		view.Focus = infoTogglPanel{Configured: true, KeyOnly: true, KeyNote: view.Focus.KeyNote, KeyExpired: view.Focus.KeyExpired}
 	}
 
 	view.Countries, view.HolidaysErr = loadHolidayInfo(ctx, s.tracker.Holidays)
@@ -107,29 +101,6 @@ func togglPanel(ctx context.Context, tg *tracker.Toggl, active bool) infoTogglPa
 	panel.Workspaces, panel.Err = loadTogglInfo(ctx, tg)
 	ks := tg.KeyStatus(time.Now())
 	panel.KeyNote, panel.KeyExpired = ks.Warning, ks.Expired
-	return panel
-}
-
-func withDiscovery(ctx context.Context, panel infoTogglPanel, tg *tracker.Toggl, f financeconfig.Config) infoTogglPanel {
-	panel.KeyOnly = !toggl2Complete(f)
-	if panel.KeyOnly {
-		panel.Active = false
-		panel.Workspaces, panel.Err = nil, ""
-	}
-	d, err := tg.Discover(ctx)
-	if err != nil {
-		panel.DiscoveryErr = err.Error()
-		ks := tg.KeyStatus(time.Now())
-		panel.KeyNote, panel.KeyExpired = ks.Warning, ks.Expired
-		return panel
-	}
-	panel.Discovery = d
-	if !panel.KeyOnly && strconv.Itoa(d.WorkspaceID) != f.Toggl2Workspace {
-		panel.IDsMismatch = "The key's account currently works in workspace " + strconv.Itoa(d.WorkspaceID) + ", not the configured " + f.Toggl2Workspace + " — fine if that is intended, worth a look if not."
-	}
-	if !panel.KeyOnly && d.OrganizationKnown && strconv.Itoa(d.OrganizationID) != f.Toggl2Organization {
-		panel.IDsMismatch += " The workspace belongs to organization " + strconv.Itoa(d.OrganizationID) + ", not the configured " + f.Toggl2Organization + "."
-	}
 	return panel
 }
 

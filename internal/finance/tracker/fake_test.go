@@ -80,9 +80,6 @@ type fakeFocus struct {
 	workspaceRates string                // JSON array
 	clients        string                // JSON array
 	failEntries    int                   // non-zero: every time-entries GET returns this status
-	settings       string                // JSON object for /users/me/settings
-	context        string                // JSON object for /workspaces/{id}/context
-	contextStatus  int                   // non-zero: the context GET returns this status
 	maxPerPage     int                   // non-zero: a list asking for more per page gets Toggl's validation 400
 	calls          []string              // path?query of every request
 }
@@ -101,24 +98,6 @@ func (f *fakeFocus) roundTrip(r *http.Request) (*http.Response, error) {
 		return jsonResponse(`{"data":`+items+`,"page":`+strconv.Itoa(page)+`,"per_page":200}`, nil)
 	}
 	switch {
-	case strings.HasSuffix(p, "/users/me/settings"):
-		if f.failEntries != 0 {
-			return statusResponse(f.failEntries, `{"error":"unauthorized","error_description":"invalid api key"}`), nil
-		}
-		body := f.settings
-		if body == "" {
-			body = `{}`
-		}
-		return jsonResponse(body, nil), nil
-	case strings.HasSuffix(p, "/context"):
-		if f.contextStatus != 0 {
-			return statusResponse(f.contextStatus, `{"error":"forbidden","error_description":"session authentication only"}`), nil
-		}
-		body := f.context
-		if body == "" {
-			body = `{}`
-		}
-		return jsonResponse(body, nil), nil
 	case strings.HasSuffix(p, "/time-entries"):
 		if f.failEntries != 0 {
 			return statusResponse(f.failEntries, `{"error":"unauthorized","error_description":"invalid api key"}`), nil

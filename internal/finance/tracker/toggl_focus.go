@@ -317,26 +317,6 @@ func (a *focusAPI) fetchProjects(ctx context.Context) (map[int]Project, error) {
 	return out, nil
 }
 
-func (a *focusAPI) discover(ctx context.Context) (Discovery, error) {
-	var settings struct {
-		CurrentWorkspaceID int `json:"current_workspace_id"`
-	}
-	if err := a.getJSON(ctx, "/users/me/settings", nil, &settings); err != nil {
-		return Discovery{}, err
-	}
-	d := Discovery{WorkspaceID: settings.CurrentWorkspaceID}
-	if d.WorkspaceID == 0 {
-		return d, nil
-	}
-	var context struct {
-		OrganizationID int `json:"organization_id"`
-	}
-	if err := a.getJSON(ctx, "/workspaces/"+strconv.Itoa(d.WorkspaceID)+"/context", nil, &context); err == nil && context.OrganizationID != 0 {
-		d.OrganizationID, d.OrganizationKnown = context.OrganizationID, true
-	}
-	return d, nil
-}
-
 func (a *focusAPI) fetchWorkspaces(context.Context) ([]Workspace, error) {
 	id, err := strconv.Atoi(a.cfg.WorkspaceID)
 	if err != nil {

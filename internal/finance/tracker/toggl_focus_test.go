@@ -304,46 +304,6 @@ func TestFocusRejectedKeyIsRemembered(t *testing.T) {
 	}
 }
 
-func TestFocusDiscoverReadsTheWorkspaceAndOrganizationTheKeySees(t *testing.T) {
-	f := &fakeFocus{settings: `{"current_workspace_id":20,"theme":"dark"}`, context: `{"workspace_id":20,"organization_id":10,"role":"admin"}`}
-	tg := NewFocus(FocusConfig{Key: "toggl_sk"}, (&fakeBackend{focus: f}).transport())
-
-	d, err := tg.Discover(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if d.WorkspaceID != 20 || d.OrganizationID != 10 || !d.OrganizationKnown {
-		t.Errorf("Discovery = %+v, want workspace 20 in organization 10", d)
-	}
-	if !strings.HasPrefix(f.calls[0], "/api/users/me/settings") || !strings.HasPrefix(f.calls[1], "/api/workspaces/20/context") {
-		t.Errorf("calls = %v", f.calls)
-	}
-}
-
-func TestFocusDiscoverLeavesTheOrganizationUnknownWhenRefused(t *testing.T) {
-	f := &fakeFocus{settings: `{"current_workspace_id":20}`, contextStatus: http.StatusForbidden}
-	tg := NewFocus(FocusConfig{Key: "toggl_sk"}, (&fakeBackend{focus: f}).transport())
-
-	d, err := tg.Discover(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if d.WorkspaceID != 20 || d.OrganizationKnown {
-		t.Errorf("Discovery = %+v, want the workspace and no organization: a 403 is the documented answer to an API key", d)
-	}
-}
-
-func TestFocusDiscoverFailsOnARejectedKey(t *testing.T) {
-	f := &fakeFocus{failEntries: http.StatusUnauthorized}
-	tg := NewFocus(FocusConfig{Key: "toggl_sk"}, (&fakeBackend{focus: f}).transport())
-	if _, err := tg.Discover(context.Background()); err == nil {
-		t.Fatal("expected the 401 to surface")
-	}
-	if !tg.KeyStatus(time.Now()).Rejected {
-		t.Error("a 401 on discovery must mark the key rejected")
-	}
-}
-
 func TestFocusShrinksThePageWhenTogglRefusesTheSize(t *testing.T) {
 	f := &fakeFocus{clients: `[{"id":5,"name":"Acme"}]`, maxPerPage: 25}
 	tg := focusToggl(f, "")

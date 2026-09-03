@@ -784,12 +784,10 @@ the last good hours after that, the returned errors would never show it — so t
 records the rejection itself, and `KeyStatus` turns it, or an optional
 `TOGGL2_API_KEY_EXPIRES_AT`, into the one warning the finance page and `/info` render, above
 the pending and stale notes. It offers **no call that lists the caller's organizations or
-workspaces**, so both ids are configuration — but a key alone is enough to boot and to
-ask: `/info` reads the account's current workspace from `/users/me/settings` and tries the
-workspace's `/context` for the organization, which answers a browser session only — an API
-key gets a 403 "this endpoint requires session authentication", confirmed live — so the
-page says where in the focus.toggl.com address the id sits instead. A key without its
-ids never reaches the dashboard; it only feeds that panel. And it is **quota-limited per hour** (30
+workspaces** (the one call that would, the workspace `/context`, answers a browser session
+only — an API key gets 403 "this endpoint requires session authentication", confirmed live),
+so both ids are configuration, read off the focus.toggl.com address. A key alone still
+boots: it never reaches the dashboard, and `/info` says which two variables are missing. And it is **quota-limited per hour** (30
 requests on Free, 240 on Starter, 600 on Premium, answered with 402 beyond that), which is
 why rate timelines are cached until Reload rather than refetched on every 15-minute refresh,
 and why a Free plan wants a longer `TOGGL_REFRESH_INTERVAL`. Confirmed against the live

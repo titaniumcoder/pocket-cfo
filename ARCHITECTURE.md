@@ -798,8 +798,12 @@ spec and still to be confirmed with a real key: `duration` is in seconds, `date_
 hundredths of the currency, and `per_page=200` is honoured.
 
 **Toggl meters requests per hour, per user, per organization** — 30 on Free, 240 on Starter,
-600 on Premium — answers HTTP 402 beyond that for the rest of a sliding sixty-minute window,
-and states `X-Toggl-Quota-Remaining` and `X-Toggl-Quota-Resets-In` on every answer. A
+600 on Premium — and answers HTTP 402 beyond that for the rest of a sliding sixty-minute
+window. Its documentation also promises `X-Toggl-Quota-Remaining` and
+`X-Toggl-Quota-Resets-In` on every answer; confirmed live in September 2026, neither API
+sends them (the 2.0 time-entries and billable-rates calls answer with `X-Service-Level:
+GREEN`, a health indicator, and nothing about the quota), so the client reads them if they
+ever appear but relies on the 402 alone. A
 freelancer's year is some thirty pages of fifty entries, so re-pulling it every fifteen
 minutes was the whole Free quota, four times over, and every cold start paid it again. The
 cache (`toggl.go`) is therefore **one entry per calendar month**, and a fetch covers one
@@ -814,11 +818,13 @@ day starts at local midnight on both APIs; an entry Toggl returns for a month it
 belong to (a timezone edge) is kept under its own month rather than dropped. The rate
 timelines stay cached until Reload, as before.
 
-A **402 is a gate, not a failure**: it closes the whole backend until the reset the header
-names (plus ten seconds), the last good hours are served meanwhile, the breaker is not
-touched, and the finance page and `/info` say when hours refresh again instead of polling.
-The warmer skips a tick when the gate is closed or fewer than five requests are left, so
-page views keep them. The cache is written to `TOGGL_CACHE_DIR` when that is set
+A **402 is a gate, not a failure**: it closes the whole backend until the reset a header
+names, or for an hour when none does (plus ten seconds), the last good hours are served
+meanwhile, the breaker is not touched, and the finance page and `/info` say when hours
+refresh again instead of polling. The warmer skips a tick when the gate is closed or, should
+Toggl ever report a remaining count, when fewer than five requests are left, so page views
+keep them. The log notes the first answer of every endpoint with its header names, which is
+how the absence was established. The cache is written to `TOGGL_CACHE_DIR` when that is set
 (`snapshot.go`; one JSON file per backend, written atomically after every successful fetch
 and on Reload, read back before the first lookup, ignored if unparsable; the directory
 carries a `VERSION` marker, and a build whose format differs deletes every cache file

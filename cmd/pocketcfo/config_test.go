@@ -203,6 +203,7 @@ func TestResolveTogglMode(t *testing.T) {
 		{"explicit toggl2", withMode(both, togglModeFocus), togglModeFocus},
 		{"explicit both", withMode(both, togglModeBoth), togglModeBoth},
 		{"half a Track pair is ignored", financeconfig.Config{TogglToken: "tok"}, ""},
+		{"both sets without a mode stay on Track", both, togglModeTrack},
 	}
 	for _, tt := range ok {
 		t.Run(tt.name, func(t *testing.T) {
@@ -214,7 +215,6 @@ func TestResolveTogglMode(t *testing.T) {
 	}
 
 	refused := map[string]financeconfig.Config{
-		"both sets without a mode":  both,
 		"track mode without track":  withMode(focusOnly, togglModeTrack),
 		"toggl2 mode without a key": withMode(trackOnly, togglModeFocus),
 		"both mode with one set":    withMode(trackOnly, togglModeBoth),

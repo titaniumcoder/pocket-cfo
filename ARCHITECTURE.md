@@ -761,7 +761,9 @@ actually tracked. Once an invoice is issued for a linked client, the invoice sup
 the hours it covers — otherwise the same work would be counted as both a prediction and a
 receipt.
 
-**Toggl comes in two APIs**, and the tracker reads either or both (`TOGGL_MODE`). Toggl
+**Toggl comes in two APIs**, and the tracker reads either or both (`TOGGL_MODE`; unset
+means Track whenever its credentials exist, so a deployment that adds the 2.0 variables
+changes nothing until it says so). Toggl
 Track's Reports API does the accounting server-side: it returns billable entries already
 rounded to the nearest quarter hour and priced per row. Toggl 2.0 (focus.toggl.com) has
 no such report, so `toggl_focus.go` reproduces it from raw time entries — billable

@@ -74,9 +74,10 @@ export TOGGL2_WORKSPACE_ID=
 # its last seven days rather than only after Toggl starts rejecting it.
 export TOGGL2_API_KEY_EXPIRES_AT=
 # Which API feeds the dashboard: track, toggl2, or both (hours from the two
-# added together — for a migration without live sync). Unset picks whichever
-# single set of credentials is present; with both sets present it must be
-# set, because guessing would show the wrong hours with no visible sign.
+# added together — for a migration without live sync). Unset keeps today's
+# behaviour: Toggl Track whenever its credentials are present, even beside
+# the 2.0 ones, and Toggl 2.0 only when those are the only ones set — so an
+# unchanged deployment is unaffected by the variables above.
 export TOGGL_MODE=
 # Optional, a Go duration, default 15m: how often tracked hours are
 # refreshed in the background. Toggl 2.0 counts requests per hour (30 on

@@ -151,7 +151,8 @@ func resolveTogglMode(f financeconfig.Config) (string, error) {
 	case "":
 		switch {
 		case track && focus:
-			return "", fmt.Errorf("both TOGGL_API_TOKEN and TOGGL2_API_KEY are set — set TOGGL_MODE=%s, %s or %s to say which feeds the dashboard", togglModeTrack, togglModeFocus, togglModeBoth)
+			log.Printf("pocketcfo: TOGGL_MODE is unset with both TOGGL_API_TOKEN and TOGGL2_API_KEY present — staying on Toggl Track; set TOGGL_MODE=%s or %s to change that", togglModeFocus, togglModeBoth)
+			return togglModeTrack, nil
 		case track:
 			return togglModeTrack, nil
 		case focus:

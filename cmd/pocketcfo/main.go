@@ -114,7 +114,7 @@ func main() {
 	httpClient := &http.Client{Timeout: 15 * time.Second}
 	track, focus := buildTogglClients(cfg.finance, httpClient)
 	if track != nil && focus != nil {
-		log.Printf("pocketcfo: TOGGL_MODE=%s — %s feeds the dashboard", cfg.togglMode, togglModeLabel(cfg.togglMode))
+		log.Printf("pocketcfo: %s feeds the dashboard (TOGGL_MODE=%q)", togglModeLabel(cfg.togglMode), cfg.finance.TogglMode)
 	}
 	s := &server{
 		cfg:              cfg,

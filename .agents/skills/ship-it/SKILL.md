@@ -29,12 +29,18 @@ step fails — fix the failure (or report it and stop) instead.
 6. **Manual test** — actually run the changed behavior (start the server and
    hit the route, or run the CLI command) rather than trusting the automated
    checks alone. Describe what was exercised and what was observed.
-7. **Commit** — stage only the files belonging to this one step (never a
+7. **Changelog** — if the step changes anything an operator or user can
+   notice (behaviour, configuration, routes, output, data formats), add one
+   line for it under `## [Unreleased]` in `CHANGELOG.md`, in the right
+   Added / Changed / Deprecated / Removed / Fixed / Security subsection,
+   written for the reader of the release notes rather than as the commit
+   subject. Pure refactors, tests, CI and docs need no line.
+8. **Commit** — stage only the files belonging to this one step (never a
    blanket `git add -A`), write a commit message describing this step alone,
    and create the commit. Do not push. Do not batch multiple unrelated steps
    into one commit, and do not amend a previous commit to fold in more work.
 
-If any of steps 1-6 fails, stop and fix the root cause before retrying from
+If any of steps 1-7 fails, stop and fix the root cause before retrying from
 that step — never commit past a failing check, and never use `--no-verify` to
 route around a failing hook.
 

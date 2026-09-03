@@ -58,6 +58,8 @@ step in Phase 3 below, and never tag/push without it.
    per commit, short hash + subject) — this becomes both what you show the
    user in Phase 3 and the basis for the tag message / GitHub Release notes
    in Phase 4.
+5. From 1.0.0 on the project follows strict semantic versioning: a breaking
+   commit bumps the major version, no exceptions and no asking.
 
 ## Phase 3 — Confirm with the user (never skip this)
 
@@ -79,21 +81,29 @@ Only after Phase 3's confirmation:
    below watches that build rather than duplicating it here. Stop and fix (or
    report and stop) on any failure — never tag a release that doesn't pass
    its own checks.
-2. If `origin/main` needs a push (per Phase 1), push it now:
+2. Update `CHANGELOG.md` ([Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/)):
+   rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, open a fresh empty
+   `## [Unreleased]` above it, and add the two link references at the bottom
+   (`[Unreleased]: .../compare/vX.Y.Z...HEAD`, `[X.Y.Z]: .../compare/<last>...vX.Y.Z`).
+   Anything in the release range that `ship-it` did not already record goes in
+   now, under Added / Changed / Deprecated / Removed / Fixed / Security, written
+   for the operator, not as commit subjects. Commit that as
+   `chore(release): vX.Y.Z` and push it with `origin/main` in the next step.
+3. If `origin/main` needs a push (per Phase 1), push it now:
    `git push origin main`.
-3. Create an annotated tag with the categorized summary as its message:
+4. Create an annotated tag with the categorized summary as its message:
    `git tag -a vX.Y.Z -m "<summary>"`.
-4. Push the tag: `git push origin vX.Y.Z`. This is what triggers
+5. Push the tag: `git push origin vX.Y.Z`. This is what triggers
    `.github/workflows/release.yml`'s GHCR image publish — nothing else does.
-5. Create the GitHub Release from the same notes:
-   `gh release create vX.Y.Z --title vX.Y.Z --notes "<summary>"`.
-6. **Track the image build to completion.** The tag push is what triggers
+6. Create the GitHub Release with the new changelog section as its notes:
+   `gh release create vX.Y.Z --title vX.Y.Z --notes "<changelog section>"`.
+7. **Track the image build to completion.** The tag push is what triggers
    `.github/workflows/release.yml`'s GHCR publish, and that build is the only
    place the image is checked at all — a release whose image never built is a
    release that cannot be deployed. Find the run with `gh run list --limit 3`
    and wait on it with `gh run watch <id> --exit-status`; a push to `main` in
    the same breath starts a second `Build` run worth watching too. Run these
    in the background rather than blocking, and report each conclusion.
-7. Report back: the release URL, the tag pushed, and whether the image build
+8. Report back: the release URL, the tag pushed, and whether the image build
    went green. If it failed, say so plainly and treat it as a broken release
    to fix, not a footnote — do not describe the release as done.

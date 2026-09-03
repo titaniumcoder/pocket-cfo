@@ -64,6 +64,10 @@ that aren't obvious from the code itself.
 
 ## Releases
 
+`CHANGELOG.md` follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/):
+`ship-it` adds a line under `[Unreleased]` for every user-visible step, and `release-it`
+turns that section into the version's entry. From 1.0.0 the versions are strict semver.
+
 Commit messages on `main` must follow [Conventional Commits](https://www.conventionalcommits.org/)
 — `feat: ...` / `fix: ...` / `feat!: ...` (or a `BREAKING CHANGE:` footer) / etc. — because
 the **`release-it`** skill (`.agents/skills/release-it/SKILL.md`, symlinked from

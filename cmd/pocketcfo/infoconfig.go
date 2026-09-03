@@ -68,7 +68,18 @@ func (s *server) configGroups() []configGroup {
 			{Name: "CLIENT_LINK_SECRET", Value: maskSecret(c.clientLinkSecret), Secret: true},
 			{Name: "OTP_LINK_SECRET", Value: maskSecret(c.otpLinkSecret), Secret: true},
 			{Name: "API2PDF_KEY", Value: maskSecret(c.api2pdfKey), Secret: true},
+		}},
+		{Name: "Toggl", Rows: []configRow{
+			{Name: "TOGGL_MODE", Value: togglModeSummary(f.TogglMode, c.togglMode)},
 			{Name: "TOGGL_API_TOKEN", Value: maskSecret(f.TogglToken), Secret: true},
+			{Name: "TOGGL_WORKSPACE_ID", Value: orUnset(f.TogglWorkspace)},
+			{Name: "togglProjectIds", Value: orUnset(f.TogglProjects)},
+			{Name: "TOGGL2_API_KEY", Value: maskSecret(f.Toggl2Key), Secret: true},
+			{Name: "TOGGL2_ORGANIZATION_ID", Value: orUnset(f.Toggl2Organization)},
+			{Name: "TOGGL2_WORKSPACE_ID", Value: orUnset(f.Toggl2Workspace)},
+			{Name: "TOGGL2_API_KEY_EXPIRES_AT", Value: keyExpirySummary(f.Toggl2KeyExpiresAt)},
+			{Name: "toggl2ProjectIds", Value: orUnset(f.Toggl2Projects)},
+			{Name: "TOGGL_REFRESH_INTERVAL", Value: togglRefreshInterval().String()},
 		}},
 		{Name: "Hermes API", Rows: []configRow{
 			{Name: "HERMES_API_TOKEN", Value: maskSecret(c.hermesAPIToken), Secret: true},
@@ -83,8 +94,6 @@ func (s *server) configGroups() []configGroup {
 			{Name: "SES_FROM_EMAIL", Value: orUnset(c.sesFromEmail)},
 		}},
 		{Name: "Finance (config.json)", Rows: []configRow{
-			{Name: "TOGGL_WORKSPACE_ID", Value: orUnset(f.TogglWorkspace)},
-			{Name: "togglProjectIds", Value: orUnset(f.TogglProjects)},
 			{Name: "holidayCountry", Value: orUnset(f.Country)},
 			{Name: "holidaySubdivision", Value: orUnset(f.Subdivision)},
 			{Name: "hoursPerDay", Value: strconv.FormatFloat(f.HoursPerDay, 'f', -1, 64)},
@@ -97,6 +106,21 @@ func (s *server) configGroups() []configGroup {
 			{Name: "startMonth", Value: startMonthSummary(f.StartMonth)},
 		}},
 	}
+}
+
+func togglModeSummary(raw, resolved string) string {
+	label := string(togglModeLabel(resolved))
+	if raw == "" {
+		return "unset — " + label
+	}
+	return raw + " — " + label
+}
+
+func keyExpirySummary(t time.Time) string {
+	if t.IsZero() {
+		return "unset — no advance warning, only a rejected key is reported"
+	}
+	return t.Format("2006-01-02")
 }
 
 func legislationSummary(periods tracker.Legislation) string {

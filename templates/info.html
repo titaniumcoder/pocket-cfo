@@ -60,29 +60,19 @@
   </section>
 
   <section class="panel">
-    <h2 class="section-title">Toggl</h2>
-    <p class="section-note">Workspaces and clients — for picking a recipient's <code>tracking_client_id</code>.</p>
-    {{if not .TogglConfigured}}
+    <h2 class="section-title">Toggl Track</h2>
+    <p class="section-note">Workspaces and clients — for picking a recipient's <code>tracking_client_id</code>.{{template "togglrole" .Track}}</p>
+    {{if not .Track.Configured}}
     <p class="not-configured">Not configured (TOGGL_API_TOKEN / TOGGL_WORKSPACE_ID unset).</p>
-    {{else if .TogglErr}}
-    <p class="error">{{.TogglErr}}</p>
-    {{else}}
-    {{range .Workspaces}}
-    <details class="card" open>
-      <summary>{{.Name}} <span class="code">(workspace {{.ID}})</span> <span class="count">— {{len .Clients}} client(s)</span></summary>
-      <div class="table-wrap">
-      <table class="data">
-        <thead><tr><th>Client</th><th class="code">tracking_client_id</th></tr></thead>
-        <tbody>
-          {{range .Clients}}
-          <tr><td>{{.Name}}</td><td class="code">{{.ID}}</td></tr>
-          {{end}}
-        </tbody>
-      </table>
-      </div>
-    </details>
-    {{end}}
-    {{end}}
+    {{else}}{{template "togglpanel" .Track}}{{end}}
+  </section>
+
+  <section class="panel">
+    <h2 class="section-title">Toggl 2.0</h2>
+    <p class="section-note">The configured workspace and its clients — the 2.0 API cannot list workspaces, so <code>TOGGL2_WORKSPACE_ID</code> is taken as given. Its keys expire; a rejected or expiring key is reported here and on the finance page.{{template "togglrole" .Focus}}</p>
+    {{if not .Focus.Configured}}
+    <p class="not-configured">Not configured (TOGGL2_API_KEY / TOGGL2_ORGANIZATION_ID / TOGGL2_WORKSPACE_ID unset).</p>
+    {{else}}{{template "togglpanel" .Focus}}{{end}}
   </section>
 
   <section class="panel">
@@ -113,3 +103,28 @@
 
 </body>
 </html>
+
+{{define "togglrole"}}{{if .Configured}} {{if .Active}}<strong>Feeds the dashboard.</strong>{{else}}Configured, but not feeding the dashboard under the current <code>TOGGL_MODE</code>.{{end}}{{end}}{{end}}
+
+{{define "togglpanel"}}
+    {{if .KeyNote}}<p class="{{if .KeyExpired}}error{{else}}stale-note{{end}}">{{.KeyNote}}</p>{{end}}
+    {{if .Err}}
+    <p class="error">{{.Err}}</p>
+    {{else}}
+    {{range .Workspaces}}
+    <details class="card" open>
+      <summary>{{.Name}} <span class="code">(workspace {{.ID}})</span> <span class="count">— {{len .Clients}} client(s)</span></summary>
+      <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>Client</th><th class="code">tracking_client_id</th></tr></thead>
+        <tbody>
+          {{range .Clients}}
+          <tr><td>{{.Name}}</td><td class="code">{{.ID}}</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+      </div>
+    </details>
+    {{end}}
+    {{end}}
+{{end}}

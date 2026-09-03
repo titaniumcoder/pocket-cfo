@@ -139,12 +139,53 @@ func TestInfoTemplate_SectionOrderAndBalanceFormatting(t *testing.T) {
 	}
 
 	api := strings.Index(body, ">api2pdf<")
-	toggl := strings.Index(body, ">Toggl<")
+	toggl := strings.Index(body, ">Toggl Track<")
+	toggl2 := strings.Index(body, ">Toggl 2.0<")
 	holidays := strings.Index(body, "Holiday API (OpenHolidays)")
-	if api < 0 || toggl < 0 || holidays < 0 {
-		t.Fatalf("missing a section: api2pdf=%d toggl=%d holidays=%d", api, toggl, holidays)
+	if api < 0 || toggl < 0 || toggl2 < 0 || holidays < 0 {
+		t.Fatalf("missing a section: api2pdf=%d toggl=%d toggl2=%d holidays=%d", api, toggl, toggl2, holidays)
 	}
-	if !(api < toggl && toggl < holidays) {
-		t.Errorf("section order = api2pdf@%d toggl@%d holidays@%d, want api2pdf < toggl < holidays", api, toggl, holidays)
+	if !(api < toggl && toggl < toggl2 && toggl2 < holidays) {
+		t.Errorf("section order = api2pdf@%d toggl@%d toggl2@%d holidays@%d, want api2pdf < toggl < toggl2 < holidays", api, toggl, toggl2, holidays)
+	}
+}
+
+func TestHandleInfo_ShowsTheToggl2Panel(t *testing.T) {
+	s := newInfoTestServer(t)
+	focusOnly := &http.Client{Transport: oauthRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host == "focus.toggl.com" && strings.HasSuffix(r.URL.Path, "/workspaces/20/clients") {
+			return jsonResp(http.StatusOK, `{"data":[{"id":5,"name":"Acme"}],"page":1,"per_page":200}`), nil
+		}
+		t.Fatalf("unexpected request: %s %s", r.Method, r.URL)
+		return nil, nil
+	})}
+	yesterday := time.Now().AddDate(0, 0, -1)
+	s.togglFocus = tracker.NewFocus(tracker.FocusConfig{Key: "toggl_sk_x", OrganizationID: "10", WorkspaceID: "20", KeyExpiresAt: yesterday}, focusOnly)
+	s.cfg.togglMode = togglModeFocus
+	s.cfg.finance.Toggl2Key = "toggl_sk_x"
+	s.cfg.finance.TogglMode = togglModeFocus
+	s.tracker.Toggl = s.togglFocus
+
+	w := httptest.NewRecorder()
+	s.handleInfo(w, authorizedRequest(t, s))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		"Not configured (TOGGL_API_TOKEN",
+		"Workspace 20",
+		">Acme<",
+		"Feeds the dashboard",
+		"expired on " + yesterday.Format("02 Jan 2006"),
+		"TOGGL2_API_KEY",
+		"toggl2 — Toggl 2.0",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+	if strings.Contains(body, "toggl_sk_x") {
+		t.Error("the 2.0 key is printed in clear")
 	}
 }

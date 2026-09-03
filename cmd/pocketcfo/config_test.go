@@ -121,25 +121,128 @@ func TestLoadConfig_DevelopmentDefaults(t *testing.T) {
 	}
 }
 
-func TestBuildTracker(t *testing.T) {
-	t.Run("toggl disabled without credentials", func(t *testing.T) {
-		trk := buildTracker(financeconfig.Config{}, &http.Client{}, "data")
-		if trk.Toggl != nil {
-			t.Error("want Toggl nil when TogglToken/TogglWorkspace are unset")
+func TestBuildTogglClients(t *testing.T) {
+	t.Run("nothing without credentials", func(t *testing.T) {
+		track, focus := buildTogglClients(financeconfig.Config{}, &http.Client{})
+		if track != nil || focus != nil {
+			t.Error("want no clients when no credentials are set")
 		}
 	})
-	t.Run("toggl enabled with credentials", func(t *testing.T) {
-		trk := buildTracker(financeconfig.Config{TogglToken: "tok", TogglWorkspace: "ws"}, &http.Client{}, "data")
-		tg, ok := trk.Toggl.(*tracker.Toggl)
-		if !ok || tg == nil {
-			t.Fatal("want a Toggl client when both credentials are set")
+	t.Run("track from its pair", func(t *testing.T) {
+		track, focus := buildTogglClients(financeconfig.Config{TogglToken: "tok", TogglWorkspace: "ws"}, &http.Client{})
+		if track == nil || track.Token != "tok" || track.WorkspaceID != "ws" {
+			t.Errorf("track = %+v, want Token=tok WorkspaceID=ws", track)
 		}
-		if tg.Token != "tok" || tg.WorkspaceID != "ws" {
-			t.Errorf("Toggl = %+v, want Token=tok WorkspaceID=ws", tg)
+		if focus != nil {
+			t.Error("want no 2.0 client without TOGGL2_API_KEY")
+		}
+	})
+	t.Run("2.0 from its triple", func(t *testing.T) {
+		track, focus := buildTogglClients(financeconfig.Config{Toggl2Key: "k", Toggl2Organization: "1", Toggl2Workspace: "2"}, &http.Client{})
+		if track != nil {
+			t.Error("want no Track client without TOGGL_API_TOKEN")
+		}
+		if focus == nil || focus.Mode() != tracker.ModeFocus {
+			t.Errorf("focus = %+v, want a Toggl 2.0 client", focus)
+		}
+	})
+	t.Run("2.0 needs the ids", func(t *testing.T) {
+		if _, focus := buildTogglClients(financeconfig.Config{Toggl2Key: "k"}, &http.Client{}); focus != nil {
+			t.Error("a key without organization and workspace ids must not build a client")
+		}
+	})
+}
+
+func TestSelectHours(t *testing.T) {
+	track := &tracker.Toggl{Token: "tok", WorkspaceID: "ws"}
+	focus := tracker.NewFocus(tracker.FocusConfig{Key: "k", OrganizationID: "1", WorkspaceID: "2"}, &http.Client{})
+	tests := []struct {
+		name         string
+		mode         string
+		track, focus *tracker.Toggl
+		want         tracker.Mode
+	}{
+		{"track", togglModeTrack, track, focus, tracker.ModeTrack},
+		{"toggl2", togglModeFocus, track, focus, tracker.ModeFocus},
+		{"both", togglModeBoth, track, focus, tracker.ModeBoth},
+		{"disabled", "", track, focus, tracker.ModeOff},
+		{"track without a client", togglModeTrack, nil, focus, tracker.ModeOff},
+		{"both with one client", togglModeBoth, track, nil, tracker.ModeOff},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hours := selectHours(tt.mode, tt.track, tt.focus)
+			if tt.want == tracker.ModeOff {
+				if hours != nil {
+					t.Errorf("selectHours = %v, want a true nil", hours)
+				}
+				return
+			}
+			if hours == nil || hours.Mode() != tt.want {
+				t.Errorf("selectHours = %v, want %s", hours, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveTogglMode(t *testing.T) {
+	trackOnly := financeconfig.Config{TogglToken: "tok", TogglWorkspace: "ws"}
+	focusOnly := financeconfig.Config{Toggl2Key: "k", Toggl2Organization: "1", Toggl2Workspace: "2"}
+	both := financeconfig.Config{TogglToken: "tok", TogglWorkspace: "ws", Toggl2Key: "k", Toggl2Organization: "1", Toggl2Workspace: "2"}
+	withMode := func(c financeconfig.Config, mode string) financeconfig.Config { c.TogglMode = mode; return c }
+
+	ok := []struct {
+		name string
+		cfg  financeconfig.Config
+		want string
+	}{
+		{"nothing set is disabled", financeconfig.Config{}, ""},
+		{"track alone", trackOnly, togglModeTrack},
+		{"2.0 alone", focusOnly, togglModeFocus},
+		{"explicit track", withMode(both, togglModeTrack), togglModeTrack},
+		{"explicit toggl2", withMode(both, togglModeFocus), togglModeFocus},
+		{"explicit both", withMode(both, togglModeBoth), togglModeBoth},
+		{"half a Track pair is ignored", financeconfig.Config{TogglToken: "tok"}, ""},
+	}
+	for _, tt := range ok {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveTogglMode(tt.cfg)
+			if err != nil || got != tt.want {
+				t.Errorf("resolveTogglMode = %q, %v; want %q", got, err, tt.want)
+			}
+		})
+	}
+
+	refused := map[string]financeconfig.Config{
+		"both sets without a mode":  both,
+		"track mode without track":  withMode(focusOnly, togglModeTrack),
+		"toggl2 mode without a key": withMode(trackOnly, togglModeFocus),
+		"both mode with one set":    withMode(trackOnly, togglModeBoth),
+		"an unknown mode":           withMode(both, "all"),
+		"a key without its ids":     financeconfig.Config{Toggl2Key: "k"},
+	}
+	for name, cfg := range refused {
+		t.Run(name, func(t *testing.T) {
+			if got, err := resolveTogglMode(cfg); err == nil {
+				t.Errorf("resolveTogglMode = %q, want an error", got)
+			}
+		})
+	}
+}
+
+func TestBuildTracker(t *testing.T) {
+	t.Run("hours source is passed through", func(t *testing.T) {
+		trk := buildTracker(financeconfig.Config{}, nil, &http.Client{}, "data")
+		if trk.Toggl != nil {
+			t.Error("want Toggl nil when no source is selected")
+		}
+		track := &tracker.Toggl{Token: "tok", WorkspaceID: "ws"}
+		if trk := buildTracker(financeconfig.Config{}, track, &http.Client{}, "data"); trk.Toggl != tracker.HoursSource(track) {
+			t.Error("want the selected source on the tracker")
 		}
 	})
 	t.Run("budget always configured", func(t *testing.T) {
-		trk := buildTracker(financeconfig.Config{}, &http.Client{}, "data")
+		trk := buildTracker(financeconfig.Config{}, nil, &http.Client{}, "data")
 		if trk.Budget == nil {
 			t.Error("want Budget always non-nil (backed by budgetDir)")
 		}

@@ -34,7 +34,9 @@ type server struct {
 	clientTmpl *template.Template
 	infoTmpl   *template.Template
 
-	tracker *tracker.Tracker
+	tracker    *tracker.Tracker
+	togglTrack *tracker.Toggl
+	togglFocus *tracker.Toggl
 
 	emailRequestMu   sync.Mutex
 	emailRequestedAt map[string]time.Time
@@ -42,8 +44,48 @@ type server struct {
 	emailGlobal      hourlyLimiter
 }
 
-func buildTracker(cfg financeconfig.Config, httpClient *http.Client, budgetDir string) *tracker.Tracker {
-	trk := &tracker.Tracker{
+func buildTogglClients(cfg financeconfig.Config, httpClient *http.Client) (track, focus *tracker.Toggl) {
+	if cfg.TogglToken != "" && cfg.TogglWorkspace != "" {
+		track = &tracker.Toggl{
+			Token:       cfg.TogglToken,
+			WorkspaceID: cfg.TogglWorkspace,
+			ProjectIDs:  cfg.TogglProjects,
+			HTTP:        togglHTTPClient(httpClient),
+		}
+	}
+	if cfg.Toggl2Key != "" && cfg.Toggl2Organization != "" && cfg.Toggl2Workspace != "" {
+		focus = tracker.NewFocus(tracker.FocusConfig{
+			Key:            cfg.Toggl2Key,
+			OrganizationID: cfg.Toggl2Organization,
+			WorkspaceID:    cfg.Toggl2Workspace,
+			ProjectIDs:     cfg.Toggl2Projects,
+			KeyExpiresAt:   cfg.Toggl2KeyExpiresAt,
+		}, togglHTTPClient(httpClient))
+	}
+	return track, focus
+}
+
+func selectHours(mode string, track, focus *tracker.Toggl) tracker.HoursSource {
+	switch mode {
+	case togglModeTrack:
+		if track != nil {
+			return track
+		}
+	case togglModeFocus:
+		if focus != nil {
+			return focus
+		}
+	case togglModeBoth:
+		if track != nil && focus != nil {
+			return tracker.Both(track, focus)
+		}
+	}
+	return nil
+}
+
+func buildTracker(cfg financeconfig.Config, hours tracker.HoursSource, httpClient *http.Client, budgetDir string) *tracker.Tracker {
+	return &tracker.Tracker{
+		Toggl:        hours,
 		Holidays:     &tracker.Holidays{Country: cfg.Country, Subdivision: cfg.Subdivision, HTTP: httpClient},
 		Budget:       &tracker.Budget{FS: os.DirFS(budgetDir)},
 		Accounts:     &tracker.Accounts{FS: os.DirFS(budgetDir)},
@@ -56,15 +98,6 @@ func buildTracker(cfg financeconfig.Config, httpClient *http.Client, budgetDir s
 		Personal:     tracker.PersonalParams{Legislation: cfg.Legislation, Salary: cfg.Salary, Target: cfg.TargetBalance},
 		Start:        cfg.StartMonth,
 	}
-	if cfg.TogglToken != "" && cfg.TogglWorkspace != "" {
-		trk.Toggl = &tracker.Toggl{
-			Token:       cfg.TogglToken,
-			WorkspaceID: cfg.TogglWorkspace,
-			ProjectIDs:  cfg.TogglProjects,
-			HTTP:        togglHTTPClient(httpClient),
-		}
-	}
-	return trk
 }
 
 const togglTimeout = 60 * time.Second
@@ -79,10 +112,16 @@ func main() {
 	cfg := loadConfig()
 
 	httpClient := &http.Client{Timeout: 15 * time.Second}
+	track, focus := buildTogglClients(cfg.finance, httpClient)
+	if track != nil && focus != nil {
+		log.Printf("pocketcfo: TOGGL_MODE=%s — %s feeds the dashboard", cfg.togglMode, togglModeLabel(cfg.togglMode))
+	}
 	s := &server{
 		cfg:              cfg,
 		httpClient:       httpClient,
-		tracker:          buildTracker(cfg.finance, httpClient, budgetDir),
+		tracker:          buildTracker(cfg.finance, selectHours(cfg.togglMode, track, focus), httpClient, budgetDir),
+		togglTrack:       track,
+		togglFocus:       focus,
 		indexTmpl:        mustPageTemplate(templatesDir + "/index.html"),
 		clientTmpl:       template.Must(template.New("client.html").Funcs(templateFuncs).ParseFiles(templatesDir + "/client.html")),
 		infoTmpl:         mustPageTemplate(templatesDir + "/info.html"),

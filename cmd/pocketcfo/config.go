@@ -72,7 +72,8 @@ type config struct {
 	githubDataToken string
 	githubAPIURL    string
 
-	finance financeconfig.Config
+	finance   financeconfig.Config
+	togglMode string
 }
 
 func loadConfig() config {
@@ -112,6 +113,11 @@ func loadConfig() config {
 	if err := requireKnownEnv(c.env); err != nil {
 		log.Fatalf("pocketcfo: %v", err)
 	}
+	mode, err := resolveTogglMode(c.finance)
+	if err != nil {
+		log.Fatalf("pocketcfo: %v", err)
+	}
+	c.togglMode = mode
 	applyDefaults(&c)
 	if c.env == envProd {
 		if err := requireProdVars(c); err != nil {
@@ -128,6 +134,59 @@ const (
 	envProd        = "prod"
 	envDevelopment = "development"
 )
+
+const (
+	togglModeTrack = "track"
+	togglModeFocus = "toggl2"
+	togglModeBoth  = "both"
+)
+
+func resolveTogglMode(f financeconfig.Config) (string, error) {
+	track := f.TogglToken != "" && f.TogglWorkspace != ""
+	focus := f.Toggl2Key != ""
+	if focus && (f.Toggl2Organization == "" || f.Toggl2Workspace == "") {
+		return "", fmt.Errorf("TOGGL2_API_KEY is set but TOGGL2_ORGANIZATION_ID and TOGGL2_WORKSPACE_ID are not — the Toggl 2.0 API needs both in every URL and has no call to look them up (see .envrc.example)")
+	}
+	switch f.TogglMode {
+	case "":
+		switch {
+		case track && focus:
+			return "", fmt.Errorf("both TOGGL_API_TOKEN and TOGGL2_API_KEY are set — set TOGGL_MODE=%s, %s or %s to say which feeds the dashboard", togglModeTrack, togglModeFocus, togglModeBoth)
+		case track:
+			return togglModeTrack, nil
+		case focus:
+			return togglModeFocus, nil
+		}
+		return "", nil
+	case togglModeTrack:
+		if !track {
+			return "", fmt.Errorf("TOGGL_MODE=%s needs TOGGL_API_TOKEN and TOGGL_WORKSPACE_ID", togglModeTrack)
+		}
+	case togglModeFocus:
+		if !focus {
+			return "", fmt.Errorf("TOGGL_MODE=%s needs TOGGL2_API_KEY", togglModeFocus)
+		}
+	case togglModeBoth:
+		if !track || !focus {
+			return "", fmt.Errorf("TOGGL_MODE=%s needs TOGGL_API_TOKEN, TOGGL_WORKSPACE_ID and TOGGL2_API_KEY", togglModeBoth)
+		}
+	default:
+		return "", fmt.Errorf("TOGGL_MODE=%q is not a mode — use %s, %s or %s, or leave it unset with one set of Toggl credentials", f.TogglMode, togglModeTrack, togglModeFocus, togglModeBoth)
+	}
+	return f.TogglMode, nil
+}
+
+func togglModeLabel(mode string) tracker.Mode {
+	switch mode {
+	case togglModeTrack:
+		return tracker.ModeTrack
+	case togglModeFocus:
+		return tracker.ModeFocus
+	case togglModeBoth:
+		return tracker.ModeBoth
+	}
+	return tracker.ModeOff
+}
 
 func requireKnownEnv(env string) error {
 	switch env {

@@ -44,7 +44,7 @@ func newFinanceTestServer(t *testing.T) *server {
 	return &server{
 		cfg:        config{env: "prod", sessionSecret: "test-secret"},
 		httpClient: noNetwork,
-		tracker:    buildTracker(financeconfig.Config{}, noNetwork, "data"),
+		tracker:    buildTracker(financeconfig.Config{}, nil, noNetwork, "data"),
 	}
 }
 

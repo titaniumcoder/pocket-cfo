@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"sort"
+	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 	"github.com/titaniumcoder/pocket-cfo/internal/render"
@@ -22,14 +23,23 @@ type infoCountryView struct {
 	Subdivisions []tracker.Subdivision
 }
 
+type infoTogglPanel struct {
+	Configured bool
+	Active     bool
+	Err        string
+	KeyNote    string
+	KeyExpired bool
+	Workspaces []infoWorkspaceView
+}
+
 type infoView struct {
 	Header webui.Header
 
 	ConfigGroups []configGroup
 
-	TogglConfigured bool
-	TogglErr        string
-	Workspaces      []infoWorkspaceView
+	TogglMode tracker.Mode
+	Track     infoTogglPanel
+	Focus     infoTogglPanel
 
 	HolidaysErr string
 	Countries   []infoCountryView
@@ -67,10 +77,10 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
-	if tg, ok := s.tracker.Toggl.(*tracker.Toggl); ok {
-		view.TogglConfigured = true
-		view.Workspaces, view.TogglErr = loadTogglInfo(ctx, tg)
-	}
+	mode := s.cfg.togglMode
+	view.TogglMode = togglModeLabel(mode)
+	view.Track = togglPanel(ctx, s.togglTrack, mode == togglModeTrack || mode == togglModeBoth)
+	view.Focus = togglPanel(ctx, s.togglFocus, mode == togglModeFocus || mode == togglModeBoth)
 
 	view.Countries, view.HolidaysErr = loadHolidayInfo(ctx, s.tracker.Holidays)
 
@@ -88,6 +98,17 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	if err := s.infoTmpl.Execute(w, view); err != nil {
 		serverError(w, r, "loading data", err)
 	}
+}
+
+func togglPanel(ctx context.Context, tg *tracker.Toggl, active bool) infoTogglPanel {
+	if tg == nil {
+		return infoTogglPanel{}
+	}
+	panel := infoTogglPanel{Configured: true, Active: active}
+	panel.Workspaces, panel.Err = loadTogglInfo(ctx, tg)
+	ks := tg.KeyStatus(time.Now())
+	panel.KeyNote, panel.KeyExpired = ks.Warning, ks.Expired
+	return panel
 }
 
 func loadTogglInfo(ctx context.Context, tg *tracker.Toggl) ([]infoWorkspaceView, string) {

@@ -188,3 +188,32 @@ func TestARemainingCountWithoutAResetHeaderStillCounts(t *testing.T) {
 		t.Errorf("headers seen = %v, quota headers = %v", s.HeadersSeen, s.QuotaHeaders)
 	}
 }
+
+func TestFirstAnswerPerEndpointIsNotedOnce(t *testing.T) {
+	f := &fakeFocus{entries: onePage(entry("2026-03-10", 3600, 1)), projectRates: map[int]string{1: rate50}, projects: `[]`}
+	tg := focusToggl(f, "")
+	ctx := context.Background()
+	if _, err := tg.Year(ctx, 2026); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tg.Projects(ctx); err != nil {
+		t.Fatal(err)
+	}
+	tg.EvictRange(mar(1), mar(31))
+	if _, err := tg.Year(ctx, 2026); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{
+		"GET focus.toggl.com/api/organizations/{id}/workspaces/{id}/time-entries":                       true,
+		"GET focus.toggl.com/api/organizations/{id}/workspaces/{id}/billable-rates/projects/{id}/rates": true,
+		"GET focus.toggl.com/api/organizations/{id}/workspaces/{id}/projects":                           true,
+	}
+	if len(tg.loggedAnswers) != len(want) {
+		t.Errorf("logged endpoints = %v, want %v", tg.loggedAnswers, want)
+	}
+	for k := range want {
+		if !tg.loggedAnswers[k] {
+			t.Errorf("endpoint %q not noted; have %v", k, tg.loggedAnswers)
+		}
+	}
+}

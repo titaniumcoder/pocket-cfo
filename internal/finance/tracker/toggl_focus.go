@@ -31,7 +31,7 @@ func NewFocus(cfg FocusConfig, httpClient *http.Client) *Toggl {
 var focusBaseURL = "https://focus.toggl.com/api"
 
 const (
-	focusPerPage    = 100
+	focusPerPage    = 50
 	focusMinPerPage = 10
 	focusMaxPages   = 100
 )

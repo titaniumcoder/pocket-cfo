@@ -92,18 +92,29 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // The rules timeline on /info: only the card in force today starts open, so
 // a chip has to open the card it jumps to — :target alone cannot open a
-// closed <details>. The same goes for arriving with a #rules-… hash.
-function openRulesCard(id) {
+// closed <details>. Opening one closes the others, so one card is open at a
+// time. On load every card is reset to what the server rendered, because a
+// browser may restore a card the reader had opened before reloading, and the
+// hash a chip left in the address is then applied on top.
+function rulesCards() {
+  return Array.prototype.slice.call(document.querySelectorAll('details.rules'));
+}
+
+function showRulesCard(id) {
   var card = id && document.getElementById(id);
-  if (card && card.tagName === 'DETAILS' && card.classList.contains('rules')) card.open = true;
+  if (!card || card.tagName !== 'DETAILS' || !card.classList.contains('rules')) return;
+  rulesCards().forEach(function (other) { other.open = other === card; });
 }
 
 document.addEventListener('click', function (e) {
   var a = e.target.closest('.timeline a[href^="#"]');
   if (!a) return;
-  openRulesCard(a.getAttribute('href').slice(1));
+  showRulesCard(a.getAttribute('href').slice(1));
 });
 
-window.addEventListener('hashchange', function () { openRulesCard(location.hash.slice(1)); });
+window.addEventListener('hashchange', function () { showRulesCard(location.hash.slice(1)); });
 
-document.addEventListener('DOMContentLoaded', function () { openRulesCard(location.hash.slice(1)); });
+document.addEventListener('DOMContentLoaded', function () {
+  rulesCards().forEach(function (card) { card.open = card.hasAttribute('open'); });
+  showRulesCard(location.hash.slice(1));
+});

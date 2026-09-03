@@ -77,7 +77,11 @@ func TestConfigGroupsMasksEverySecret(t *testing.T) {
 		otpKey       = "otp-link-secret-6666"
 		api2pdfKey   = "api2pdf-key-value-5555"
 		togglToken   = "toggl-api-token-4444"
+		toggl2Key    = "toggl_sk_key-value-3333"
+		awsKey       = "aws-secret-access-key-2222"
 	)
+	t.Setenv("AWS_ACCESS_KEY_ID", "AKIA-access-key-id-1111")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", awsKey)
 	s := &server{cfg: config{
 		env:              "prod",
 		clientID:         "client-id-value-0000",
@@ -88,6 +92,7 @@ func TestConfigGroupsMasksEverySecret(t *testing.T) {
 		api2pdfKey:       api2pdfKey,
 	}}
 	s.cfg.finance.TogglToken = togglToken
+	s.cfg.finance.Toggl2Key = toggl2Key
 
 	var flat strings.Builder
 	secretRows := 0
@@ -107,9 +112,48 @@ func TestConfigGroupsMasksEverySecret(t *testing.T) {
 	}
 
 	rendered := flat.String()
-	for _, secret := range []string{clientSecret, sessionKey, clientLink, otpKey, api2pdfKey, togglToken} {
+	for _, secret := range []string{clientSecret, sessionKey, clientLink, otpKey, api2pdfKey, togglToken, toggl2Key, awsKey} {
 		if strings.Contains(rendered, secret) {
 			t.Errorf("cleartext secret %q appears in the /info config panel", secret)
+		}
+	}
+}
+
+// TestConfigGroupsNameEverySettingTheProcessReads: the table is what a
+// deployment is checked against, so a variable the code reads but the page
+// never names is a setting nobody can verify.
+func TestConfigGroupsNameEverySettingTheProcessReads(t *testing.T) {
+	t.Setenv("CONFIG_FILE", "/srv/data/config.json")
+	t.Setenv("CATALOG_DIR", "/srv/catalog")
+	s := &server{cfg: config{env: "prod"}}
+	s.cfg.finance.HourlyRateCents = 7500
+	s.cfg.finance.Currency = "EUR"
+
+	rows := map[string]string{}
+	for _, g := range s.configGroups() {
+		for _, row := range g.Rows {
+			rows[row.Name] = row.Value
+		}
+	}
+	for name, want := range map[string]string{
+		"CONFIG_FILE":               "/srv/data/config.json",
+		"CATALOG_DIR":               "/srv/catalog",
+		"DATA_UPDATED_AT":           unsetLabel,
+		"DATA_COMMIT":               unsetLabel,
+		"TOGGL_MODE":                "unset — disabled",
+		"TOGGL_REFRESH_INTERVAL":    "15m0s",
+		"TOGGL2_API_KEY_EXPIRES_AT": "unset — no advance warning, only a rejected key is reported",
+		"hourlyRateCents":           "7500 (75,00 EUR an hour)",
+	} {
+		if got, ok := rows[name]; !ok {
+			t.Errorf("no row named %s", name)
+		} else if got != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
+	}
+	for _, name := range []string{"TOGGL_API_TOKEN", "TOGGL_WORKSPACE_ID", "togglProjectIds", "TOGGL2_API_KEY", "TOGGL2_ORGANIZATION_ID", "TOGGL2_WORKSPACE_ID", "toggl2ProjectIds", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"} {
+		if _, ok := rows[name]; !ok {
+			t.Errorf("no row named %s", name)
 		}
 	}
 }

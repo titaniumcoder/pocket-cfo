@@ -1,12 +1,14 @@
 package main
 
 import (
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/buildinfo"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
+	"github.com/titaniumcoder/pocket-cfo/internal/render"
 )
 
 type configRow struct {
@@ -48,7 +50,8 @@ func (s *server) configGroups() []configGroup {
 	return []configGroup{
 		{Name: "Application", Rows: []configRow{
 			{Name: "Version", Value: buildinfo.Version},
-			{Name: "Data updated", Value: orUnset(buildinfo.Data.String())},
+			{Name: "DATA_UPDATED_AT", Value: orUnset(buildinfo.Data.UpdatedAt)},
+			{Name: "DATA_COMMIT", Value: orUnset(buildinfo.Data.Commit)},
 			{Name: "ENV", Value: orUnset(c.env)},
 			{Name: "PORT", Value: orUnset(c.port)},
 			{Name: "PUBLIC_BASE_URL", Value: orUnset(c.baseURL)},
@@ -59,6 +62,8 @@ func (s *server) configGroups() []configGroup {
 			{Name: "BUILD_DIR", Value: buildDir},
 			{Name: "TEMPLATES_DIR", Value: templatesDir},
 			{Name: "STATIC_DIR", Value: staticDir},
+			{Name: "CATALOG_DIR", Value: getenv("CATALOG_DIR", "catalog")},
+			{Name: "CONFIG_FILE", Value: getenv("CONFIG_FILE", "config.json")},
 			{Name: "users.json", Value: usersFile},
 		}},
 		{Name: "Credentials", Rows: []configRow{
@@ -92,12 +97,14 @@ func (s *server) configGroups() []configGroup {
 		{Name: "Email (Amazon SES)", Rows: []configRow{
 			{Name: "AWS_REGION", Value: orUnset(c.sesRegion)},
 			{Name: "SES_FROM_EMAIL", Value: orUnset(c.sesFromEmail)},
+			{Name: "AWS_ACCESS_KEY_ID", Value: maskSecret(os.Getenv("AWS_ACCESS_KEY_ID")), Secret: true},
+			{Name: "AWS_SECRET_ACCESS_KEY", Value: maskSecret(os.Getenv("AWS_SECRET_ACCESS_KEY")), Secret: true},
 		}},
 		{Name: "Finance (config.json)", Rows: []configRow{
 			{Name: "holidayCountry", Value: orUnset(f.Country)},
 			{Name: "holidaySubdivision", Value: orUnset(f.Subdivision)},
 			{Name: "hoursPerDay", Value: strconv.FormatFloat(f.HoursPerDay, 'f', -1, 64)},
-			{Name: "hourlyRateCents", Value: strconv.Itoa(f.HourlyRateCents)},
+			{Name: "hourlyRateCents", Value: hourlyRateSummary(f.HourlyRateCents, f.Currency)},
 			{Name: "currency", Value: orUnset(f.Currency)},
 			{Name: "annualVacationDays", Value: strconv.Itoa(f.AnnualVacationDays)},
 			{Name: "legislation", Value: legislationSummary(f.Legislation)},
@@ -106,6 +113,10 @@ func (s *server) configGroups() []configGroup {
 			{Name: "startMonth", Value: startMonthSummary(f.StartMonth)},
 		}},
 	}
+}
+
+func hourlyRateSummary(cents int, currency string) string {
+	return strconv.Itoa(cents) + " (" + render.FormatAmount(int64(cents)) + " " + currency + " an hour)"
 }
 
 func togglModeSummary(raw, resolved string) string {

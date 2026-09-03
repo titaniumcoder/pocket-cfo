@@ -100,7 +100,8 @@ a script.
 ### What the app never does
 
 It does not write to `DATA_DIR`. A deployment's data directory is a baked image layer or a
-mount, so a write landing there would be lost on restart and diverge from the repo.
+mount, so a write landing there would be lost on restart and diverge from the repo. The one
+thing it writes anywhere is the Toggl cache, and only under `TOGGL_CACHE_DIR` when that is set.
 Everything the agent API accepts is committed through the GitHub Contents API instead, and
 the pipeline rebuilds. That is what makes an agent-facing write surface tolerable: it is
 not trusted, it is audited, and every change is one you can read in `git log` and revert.
@@ -175,7 +176,8 @@ Secrets and deployment-specific paths come from the environment. Copy `.envrc.ex
 | `TOGGL_API_TOKEN` / `TOGGL_WORKSPACE_ID` | `cmd/pocketcfo`, optional | Toggl Track. With no Toggl credentials at all the tracked-hours layer is disabled; predictions still run off the hourly rate |
 | `TOGGL2_API_KEY` / `TOGGL2_ORGANIZATION_ID` / `TOGGL2_WORKSPACE_ID` | `cmd/pocketcfo`, optional | Toggl 2.0 (focus.toggl.com): a `toggl_sk_…` key from its settings page, plus an organization id and a workspace id the API cannot list. Set the key first: `/info` then shows the workspace the key sees and, where Toggl allows it, the organization — otherwise both sit in the focus.toggl.com address. Nothing changes on the dashboard until all three are set and `TOGGL_MODE` says so. The key **expires** after the period chosen when it was generated (30 or 90 days, …); once Toggl rejects it, the finance page and `/info` say so until a new one is set |
 | `TOGGL2_API_KEY_EXPIRES_AT` | `cmd/pocketcfo`, optional | `YYYY-MM-DD` the 2.0 key expires; the pages warn during its last seven days and after |
-| `TOGGL_REFRESH_INTERVAL` | `cmd/pocketcfo`, optional | default `15m`; a Go duration. Toggl 2.0 counts requests per hour (30 on its Free plan), so a Free plan wants `1h` |
+| `TOGGL_REFRESH_INTERVAL` | `cmd/pocketcfo`, optional | default `15m`; a Go duration. How often the last 45 days of tracked hours are refreshed in the background — one request or a few per refresh, not the whole year. Older months are refetched once a day or on Reload. Toggl counts requests per hour (30 on its Free plan, 240 Starter, 600 Premium) and the client stops at that limit by itself, so the default fits every plan |
+| `TOGGL_CACHE_DIR` | `cmd/pocketcfo`, optional | a writable directory for the Toggl cache — one small JSON file per backend. Set, a restart or a Fly machine waking from auto-stop serves the last hours at once and asks Toggl only for what is due; unset, the cache lives in process memory and every start pulls the year again. On Fly, mount a volume (`[mounts] source = "pocketcfo_cache", destination = "/var/cache/pocketcfo"`) and point this at it. This is derived, disposable data, nothing from your data repo; `/info` has a **Reset Toggl cache** button that wipes it, and deleting the files over `fly ssh console` does the same |
 | `PORT` | `cmd/pocketcfo`, optional | default `8080` |
 | `CLIENT_LINK_SECRET` | `cmd/pocketcfo`, prod | any random string; signs the stateless client-portal links |
 | `GITHUB_API_URL` | `cmd/pocketcfo`, optional | default `https://api.github.com`; points the Contents client at a stub while verifying the write path |

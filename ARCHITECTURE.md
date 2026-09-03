@@ -787,16 +787,61 @@ the pending and stale notes. It offers **no call that lists the caller's organiz
 workspaces** (the one call that would, the workspace `/context`, answers a browser session
 only — an API key gets 403 "this endpoint requires session authentication", confirmed live),
 so both ids are configuration, read off the focus.toggl.com address. A key alone still
-boots: it never reaches the dashboard, and `/info` says which two variables are missing. And it is **quota-limited per hour** (30
-requests on Free, 240 on Starter, 600 on Premium, answered with 402 beyond that), which is
-why rate timelines are cached until Reload rather than refetched on every 15-minute refresh,
-and why a Free plan wants a longer `TOGGL_REFRESH_INTERVAL`. Confirmed against the live
+boots: it never reaches the dashboard, and `/info` says which two variables are missing. And
+it is **quota-limited per hour** — as is Toggl Track since June 2025 — which shaped the cache
+below. Confirmed against the live
 API: an unknown key gets a 401 with a JSON error body, `per_page=200` is refused with a
 validation 400 (the client asks for 50 and halves on that error), and the workspace
 `/context` call answers 403 to an API key. Read from the published OpenAPI
 spec and still to be confirmed with a real key: `duration` is in seconds, `date_from` and
 `date_to` accept RFC 3339 timestamps, `hourly_rate` on the billable-rates endpoints is in
 hundredths of the currency, and `per_page=200` is honoured.
+
+**Toggl meters requests per hour, per user, per organization** — 30 on Free, 240 on Starter,
+600 on Premium — answers HTTP 402 beyond that for the rest of a sliding sixty-minute window,
+and states `X-Toggl-Quota-Remaining` and `X-Toggl-Quota-Resets-In` on every answer. A
+freelancer's year is some thirty pages of fifty entries, so re-pulling it every fifteen
+minutes was the whole Free quota, four times over, and every cold start paid it again. The
+cache (`toggl.go`) is therefore **one entry per calendar month**, and a fetch covers one
+contiguous run of stale months in a single request: a cold year is still the one request it
+always was, but the background refresh (`warm.go`) marks stale only the months touching the
+last 45 days — one request for two months — and, once a day, everything older, since an old
+month changes only when someone corrects it. Reload of a month refetches that month alone,
+and the status and pending notes follow the months in the viewed range, so the year view
+reports the age of its oldest month. Month bounds are drawn in the process location, so a
+day starts at local midnight on both APIs; an entry Toggl returns for a month it does not
+belong to (a timezone edge) is kept under its own month rather than dropped. The rate
+timelines stay cached until Reload, as before.
+
+A **402 is a gate, not a failure**: it closes the whole backend until the reset the header
+names (plus ten seconds), the last good hours are served meanwhile, the breaker is not
+touched, and the finance page and `/info` say when hours refresh again instead of polling.
+The warmer skips a tick when the gate is closed or fewer than five requests are left, so
+page views keep them. The cache is written to `TOGGL_CACHE_DIR` when that is set
+(`snapshot.go`; one JSON file per backend, written atomically after every successful fetch
+and on Reload, read back before the first lookup, ignored if of another version or
+unparsable) so a Fly machine woken from auto-stop, or a fresh deploy, serves the last hours
+at once and asks Toggl only for what the cadence says is due — the one thing the app writes
+to disk, and deliberately not the data repo, whose commits are the business record. Because
+such a file outlives every restart, `/info` carries a **Reset Toggl cache** button
+(`POST /toggl/reset`, admin-only): it drops every cached month, project and rate on both
+backends, deletes the file, discards any fetch still in flight, and keeps only the quota gate,
+which is real regardless of what was cached.
+
+**Toggl webhooks are deliberately not used.** Toggl 2.0 has none — its OpenAPI spec lists no
+webhook, subscription or event path, and its time-entries list has no modified-since filter,
+only `date_from`/`date_to` and an `order_by` that includes `updated_at`. Toggl Track has
+them, but a Free workspace gets one webhook of at most three events, only an admin may
+create it, Toggl disables it after three failed deliveries (a machine that is asleep when the
+event arrives is exactly that), it is delivered to one instance, and its payload is a raw
+entry that would still need the Reports API for rounding and pricing — for the API being
+migrated away from. The recorded follow-up, for Toggl 2.0 only, is a true delta:
+`order_by=-updated_at` with a watermark would make a refresh one request regardless of
+history; what stands in its way is confirming live whether deleted entries are listed with
+`deleted_at` set, since otherwise a deletion would be seen only by the daily reconcile.
+Fly's auto-stop is not a problem to solve here: the idle delay is not configurable, a
+machine kept awake makes more requests rather than fewer, and the snapshot makes a wake
+cost nothing.
 
 **The two-month funding shift** is the domain rule that most of the module bends around:
 money earned in month M is invoiced at the end of M, paid during M+1, and is spendable in
@@ -1251,7 +1296,8 @@ restarts every instance within the same few minutes, which is total invalidation
 `min_machines_running = 0` means one machine is the normal case; and a webhook is a new
 public endpoint with a secret to hold, for a few minutes of freshness on a second machine
 that usually is not running. If cross-instance freshness ever does matter, the honest fix is
-a shared store for the overlay, not a notification.
+a shared store for the overlay, not a notification. (§10 reaches the same verdict for Toggl's
+webhooks, for its own reasons.)
 
 `docs/HERMES.md` is the contract the agent works to, and the MCP tool descriptions are
 where it actually reads it.

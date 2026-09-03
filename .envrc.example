@@ -82,10 +82,20 @@ export TOGGL2_API_KEY_EXPIRES_AT=
 # the 2.0 ones, and Toggl 2.0 only when those are the only ones set — so an
 # unchanged deployment is unaffected by the variables above.
 export TOGGL_MODE=
-# Optional, a Go duration, default 15m: how often tracked hours are
-# refreshed in the background. Toggl 2.0 counts requests per hour (30 on
-# its Free plan), so a Free plan wants 1h.
+# Optional, a Go duration, default 15m: how often the last 45 days of
+# tracked hours are refreshed in the background — a request or a few, not
+# the whole year; older months are refetched once a day or on Reload.
+# Toggl counts requests per hour (30 on its Free plan, 240 Starter, 600
+# Premium) and the client stops at that limit by itself, so the default
+# fits every plan.
 # export TOGGL_REFRESH_INTERVAL=15m
+# Optional: a writable directory for the Toggl cache, one small JSON file
+# per backend. Set, a restart (or a Fly machine waking from auto-stop)
+# serves the last hours at once and asks Toggl only for what is due;
+# unset, the cache lives in memory and every start pulls the year again.
+# On Fly, mount a volume and point this at it. Derived, disposable data:
+# /info has a "Reset Toggl cache" button that wipes it.
+# export TOGGL_CACHE_DIR=/var/cache/pocketcfo
 # Optional. Default to config.json — non-secret finance tunables
 # (hoursPerDay, togglProjectIds, toggl2ProjectIds, holidayCountry,
 # holidaySubdivision, hourlyRateCents, currency, annualVacationDays) plus

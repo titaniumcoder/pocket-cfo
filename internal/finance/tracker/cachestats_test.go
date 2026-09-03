@@ -14,7 +14,7 @@ func TestStatsCountWhatTheCacheDid(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 
-	if s := tg.Stats(now); s.SnapshotPath != tg.snapshotPath() || s.Entries != 0 || s.Fetches != 0 || s.Requests != 0 || len(s.HeadersSeen) != 0 {
+	if s := tg.Stats(now); s.SnapshotPath != tg.snapshotPath() || s.Entries != 0 || s.Fetches != 0 || s.Requests != 0 {
 		t.Errorf("fresh client Stats = %+v, want only the snapshot path", s)
 	}
 

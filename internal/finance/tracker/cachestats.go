@@ -2,7 +2,6 @@ package tracker
 
 import (
 	"os"
-	"slices"
 	"time"
 )
 
@@ -20,8 +19,6 @@ type CacheStats struct {
 	SnapshotPath        string
 	SnapshotBytes       int64
 	SnapshotWrittenAt   time.Time
-	HeadersSeen         []string
-	QuotaHeaders        map[string]string
 }
 
 func (t *Toggl) Stats(now time.Time) CacheStats {
@@ -41,14 +38,6 @@ func (t *Toggl) Stats(now time.Time) CacheStats {
 		LastFetchAt:   t.counters.LastFetchAt,
 		LastFetchTook: t.counters.LastFetchTook,
 		SnapshotPath:  t.snapshotPath(),
-		QuotaHeaders:  map[string]string{},
-	}
-	for name := range t.headersSeen {
-		s.HeadersSeen = append(s.HeadersSeen, name)
-	}
-	slices.Sort(s.HeadersSeen)
-	for name, value := range t.quotaHeaders {
-		s.QuotaHeaders[name] = value
 	}
 	for _, e := range t.cache {
 		if e.kind != kindMonth {

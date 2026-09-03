@@ -9,8 +9,6 @@ import (
 	"log"
 	"math"
 	"net/http"
-	neturl "net/url"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -42,9 +40,6 @@ type Toggl struct {
 	quotaRemaining int
 	quotaResetAt   time.Time
 	quotaGateUntil time.Time
-	headersSeen    map[string]bool
-	quotaHeaders   map[string]string
-	loggedAnswers  map[string]bool
 
 	counters cacheCounters
 }
@@ -407,14 +402,13 @@ func (s QuotaStatus) BelowReserve() bool {
 	return s.Exhausted || (s.Remaining >= 0 && s.Remaining < quotaReserve)
 }
 
-func (t *Toggl) noteQuota(resp *http.Response, method, rawURL string) {
+func (t *Toggl) noteQuota(resp *http.Response) {
 	remaining, hasRemaining := headerInt(resp, "X-Toggl-Quota-Remaining")
 	resetsIn, hasReset := headerInt(resp, "X-Toggl-Quota-Resets-In")
 	exhausted := resp.StatusCode == http.StatusPaymentRequired
 	now := time.Now()
 	t.lock()
 	defer t.mu.Unlock()
-	t.noteHeadersLocked(resp, endpointOf(method, rawURL))
 	if !hasRemaining && !hasReset && !exhausted {
 		return
 	}
@@ -433,61 +427,6 @@ func (t *Toggl) noteQuota(resp *http.Response, method, rawURL string) {
 		t.quotaGateUntil = now.Add(window + quotaGateSlack)
 		log.Printf("toggl: hourly quota used up (HTTP 402) — no requests before %s", t.quotaGateUntil.Format(time.RFC3339))
 	}
-}
-
-func (t *Toggl) noteHeadersLocked(resp *http.Response, endpoint string) {
-	if t.headersSeen == nil {
-		t.headersSeen, t.quotaHeaders, t.loggedAnswers = map[string]bool{}, map[string]string{}, map[string]bool{}
-	}
-	var names, telling []string
-	for name, values := range resp.Header {
-		t.headersSeen[name] = true
-		names = append(names, name)
-		if len(values) == 0 {
-			continue
-		}
-		if looksLikeQuota(name) {
-			t.quotaHeaders[name] = values[0]
-		}
-		if looksLikeQuota(name) || looksLikePlan(name) {
-			telling = append(telling, name+": "+values[0])
-		}
-	}
-	if t.loggedAnswers[endpoint] {
-		return
-	}
-	t.loggedAnswers[endpoint] = true
-	slices.Sort(names)
-	slices.Sort(telling)
-	line := fmt.Sprintf("toggl: %s — first answer from %s (status %d) carried the headers %s", t.backend().mode(), endpoint, resp.StatusCode, strings.Join(names, ", "))
-	if len(telling) > 0 {
-		line += "; " + strings.Join(telling, "; ")
-	}
-	log.Print(line)
-}
-
-func endpointOf(method, rawURL string) string {
-	u, err := neturl.Parse(rawURL)
-	if err != nil {
-		return method + " " + rawURL
-	}
-	parts := strings.Split(u.Path, "/")
-	for i, p := range parts {
-		if p != "" && strings.Trim(p, "0123456789") == "" {
-			parts[i] = "{id}"
-		}
-	}
-	return method + " " + u.Host + strings.Join(parts, "/")
-}
-
-func looksLikeQuota(name string) bool {
-	lower := strings.ToLower(name)
-	return strings.Contains(lower, "quota") || strings.Contains(lower, "limit") || strings.Contains(lower, "reset") || strings.Contains(lower, "retry")
-}
-
-func looksLikePlan(name string) bool {
-	lower := strings.ToLower(name)
-	return strings.Contains(lower, "service-level") || strings.Contains(lower, "plan") || strings.Contains(lower, "tier")
 }
 
 func headerInt(resp *http.Response, name string) (int, bool) {
@@ -850,7 +789,7 @@ func (t *Toggl) do(ctx context.Context, method, url string, body io.Reader) (*ht
 	for attempt := 1; ; attempt++ {
 		resp, err := t.attempt(ctx, method, url, payload)
 		if err == nil {
-			t.noteQuota(resp, method, url)
+			t.noteQuota(resp)
 		}
 		if err == nil && !retryableStatus(resp.StatusCode) {
 			return resp, nil

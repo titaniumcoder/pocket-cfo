@@ -94,12 +94,34 @@ func TestInfoPageShowsCacheStatisticsPerConfiguredBackend(t *testing.T) {
 	w := httptest.NewRecorder()
 	s.handleInfo(w, authorizedRequest(t, s))
 	body := w.Body.String()
-	for _, want := range []string{"Months cached</td><td>12 (0 stale", "HTTP requests to Toggl</td><td>2, 0 of them retries", "none — memory only (TOGGL_CACHE_DIR unset)", "Hourly quota"} {
+	for _, want := range []string{"Months cached</td><td>12 (0 stale", "HTTP requests to Toggl</td><td>2, 0 of them retries", "none — memory only (TOGGL_CACHE_DIR unset)"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("info page lacks %q", want)
 		}
 	}
+	if strings.Contains(body, "Hourly quota") {
+		t.Error("an API that never reported a quota must not get a quota row")
+	}
 	if strings.Count(body, `<h3 class="config-group">Toggl 2.0</h3>`) != 0 {
 		t.Error("statistics shown for a backend that is not configured")
+	}
+}
+
+func TestInfoPageShowsTheQuotaRowOnceTogglReportsOne(t *testing.T) {
+	s := newInfoTestServer(t)
+	client := &http.Client{Transport: oauthRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		resp := jsonResp(http.StatusOK, `[]`)
+		resp.Header.Set("X-Toggl-Quota-Remaining", "21")
+		resp.Header.Set("X-Toggl-Quota-Resets-In", "1200")
+		return resp, nil
+	})}
+	s.togglTrack = &tracker.Toggl{WorkspaceID: "ws", HTTP: client}
+	if _, err := s.togglTrack.Year(context.Background(), 2026); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	s.handleInfo(w, authorizedRequest(t, s))
+	if body := w.Body.String(); !strings.Contains(body, "Hourly quota</td><td>21 requests left") {
+		t.Error("the quota row is missing although Toggl reported 21 requests left")
 	}
 }

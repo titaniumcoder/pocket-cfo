@@ -9,6 +9,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -433,14 +434,21 @@ func (t *Toggl) noteQuota(resp *http.Response) {
 }
 
 func (t *Toggl) noteHeadersLocked(h http.Header) {
-	if t.headersSeen == nil {
+	first := t.headersSeen == nil
+	if first {
 		t.headersSeen, t.quotaHeaders = map[string]bool{}, map[string]string{}
 	}
+	var names []string
 	for name, values := range h {
 		t.headersSeen[name] = true
+		names = append(names, name)
 		if looksLikeQuota(name) && len(values) > 0 {
 			t.quotaHeaders[name] = values[0]
 		}
+	}
+	if first {
+		slices.Sort(names)
+		log.Printf("toggl: %s — first answer carried the headers %s", t.backend().mode(), strings.Join(names, ", "))
 	}
 }
 

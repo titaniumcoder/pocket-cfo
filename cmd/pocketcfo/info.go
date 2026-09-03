@@ -155,8 +155,9 @@ func cacheStatsRows(s tracker.CacheStats, q tracker.QuotaStatus, now time.Time) 
 		{Name: "HTTP requests to Toggl", Value: fmt.Sprintf("%d, %d of them retries", s.Requests, s.Retries)},
 		{Name: "Last fetch", Value: lastFetch(s, at)},
 		{Name: "In flight now", Value: fmt.Sprintf("%d fetches, %d breakers open", s.InFlight, s.OpenBreakers)},
-		{Name: "Hourly quota", Value: strings.TrimPrefix(describeQuota(q, now), "Hourly request quota: ")},
-		{Name: "Quota headers in Toggl's answers", Value: describeQuotaHeaders(s)},
+	}
+	if q.Exhausted || q.Remaining >= 0 {
+		rows = append(rows, configRow{Name: "Hourly quota", Value: strings.TrimPrefix(describeQuota(q, now), "Hourly request quota: ")})
 	}
 	switch {
 	case s.SnapshotPath == "":
@@ -167,25 +168,6 @@ func cacheStatsRows(s tracker.CacheStats, q tracker.QuotaStatus, now time.Time) 
 		rows = append(rows, configRow{Name: "Snapshot", Value: fmt.Sprintf("%s — %d bytes, written %s", s.SnapshotPath, s.SnapshotBytes, at(s.SnapshotWrittenAt))})
 	}
 	return rows
-}
-
-func describeQuotaHeaders(s tracker.CacheStats) string {
-	if len(s.HeadersSeen) == 0 {
-		return "no answer received yet"
-	}
-	if len(s.QuotaHeaders) == 0 {
-		return "none — the headers seen so far are " + strings.Join(s.HeadersSeen, ", ")
-	}
-	names := make([]string, 0, len(s.QuotaHeaders))
-	for name := range s.QuotaHeaders {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	parts := make([]string, len(names))
-	for i, name := range names {
-		parts[i] = name + ": " + s.QuotaHeaders[name]
-	}
-	return strings.Join(parts, ", ")
 }
 
 func lastFetch(s tracker.CacheStats, at func(time.Time) string) string {
@@ -200,7 +182,7 @@ func describeQuota(q tracker.QuotaStatus, now time.Time) string {
 	case q.Exhausted:
 		return q.Note
 	case q.Remaining < 0:
-		return "Hourly request quota: not reported yet — Toggl states it on every answer."
+		return "Hourly request quota: not reported by this API."
 	}
 	return fmt.Sprintf("Hourly request quota: %d requests left, window resets at %s.", q.Remaining, q.ResetAt.In(now.Location()).Format("15:04"))
 }

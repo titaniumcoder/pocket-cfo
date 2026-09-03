@@ -39,7 +39,7 @@ func TestWarmRefreshesTheHotWindowOnTheTicker(t *testing.T) {
 	}
 	now := time.Now().In(trk.Loc)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, trk.Loc)
-	hotStart := today.AddDate(0, 0, -hotWindowDays)
+	hotStart := hotWindowStart(today)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -66,6 +66,22 @@ func TestWarmRefreshesTheHotWindowOnTheTicker(t *testing.T) {
 	}
 	if strings.HasSuffix(ranges[1], "-12-31") && today.Month() != time.December && hotStart.Month() != time.December {
 		t.Errorf("second fetch %q re-pulled the whole year", ranges[1])
+	}
+}
+
+func TestHotWindowIsTheCurrentMonthPlusLastMonthDuringTheFirstWeek(t *testing.T) {
+	vienna, _ := time.LoadLocation("Europe/Vienna")
+	tests := map[time.Time]time.Time{
+		time.Date(2026, 9, 3, 0, 0, 0, 0, vienna):  time.Date(2026, 8, 1, 0, 0, 0, 0, vienna),
+		time.Date(2026, 9, 7, 0, 0, 0, 0, vienna):  time.Date(2026, 8, 1, 0, 0, 0, 0, vienna),
+		time.Date(2026, 9, 8, 0, 0, 0, 0, vienna):  time.Date(2026, 9, 1, 0, 0, 0, 0, vienna),
+		time.Date(2026, 9, 30, 0, 0, 0, 0, vienna): time.Date(2026, 9, 1, 0, 0, 0, 0, vienna),
+		time.Date(2026, 1, 2, 0, 0, 0, 0, vienna):  time.Date(2025, 12, 1, 0, 0, 0, 0, vienna),
+	}
+	for today, want := range tests {
+		if got := hotWindowStart(today); !got.Equal(want) {
+			t.Errorf("hotWindowStart(%s) = %s, want %s", today.Format("2006-01-02"), got.Format("2006-01-02"), want.Format("2006-01-02"))
+		}
 	}
 }
 

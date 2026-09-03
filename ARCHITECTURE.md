@@ -804,9 +804,10 @@ freelancer's year is some thirty pages of fifty entries, so re-pulling it every 
 minutes was the whole Free quota, four times over, and every cold start paid it again. The
 cache (`toggl.go`) is therefore **one entry per calendar month**, and a fetch covers one
 contiguous run of stale months in a single request: a cold year is still the one request it
-always was, but the background refresh (`warm.go`) marks stale only the months touching the
-last 45 days — one request for two months — and, once a day, everything older, since an old
-month changes only when someone corrects it. Reload of a month refetches that month alone,
+always was, but the background refresh (`warm.go`) marks stale only the current month — and
+the previous one through the 7th, while last month's entries are still being tidied — one
+request for one or two months — and, every 42 hours, everything older, since an old month
+changes only when someone corrects it. Reload of a month refetches that month alone,
 and the status and pending notes follow the months in the viewed range, so the year view
 reports the age of its oldest month. Month bounds are drawn in the process location, so a
 day starts at local midnight on both APIs; an entry Toggl returns for a month it does not

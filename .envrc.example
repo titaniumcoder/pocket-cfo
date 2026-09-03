@@ -82,9 +82,10 @@ export TOGGL2_API_KEY_EXPIRES_AT=
 # the 2.0 ones, and Toggl 2.0 only when those are the only ones set — so an
 # unchanged deployment is unaffected by the variables above.
 export TOGGL_MODE=
-# Optional, a Go duration, default 15m: how often the last 45 days of
-# tracked hours are refreshed in the background — a request or a few, not
-# the whole year; older months are refetched once a day or on Reload.
+# Optional, a Go duration, default 15m: how often the current month's
+# tracked hours (and last month's, through the 7th) are refreshed in the
+# background — a request or two, not the whole year; older months are
+# refetched every 42 hours or on Reload.
 # Toggl counts requests per hour (30 on its Free plan, 240 Starter, 600
 # Premium) and the client stops at that limit by itself, so the default
 # fits every plan.

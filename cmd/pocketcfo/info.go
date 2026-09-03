@@ -41,6 +41,8 @@ type infoView struct {
 	Track     infoTogglPanel
 	Focus     infoTogglPanel
 
+	Rules []tracker.RuleChange
+
 	HolidaysErr string
 	Countries   []infoCountryView
 
@@ -76,6 +78,8 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 			{Name: "Avatar URL", Value: orUnset(view.Header.AvatarURL())},
 		},
 	})
+
+	view.Rules = tracker.RulesTimeline(s.tracker.Personal, s.tracker.Start, time.Now())
 
 	mode := s.cfg.togglMode
 	view.TogglMode = togglModeLabel(mode)

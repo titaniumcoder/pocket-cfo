@@ -170,6 +170,7 @@ var templateFuncs = template.FuncMap{
 	"amount": func(v float64) string {
 		return render.FormatAmount(int64(math.Round(v * 100)))
 	},
+	"join": strings.Join,
 }
 
 func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {

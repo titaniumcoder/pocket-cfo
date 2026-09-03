@@ -189,3 +189,36 @@ func TestHandleInfo_ShowsTheToggl2Panel(t *testing.T) {
 		t.Error("the 2.0 key is printed in clear")
 	}
 }
+
+func TestHandleInfo_RendersTheRulesTimeline(t *testing.T) {
+	s := newInfoTestServer(t)
+	legislation, err := tracker.ParseLegislation([]tracker.LegislationEntry{
+		{From: "2026-01", DividendTax: &tracker.TaxEntry{Bands: []tracker.BandEntry{{From: 0, Rate: ratePtr(0.05)}}}},
+		{From: "2026-07", MinimumWage: ratePtr(1077)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.tracker.Personal = tracker.PersonalParams{Legislation: legislation}
+
+	w := httptest.NewRecorder()
+	s.handleInfo(w, authorizedRequest(t, s))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		`href="#rules-2026-01"`,
+		`id="rules-2026-07"`,
+		"From July 2026",
+		"<span class=\"since\">since January 2026</span>",
+		"1,077",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+	if strings.Contains(body, "No dated rules configured") {
+		t.Error("the empty state shows although legislation is configured")
+	}
+}

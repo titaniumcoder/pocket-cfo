@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
@@ -172,10 +173,17 @@ func TestTheInfoPageNamesTheDividendRates(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	summary := legislationSummary(periods)
-	for _, want := range []string{"company profit tax 10%", "dividend tax 5%"} {
-		if !strings.Contains(summary, want) {
-			t.Errorf("the /info legislation summary %q never says %q", summary, want)
+	entries := tracker.RulesTimeline(tracker.PersonalParams{Legislation: periods}, time.Time{}, time.Now())
+	if len(entries) != 1 {
+		t.Fatalf("entries = %+v, want one for January 2026", entries)
+	}
+	got := map[string]string{}
+	for _, r := range entries[0].Rules {
+		got[r.Name] = r.Value
+	}
+	for name, want := range map[string]string{"Company profit tax": "10%", "Dividend tax": "5%"} {
+		if got[name] != want {
+			t.Errorf("the /info rules timeline says %s = %q, want %q", name, got[name], want)
 		}
 	}
 }

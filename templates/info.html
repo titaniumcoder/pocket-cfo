@@ -36,6 +36,35 @@
   </section>
 
   <section class="panel">
+    <h2 class="section-title">Finance rules over time</h2>
+    <p class="section-note">config.json's dated blocks — <code>legislation</code>, <code>salary</code>, <code>targetBalance</code>, <code>startMonth</code> — resolved to what is in force from each date on which anything changes. A rule an entry leaves out carries forward from the last entry that stated it; a salary or target span that ends falls back to a full salary and no target.</p>
+    {{if not .Rules}}
+    <p class="not-configured">No dated rules configured — nothing is contributed or taxed and no minimum wage is enforced, every month pays a full salary, there is no target balance, and every month in the ±2 year window is offered.</p>
+    {{else}}
+    <nav class="timeline" aria-label="Rule changes">
+      {{range .Rules}}<a href="#{{.Anchor}}"{{if .Current}} class="current"{{end}}><span class="timeline-date">{{.Label}}</span><span class="timeline-what">{{join .Changes ", "}}</span></a>{{end}}
+    </nav>
+    {{range .Rules}}
+    <details class="card rules" id="{{.Anchor}}" open>
+      <summary>From {{.Label}} <span class="count">— {{join .Changes ", "}}</span>{{if .Current}} <span class="badge">in force now</span>{{end}}</summary>
+      <div class="table-wrap">
+      <table class="data">
+        <tbody>
+          {{range .Rules}}
+          <tr class="{{if .Changed}}rule-changed{{else}}rule-carried{{end}}"><td class="config-name">{{.Name}}</td><td>{{.Value}}{{if .Since}} <span class="since">since {{.Since}}</span>{{end}}</td></tr>
+          {{end}}
+          <tr><td class="config-name">Salary</td><td>{{.Salary}}</td></tr>
+          <tr><td class="config-name">Target balance</td><td>{{.Target}}</td></tr>
+        </tbody>
+      </table>
+      </div>
+      {{range .Notes}}<p class="stale-note">{{.}}</p>{{end}}
+    </details>
+    {{end}}
+    {{end}}
+  </section>
+
+  <section class="panel">
     <h2 class="section-title">api2pdf</h2>
     <p class="section-note">Account balance and spend.</p>
     {{if not .API2PDFConfigured}}

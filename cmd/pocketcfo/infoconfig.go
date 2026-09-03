@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/buildinfo"
-	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 	"github.com/titaniumcoder/pocket-cfo/internal/render"
 )
 
@@ -107,10 +106,7 @@ func (s *server) configGroups() []configGroup {
 			{Name: "hourlyRateCents", Value: hourlyRateSummary(f.HourlyRateCents, f.Currency)},
 			{Name: "currency", Value: orUnset(f.Currency)},
 			{Name: "annualVacationDays", Value: strconv.Itoa(f.AnnualVacationDays)},
-			{Name: "legislation", Value: legislationSummary(f.Legislation)},
-			{Name: "salary", Value: salarySummary(f.Salary)},
-			{Name: "targetBalance", Value: targetBalanceSummary(f.TargetBalance, f.TargetIdleMonths)},
-			{Name: "startMonth", Value: startMonthSummary(f.StartMonth)},
+			{Name: "legislation / salary / targetBalance / startMonth", Value: "see the rules timeline below"},
 		}},
 	}
 }
@@ -132,50 +128,6 @@ func keyExpirySummary(t time.Time) string {
 		return "unset — no advance warning, only a rejected key is reported"
 	}
 	return t.Format("2006-01-02")
-}
-
-func legislationSummary(periods tracker.Legislation) string {
-	if len(periods) == 0 {
-		return "none — nothing is contributed or taxed, and no minimum wage is enforced"
-	}
-	parts := make([]string, 0, len(periods))
-	for _, p := range periods {
-		parts = append(parts, p.String())
-	}
-	return strings.Join(parts, " · ")
-}
-
-func salarySummary(plan tracker.SalaryPlan) string {
-	if len(plan) == 0 {
-		return "every month pays a full salary"
-	}
-	parts := make([]string, 0, len(plan))
-	for _, p := range plan {
-		parts = append(parts, p.String())
-	}
-	return strings.Join(parts, " · ")
-}
-
-func targetBalanceSummary(plan tracker.TargetPlan, idle []string) string {
-	if len(plan) == 0 {
-		return "none — the company keeps whatever a month's salary leaves behind, with no figure it saves towards"
-	}
-	parts := make([]string, 0, len(plan))
-	for _, p := range plan {
-		parts = append(parts, p.String())
-	}
-	out := strings.Join(parts, " · ")
-	if len(idle) > 0 {
-		out += " — idle in " + strings.Join(idle, ", ") + ", because a target only holds back a month that would otherwise pay a full salary"
-	}
-	return out
-}
-
-func startMonthSummary(t time.Time) string {
-	if t.IsZero() {
-		return "unset — every month in the ±2 year window is offered"
-	}
-	return t.Format("2006-01")
 }
 
 func enabledIf(on bool) string {

@@ -351,6 +351,20 @@ h3.config-group:first-of-type { margin-top: .25rem; }
 table.data td.config-name { white-space: nowrap; width: 1%; padding-right: 1.5rem; }
 table.data td.config-secret { opacity: .75; }
 
+/* Info page's rules timeline: one chip per month anything changes, each
+   jumping to the card that says what is in force from then. */
+.timeline { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0 0 1rem; }
+.timeline a { display: flex; flex-direction: column; min-width: 8em; padding: .4rem .7rem; border: 1px solid var(--net-border); border-radius: 8px; color: inherit; text-decoration: none; }
+.timeline a:hover { background: var(--hover-bg); }
+.timeline a.current { border-color: var(--good-strong); background: var(--hover-bg); }
+.timeline-date { font-weight: 700; }
+.timeline-what { font-size: .75rem; color: var(--muted); }
+details.rules:target { outline: 2px solid var(--good-strong); outline-offset: 4px; border-radius: 8px; }
+details.rules summary .badge { margin-left: .4rem; }
+tr.rule-changed td { font-weight: 700; }
+tr.rule-carried { opacity: .6; }
+.since { font-size: .78em; font-weight: 400; opacity: .75; margin-left: .4rem; }
+
 /* Info page's collapsible per-workspace/per-country cards. */
 details.card { margin-bottom: .5rem; }
 details.card summary { cursor: pointer; font-weight: 700; padding: .3rem 0; }

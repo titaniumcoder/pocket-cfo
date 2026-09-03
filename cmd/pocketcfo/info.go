@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
@@ -31,8 +32,6 @@ type infoTogglPanel struct {
 	Err        string
 	KeyNote    string
 	KeyExpired bool
-	Quota      string
-	Snapshot   string
 	Workspaces []infoWorkspaceView
 }
 
@@ -41,9 +40,10 @@ type infoView struct {
 
 	ConfigGroups []configGroup
 
-	TogglMode tracker.Mode
-	Track     infoTogglPanel
-	Focus     infoTogglPanel
+	TogglMode  tracker.Mode
+	Track      infoTogglPanel
+	Focus      infoTogglPanel
+	CacheStats []configGroup
 
 	Rules []tracker.RuleChange
 
@@ -89,6 +89,7 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		view.Focus = infoTogglPanel{Configured: true, KeyOnly: true, KeyNote: view.Focus.KeyNote, KeyExpired: view.Focus.KeyExpired}
 	}
 
+	view.CacheStats = cacheStatsGroups(s.togglTrack, s.togglFocus, time.Now())
 	view.Countries, view.HolidaysErr = loadHolidayInfo(ctx, s.tracker.Holidays)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -119,26 +120,59 @@ func togglPanel(ctx context.Context, tg *tracker.Toggl, active bool) infoTogglPa
 	}
 	panel := infoTogglPanel{Configured: true, Active: active}
 	panel.Workspaces, panel.Err = loadTogglInfo(ctx, tg)
-	now := time.Now()
-	ks := tg.KeyStatus(now)
+	ks := tg.KeyStatus(time.Now())
 	panel.KeyNote, panel.KeyExpired = ks.Warning, ks.Expired
-	panel.Quota = describeQuota(tg.Quota(now), now)
-	panel.Snapshot = describeSnapshot(tg.Snapshot(), now)
 	return panel
 }
 
-func describeSnapshot(s tracker.SnapshotStatus, now time.Time) string {
-	if s.Path == "" {
-		return "Cache: in process memory only — a restart starts cold. Set TOGGL_CACHE_DIR to keep it on disk."
+func cacheStatsGroups(track, focus *tracker.Toggl, now time.Time) []configGroup {
+	var groups []configGroup
+	for _, side := range []struct {
+		name string
+		tg   *tracker.Toggl
+	}{{"Toggl Track", track}, {"Toggl 2.0", focus}} {
+		if side.tg == nil {
+			continue
+		}
+		groups = append(groups, configGroup{Name: side.name, Rows: cacheStatsRows(side.tg.Stats(now), side.tg.Quota(now), now)})
 	}
-	if s.Entries == 0 {
-		return fmt.Sprintf("Cache on disk: %s — nothing fetched yet.", s.Path)
+	return groups
+}
+
+func cacheStatsRows(s tracker.CacheStats, q tracker.QuotaStatus, now time.Time) []configRow {
+	at := func(t time.Time) string {
+		if t.IsZero() {
+			return "—"
+		}
+		return t.In(now.Location()).Format("02 Jan 15:04:05")
 	}
-	span := ""
-	if !s.Oldest.IsZero() {
-		span = fmt.Sprintf(", months fetched between %s and %s", s.Oldest.In(now.Location()).Format("02 Jan 15:04"), s.Newest.In(now.Location()).Format("02 Jan 15:04"))
+	rows := []configRow{
+		{Name: "Months cached", Value: fmt.Sprintf("%d (%d stale, waiting for a refresh)", s.Months, s.StaleMonths)},
+		{Name: "Months fetched between", Value: at(s.Oldest) + " and " + at(s.Newest)},
+		{Name: "Entries in memory", Value: fmt.Sprintf("%d (months, projects, rates, workspaces, clients)", s.Entries)},
+		{Name: "Served from cache", Value: fmt.Sprintf("%d fresh, %d stale while Toggl could not be asked", s.Hits, s.StaleServed)},
+		{Name: "Fetches", Value: fmt.Sprintf("%d, %d of them failed", s.Fetches, s.Failures)},
+		{Name: "HTTP requests to Toggl", Value: fmt.Sprintf("%d, %d of them retries", s.Requests, s.Retries)},
+		{Name: "Last fetch", Value: lastFetch(s, at)},
+		{Name: "In flight now", Value: fmt.Sprintf("%d fetches, %d breakers open", s.InFlight, s.OpenBreakers)},
+		{Name: "Hourly quota", Value: strings.TrimPrefix(describeQuota(q, now), "Hourly request quota: ")},
 	}
-	return fmt.Sprintf("Cache on disk: %s — %d entries%s.", s.Path, s.Entries, span)
+	switch {
+	case s.SnapshotPath == "":
+		rows = append(rows, configRow{Name: "Snapshot", Value: "none — memory only (TOGGL_CACHE_DIR unset)"})
+	case s.SnapshotBytes == 0:
+		rows = append(rows, configRow{Name: "Snapshot", Value: s.SnapshotPath + " — not written yet"})
+	default:
+		rows = append(rows, configRow{Name: "Snapshot", Value: fmt.Sprintf("%s — %d bytes, written %s", s.SnapshotPath, s.SnapshotBytes, at(s.SnapshotWrittenAt))})
+	}
+	return rows
+}
+
+func lastFetch(s tracker.CacheStats, at func(time.Time) string) string {
+	if s.LastFetchAt.IsZero() {
+		return "none since this process started"
+	}
+	return fmt.Sprintf("%s, took %s", at(s.LastFetchAt), s.LastFetchTook.Round(time.Millisecond))
 }
 
 func describeQuota(q tracker.QuotaStatus, now time.Time) string {

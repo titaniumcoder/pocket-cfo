@@ -40,6 +40,14 @@ type Toggl struct {
 	quotaRemaining int
 	quotaResetAt   time.Time
 	quotaGateUntil time.Time
+
+	counters cacheCounters
+}
+
+type cacheCounters struct {
+	Hits, StaleServed, Fetches, Failures, Requests, Retries int
+	LastFetchAt                                             time.Time
+	LastFetchTook                                           time.Duration
 }
 
 type HoursSource interface {
@@ -134,6 +142,7 @@ func (t *Toggl) getCachedAs(ctx context.Context, key string, kind entryKind, sta
 	t.lock()
 	cached, hit := t.cache[key]
 	if hit && !cached.stale {
+		t.counters.Hits++
 		t.mu.Unlock()
 		log.Printf("toggl: %s — served from cache", key)
 		return cached.val, nil
@@ -141,12 +150,12 @@ func (t *Toggl) getCachedAs(ctx context.Context, key string, kind entryKind, sta
 	if until, gated := t.gatedLocked(); gated {
 		t.mu.Unlock()
 		log.Printf("toggl: %s — hourly quota used up, not asking before %s", key, until.Format(time.RFC3339))
-		return staleOr(key, cached, hit, &quotaError{resetAt: until})
+		return t.staleOr(key, cached, hit, &quotaError{resetAt: until})
 	}
 	if until, blocked := t.blockedLocked(key); blocked {
 		t.mu.Unlock()
 		log.Printf("toggl: %s — upstream failing, not retrying before %s", key, until.Format(time.RFC3339))
-		return staleOr(key, cached, hit, fmt.Errorf("toggl: %s: upstream unavailable, not retried", key))
+		return t.staleOr(key, cached, hit, fmt.Errorf("toggl: %s: upstream unavailable, not retried", key))
 	}
 	call, leader := t.joinLocked(key, start, end)
 	t.mu.Unlock()
@@ -163,10 +172,10 @@ func (t *Toggl) getCachedAs(ctx context.Context, key string, kind entryKind, sta
 	case <-call.done:
 	case <-ctx.Done():
 		log.Printf("toggl: %s — gave up waiting; the fetch continues", key)
-		return staleOr(key, cached, hit, ctx.Err())
+		return t.staleOr(key, cached, hit, ctx.Err())
 	}
 	if call.err != nil {
-		return staleOr(key, cached, hit, call.err)
+		return t.staleOr(key, cached, hit, call.err)
 	}
 	return call.val, nil
 }
@@ -204,6 +213,11 @@ func (t *Toggl) fill(ctx context.Context, key string, fn func(context.Context) (
 	if t.inflight[key] == call {
 		delete(t.inflight, key)
 	}
+	t.counters.Fetches++
+	t.counters.LastFetchAt, t.counters.LastFetchTook = time.Now(), elapsed
+	if err != nil {
+		t.counters.Failures++
+	}
 	stored := false
 	switch {
 	case err != nil:
@@ -238,10 +252,13 @@ func (t *Toggl) fill(ctx context.Context, key string, fn func(context.Context) (
 	log.Printf("toggl: %s — fetched in %s", key, elapsed)
 }
 
-func staleOr(key string, cached cacheEntry, hit bool, err error) (any, error) {
+func (t *Toggl) staleOr(key string, cached cacheEntry, hit bool, err error) (any, error) {
 	if !hit {
 		return nil, err
 	}
+	t.mu.Lock()
+	t.counters.StaleServed++
+	t.mu.Unlock()
 	log.Printf("toggl: %s — serving stale data fetched %s", key, cached.fetchedAt.Format(time.RFC3339))
 	return cached.val, nil
 }
@@ -793,6 +810,9 @@ func (t *Toggl) do(ctx context.Context, method, url string, body io.Reader) (*ht
 			return nil, lastErr
 		}
 		log.Printf("toggl: attempt %d/%d failed (%v) — retrying in %s", attempt, togglAttempts, lastErr, wait)
+		t.mu.Lock()
+		t.counters.Retries++
+		t.mu.Unlock()
 		if err := sleepCtx(ctx, wait); err != nil {
 			return nil, lastErr
 		}
@@ -815,6 +835,9 @@ func (t *Toggl) attempt(ctx context.Context, method, url string, payload []byte)
 		req.Header.Set("Content-Type", "application/json")
 	}
 	t.backend().authorize(req)
+	t.mu.Lock()
+	t.counters.Requests++
+	t.mu.Unlock()
 	return t.client().Do(req)
 }
 

@@ -87,3 +87,19 @@ func TestInfoPageOffersTheResetOnlyWhenTogglIsConfigured(t *testing.T) {
 		t.Error("the reset form is missing with Toggl Track configured")
 	}
 }
+
+func TestInfoPageShowsCacheStatisticsPerConfiguredBackend(t *testing.T) {
+	s := newInfoTestServer(t)
+	s.togglTrack = togglWithACachedYear(t)
+	w := httptest.NewRecorder()
+	s.handleInfo(w, authorizedRequest(t, s))
+	body := w.Body.String()
+	for _, want := range []string{"Months cached</td><td>12 (0 stale", "HTTP requests to Toggl</td><td>2, 0 of them retries", "none — memory only (TOGGL_CACHE_DIR unset)", "Hourly quota"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("info page lacks %q", want)
+		}
+	}
+	if strings.Count(body, `<h3 class="config-group">Toggl 2.0</h3>`) != 0 {
+		t.Error("statistics shown for a backend that is not configured")
+	}
+}

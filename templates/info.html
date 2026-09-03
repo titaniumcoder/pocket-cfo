@@ -83,6 +83,19 @@
     <h2 class="section-title">Toggl cache</h2>
     <p class="section-note">Tracked hours are cached per month: the current month (and last month, through the 7th) refreshed on every <code>TOGGL_REFRESH_INTERVAL</code>, older months every 42 hours or on Reload. Resetting throws away every cached month, project and rate — in memory and, with <code>TOGGL_CACHE_DIR</code>, on disk — and the next page view fetches the year afresh, within the hourly quota.</p>
     <form class="inline-form" method="post" action="/toggl/reset"><button class="link" type="submit">Reset Toggl cache</button></form>
+    <p class="section-note">Counters are for this process since it started; a restart (or Fly waking the machine) begins them at zero, while the cached months and the snapshot carry over.</p>
+    {{range .CacheStats}}
+    <h3 class="config-group">{{.Name}}</h3>
+    <div class="table-wrap">
+    <table class="data">
+      <tbody>
+        {{range .Rows}}
+        <tr><td class="config-name">{{.Name}}</td><td>{{.Value}}</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{end}}
   </section>
   {{end}}
 
@@ -126,8 +139,6 @@
 
 {{define "togglpanel"}}
     {{if .KeyNote}}<p class="{{if .KeyExpired}}error{{else}}stale-note{{end}}">{{.KeyNote}}</p>{{end}}
-    {{if .Quota}}<p class="section-note">{{.Quota}}</p>{{end}}
-    {{if .Snapshot}}<p class="section-note">{{.Snapshot}}</p>{{end}}
     {{if .Err}}
     <p class="error">{{.Err}}</p>
     {{else}}

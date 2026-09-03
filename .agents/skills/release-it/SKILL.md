@@ -55,17 +55,37 @@ step in Phase 3 below, and never tag/push without it.
    stays on the same minor-bump-for-breaking-too convention unless the user
    says otherwise when asked — don't silently jump to v1.0.0 without asking.
 4. Build a short categorized summary (feature/fix/breaking/other, one line
-   per commit, short hash + subject) — this becomes both what you show the
-   user in Phase 3 and the basis for the tag message / GitHub Release notes
-   in Phase 4.
-5. From 1.0.0 on the project follows strict semantic versioning: a breaking
+   per commit, short hash + subject) — this is what you show the user in
+   Phase 3.
+5. **Draft the changelog entry from the commits — always, every release.**
+   Walk every commit in the range (`git log <range> --reverse --pretty=format:'%h %s%n%b'`)
+   and write one line per user-visible change into the
+   [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) subsections:
+   - `feat` → **Added** (or **Changed** when it alters existing behaviour —
+     "no longer", "instead of", "moves", renames)
+   - `fix` → **Fixed**
+   - a removal of a feature, option, route or file → **Removed**
+   - `!` or a `BREAKING CHANGE:` footer → the line starts with **Breaking:**
+     in whichever subsection it belongs to
+   - `docs`, `test`, `ci`, `chore`, `refactor` and merge commits → no line,
+     unless the change is something an operator notices (a new env var, a
+     changed default, a dropped file in the image)
+   Write each line for the reader of the release notes — what changed for
+   them, not the commit subject verbatim — and drop the scope prefix. Then
+   merge that draft with whatever `## [Unreleased]` in `CHANGELOG.md` already
+   holds (ship-it adds lines there as it goes): keep one line per change,
+   prefer the better-worded of two duplicates, and never lose a line that is
+   only in one of the two. The result is the version's changelog section and
+   the GitHub Release notes in Phase 4; show it in Phase 3 beside the
+   commit list.
+6. From 1.0.0 on the project follows strict semantic versioning: a breaking
    commit bumps the major version, no exceptions and no asking.
 
 ## Phase 3 — Confirm with the user (never skip this)
 
 Present the proposal plainly: the last release (or "no releases yet"), the
-categorized commit list, the proposed next version and why, and whether
-`origin/main` needs a push first. Then use AskUserQuestion (or, if the
+categorized commit list, the drafted changelog section, the proposed next
+version and why, and whether `origin/main` needs a push first. Then use AskUserQuestion (or, if the
 answer is obvious from a direct instruction already in the conversation,
 a plain confirmation) to get an explicit go-ahead — offer the proposed
 version as the recommended option, but let the user pick a different one or
@@ -82,12 +102,13 @@ Only after Phase 3's confirmation:
    report and stop) on any failure — never tag a release that doesn't pass
    its own checks.
 2. Update `CHANGELOG.md` ([Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/)):
-   rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, open a fresh empty
-   `## [Unreleased]` above it, and add the two link references at the bottom
-   (`[Unreleased]: .../compare/vX.Y.Z...HEAD`, `[X.Y.Z]: .../compare/<last>...vX.Y.Z`).
-   Anything in the release range that `ship-it` did not already record goes in
-   now, under Added / Changed / Deprecated / Removed / Fixed / Security, written
-   for the operator, not as commit subjects. Commit that as
+   replace the body of `## [Unreleased]` with the section drafted in Phase 2
+   step 5, rename that heading to `## [X.Y.Z] - YYYY-MM-DD`, open a fresh
+   empty `## [Unreleased]` above it, and add the two link references at the
+   bottom (`[Unreleased]: .../compare/vX.Y.Z...HEAD`,
+   `[X.Y.Z]: .../compare/<last>...vX.Y.Z`). A release never ships with an
+   empty section: if the range has only commits that earn no line, the
+   section says so in one sentence (as 0.3.1 and 0.5.1 do). Commit that as
    `chore(release): vX.Y.Z` and push it with `origin/main` in the next step.
 3. If `origin/main` needs a push (per Phase 1), push it now:
    `git push origin main`.

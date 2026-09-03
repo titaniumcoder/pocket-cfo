@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
@@ -70,6 +71,9 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.TogglToken != "" || cfg.TogglWorkspace != "" {
 		t.Error("TogglToken/TogglWorkspace should be empty when the env vars aren't set")
 	}
+	if cfg.TogglMode != "" || cfg.Toggl2Key != "" || cfg.Toggl2Organization != "" || cfg.Toggl2Workspace != "" || !cfg.Toggl2KeyExpiresAt.IsZero() {
+		t.Error("the Toggl 2.0 settings should be empty when the env vars aren't set")
+	}
 	if cfg.Country != "AT" {
 		t.Errorf("Country = %q, want default AT (matches the previously-hardcoded value)", cfg.Country)
 	}
@@ -92,6 +96,7 @@ func TestLoad_OverridesFromFileConfig(t *testing.T) {
 		Currency:           &currency,
 		AnnualVacationDays: &days,
 		TogglProjectIDs:    []int{10, 20},
+		Toggl2ProjectIDs:   []int{7},
 	})
 	if cfg.HourlyRateCents != 6000 {
 		t.Errorf("HourlyRateCents = %d, want 6000", cfg.HourlyRateCents)
@@ -104,6 +109,34 @@ func TestLoad_OverridesFromFileConfig(t *testing.T) {
 	}
 	if cfg.TogglProjects != "10,20" {
 		t.Errorf("TogglProjects = %q, want 10,20", cfg.TogglProjects)
+	}
+	if cfg.Toggl2Projects != "7" {
+		t.Errorf("Toggl2Projects = %q, want 7", cfg.Toggl2Projects)
+	}
+}
+
+func TestLoad_Toggl2FromEnv(t *testing.T) {
+	t.Setenv("TOGGL_MODE", "both")
+	t.Setenv("TOGGL2_API_KEY", "toggl_sk_x")
+	t.Setenv("TOGGL2_ORGANIZATION_ID", "11")
+	t.Setenv("TOGGL2_WORKSPACE_ID", "22")
+	t.Setenv("TOGGL2_API_KEY_EXPIRES_AT", "2026-12-01")
+	cfg := Load(FileConfig{})
+	if cfg.TogglMode != "both" {
+		t.Errorf("TogglMode = %q, want both", cfg.TogglMode)
+	}
+	if cfg.Toggl2Key != "toggl_sk_x" || cfg.Toggl2Organization != "11" || cfg.Toggl2Workspace != "22" {
+		t.Errorf("Toggl 2.0 settings = %q/%q/%q, want toggl_sk_x/11/22", cfg.Toggl2Key, cfg.Toggl2Organization, cfg.Toggl2Workspace)
+	}
+	if want := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC); !cfg.Toggl2KeyExpiresAt.Equal(want) {
+		t.Errorf("Toggl2KeyExpiresAt = %v, want %v", cfg.Toggl2KeyExpiresAt, want)
+	}
+}
+
+func TestLoad_IgnoresAMalformedKeyExpiry(t *testing.T) {
+	t.Setenv("TOGGL2_API_KEY_EXPIRES_AT", "next spring")
+	if cfg := Load(FileConfig{}); !cfg.Toggl2KeyExpiresAt.IsZero() {
+		t.Errorf("Toggl2KeyExpiresAt = %v, want zero for an unparseable date", cfg.Toggl2KeyExpiresAt)
 	}
 }
 

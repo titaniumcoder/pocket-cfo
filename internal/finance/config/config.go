@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 type FileConfig struct {
 	HoursPerDay        *float64 `json:"hoursPerDay"`
 	TogglProjectIDs    []int    `json:"togglProjectIds"`
+	Toggl2ProjectIDs   []int    `json:"toggl2ProjectIds"`
 	HolidayCountry     *string  `json:"holidayCountry"`
 	HolidaySubdivision *string  `json:"holidaySubdivision"`
 
@@ -75,11 +77,19 @@ func LoadFileConfig(path string) (FileConfig, error) {
 }
 
 type Config struct {
+	TogglMode      string
 	TogglToken     string
 	TogglWorkspace string
 	TogglProjects  string
-	Country        string
-	Subdivision    string
+
+	Toggl2Key          string
+	Toggl2Organization string
+	Toggl2Workspace    string
+	Toggl2Projects     string
+	Toggl2KeyExpiresAt time.Time
+
+	Country     string
+	Subdivision string
 
 	HoursPerDay     float64
 	HourlyRateCents int
@@ -96,11 +106,19 @@ type Config struct {
 
 func Load(fc FileConfig) Config {
 	return Config{
+		TogglMode:      os.Getenv("TOGGL_MODE"),
 		TogglToken:     os.Getenv("TOGGL_API_TOKEN"),
 		TogglWorkspace: os.Getenv("TOGGL_WORKSPACE_ID"),
 		TogglProjects:  joinIDs(fc.TogglProjectIDs),
-		Country:        strOr(fc.HolidayCountry, "AT"),
-		Subdivision:    strOr(fc.HolidaySubdivision, ""),
+
+		Toggl2Key:          os.Getenv("TOGGL2_API_KEY"),
+		Toggl2Organization: os.Getenv("TOGGL2_ORGANIZATION_ID"),
+		Toggl2Workspace:    os.Getenv("TOGGL2_WORKSPACE_ID"),
+		Toggl2Projects:     joinIDs(fc.Toggl2ProjectIDs),
+		Toggl2KeyExpiresAt: keyExpiry(os.Getenv("TOGGL2_API_KEY_EXPIRES_AT")),
+
+		Country:     strOr(fc.HolidayCountry, "AT"),
+		Subdivision: strOr(fc.HolidaySubdivision, ""),
 
 		HoursPerDay:     floatOr(fc.HoursPerDay, 8),
 		HourlyRateCents: intOr(fc.HourlyRateCents, 0),
@@ -113,6 +131,18 @@ func Load(fc FileConfig) Config {
 		TargetIdleMonths:   fc.targetIdle,
 		StartMonth:         fc.startMonth,
 	}
+}
+
+func keyExpiry(raw string) time.Time {
+	if raw == "" {
+		return time.Time{}
+	}
+	d, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		log.Printf("TOGGL2_API_KEY_EXPIRES_AT=%q is not a YYYY-MM-DD date; ignoring it", raw)
+		return time.Time{}
+	}
+	return d
 }
 
 func floatOr(p *float64, def float64) float64 {

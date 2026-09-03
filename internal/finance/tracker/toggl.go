@@ -3,8 +3,6 @@ package tracker
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,10 +20,28 @@ type Toggl struct {
 	ProjectIDs  string
 	HTTP        *http.Client
 
+	api togglAPI
+
 	mu       sync.Mutex
 	cache    map[string]cacheEntry
 	inflight map[string]*fetchCall
 	breaker  map[string]breakerState
+}
+
+type togglAPI interface {
+	authorize(req *http.Request)
+	cacheScope() string
+	fetchYear(ctx context.Context, start, end time.Time) (*YearData, error)
+	fetchProjects(ctx context.Context) (map[int]Project, error)
+	fetchWorkspaces(ctx context.Context) ([]Workspace, error)
+	fetchClients(ctx context.Context, workspaceID int) ([]Client, error)
+}
+
+func (t *Toggl) backend() togglAPI {
+	if t.api != nil {
+		return t.api
+	}
+	return trackAPI{t}
 }
 
 type fetchCall struct {
@@ -200,7 +216,7 @@ func (t *Toggl) YearStatus(year int) (fetchedAt time.Time, stale bool) {
 }
 
 func (t *Toggl) yearKey(year int) string {
-	return "detailed|" + t.ProjectIDs + "|" + strconv.Itoa(year)
+	return t.backend().cacheScope() + "|" + strconv.Itoa(year)
 }
 
 type Aggregate struct {
@@ -216,76 +232,6 @@ type Project struct {
 	ClientID int
 }
 
-const (
-	roundingNearest = 0
-	roundingMinutes = 15
-)
-
-type detailedRow struct {
-	ProjectID             *int   `json:"project_id"`
-	HourlyRateInCents     *int   `json:"hourly_rate_in_cents"`
-	BillableAmountInCents *int   `json:"billable_amount_in_cents"`
-	Currency              string `json:"currency"`
-	TimeEntries           []struct {
-		Seconds int    `json:"seconds"`
-		Start   string `json:"start"`
-	} `json:"time_entries"`
-}
-
-func (t *Toggl) eachDetailedRow(ctx context.Context, start, end time.Time, fn func(detailedRow)) error {
-	firstRow := 0
-	for page := 0; page < 100; page++ {
-		body := map[string]any{
-			"start_date":       start.Format("2006-01-02"),
-			"end_date":         end.Format("2006-01-02"),
-			"billable":         true,
-			"rounding":         roundingNearest,
-			"rounding_minutes": roundingMinutes,
-		}
-		if ids := parseIDs(t.ProjectIDs); len(ids) > 0 {
-			body["project_ids"] = ids
-		}
-		if firstRow > 0 {
-			body["first_row_number"] = firstRow
-		}
-
-		buf, err := json.Marshal(body)
-		if err != nil {
-			return err
-		}
-
-		url := fmt.Sprintf("https://api.track.toggl.com/reports/api/v3/workspace/%s/search/time_entries", t.WorkspaceID)
-		resp, err := t.do(ctx, http.MethodPost, url, bytes.NewReader(buf))
-		if err != nil {
-			return err
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			err := apiError("toggl", resp)
-			resp.Body.Close()
-			return err
-		}
-
-		var rows []detailedRow
-		if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
-			resp.Body.Close()
-			return fmt.Errorf("toggl: decode detailed: %w", err)
-		}
-		nextRow := resp.Header.Get("X-Next-Row-Number")
-		resp.Body.Close()
-
-		for _, r := range rows {
-			fn(r)
-		}
-
-		if nextRow == "" {
-			break
-		}
-		firstRow, _ = strconv.Atoi(nextRow)
-	}
-	return nil
-}
-
 type YearData struct {
 	Months map[time.Month][]Aggregate
 	Days   map[string]bool
@@ -298,7 +244,7 @@ func (t *Toggl) Year(ctx context.Context, year int) (*YearData, error) {
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, time.UTC)
 	end := time.Date(year, time.December, 31, 0, 0, 0, 0, time.UTC)
 	v, err := t.getCached(ctx, t.yearKey(year), start, end, func(fetchCtx context.Context) (any, error) {
-		return t.fetchYear(fetchCtx, start, end)
+		return t.backend().fetchYear(fetchCtx, start, end)
 	})
 	if err != nil {
 		return nil, err
@@ -306,94 +252,17 @@ func (t *Toggl) Year(ctx context.Context, year int) (*YearData, error) {
 	return v.(*YearData), nil
 }
 
-func (t *Toggl) fetchYear(ctx context.Context, start, end time.Time) (*YearData, error) {
-	type key struct {
-		pid, rate int
-		month     time.Month
-	}
-	acc := map[key]*Aggregate{}
-	days := map[string]bool{}
-
-	err := t.eachDetailedRow(ctx, start, end, func(r detailedRow) {
-		pid := derefInt(r.ProjectID)
-		rate := derefInt(r.HourlyRateInCents)
-		amount := derefInt(r.BillableAmountInCents)
-		sec := 0
-		earliest := ""
-		for _, te := range r.TimeEntries {
-			sec += te.Seconds
-			if te.Seconds <= 0 || len(te.Start) < 10 {
-				continue
-			}
-			d := te.Start[:10]
-			days[d] = true
-			if earliest == "" || d < earliest {
-				earliest = d
-			}
-		}
-		month := start.Month()
-		if tm, perr := time.Parse("2006-01-02", earliest); perr == nil {
-			month = tm.Month()
-		}
-		k := key{pid, rate, month}
-		a := acc[k]
-		if a == nil {
-			a = &Aggregate{ProjectID: pid, RateCents: rate, Currency: r.Currency}
-			acc[k] = a
-		}
-		a.AmountCents += amount
-		a.Seconds += sec
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	yd := &YearData{Months: map[time.Month][]Aggregate{}, Days: days}
-	for k, a := range acc {
-		yd.Months[k.month] = append(yd.Months[k.month], *a)
-	}
-	return yd, nil
-}
-
 func (t *Toggl) Projects(ctx context.Context) (map[int]Project, error) {
 	if t == nil {
 		return map[int]Project{}, nil
 	}
 	v, err := t.getCached(ctx, "projects", time.Time{}, time.Time{}, func(fetchCtx context.Context) (any, error) {
-		return t.fetchProjects(fetchCtx)
+		return t.backend().fetchProjects(fetchCtx)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return v.(map[int]Project), nil
-}
-
-func (t *Toggl) fetchProjects(ctx context.Context) (map[int]Project, error) {
-	url := fmt.Sprintf("https://api.track.toggl.com/api/v9/workspaces/%s/projects?active=both&per_page=500", t.WorkspaceID)
-	resp, err := t.do(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, apiError("toggl", resp)
-	}
-
-	var list []struct {
-		ID       int    `json:"id"`
-		Name     string `json:"name"`
-		ClientID *int   `json:"client_id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
-		return nil, fmt.Errorf("toggl: decode projects: %w", err)
-	}
-
-	out := make(map[int]Project, len(list))
-	for _, p := range list {
-		out[p.ID] = Project{Name: p.Name, ClientID: derefInt(p.ClientID)}
-	}
-	return out, nil
 }
 
 type Workspace struct {
@@ -406,38 +275,12 @@ func (t *Toggl) Workspaces(ctx context.Context) ([]Workspace, error) {
 		return nil, nil
 	}
 	v, err := t.getCached(ctx, "workspaces", time.Time{}, time.Time{}, func(fetchCtx context.Context) (any, error) {
-		return t.fetchWorkspaces(fetchCtx)
+		return t.backend().fetchWorkspaces(fetchCtx)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return v.([]Workspace), nil
-}
-
-func (t *Toggl) fetchWorkspaces(ctx context.Context) ([]Workspace, error) {
-	resp, err := t.do(ctx, http.MethodGet, "https://api.track.toggl.com/api/v9/me/workspaces", nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, apiError("toggl", resp)
-	}
-
-	var list []struct {
-		ID   int    `json:"id"`
-		Name string `json:"name"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
-		return nil, fmt.Errorf("toggl: decode workspaces: %w", err)
-	}
-
-	out := make([]Workspace, len(list))
-	for i, w := range list {
-		out[i] = Workspace{ID: w.ID, Name: w.Name}
-	}
-	return out, nil
 }
 
 type Client struct {
@@ -451,39 +294,12 @@ func (t *Toggl) Clients(ctx context.Context, workspaceID int) ([]Client, error) 
 	}
 	key := "clients|" + strconv.Itoa(workspaceID)
 	v, err := t.getCached(ctx, key, time.Time{}, time.Time{}, func(fetchCtx context.Context) (any, error) {
-		return t.fetchClients(fetchCtx, workspaceID)
+		return t.backend().fetchClients(fetchCtx, workspaceID)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return v.([]Client), nil
-}
-
-func (t *Toggl) fetchClients(ctx context.Context, workspaceID int) ([]Client, error) {
-	url := fmt.Sprintf("https://api.track.toggl.com/api/v9/workspaces/%d/clients", workspaceID)
-	resp, err := t.do(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, apiError("toggl", resp)
-	}
-
-	var list []struct {
-		ID   int    `json:"id"`
-		Name string `json:"name"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
-		return nil, fmt.Errorf("toggl: decode clients: %w", err)
-	}
-
-	out := make([]Client, len(list))
-	for i, c := range list {
-		out[i] = Client{ID: c.ID, Name: c.Name}
-	}
-	return out, nil
 }
 
 const (
@@ -547,8 +363,7 @@ func (t *Toggl) attempt(ctx context.Context, method, url string, payload []byte)
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	auth := base64.StdEncoding.EncodeToString([]byte(t.Token + ":api_token"))
-	req.Header.Set("Authorization", "Basic "+auth)
+	t.backend().authorize(req)
 	return t.client().Do(req)
 }
 

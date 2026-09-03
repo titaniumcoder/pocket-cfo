@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"context"
+	"encoding/base64"
 	"io"
 	"net/http"
 	"sort"
@@ -273,5 +274,22 @@ func TestWorkspacesClientsNilTogglNoOp(t *testing.T) {
 	}
 	if got, err := tg.Clients(context.Background(), 10); got != nil || err != nil {
 		t.Errorf("nil Toggl Clients() = %v, %v, want nil, nil", got, err)
+	}
+}
+
+func TestTrackSendsBasicAuth(t *testing.T) {
+	var got string
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		got = r.Header.Get("Authorization")
+		return jsonResponse(`[]`, nil), nil
+	})
+	tg := &Toggl{Token: "tok", WorkspaceID: "ws", HTTP: &http.Client{Transport: rt}}
+
+	if _, err := tg.Projects(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("tok:api_token"))
+	if got != want {
+		t.Errorf("Authorization = %q, want %q", got, want)
 	}
 }

@@ -677,3 +677,76 @@ func TestComputeServesStaleTogglRatherThanBlanking(t *testing.T) {
 		t.Errorf("stale note %q should name when the data was fetched (%q)", stale.TogglStaleNote, stale.LastUpdated)
 	}
 }
+
+func focusTrackerWithBackend(expires time.Time) (*Tracker, *fakeBackend) {
+	b := &fakeBackend{
+		focus: &fakeFocus{
+			entries:      onePage(entry("2026-03-02", 7200, 1)),
+			projects:     `[{"id":1,"name":"Alpha"}]`,
+			projectRates: map[int]string{1: `[{"id":1,"hourly_rate":7500,"currency":"EUR","start_date":"2026-01-01"}]`},
+		},
+		holidays: `[]`,
+	}
+	client := b.transport()
+	return &Tracker{
+		Toggl:        NewFocus(FocusConfig{Key: "toggl_sk", OrganizationID: "10", WorkspaceID: "20", KeyExpiresAt: expires}, client),
+		Holidays:     &Holidays{HTTP: client},
+		HoursPerDay:  8,
+		Loc:          time.UTC,
+		RateCents:    7500,
+		RateCurrency: "EUR",
+		Personal:     testLegislation(0.1892, 0.1378, 2112, 0.10),
+	}, b
+}
+
+func TestComputeShowsTheKeyNoteEvenWhileServingStaleHours(t *testing.T) {
+	trk, b := focusTrackerWithBackend(time.Time{})
+	f := trk.ComputeMonth(context.Background(), 2026, time.March)
+	if f.TrackedErr != "" || len(f.Tracked) != 1 || f.Tracked[0].AmountCents != 15000 {
+		t.Fatalf("healthy render: TrackedErr=%q Tracked=%+v", f.TrackedErr, f.Tracked)
+	}
+	if f.TogglKeyNote != "" {
+		t.Fatalf("healthy render carries a key note: %q", f.TogglKeyNote)
+	}
+
+	b.focus.failEntries = http.StatusUnauthorized
+	trk.EvictMonth(2026, time.March)
+	f = trk.ComputeMonth(context.Background(), 2026, time.March)
+
+	if len(f.Tracked) != 1 {
+		t.Errorf("stale hours vanished after the 401: %+v", f.Tracked)
+	}
+	if f.TogglStaleNote == "" {
+		t.Error("no stale note while serving cached hours")
+	}
+	if !strings.Contains(f.TogglKeyNote, "HTTP 401") || !strings.Contains(f.TogglKeyNote, "TOGGL2_API_KEY") || !f.TogglKeyExpired {
+		t.Errorf("key note = %q (expired=%v), want the 401 warning", f.TogglKeyNote, f.TogglKeyExpired)
+	}
+}
+
+func TestComputeWarnsBeforeTheKeyExpires(t *testing.T) {
+	trk, _ := focusTrackerWithBackend(time.Now().UTC().AddDate(0, 0, 3))
+	f := trk.ComputeMonth(context.Background(), 2026, time.March)
+	if !strings.Contains(f.TogglKeyNote, "expires in 3 days") || f.TogglKeyExpired {
+		t.Errorf("key note = %q (expired=%v), want a 3-day warning", f.TogglKeyNote, f.TogglKeyExpired)
+	}
+}
+
+func TestRenderPageShowsTheKeyNote(t *testing.T) {
+	rec := httptest.NewRecorder()
+	RenderPage(rec, Figures{Month: "March 2026", TogglKeyNote: "The Toggl API key expired on 01 Sep 2026", TogglKeyExpired: true, TogglPending: true})
+	body := rec.Body.String()
+	if !strings.Contains(body, `class="stale-note key-note expired">The Toggl API key expired on 01 Sep 2026<`) {
+		t.Errorf("the key note is missing or not marked expired:\n%s", body)
+	}
+	if !strings.Contains(body, "Fetching tracked hours") {
+		t.Error("the key note replaced the pending note instead of sitting above it")
+	}
+}
+
+func TestTrackModeWithoutARejectionShowsNoKeyNote(t *testing.T) {
+	f := fullTracker().ComputeMonth(context.Background(), 2026, time.March)
+	if f.TogglKeyNote != "" || f.TogglKeyExpired {
+		t.Errorf("key note = %q on a healthy Track tracker", f.TogglKeyNote)
+	}
+}

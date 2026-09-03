@@ -99,8 +99,10 @@ type Figures struct {
 	MinimalMode      bool
 	MinimalToggleURL string
 
-	TogglPending   bool
-	TogglStaleNote string
+	TogglPending    bool
+	TogglStaleNote  string
+	TogglKeyNote    string
+	TogglKeyExpired bool
 
 	Tracked    []TrackedRow
 	TrackedErr string
@@ -308,6 +310,9 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 		}
 	} else {
 		result.LastUpdated = "—"
+	}
+	if ks := t.hours().KeyStatus(today); ks.Warning != "" {
+		result.TogglKeyNote, result.TogglKeyExpired = ks.Warning, ks.Expired
 	}
 
 	return result

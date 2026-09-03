@@ -376,6 +376,7 @@ var templates = `
   <section class="panel income-panel">
     <h2 class="panel-title">Income</h2>
     <div class="ledger">
+      {{if .TogglKeyNote}}<div class="row"><span class="stale-note key-note{{if .TogglKeyExpired}} expired{{end}}">{{.TogglKeyNote}}</span></div>{{end}}
       {{if .TogglPending}}
       <div class="row"><span class="stale-note">Fetching tracked hours from Toggl — this page refreshes itself in a moment.</span></div>
       {{else}}

@@ -76,7 +76,6 @@ func TestConfigGroupsMasksEverySecret(t *testing.T) {
 		sessionKey   = "session-secret-value-8888"
 		clientLink   = "client-link-secret-7777"
 		otpKey       = "otp-link-secret-6666"
-		api2pdfKey   = "api2pdf-key-value-5555"
 		togglToken   = "toggl-api-token-4444"
 		toggl2Key    = "toggl_sk_key-value-3333"
 		awsKey       = "aws-secret-access-key-2222"
@@ -90,7 +89,6 @@ func TestConfigGroupsMasksEverySecret(t *testing.T) {
 		sessionSecret:    sessionKey,
 		clientLinkSecret: clientLink,
 		otpLinkSecret:    otpKey,
-		api2pdfKey:       api2pdfKey,
 	}}
 	s.cfg.finance.TogglToken = togglToken
 	s.cfg.finance.Toggl2Key = toggl2Key
@@ -113,7 +111,7 @@ func TestConfigGroupsMasksEverySecret(t *testing.T) {
 	}
 
 	rendered := flat.String()
-	for _, secret := range []string{clientSecret, sessionKey, clientLink, otpKey, api2pdfKey, togglToken, toggl2Key, awsKey} {
+	for _, secret := range []string{clientSecret, sessionKey, clientLink, otpKey, togglToken, toggl2Key, awsKey} {
 		if strings.Contains(rendered, secret) {
 			t.Errorf("cleartext secret %q appears in the /info config panel", secret)
 		}

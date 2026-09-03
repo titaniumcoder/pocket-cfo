@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -17,7 +15,6 @@ type Renderer interface {
 }
 
 const api2pdfEndpoint = "https://v2.api2pdf.com/chrome/pdf/html"
-const api2pdfBalanceEndpoint = "https://v2.api2pdf.com/balance"
 
 const fontDelay = 1500 * time.Millisecond
 
@@ -86,66 +83,6 @@ func (r *API2PDF) Render(ctx context.Context, html []byte) ([]byte, error) {
 		}
 	}
 	return nil, fmt.Errorf("api2pdf: giving up after %d attempts: %w", maxRetries, lastErr)
-}
-
-type BalanceInfo struct {
-	Balance    float64
-	HasBalance bool
-	Currency   string
-	Raw        map[string]string
-}
-
-func (r *API2PDF) Balance(ctx context.Context) (BalanceInfo, error) {
-	if r.APIKey == "" {
-		return BalanceInfo{}, fmt.Errorf("api2pdf: API key is empty")
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, api2pdfBalanceEndpoint, nil)
-	if err != nil {
-		return BalanceInfo{}, fmt.Errorf("api2pdf: build balance request: %w", err)
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", r.APIKey)
-
-	resp, err := r.Client.Do(req)
-	if err != nil {
-		return BalanceInfo{}, fmt.Errorf("api2pdf: balance request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return BalanceInfo{}, fmt.Errorf("api2pdf: read balance response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return BalanceInfo{}, fmt.Errorf("api2pdf: balance status %d: %s", resp.StatusCode, truncate(body, 500))
-	}
-
-	var raw map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return BalanceInfo{}, fmt.Errorf("api2pdf: unexpected balance response: %s", truncate(body, 500))
-	}
-
-	info := BalanceInfo{Raw: make(map[string]string, len(raw))}
-	for k, v := range raw {
-		if f, ok := v.(float64); ok {
-			info.Raw[k] = FormatAmount(int64(math.Round(f * 100)))
-		} else {
-			info.Raw[k] = fmt.Sprintf("%v", v)
-		}
-		if !info.HasBalance && strings.EqualFold(k, "balance") {
-			if f, ok := v.(float64); ok {
-				info.Balance = f
-				info.HasBalance = true
-			}
-		}
-		if info.Currency == "" && strings.EqualFold(k, "currency") {
-			if s, ok := v.(string); ok {
-				info.Currency = s
-			}
-		}
-	}
-	return info, nil
 }
 
 func (r *API2PDF) attempt(ctx context.Context, body []byte) (pdf []byte, retryable bool, err error) {

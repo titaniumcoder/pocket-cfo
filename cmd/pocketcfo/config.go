@@ -66,7 +66,6 @@ type config struct {
 	sesRegion        string
 	sesFromEmail     string
 	otpLinkSecret    string
-	api2pdfKey       string
 
 	hermesAPIToken  string
 	githubDataToken string
@@ -94,7 +93,6 @@ func loadConfig() config {
 		sesRegion:        os.Getenv("AWS_REGION"),
 		sesFromEmail:     os.Getenv("SES_FROM_EMAIL"),
 		otpLinkSecret:    os.Getenv("OTP_LINK_SECRET"),
-		api2pdfKey:       os.Getenv("API2PDF_KEY"),
 		hermesAPIToken:   os.Getenv("HERMES_API_TOKEN"),
 		githubDataToken:  os.Getenv("GITHUB_DATA_TOKEN"),
 		githubAPIURL:     os.Getenv("GITHUB_API_URL"),

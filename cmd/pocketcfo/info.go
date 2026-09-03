@@ -9,7 +9,6 @@ import (
 
 	financeconfig "github.com/titaniumcoder/pocket-cfo/internal/finance/config"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
-	"github.com/titaniumcoder/pocket-cfo/internal/render"
 	"github.com/titaniumcoder/pocket-cfo/internal/webui"
 )
 
@@ -52,10 +51,6 @@ type infoView struct {
 
 	HolidaysErr string
 	Countries   []infoCountryView
-
-	API2PDFConfigured bool
-	API2PDFErr        string
-	Balance           render.BalanceInfo
 }
 
 func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
@@ -97,16 +92,6 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	view.Countries, view.HolidaysErr = loadHolidayInfo(ctx, s.tracker.Holidays)
-
-	if s.cfg.api2pdfKey != "" {
-		view.API2PDFConfigured = true
-		balance, err := render.NewAPI2PDF(s.cfg.api2pdfKey).Balance(ctx)
-		if err != nil {
-			view.API2PDFErr = err.Error()
-		} else {
-			view.Balance = balance
-		}
-	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.infoTmpl.Execute(w, view); err != nil {

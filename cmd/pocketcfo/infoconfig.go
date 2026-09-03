@@ -71,7 +71,6 @@ func (s *server) configGroups() []configGroup {
 			{Name: "SESSION_SECRET", Value: maskSecret(c.sessionSecret), Secret: true},
 			{Name: "CLIENT_LINK_SECRET", Value: maskSecret(c.clientLinkSecret), Secret: true},
 			{Name: "OTP_LINK_SECRET", Value: maskSecret(c.otpLinkSecret), Secret: true},
-			{Name: "API2PDF_KEY", Value: maskSecret(c.api2pdfKey), Secret: true},
 		}},
 		{Name: "Toggl", Rows: []configRow{
 			{Name: "TOGGL_MODE", Value: togglModeSummary(f.TogglMode, c.togglMode)},

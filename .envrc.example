@@ -10,6 +10,7 @@ export ENV=development
 export DATA_UPDATED_AT=
 export DATA_COMMIT=
 
+# Only pocket-cfo-ctl render reads this; the web app does not need it.
 export API2PDF_KEY=
 # Shared bearer token for the Hermes API. Unset means /api/ is never
 # registered at all — the endpoints do not exist rather than returning 401.

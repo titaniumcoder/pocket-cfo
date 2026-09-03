@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -65,6 +66,71 @@ type fakeBackend struct {
 	holidays         string // JSON for the OpenHolidays endpoint
 	// failDetailed, when non-zero, makes every detailed POST return that status.
 	failDetailed int
+	// focus answers everything sent to focus.toggl.com (the Toggl 2.0 API);
+	// nil means that host 404s.
+	focus *fakeFocus
+}
+
+// fakeFocus routes Toggl 2.0 requests to canned responses and records every
+// path it saw, so tests can assert on pagination and on what was refetched.
+type fakeFocus struct {
+	entries        func(page int) string // JSON array for the 1-based page; nil = []
+	projects       string                // JSON array
+	projectRates   map[int]string        // JSON array per project id
+	workspaceRates string                // JSON array
+	clients        string                // JSON array
+	failEntries    int                   // non-zero: every time-entries GET returns this status
+	calls          []string              // path?query of every request
+}
+
+func (f *fakeFocus) roundTrip(r *http.Request) (*http.Response, error) {
+	f.calls = append(f.calls, r.URL.Path+"?"+r.URL.RawQuery)
+	p := r.URL.Path
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	wrap := func(items string) *http.Response {
+		if items == "" {
+			items = "[]"
+		}
+		return jsonResponse(`{"data":`+items+`,"page":`+strconv.Itoa(page)+`,"per_page":200}`, nil)
+	}
+	switch {
+	case strings.HasSuffix(p, "/time-entries"):
+		if f.failEntries != 0 {
+			return statusResponse(f.failEntries, `{"error":"unauthorized","error_description":"invalid api key"}`), nil
+		}
+		if f.entries == nil {
+			return wrap(""), nil
+		}
+		return wrap(f.entries(page)), nil
+	case strings.Contains(p, "/billable-rates/projects/") && strings.HasSuffix(p, "/rates"):
+		id, _ := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(p[strings.Index(p, "/billable-rates/projects/"):], "/billable-rates/projects/"), "/rates"))
+		body := f.projectRates[id]
+		if body == "" {
+			body = "[]"
+		}
+		return jsonResponse(body, nil), nil
+	case strings.HasSuffix(p, "/billable-rates/workspace/rates"):
+		body := f.workspaceRates
+		if body == "" {
+			body = "[]"
+		}
+		return jsonResponse(body, nil), nil
+	case strings.HasSuffix(p, "/projects"):
+		return wrap(f.projects), nil
+	case strings.HasSuffix(p, "/clients"):
+		return wrap(f.clients), nil
+	}
+	return statusResponse(http.StatusNotFound, "unexpected: "+r.URL.String()), nil
+}
+
+func (f *fakeFocus) callsTo(fragment string) int {
+	n := 0
+	for _, c := range f.calls {
+		if strings.Contains(c, fragment) {
+			n++
+		}
+	}
+	return n
 }
 
 // transport returns an http.RoundTripper backed by b, and a pointer to a counter
@@ -73,6 +139,11 @@ func (b *fakeBackend) transport() *http.Client {
 	page := 0
 	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch {
+		case r.URL.Host == "focus.toggl.com":
+			if b.focus == nil {
+				return statusResponse(http.StatusNotFound, "unexpected: "+r.URL.String()), nil
+			}
+			return b.focus.roundTrip(r)
 		case strings.Contains(r.URL.Path, "/search/time_entries"):
 			if b.failDetailed != 0 {
 				return statusResponse(b.failDetailed, `{"error":"boom"}`), nil

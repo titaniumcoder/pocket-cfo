@@ -12,8 +12,6 @@ type RuleChange struct {
 	Changes []string
 	Current bool
 	Rules   []RuleRow
-	Salary  string
-	Target  string
 	Notes   []string
 }
 
@@ -74,13 +72,12 @@ func RulesTimeline(p PersonalParams, startMonth, today time.Time) []RuleChange {
 		if i+1 < len(months) {
 			next = months[i+1]
 		}
+		rows := append(ruleRows(p.Legislation, ym), salaryRow(p.Salary, ym), targetRow(p.Target, ym))
 		out = append(out, RuleChange{
 			Anchor:  "rules-" + ym.configForm(),
 			Label:   ym.String(),
 			Changes: orderedChanges(changes[ym]),
-			Rules:   ruleRows(p.Legislation, ym),
-			Salary:  salaryInForce(p.Salary, ym),
-			Target:  targetInForce(p.Target, ym),
+			Rules:   rows,
 			Notes:   notesBetween(idle, ym, next),
 		})
 	}
@@ -179,7 +176,10 @@ func partyRules(r PartyRules) string {
 	return out
 }
 
-func salaryInForce(plan SalaryPlan, ym yearMonth) string {
+func salaryRow(plan SalaryPlan, ym yearMonth) RuleRow {
+	row := RuleRow{Name: "Salary", Value: "full (nothing configured)"}
+	var since yearMonth
+	stated := false
 	for i, p := range plan {
 		if ym.ordinal() < p.From.ordinal() {
 			break
@@ -189,22 +189,45 @@ func salaryInForce(plan SalaryPlan, ym yearMonth) string {
 			if p.Mode == SalaryFixed {
 				what += " " + groupThousands(round(p.AmountEUR))
 			}
-			return what + " — " + periodLabel(p.From, p.To, p.ToSet)
+			row.Value = what + " — " + periodLabel(p.From, p.To, p.ToSet)
+			since, stated = p.From, true
+			break
+		}
+		if p.ToSet {
+			since, stated = p.To.addMonths(1), true
 		}
 	}
-	return "full (nothing configured)"
+	return markSince(row, since, stated, ym)
 }
 
-func targetInForce(plan TargetPlan, ym yearMonth) string {
+func targetRow(plan TargetPlan, ym yearMonth) RuleRow {
+	row := RuleRow{Name: "Target balance", Value: "none"}
+	var since yearMonth
+	stated := false
 	for i, p := range plan {
 		if ym.ordinal() < p.From.ordinal() {
 			break
 		}
 		if p.covers(ym) || p.runsOnThrough(ym, plan.next(i)) {
-			return groupThousands(round(p.AmountEUR)) + " — " + periodLabel(p.From, p.To, p.ToSet)
+			row.Value = groupThousands(round(p.AmountEUR)) + " — " + periodLabel(p.From, p.To, p.ToSet)
+			since, stated = p.From, true
+			break
+		}
+		if p.ToSet {
+			since, stated = p.To.addMonths(1), true
 		}
 	}
-	return "none"
+	return markSince(row, since, stated, ym)
+}
+
+func markSince(row RuleRow, since yearMonth, stated bool, ym yearMonth) RuleRow {
+	switch {
+	case stated && since == ym:
+		row.Changed = true
+	case stated:
+		row.Since = since.String()
+	}
+	return row
 }
 
 func periodLabel(from, to yearMonth, toSet bool) string {

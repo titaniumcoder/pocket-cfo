@@ -45,7 +45,7 @@
       {{range .Rules}}<a href="#{{.Anchor}}"{{if .Current}} class="current"{{end}}><span class="timeline-date">{{.Label}}</span><span class="timeline-what">{{join .Changes ", "}}</span></a>{{end}}
     </nav>
     {{range .Rules}}
-    <details class="card rules" id="{{.Anchor}}" open>
+    <details class="card rules" id="{{.Anchor}}"{{if .Current}} open{{end}}>
       <summary>From {{.Label}} <span class="count">— {{join .Changes ", "}}</span>{{if .Current}} <span class="badge">in force now</span>{{end}}</summary>
       <div class="table-wrap">
       <table class="data">
@@ -53,8 +53,6 @@
           {{range .Rules}}
           <tr class="{{if .Changed}}rule-changed{{else}}rule-carried{{end}}"><td class="config-name">{{.Name}}</td><td>{{.Value}}{{if .Since}} <span class="since">since {{.Since}}</span>{{end}}</td></tr>
           {{end}}
-          <tr><td class="config-name">Salary</td><td>{{.Salary}}</td></tr>
-          <tr><td class="config-name">Target balance</td><td>{{.Target}}</td></tr>
         </tbody>
       </table>
       </div>

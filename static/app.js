@@ -89,3 +89,21 @@ document.addEventListener('DOMContentLoaded', function () {
     if (img.complete && img.naturalWidth === 0) img.remove();
   });
 });
+
+// The rules timeline on /info: only the card in force today starts open, so
+// a chip has to open the card it jumps to — :target alone cannot open a
+// closed <details>. The same goes for arriving with a #rules-… hash.
+function openRulesCard(id) {
+  var card = id && document.getElementById(id);
+  if (card && card.tagName === 'DETAILS' && card.classList.contains('rules')) card.open = true;
+}
+
+document.addEventListener('click', function (e) {
+  var a = e.target.closest('.timeline a[href^="#"]');
+  if (!a) return;
+  openRulesCard(a.getAttribute('href').slice(1));
+});
+
+window.addEventListener('hashchange', function () { openRulesCard(location.hash.slice(1)); });
+
+document.addEventListener('DOMContentLoaded', function () { openRulesCard(location.hash.slice(1)); });

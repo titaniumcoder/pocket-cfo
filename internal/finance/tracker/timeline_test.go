@@ -102,24 +102,61 @@ func TestRulesTimelineMarksWhatChangedAndWhatCarriedForward(t *testing.T) {
 
 func TestRulesTimelineSaysWhatSalaryAndTargetApply(t *testing.T) {
 	entries := RulesTimeline(timelineParams(t), time.Time{}, time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC))
-	byLabel := map[string]RuleChange{}
+	row := func(label, name string) RuleRow {
+		for _, e := range entries {
+			if e.Label != label {
+				continue
+			}
+			for _, r := range e.Rules {
+				if r.Name == name {
+					return r
+				}
+			}
+		}
+		t.Fatalf("no %s row for %s", name, label)
+		return RuleRow{}
+	}
+	if r := row("July 2026", "Salary"); r.Value != "full (nothing configured)" || r.Changed || r.Since != "" {
+		t.Errorf("July salary = %+v, want the never-configured default, unmarked", r)
+	}
+	if r := row("September 2026", "Salary"); r.Value != "fixed 2,500 — September 2026 to October 2026" || !r.Changed {
+		t.Errorf("September salary = %+v, want the fixed span, changed", r)
+	}
+	if r := row("November 2026", "Salary"); r.Value != "full (nothing configured)" || !r.Changed {
+		t.Errorf("November salary = %+v, want the fallback after the closed span, changed", r)
+	}
+	if r := row("September 2026", "Target balance"); r.Value != "none" || r.Changed || r.Since != "" {
+		t.Errorf("September target = %+v, want none, unmarked", r)
+	}
+	if r := row("November 2026", "Target balance"); r.Value != "15,000 — from November 2026" || !r.Changed {
+		t.Errorf("November target = %+v, want the new target, changed", r)
+	}
+	if r := row("July 2026", "Dividend tax"); r.Changed || r.Since != "January 2026" {
+		t.Errorf("July dividend tax = %+v, want carried forward", r)
+	}
+}
+
+func TestRulesTimelineCarriesSalaryAndTargetForwardToo(t *testing.T) {
+	p := timelineParams(t)
+	salary, err := ParseSalaryPlan([]SalaryEntry{{From: "2026-03", Mode: "minimum"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := ParseTargetPlan([]TargetEntry{{From: "2026-03", Amount: f64(9000)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Salary, p.Target = salary, target
+	entries := RulesTimeline(p, time.Time{}, time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC))
 	for _, e := range entries {
-		byLabel[e.Label] = e
-	}
-	if got := byLabel["July 2026"].Salary; got != "full (nothing configured)" {
-		t.Errorf("July salary = %q", got)
-	}
-	if got := byLabel["September 2026"].Salary; got != "fixed 2,500 — September 2026 to October 2026" {
-		t.Errorf("September salary = %q", got)
-	}
-	if got := byLabel["November 2026"].Salary; got != "full (nothing configured)" {
-		t.Errorf("November salary = %q, want the fallback after the closed span", got)
-	}
-	if got := byLabel["September 2026"].Target; got != "none" {
-		t.Errorf("September target = %q", got)
-	}
-	if got := byLabel["November 2026"].Target; got != "15,000 — from November 2026" {
-		t.Errorf("November target = %q", got)
+		if e.Label != "July 2026" {
+			continue
+		}
+		for _, r := range e.Rules {
+			if (r.Name == "Salary" || r.Name == "Target balance") && (r.Changed || r.Since != "March 2026") {
+				t.Errorf("July %s = %+v, want carried forward since March 2026", r.Name, r)
+			}
+		}
 	}
 }
 

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,8 +31,9 @@ func NewFocus(cfg FocusConfig, httpClient *http.Client) *Toggl {
 var focusBaseURL = "https://focus.toggl.com/api"
 
 const (
-	focusPerPage  = 200
-	focusMaxPages = 100
+	focusPerPage    = 100
+	focusMinPerPage = 10
+	focusMaxPages   = 100
 )
 
 var (
@@ -42,6 +45,37 @@ type focusAPI struct {
 	t        *Toggl
 	cfg      FocusConfig
 	projects map[int]bool
+
+	mu       sync.Mutex
+	pageSize map[string]int
+}
+
+func (a *focusAPI) perPage(path string) int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if n, ok := a.pageSize[path]; ok {
+		return n
+	}
+	return focusPerPage
+}
+
+func (a *focusAPI) shrinkPage(path string, current int) bool {
+	next := current / 2
+	if next < focusMinPerPage {
+		return false
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.pageSize == nil {
+		a.pageSize = map[string]int{}
+	}
+	a.pageSize[path] = next
+	return true
+}
+
+func isPageTooLarge(err error) bool {
+	var se *statusError
+	return errors.As(err, &se) && se.Status == http.StatusBadRequest && strings.Contains(se.Body, "PerPage")
 }
 
 func idSet(ids []int) map[int]bool {
@@ -93,17 +127,24 @@ func (a *focusAPI) getJSON(ctx context.Context, path string, q url.Values, out a
 
 func focusPages[T any](ctx context.Context, a *focusAPI, path string, q url.Values) ([]T, error) {
 	var all []T
+	size := a.perPage(path)
 	for page := 1; page <= focusMaxPages; page++ {
 		q.Set("page", strconv.Itoa(page))
-		q.Set("per_page", strconv.Itoa(focusPerPage))
+		q.Set("per_page", strconv.Itoa(size))
 		var body struct {
 			Data []T `json:"data"`
 		}
-		if err := a.getJSON(ctx, path, q, &body); err != nil {
+		err := a.getJSON(ctx, path, q, &body)
+		if isPageTooLarge(err) && a.shrinkPage(path, size) {
+			size = a.perPage(path)
+			all, page = nil, 0
+			continue
+		}
+		if err != nil {
 			return nil, err
 		}
 		all = append(all, body.Data...)
-		if len(body.Data) < focusPerPage {
+		if len(body.Data) < size {
 			break
 		}
 	}

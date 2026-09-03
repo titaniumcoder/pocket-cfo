@@ -193,7 +193,7 @@ func TestFocusYearAsksForTheWholeYear(t *testing.T) {
 		t.Fatal(err)
 	}
 	call := f.calls[0]
-	for _, want := range []string{"/organizations/10/workspaces/20/time-entries?", "date_from=2026-01-01T00%3A00%3A00Z", "date_to=2026-12-31T23%3A59%3A59Z", "include_taskless=true", "per_page=200"} {
+	for _, want := range []string{"/organizations/10/workspaces/20/time-entries?", "date_from=2026-01-01T00%3A00%3A00Z", "date_to=2026-12-31T23%3A59%3A59Z", "include_taskless=true", "per_page=100"} {
 		if !strings.Contains(call, want) {
 			t.Errorf("request %q lacks %q", call, want)
 		}
@@ -268,7 +268,7 @@ func TestFocusClientsPaginate(t *testing.T) {
 	if len(got) != 1 || got[0].ID != 5 || got[0].Name != "Acme" {
 		t.Errorf("Clients = %+v", got)
 	}
-	if !strings.HasPrefix(f.calls[0], "/api/workspaces/20/clients?page=1&per_page=200") {
+	if !strings.HasPrefix(f.calls[0], "/api/workspaces/20/clients?page=1&per_page=100") {
 		t.Errorf("request = %q", f.calls[0])
 	}
 }
@@ -341,5 +341,43 @@ func TestFocusDiscoverFailsOnARejectedKey(t *testing.T) {
 	}
 	if !tg.KeyStatus(time.Now()).Rejected {
 		t.Error("a 401 on discovery must mark the key rejected")
+	}
+}
+
+func TestFocusShrinksThePageWhenTogglRefusesTheSize(t *testing.T) {
+	f := &fakeFocus{clients: `[{"id":5,"name":"Acme"}]`, maxPerPage: 50}
+	tg := focusToggl(f, "")
+	got, err := tg.Clients(context.Background(), 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Name != "Acme" {
+		t.Errorf("Clients = %+v", got)
+	}
+	if len(f.calls) != 2 || !strings.Contains(f.calls[0], "per_page=100") || !strings.Contains(f.calls[1], "per_page=50") {
+		t.Errorf("calls = %v, want 100 refused then 50 accepted", f.calls)
+	}
+
+}
+
+func TestFocusRemembersTheWorkingPageSize(t *testing.T) {
+	f := &fakeFocus{projects: `[{"id":1,"name":"Alpha"}]`, maxPerPage: 50}
+	tg := focusToggl(f, "")
+	if _, err := tg.Projects(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	api := tg.api.(*focusAPI)
+	if got := api.perPage(api.workspacePath("projects")); got != 50 {
+		t.Errorf("remembered page size = %d, want 50", got)
+	}
+	if got := api.perPage(api.workspacePath("time-entries")); got != focusPerPage {
+		t.Errorf("another endpoint's page size = %d, want the default %d", got, focusPerPage)
+	}
+}
+
+func TestFocusGivesUpShrinkingBelowTheMinimum(t *testing.T) {
+	f := &fakeFocus{clients: `[]`, maxPerPage: 1}
+	if _, err := focusToggl(f, "").Clients(context.Background(), 20); err == nil || !strings.Contains(err.Error(), "PerPage") {
+		t.Errorf("err = %v, want Toggl's validation error once no smaller page is left to try", err)
 	}
 }

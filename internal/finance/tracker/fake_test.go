@@ -83,6 +83,7 @@ type fakeFocus struct {
 	settings       string                // JSON object for /users/me/settings
 	context        string                // JSON object for /workspaces/{id}/context
 	contextStatus  int                   // non-zero: the context GET returns this status
+	maxPerPage     int                   // non-zero: a list asking for more per page gets Toggl's validation 400
 	calls          []string              // path?query of every request
 }
 
@@ -90,6 +91,9 @@ func (f *fakeFocus) roundTrip(r *http.Request) (*http.Response, error) {
 	f.calls = append(f.calls, r.URL.Path+"?"+r.URL.RawQuery)
 	p := r.URL.Path
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if per, _ := strconv.Atoi(r.URL.Query().Get("per_page")); f.maxPerPage != 0 && per > f.maxPerPage {
+		return statusResponse(http.StatusBadRequest, `{"error":"validation","error_description":"Key: 'Pagination.PerPage' Error:Field validation for 'PerPage' failed on the 'max' tag"}`), nil
+	}
 	wrap := func(items string) *http.Response {
 		if items == "" {
 			items = "[]"

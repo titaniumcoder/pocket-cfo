@@ -54,19 +54,47 @@ export AWS_SECRET_ACCESS_KEY=
 export SES_FROM_EMAIL=
 
 # Finance tracker (internal/finance) — see internal/finance/config.
-# Optional: TOGGL_API_TOKEN/TOGGL_WORKSPACE_ID unset leaves the Toggl
-# tracked-hours layer disabled entirely (predictions still run off the
-# configured hourly rate in config.json — see hourlyRateCents/currency
-# there).
+# Optional: with no Toggl credentials at all the tracked-hours layer is
+# disabled entirely (predictions still run off the configured hourly rate
+# in config.json — see hourlyRateCents/currency there).
+#
+# Toggl Track: the API token from its profile page and the workspace id.
 export TOGGL_API_TOKEN=
 export TOGGL_WORKSPACE_ID=
+# Toggl 2.0 (focus.toggl.com): a toggl_sk_… key from its settings page —
+# only one is active per user, and it EXPIRES after the period chosen when
+# it was generated (30 or 90 days, …). The organization and workspace ids
+# come from the app's URL; the 2.0 API has no call to look them up. Once
+# Toggl rejects the key, the finance page and /info say so until a new one
+# is set here.
+export TOGGL2_API_KEY=
+export TOGGL2_ORGANIZATION_ID=
+export TOGGL2_WORKSPACE_ID=
+# Optional, YYYY-MM-DD: the date the 2.0 key expires, for a warning during
+# its last seven days rather than only after Toggl starts rejecting it.
+export TOGGL2_API_KEY_EXPIRES_AT=
+# Which API feeds the dashboard: track, toggl2, or both (hours from the two
+# added together — for a migration without live sync). Unset picks whichever
+# single set of credentials is present; with both sets present it must be
+# set, because guessing would show the wrong hours with no visible sign.
+export TOGGL_MODE=
+# Optional, a Go duration, default 15m: how often tracked hours are
+# refreshed in the background. Toggl 2.0 counts requests per hour (30 on
+# its Free plan), so a Free plan wants 1h.
+# export TOGGL_REFRESH_INTERVAL=15m
 # Optional. Default to config.json — non-secret finance tunables
-# (hoursPerDay, togglProjectIds, holidayCountry, holidaySubdivision,
-# hourlyRateCents, currency, annualVacationDays) plus the four dated
-# blocks: legislation, salary, targetBalance, startMonth. See
-# internal/finance/config.FileConfig, which is the reference for every
+# (hoursPerDay, togglProjectIds, toggl2ProjectIds, holidayCountry,
+# holidaySubdivision, hourlyRateCents, currency, annualVacationDays) plus
+# the four dated blocks: legislation, salary, targetBalance, startMonth.
+# See internal/finance/config.FileConfig, which is the reference for every
 # field, and README.md's config.json section.
 # export CONFIG_FILE=
+# Optional. The note catalog the invoice validators check mandatory wording
+# against; defaults to catalog in the web app and to catalog beside DATA_DIR
+# in pocket-cfo-ctl.
+# export CATALOG_DIR=
+# Optional, default 8080.
+# export PORT=
 
 # Local data/build/template layout — override to point cmd/pocketcfo/
 # pocket-cfo-ctl at a data checkout outside this repo (e.g. a separate private

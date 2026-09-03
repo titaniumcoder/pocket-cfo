@@ -761,6 +761,36 @@ actually tracked. Once an invoice is issued for a linked client, the invoice sup
 the hours it covers — otherwise the same work would be counted as both a prediction and a
 receipt.
 
+**Toggl comes in two APIs**, and the tracker reads either or both (`TOGGL_MODE`). Toggl
+Track's Reports API does the accounting server-side: it returns billable entries already
+rounded to the nearest quarter hour and priced per row. Toggl 2.0 (focus.toggl.com) has
+no such report, so `toggl_focus.go` reproduces it from raw time entries — billable
+activities only, undeleted, each rounded to the nearest quarter hour (half up, as Reports'
+`rounding: 0, rounding_minutes: 15` does), priced at the project's billable rate in force on
+the entry's day, falling back to the workspace rate and then to zero — and folds them into
+the same per-project, per-rate, per-month aggregates, so nothing downstream knows which API
+answered. `both` merges the two years, summing aggregates with the same project, rate and
+month, for the migration in which hours are split between the products without live sync;
+a project id present in both is shown under its 2.0 name with the hours added, tolerable
+only because Track ids are nine digits and 2.0 numbers afresh. One side failing fails the
+year: half a total would read as the whole.
+
+The 2.0 API differs in three ways that shaped the client. Its keys (`toggl_sk_…`, sent as
+a Bearer token) **expire** after a period chosen when they are generated, and only one is
+active per user; from then on every call answers 401, and because the cache keeps serving
+the last good hours after that, the returned errors would never show it — so the client
+records the rejection itself, and `KeyStatus` turns it, or an optional
+`TOGGL2_API_KEY_EXPIRES_AT`, into the one warning the finance page and `/info` render, above
+the pending and stale notes. It offers **no call that lists the caller's organizations or
+workspaces**, so both ids are configuration. And it is **quota-limited per hour** (30
+requests on Free, 240 on Starter, 600 on Premium, answered with 402 beyond that), which is
+why rate timelines are cached until Reload rather than refetched on every 15-minute refresh,
+and why a Free plan wants a longer `TOGGL_REFRESH_INTERVAL`. Confirmed against the live
+API: an unknown key gets a 401 with a JSON error body. Read from the published OpenAPI
+spec and still to be confirmed with a real key: `duration` is in seconds, `date_from` and
+`date_to` accept RFC 3339 timestamps, `hourly_rate` on the billable-rates endpoints is in
+hundredths of the currency, and `per_page=200` is honoured.
+
 **The two-month funding shift** is the domain rule that most of the module bends around:
 money earned in month M is invoiced at the end of M, paid during M+1, and is spendable in
 M+2. So the expenses shown for a month are funded by the income of two months earlier,
@@ -860,7 +890,11 @@ minimum, forever — which is a reserve that is never actually reserved.
 A target can only ever hold a month back, never make it pay more, so an explicit `minimum`,
 `none` or `fixed` month wins over it. Writing a target over one is allowed rather than
 refused, because the salary block is the more explicit statement; but it does nothing there,
-so `/info` names every idle month and the page says so in the month itself. The same goes
+so `/info` names every idle month and the page says so in the month itself. `/info` shows
+the dated blocks as a timeline — one card per month anything changes, resolving what is in
+force from then — because an entry's own line rarely is: a legislation entry carries each
+field it omits forward independently from the last entry that stated it, and a closed
+salary or target span falls back to a full salary and no target without saying so. The same goes
 for a target with no company account to measure against.
 
 An **unknown** company balance is not a balance of zero. Treating the two alike would hold

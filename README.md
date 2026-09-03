@@ -171,19 +171,28 @@ Secrets and deployment-specific paths come from the environment. Copy `.envrc.ex
 | `OTP_LINK_SECRET` | `cmd/pocketcfo`, prod | any random string; signs the email login link |
 | `AWS_REGION` / `SES_FROM_EMAIL` | `cmd/pocketcfo`, prod | SES sends the login link; unset logs it instead, for local testing |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `cmd/pocketcfo`, prod | read by the AWS SDK's own credential chain; needs only `ses:SendEmail` |
-| `TOGGL_API_TOKEN` / `TOGGL_WORKSPACE_ID` | `cmd/pocketcfo`, optional | unset leaves the tracked-hours layer disabled; predictions still run off the hourly rate |
-| `TOGGL_REFRESH_INTERVAL` | `cmd/pocketcfo`, optional | default `15m`; a Go duration |
+| `TOGGL_MODE` | `cmd/pocketcfo`, optional | `track`, `toggl2` or `both` — which Toggl API feeds the tracked hours. Unset picks whichever single set of credentials below is present; with both sets present it must be set. `both` adds the two APIs' hours together, for a migration to Toggl 2.0 without live sync |
+| `TOGGL_API_TOKEN` / `TOGGL_WORKSPACE_ID` | `cmd/pocketcfo`, optional | Toggl Track. With no Toggl credentials at all the tracked-hours layer is disabled; predictions still run off the hourly rate |
+| `TOGGL2_API_KEY` / `TOGGL2_ORGANIZATION_ID` / `TOGGL2_WORKSPACE_ID` | `cmd/pocketcfo`, optional | Toggl 2.0 (focus.toggl.com): a `toggl_sk_…` key from its settings page, plus the two ids from the app's URL — the API cannot list them. The key **expires** after the period chosen when it was generated (30 or 90 days, …); once Toggl rejects it, the finance page and `/info` say so until a new one is set |
+| `TOGGL2_API_KEY_EXPIRES_AT` | `cmd/pocketcfo`, optional | `YYYY-MM-DD` the 2.0 key expires; the pages warn during its last seven days and after |
+| `TOGGL_REFRESH_INTERVAL` | `cmd/pocketcfo`, optional | default `15m`; a Go duration. Toggl 2.0 counts requests per hour (30 on its Free plan), so a Free plan wants `1h` |
+| `PORT` | `cmd/pocketcfo`, optional | default `8080` |
+| `CLIENT_LINK_SECRET` | `cmd/pocketcfo`, prod | any random string; signs the stateless client-portal links |
+| `GITHUB_API_URL` | `cmd/pocketcfo`, optional | default `https://api.github.com`; points the Contents client at a stub while verifying the write path |
+| `DEEPL_API_KEY` | `pocket-cfo-ctl translate` | fills missing Bulgarian text on drafts |
 | `DATA_DIR` | both binaries, optional | default `data` |
 | `BUILD_DIR` | both binaries, optional | default `build` — rendered PDFs, kept apart from hand-edited data |
 | `CONFIG_FILE` | `cmd/pocketcfo`, optional | default `config.json` |
 | `TEMPLATES_DIR` / `STATIC_DIR` | `cmd/pocketcfo`; `TEMPLATES_DIR` also for `render` | default `templates` / `static` |
-| `CATALOG_DIR` | both binaries, optional | default `catalog` — the note catalog the invoice validators check mandatory wording against |
+| `CATALOG_DIR` | both binaries, optional | the note catalog the invoice validators check mandatory wording against. Defaults to `catalog` in the web app and to `catalog` beside `DATA_DIR` in `pocket-cfo-ctl` |
 
 ### `config.json`
 
 Non-secret, and it lives in *your* data repo. Beyond the scalars — `hourlyRateCents`,
-`currency`, `hoursPerDay`, `annualVacationDays` — four settings are lists of dated
-entries, because what they describe changes on a date and last year's figures have to stay
+`currency`, `hoursPerDay`, `annualVacationDays`, and the project filters `togglProjectIds`
+(Toggl Track) and `toggl2ProjectIds` (Toggl 2.0, which renumbers projects on import; an
+empty list counts every billable project) — four settings are lists of dated entries,
+because what they describe changes on a date and last year's figures have to stay
 reproducible. Each entry states only what changed; anything it omits carries forward.
 
 | Block | Decides |
@@ -200,8 +209,8 @@ shrink. It is still refused below the minimum wage in force.
 `targetBalance` is a **floor**: once reached, a full salary is drawn out of what sits *above*
 the target, so the reserve is not spent back down the following month. It only ever holds a
 month back, never makes one pay more, so it does nothing in a month whose `salary` entry
-already says `minimum`, `fixed` or `none` — that is allowed rather than refused, and `/info`
-names every month where it is idle. It also needs an account with `"kind": "company"` in
+already says `minimum`, `fixed` or `none` — that is allowed rather than refused, and the
+rules timeline on `/info` names every month where it is idle. It also needs an account with `"kind": "company"` in
 `accounts.json`, since otherwise there is no balance to compare it against.
 
 Bands are marginal, so a contribution ceiling is an ordinary band with a rate of `0` rather
@@ -211,7 +220,10 @@ the app from starting — these are legal obligations, and a typo that silently 
 is the failure the setting exists to prevent.
 
 `internal/finance/config`'s `FileConfig` is the reference for every field, and `/info`
-renders the parsed result back so it can be compared against the file by eye.
+renders the parsed result back so it can be compared against the file by eye: the scalars
+in its configuration table, the four dated blocks as a timeline — one card per month
+anything changes, saying what is in force from then, with the rules that entry changed in
+bold and the ones carried forward from an earlier entry muted.
 
 ## Building and running
 

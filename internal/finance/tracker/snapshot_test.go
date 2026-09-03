@@ -123,3 +123,84 @@ func TestSnapshotPathIsScopedPerBackendAndProjectList(t *testing.T) {
 		t.Errorf("without a dir the path must be empty, got %q", got)
 	}
 }
+
+func TestAnotherCacheVersionWipesTheDirectoryOnStart(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(versionMarker, "0\n")
+	write("detailed_.json", `{"version":1,"entries":{}}`)
+	write("focus_1_2.json", `{"version":0,"entries":{}}`)
+	write("detailed_.json.tmp", "half written")
+	write("notes.txt", "not ours")
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(filepath.Join("sub", "keep.json"), "not ours either")
+
+	calls := 0
+	b := &fakeBackend{detailed: func(int) (string, string, string) { calls++; return `[]`, "", "" }}
+	tg := &Toggl{WorkspaceID: "ws", HTTP: b.transport(), CacheDir: dir}
+	if _, err := tg.Year(context.Background(), 2026); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Errorf("made %d requests, want a cold fetch after the wipe", calls)
+	}
+	for _, gone := range []string{"focus_1_2.json", "detailed_.json.tmp"} {
+		if _, err := os.Stat(filepath.Join(dir, gone)); err == nil {
+			t.Errorf("%s survived the version change", gone)
+		}
+	}
+	for _, kept := range []string{"notes.txt", filepath.Join("sub", "keep.json")} {
+		if _, err := os.Stat(filepath.Join(dir, kept)); err != nil {
+			t.Errorf("%s is not a cache file and must not be touched: %v", kept, err)
+		}
+	}
+	marker, err := os.ReadFile(filepath.Join(dir, versionMarker))
+	if err != nil || strings.TrimSpace(string(marker)) != "1" {
+		t.Errorf("marker = %q, %v; want the current version", marker, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "detailed_.json"))
+	if err != nil || !strings.Contains(string(raw), `"version":1`) {
+		t.Errorf("a fresh snapshot was not written after the wipe: %v", err)
+	}
+}
+
+func TestAMissingMarkerTreatsExistingFilesAsAnOldVersion(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "detailed_.json"), []byte(`{"version":1,"entries":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tg := &Toggl{WorkspaceID: "ws", HTTP: (&fakeBackend{}).transport(), CacheDir: dir}
+	tg.lock()
+	tg.mu.Unlock()
+	if _, err := os.Stat(filepath.Join(dir, "detailed_.json")); err == nil {
+		t.Error("a file from before the marker existed must be removed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, versionMarker)); err != nil {
+		t.Errorf("marker not written: %v", err)
+	}
+}
+
+func TestAMatchingMarkerLeavesTheSecondBackendsFileAlone(t *testing.T) {
+	dir := t.TempDir()
+	b := &fakeBackend{detailed: func(int) (string, string, string) { return `[]`, "", "" }, focus: &fakeFocus{}}
+	track := &Toggl{WorkspaceID: "ws", HTTP: b.transport(), CacheDir: dir}
+	if _, err := track.Year(context.Background(), 2026); err != nil {
+		t.Fatal(err)
+	}
+	focus := NewFocus(FocusConfig{Key: "k", OrganizationID: "10", WorkspaceID: "20"}, b.transport())
+	focus.CacheDir = dir
+	if _, err := focus.Year(context.Background(), 2026); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"detailed_.json", "focus_.json", versionMarker} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("%s missing: %v", name, err)
+		}
+	}
+}

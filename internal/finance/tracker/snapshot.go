@@ -6,11 +6,15 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
 
-const snapshotVersion = 1
+const (
+	snapshotVersion = 1
+	versionMarker   = "VERSION"
+)
 
 type snapshotFile struct {
 	Version int                      `json:"version"`
@@ -63,6 +67,7 @@ func (t *Toggl) restoreLocked() {
 	if path == "" {
 		return
 	}
+	ensureCacheVersion(t.CacheDir)
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return
@@ -92,6 +97,40 @@ func (t *Toggl) restoreLocked() {
 		t.cache[key] = cacheEntry{val: val, kind: e.Kind, start: e.Start, end: e.End, fetchedAt: e.FetchedAt, stale: e.Stale}
 	}
 	log.Printf("toggl: restored %d cache entries from %s", len(file.Entries), path)
+}
+
+func ensureCacheVersion(dir string) {
+	marker := filepath.Join(dir, versionMarker)
+	want := strconv.Itoa(snapshotVersion)
+	if raw, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(raw)) == want {
+		return
+	}
+	removed := clearCacheFiles(dir)
+	if err := writeAtomically(marker, []byte(want+"\n")); err != nil {
+		log.Printf("toggl: cache version marker %s not written: %v", marker, err)
+		return
+	}
+	log.Printf("toggl: cache directory %s is not version %s — removed %d cache file(s) and marked it", dir, want, removed)
+}
+
+func clearCacheFiles(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	removed := 0
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !(strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".json.tmp")) {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, name)); err != nil {
+			log.Printf("toggl: stale cache file %s not removed: %v", name, err)
+			continue
+		}
+		removed++
+	}
+	return removed
 }
 
 func decodeEntry(e snapshotEntry) (any, error) {

@@ -820,8 +820,10 @@ touched, and the finance page and `/info` say when hours refresh again instead o
 The warmer skips a tick when the gate is closed or fewer than five requests are left, so
 page views keep them. The cache is written to `TOGGL_CACHE_DIR` when that is set
 (`snapshot.go`; one JSON file per backend, written atomically after every successful fetch
-and on Reload, read back before the first lookup, ignored if of another version or
-unparsable) so a Fly machine woken from auto-stop, or a fresh deploy, serves the last hours
+and on Reload, read back before the first lookup, ignored if unparsable; the directory
+carries a `VERSION` marker, and a build whose format differs deletes every cache file
+there — only `.json` files at the top level, so a misconfigured path can lose nothing
+else — and writes its own marker before it reads anything) so a Fly machine woken from auto-stop, or a fresh deploy, serves the last hours
 at once and asks Toggl only for what the cadence says is due — the one thing the app writes
 to disk, and deliberately not the data repo, whose commits are the business record. Because
 such a file outlives every restart, `/info` carries a **Reset Toggl cache** button

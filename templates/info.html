@@ -148,7 +148,6 @@
       </tbody>
     </table>
     </div>
-    {{if and (not .Discovery.OrganizationKnown) .Discovery.OrganizationNote}}<p class="section-note">Toggl answered: {{.Discovery.OrganizationNote}}</p>{{end}}
     {{if .IDsMismatch}}<p class="stale-note">{{.IDsMismatch}}</p>{{end}}
     {{end}}
 {{end}}

@@ -326,28 +326,15 @@ func (a *focusAPI) discover(ctx context.Context) (Discovery, error) {
 	}
 	d := Discovery{WorkspaceID: settings.CurrentWorkspaceID}
 	if d.WorkspaceID == 0 {
-		d.OrganizationNote = "the account names no current workspace, so the organization could not be looked up either"
 		return d, nil
 	}
 	var context struct {
 		OrganizationID int `json:"organization_id"`
 	}
-	err := a.getJSON(ctx, "/workspaces/"+strconv.Itoa(d.WorkspaceID)+"/context", nil, &context)
-	switch {
-	case err == nil && context.OrganizationID != 0:
+	if err := a.getJSON(ctx, "/workspaces/"+strconv.Itoa(d.WorkspaceID)+"/context", nil, &context); err == nil && context.OrganizationID != 0 {
 		d.OrganizationID, d.OrganizationKnown = context.OrganizationID, true
-	case err == nil:
-		d.OrganizationNote = "the workspace context names no organization"
-	case isForbidden(err):
-	default:
-		d.OrganizationNote = err.Error()
 	}
 	return d, nil
-}
-
-func isForbidden(err error) bool {
-	var se *statusError
-	return errors.As(err, &se) && se.Status == http.StatusForbidden
 }
 
 func (a *focusAPI) fetchWorkspaces(context.Context) ([]Workspace, error) {

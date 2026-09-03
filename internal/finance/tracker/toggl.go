@@ -311,7 +311,6 @@ type Discovery struct {
 	WorkspaceID       int
 	OrganizationID    int
 	OrganizationKnown bool
-	OrganizationNote  string
 }
 
 func (t *Toggl) Discover(ctx context.Context) (Discovery, error) {

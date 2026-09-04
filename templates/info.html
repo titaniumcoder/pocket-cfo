@@ -78,6 +78,14 @@
     {{else}}{{template "toggl2ids" .Focus}}{{if not .Focus.KeyOnly}}{{template "togglpanel" .Focus}}{{end}}{{end}}
   </section>
 
+  {{if .ChatEnabled}}
+  <section class="panel">
+    <h2 class="section-title">Chats</h2>
+    <p class="section-note">{{.ChatCount}} chat(s) stored under <code>CHAT_DIR</code>, one file per chat. They hold uploaded statements and everything the model said; deleting them loses nothing in the data repo. A release that changes the chat format deletes them on its first start as well.</p>
+    <form class="inline-form" method="post" action="/chat/purge"><button class="link" type="submit">Delete all chats</button></form>
+  </section>
+  {{end}}
+
   {{if or .Track.Configured .Focus.Configured}}
   <section class="panel">
     <h2 class="section-title">Toggl cache</h2>

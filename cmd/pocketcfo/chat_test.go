@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,7 +17,11 @@ import (
 
 func chatServer(t *testing.T, answers ...string) *server {
 	t.Helper()
-	s := apiServer(t, apiTestToken, "prod")
+	return enableChat(t, apiServer(t, apiTestToken, "prod"), answers...)
+}
+
+func enableChat(t *testing.T, s *server, answers ...string) *server {
+	t.Helper()
 	s.cfg.openAIKey, s.cfg.openAIModel, s.cfg.chatDir = "sk-test", "acme/model", filepath.Join(t.TempDir(), "chats")
 	n := 0
 	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -145,5 +150,118 @@ func TestAnotherUsersChatIsNotFoundAndCloseDeletes(t *testing.T) {
 	}
 	if _, err := s.chatStore.Load("octocat", mine.ID); err != chat.ErrNotFound {
 		t.Errorf("closed chat still there: %v", err)
+	}
+}
+
+const pendingAdd = `{"transactions":[{"id":"n1","date":"2026-08-20","description":"NEW LINE","amount":12.5,"account":"Private Checking","category":"00000000-0000-4000-8000-000000000001"}]}`
+
+func chatWithPending(t *testing.T) (*server, *fakeContents, *chat.Chat) {
+	t.Helper()
+	s, gh := writingServer(t, map[string]string{"data/actuals/2026-08.json": apiActualsJSON})
+	enableChat(t, s, textAnswer("ok"))
+	c, _ := s.chatStore.Create("octocat")
+	c.Pending = []chat.PendingChange{
+		{Tool: "add_transactions", Arguments: json.RawMessage(pendingAdd)},
+		{Tool: "edit_transactions", Arguments: json.RawMessage(`{"edits":[{"id":"n1","month":"2026-08","ignored":"actually a transfer"}],"reason":"transfer"}`)},
+	}
+	if err := s.chatStore.Save(c); err != nil {
+		t.Fatal(err)
+	}
+	return s, gh, c
+}
+
+func TestApplyCommitsOncePerFileAndRevertPutsItBack(t *testing.T) {
+	s, gh, c := chatWithPending(t)
+	before := string(gh.files["data/actuals/2026-08.json"])
+
+	w := sessionRequest(t, s, http.MethodPost, "/chat/"+c.ID+"/apply", "admin", `{}`, "application/json")
+	if w.Code != http.StatusOK {
+		t.Fatalf("apply = %d %s", w.Code, w.Body)
+	}
+	after := string(gh.files["data/actuals/2026-08.json"])
+	if gh.puts != 1 || !strings.Contains(after, "NEW LINE") || !strings.Contains(after, "actually a transfer") {
+		t.Errorf("want one commit carrying both changes, got %d puts:\n%s", gh.puts, after)
+	}
+	saved, _ := s.chatStore.Load("octocat", c.ID)
+	if len(saved.Pending) != 0 || len(saved.Applied) != 1 || saved.Applied[0].Path != "data/actuals/2026-08.json" || saved.Applied[0].Reverted {
+		t.Fatalf("saved = pending %+v applied %+v", saved.Pending, saved.Applied)
+	}
+	if !strings.Contains(saved.Applied[0].Message, "+1 more change") {
+		t.Errorf("message = %q", saved.Applied[0].Message)
+	}
+	last := saved.Messages[len(saved.Messages)-1]
+	if !strings.HasPrefix(last.Content, "System note: the user approved") {
+		t.Errorf("the model must learn of the approval: %+v", last)
+	}
+	page := sessionRequest(t, s, http.MethodGet, "/chat/"+c.ID, "admin", "", "").Body.String()
+	if !strings.Contains(page, `data-action="revert"`) || strings.Contains(page, `data-action="apply"`) {
+		t.Error("the page must offer Revert and no longer Approve")
+	}
+
+	w = sessionRequest(t, s, http.MethodPost, "/chat/"+c.ID+"/revert", "admin", `{"index":0}`, "application/json")
+	if w.Code != http.StatusOK {
+		t.Fatalf("revert = %d %s", w.Code, w.Body)
+	}
+	if string(gh.files["data/actuals/2026-08.json"]) != before {
+		t.Errorf("revert did not restore the month:\n%s", gh.files["data/actuals/2026-08.json"])
+	}
+	saved, _ = s.chatStore.Load("octocat", c.ID)
+	if !saved.Applied[0].Reverted {
+		t.Error("the applied change must be marked reverted")
+	}
+	if w := sessionRequest(t, s, http.MethodPost, "/chat/"+c.ID+"/revert", "admin", `{"index":0}`, "application/json"); w.Code != http.StatusConflict {
+		t.Errorf("a second revert = %d", w.Code)
+	}
+}
+
+func TestApplyRefusesWhenAPendingChangeNoLongerApplies(t *testing.T) {
+	s, gh, c := chatWithPending(t)
+	c.Pending = append(c.Pending, chat.PendingChange{Tool: "add_transactions", Arguments: json.RawMessage(`{"transactions":[{"id":"bad","date":"2026-08-21","description":"X","amount":1,"account":"Private Checking","category":"nope"}]}`)})
+	s.chatStore.Save(c)
+	w := sessionRequest(t, s, http.MethodPost, "/chat/"+c.ID+"/apply", "admin", `{}`, "application/json")
+	if w.Code != http.StatusConflict || gh.puts != 0 {
+		t.Fatalf("apply = %d with %d puts: %s", w.Code, gh.puts, w.Body)
+	}
+	saved, _ := s.chatStore.Load("octocat", c.ID)
+	if len(saved.Pending) != 3 || saved.Pending[2].Error == "" || saved.Pending[0].Error != "" {
+		t.Errorf("pending = %+v", saved.Pending)
+	}
+}
+
+func TestDiscardDropsOnePendingChange(t *testing.T) {
+	s, gh, c := chatWithPending(t)
+	w := sessionRequest(t, s, http.MethodPost, "/chat/"+c.ID+"/discard", "admin", `{"index":1}`, "application/json")
+	if w.Code != http.StatusOK {
+		t.Fatalf("discard = %d %s", w.Code, w.Body)
+	}
+	saved, _ := s.chatStore.Load("octocat", c.ID)
+	if len(saved.Pending) != 1 || saved.Pending[0].Tool != "add_transactions" || gh.puts != 0 {
+		t.Errorf("pending = %+v, puts %d", saved.Pending, gh.puts)
+	}
+	if w := sessionRequest(t, s, http.MethodPost, "/chat/"+c.ID+"/discard", "admin", `{"index":5}`, "application/json"); w.Code != http.StatusNotFound {
+		t.Errorf("out of range = %d", w.Code)
+	}
+}
+
+func TestApplyWithoutWritesConfiguredIs503(t *testing.T) {
+	s := chatServer(t, textAnswer("x"))
+	c, _ := s.chatStore.Create("octocat")
+	c.Pending = []chat.PendingChange{{Tool: "add_transactions", Arguments: json.RawMessage(pendingAdd)}}
+	s.chatStore.Save(c)
+	if w := sessionRequest(t, s, http.MethodPost, "/chat/"+c.ID+"/apply", "admin", `{}`, "application/json"); w.Code != http.StatusServiceUnavailable {
+		t.Errorf("apply = %d %s", w.Code, w.Body)
+	}
+}
+
+func TestPurgeDeletesEveryChatFromInfo(t *testing.T) {
+	s := chatServer(t, textAnswer("x"))
+	s.chatStore.Create("octocat")
+	s.chatStore.Create("someone-else")
+	w := sessionRequest(t, s, http.MethodPost, "/chat/purge", "admin", "", "application/x-www-form-urlencoded")
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/info" || s.chatStore.Count() != 0 {
+		t.Errorf("purge = %d -> %s, %d left", w.Code, w.Header().Get("Location"), s.chatStore.Count())
+	}
+	if w := sessionRequest(t, s, http.MethodPost, "/chat/purge", "push", "", "application/x-www-form-urlencoded"); w.Code != http.StatusForbidden {
+		t.Errorf("push may not purge: %d", w.Code)
 	}
 }

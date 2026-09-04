@@ -26,6 +26,7 @@
       {{if not .Rows}}<p class="not-configured">Say what you want to do, or attach a bank statement (CSV) and ask to reconcile it.</p>{{end}}
       {{range .Rows}}
       {{if eq .Kind "user"}}<div class="msg user"><pre>{{.Text}}</pre></div>
+      {{else if eq .Kind "note"}}<div class="msg note"><pre>{{.Text}}</pre></div>
       {{else if eq .Kind "assistant"}}<div class="msg assistant">{{if .Text}}<pre>{{.Text}}</pre>{{end}}{{if .Calls}}<ul class="calls">{{range .Calls}}<li><code>{{.}}</code></li>{{end}}</ul>{{end}}</div>
       {{else}}<details class="msg tool"><summary><code>{{.Tool}}</code></summary><pre>{{.Content}}</pre></details>
       {{end}}
@@ -43,10 +44,12 @@
     <p class="section-note usage">{{.Model}} · {{.Chat.Usage.PromptTokens}} prompt / {{.Chat.Usage.CompletionTokens}} completion tokens in this chat</p>
   </section>
 
-  <aside class="panel chat-changes">
+  <aside class="panel chat-changes" id="changes" data-chat="{{.Chat.ID}}">
     <h2 class="panel-title">Changes</h2>
+    <p id="changes-status" class="turn-status"></p>
     <h3 class="config-group">Pending</h3>
     {{if not .Chat.Pending}}<p class="not-configured">Nothing waiting for approval.</p>{{else}}
+    {{if .Writable}}<p><button class="button chat-action" type="button" data-action="apply" data-confirm="Commit every pending change to the data repo?">Approve all</button></p>{{end}}
     <ol class="pending">
       {{range $i, $p := .Chat.Pending}}
       <li class="{{if $p.Error}}failed{{end}}">
@@ -56,6 +59,7 @@
           {{if $p.Summary}}<pre class="summary">{{$p.Summary}}</pre>{{end}}
           <pre class="args">{{printf "%s" $p.Arguments}}</pre>
         </details>
+        <button class="link chat-action" type="button" data-action="discard" data-index="{{$i}}">Discard</button>
       </li>
       {{end}}
     </ol>
@@ -64,7 +68,7 @@
     {{if not .Chat.Applied}}<p class="not-configured">Nothing applied from this chat yet.</p>{{else}}
     <ol class="applied">
       {{range $i, $a := .Chat.Applied}}
-      <li class="{{if $a.Reverted}}reverted{{end}}"><code>{{$a.Path}}</code> — {{$a.Message}} <span class="since">{{$a.At.Format "02 Jan 15:04"}}</span>{{if $a.Reverted}} <span class="badge">reverted</span>{{end}}</li>
+      <li class="{{if $a.Reverted}}reverted{{end}}"><code>{{$a.Path}}</code> — {{$a.Message}} <span class="since">{{$a.At.Format "02 Jan 15:04"}}</span>{{if $a.Reverted}} <span class="badge">reverted</span>{{else if $.Writable}} <button class="link chat-action" type="button" data-action="revert" data-index="{{$i}}" data-confirm="Commit a revert of this change to the data repo?">Revert</button>{{end}}</li>
       {{end}}
     </ol>
     {{end}}

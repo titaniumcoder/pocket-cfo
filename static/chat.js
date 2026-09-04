@@ -3,6 +3,33 @@
 // the server persisted. The page holds no state of its own — everything a
 // reload needs is in the chat file on the server.
 (function () {
+  var changes = document.getElementById('changes');
+  if (changes) {
+    var changesStatus = document.getElementById('changes-status');
+    changes.addEventListener('click', function (e) {
+      var button = e.target.closest('.chat-action');
+      if (!button) return;
+      if (button.dataset.confirm && !window.confirm(button.dataset.confirm)) return;
+      button.disabled = true;
+      changesStatus.textContent = 'Working…';
+      fetch('/chat/' + changes.dataset.chat + '/' + button.dataset.action, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ index: Number(button.dataset.index || 0) })
+      }).then(function (resp) {
+        if (resp.ok) { location.reload(); return; }
+        return resp.text().then(function (t) {
+          var message = t;
+          try { message = JSON.parse(t).error.message; } catch (err) { /* plain text */ }
+          throw new Error(message || ('HTTP ' + resp.status));
+        });
+      }).catch(function (err) {
+        changesStatus.textContent = 'Failed: ' + err.message;
+        button.disabled = false;
+      });
+    });
+  }
+
   var form = document.getElementById('composer');
   if (!form) return;
   var transcript = document.getElementById('transcript');

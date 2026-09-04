@@ -623,6 +623,7 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
 .msg.calls, .msg.assistant .calls { font-size: .8rem; color: var(--muted); }
 .msg.assistant .calls { margin: .3rem 0 0; padding-left: 1.1rem; }
 .msg.tool { font-size: .8rem; color: var(--muted); padding: .2rem .9rem; }
+.msg.note { font-size: .8rem; color: var(--muted); align-self: center; font-style: italic; }
 .msg.tool pre { max-height: 14rem; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .75rem; }
 .composer textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--panel-border); border-radius: 10px; padding: .6rem .8rem; font: inherit; background: var(--panel-bg); color: inherit; resize: vertical; }
 .composer-row { display: flex; align-items: center; gap: .75rem; margin-top: .5rem; flex-wrap: wrap; }

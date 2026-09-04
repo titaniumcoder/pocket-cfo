@@ -1,10 +1,13 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"go/parser"
 	"go/token"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -622,8 +625,13 @@ func TestMCPAndRESTAgreeOnRefusingAMidMonthBalance(t *testing.T) {
 // that the whole stack in between — SDK decoding, the service, the store —
 // carries a real call from JSON-RPC to a commit.
 type fakeContents struct {
-	files map[string][]byte
+	files   map[string][]byte
+	blobs   map[string][]byte
+	deletes []string
+	puts    int
 }
+
+func contentSHA(body []byte) string { return "sha-" + fmt.Sprintf("%x", sha256.Sum256(body))[:12] }
 
 func (f *fakeContents) serve(t *testing.T) *httptest.Server {
 	t.Helper()
@@ -635,7 +643,7 @@ func (f *fakeContents) serve(t *testing.T) *httptest.Server {
 			if body, ok := f.files[path]; ok {
 				json.NewEncoder(w).Encode(map[string]string{
 					"content": base64.StdEncoding.EncodeToString(body),
-					"sha":     "sha-" + path,
+					"sha":     contentSHA(body),
 				})
 				return
 			}
@@ -660,10 +668,33 @@ func (f *fakeContents) serve(t *testing.T) *httptest.Server {
 				t.Fatalf("PUT content is not base64: %v", err)
 			}
 			f.files[path] = decoded
-			json.NewEncoder(w).Encode(map[string]any{"content": map[string]string{"sha": "sha-written"}})
+			f.puts++
+			if f.blobs == nil {
+				f.blobs = map[string][]byte{}
+			}
+			f.blobs[contentSHA(decoded)] = decoded
+			json.NewEncoder(w).Encode(map[string]any{"content": map[string]string{"sha": contentSHA(decoded)}})
+		case http.MethodDelete:
+			var req struct{ SHA string }
+			json.NewDecoder(r.Body).Decode(&req)
+			if body, ok := f.files[path]; !ok || contentSHA(body) != req.SHA {
+				w.WriteHeader(http.StatusConflict)
+				return
+			}
+			delete(f.files, path)
+			f.deletes = append(f.deletes, path)
+			io.WriteString(w, "{}")
 		default:
 			t.Fatalf("unexpected method %s", r.Method)
 		}
+	})
+	mux.HandleFunc("GET /repos/{owner}/{repo}/git/blobs/{sha}", func(w http.ResponseWriter, r *http.Request) {
+		body, ok := f.blobs[r.PathValue("sha")]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"content": base64.StdEncoding.EncodeToString(body), "encoding": "base64"})
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -672,9 +703,10 @@ func (f *fakeContents) serve(t *testing.T) *httptest.Server {
 
 func writingServer(t *testing.T, files map[string]string) (*server, *fakeContents) {
 	t.Helper()
-	gh := &fakeContents{files: map[string][]byte{}}
+	gh := &fakeContents{files: map[string][]byte{}, blobs: map[string][]byte{}}
 	for k, v := range files {
 		gh.files[k] = []byte(v)
+		gh.blobs[contentSHA([]byte(v))] = []byte(v)
 	}
 	srv := gh.serve(t)
 	s := putServer(t)
@@ -748,7 +780,7 @@ func TestMCPAndRESTAgreeOnRefusingAStepOnAClosedMonth(t *testing.T) {
 	s, _ := changeServer(t)
 	thisMonth := time.Now().UTC().Format("2006-01")
 	body := `{"category_id":"00000000-0000-4000-8000-000000000001","from_month":` +
-		`"` + thisMonth + `","amount":999,"reason":"late raise","base_sha":"sha-data/budget.json"}`
+		`"` + thisMonth + `","amount":999,"reason":"late raise","base_sha":"` + contentSHA([]byte(changeBudgetJSON)) + `"}`
 
 	r := httptest.NewRequest(http.MethodPost, "/api/budget/schedule-amount-change", strings.NewReader(body))
 	r.Header.Set("Authorization", "Bearer "+apiTestToken)
@@ -782,7 +814,7 @@ func TestMCPSchedulesAnAmountChangeThroughTheWholeStack(t *testing.T) {
 	w := mcpCall(t, s, apiTestToken,
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"schedule_amount_change","arguments":`+
 			`{"category_id":"00000000-0000-4000-8000-000000000001","from_month":"`+nextJanuary+`"`+
-			`,"amount":950,"minimal_amount":900,"reason":"the landlord put the rent up","base_sha":"sha-data/budget.json"}}}`)
+			`,"amount":950,"minimal_amount":900,"reason":"the landlord put the rent up","base_sha":"`+contentSHA([]byte(changeBudgetJSON))+`"}}}`)
 	resp := decodeRPC(t, w.Body.String())
 	result, ok := resp["result"].(map[string]any)
 	if !ok {
@@ -795,8 +827,8 @@ func TestMCPSchedulesAnAmountChangeThroughTheWholeStack(t *testing.T) {
 	if sc["name"] != "Rent" || sc["from"] != nextJanuary || sc["amount"] != 950.0 {
 		t.Errorf("result = %v, want Rent stepping to 950 in %s", sc, nextJanuary)
 	}
-	if sc["sha"] != "sha-written" {
-		t.Errorf("sha = %v, want sha-written", sc["sha"])
+	if sc["sha"] != contentSHA(gh.files["data/budget.json"]) {
+		t.Errorf("sha = %v, want the committed content's sha", sc["sha"])
 	}
 
 	written := string(gh.files["data/budget.json"])

@@ -47,6 +47,9 @@ type infoView struct {
 
 	Rules []tracker.RuleChange
 
+	ChatEnabled bool
+	ChatCount   int
+
 	HolidaysErr string
 	Countries   []infoCountryView
 }
@@ -80,6 +83,9 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	})
 
 	view.Rules = tracker.RulesTimeline(s.tracker.Personal, s.tracker.Start, time.Now())
+	if s.chatStore != nil {
+		view.ChatEnabled, view.ChatCount = true, s.chatStore.Count()
+	}
 
 	mode := s.cfg.togglMode
 	view.TogglMode = togglModeLabel(mode)

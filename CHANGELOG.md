@@ -8,47 +8,22 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
-## [2.0.0-rc.4] - 2026-09-05
+## [2.0.0] - 2026-09-05
 
-The fourth candidate for 2.0: rc.3 lost long answers to a request deadline. Published as `:next`, not `:latest`.
-
-### Fixed
-- The chat no longer fails with "reaching the model endpoint: error reading response body: context deadline exceeded" on a long answer: the completion is streamed from the provider and assembled as it arrives, so a reasoning model may take as long as it needs; only an endpoint that sends nothing for three minutes is given up on, and a turn has nine minutes per model call in total.
-
-## [2.0.0-rc.3] - 2026-09-04
-
-The third candidate for 2.0: the chat becomes usable — laid out for the job, turns that survive a tab switch, questions instead of guesses, and the three hand-maintained files editable with a diff to approve. Published as `:next`, not `:latest`.
+Previewed as 2.0.0-rc.1 to 2.0.0-rc.4. The feature that defines 2.0 is the in-app chat: reconciling bank statements in a conversation inside Pocket CFO, with every write staged for approval, instead of driving an external agent against the API.
 
 ### Added
-- `read_data_file` and `write_data_file` (MCP, `GET`/`PUT /api/files/{name}`, chat) serve `budget.json`, `accounts.json` and `config.json` whole, for what the narrower tools cannot express — a moved dividend, a new category or account, a new dated rule. A write must pass the file's own validation, becomes one commit with the reason as its message, and reports the diff; in the chat it is staged and reviewed as that diff.
-- The chat asks instead of assuming: an `ask_user` tool ends the turn with a question card — clickable options and, where sensible, a free-text field — and the answer resumes the turn. The system prompt makes this the normal way to resolve an unknown account, category or line.
-
-### Changed
-- The chat page is laid out for the job: the conversation fills the screen with the composer pinned at the bottom — a full-width box, an Attach button with removable file chips, Enter to send — and the Changes rail sits beside it on a wide screen and below it on a phone.
-- The chat transcript tells logs from answers: the model's reasoning, its tool calls and their results are gray, collapsed monospace lines between your message and the answer, and the answer is a white card with light formatting (lists, bold, code), everything wrapped.
-
-### Fixed
-- A chat turn no longer dies with the browser tab: it runs on the server until it finishes, the page follows it over a live event stream and picks it up again after a reload or a tab switch, and the composer is disabled while it runs.
-
-## [2.0.0-rc.2] - 2026-09-04
-
-The second candidate for 2.0: rc.1 refused to boot on a deployment that carried `OPENAI_API_KEY` without the rest of the chat configuration. Published as `:next`, not `:latest`.
-
-### Changed
-- `STATE_DIR` is the one writable directory the app keeps between restarts — `cache/` for Toggl, `chat/` for the chats — set to `/var/data/pocketcfo` by the image, so a deployment mounts one volume there and sets nothing else. `TOGGL_CACHE_DIR` and `CHAT_DIR` remain as overrides; chats no longer default to a subdirectory of the Toggl cache.
-
-### Fixed
-- `OPENAI_API_KEY` alone is enough to boot: an unset `OPENAI_MODEL` falls back to `gpt-5` (`openai/gpt-5` on OpenRouter) and an unset chat directory falls back to a temporary one, each with a log line — 2.0.0-rc.1 refused to start in both cases, which would have crashed a deploy that already carried the key.
-
-## [2.0.0-rc.1] - 2026-09-04
-
-A release candidate for 2.0: the in-app chat. Published as `:next`, not `:latest`.
-
-### Added
-- A **Chat** tab, for admins only, where a bank statement is uploaded and reconciled in a conversation with a model: read tools run at once, every write the model proposes is staged as a pending change that nothing commits, and the conversation is kept on the server so it survives a reload or a redeploy. Several chats per user; a chat can be closed. Present only when `OPENAI_API_KEY` is set. Pending changes are approved together — one commit per touched file, however many tool calls produced it — or discarded one by one, and every applied change has a **Revert** button that commits the previous content back (or removes a file the change created). `/info` counts the stored chats and can delete them all.
-- `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_EXTRA_BODY` and `CHAT_DIR` configure the in-app Chat tab: any OpenAI-compatible endpoint, the model passed through verbatim, and a directory for the chats. The key set without a model or without anywhere to keep chats refuses to boot; `/info` shows the resolved values.
-- Release candidates: a tag such as `v2.0.0-rc.1` publishes the image under its own tag and `:next` — never `:latest` — is marked pre-release on GitHub, and does not notify the data repo, so a test deployment can follow `:next` while production stays on stable tags. The `release-it` skill cuts and later promotes them.
+- A **Chat** tab, for admins only, where a bank statement is uploaded and reconciled in a conversation with a model behind any OpenAI-compatible endpoint. The conversation fills the screen with the composer pinned at the bottom — a full-width box, an Attach button with removable file chips, Enter to send — and the Changes rail sits beside it on a wide screen and below it on a phone. The transcript tells logs from answers: the model's reasoning, tool calls and results are gray, collapsed lines between your message and the answer, which is a white card with light formatting. Several chats per user, kept on the server so they survive a reload or a redeploy; a chat can be closed, and `/info` counts the stored chats and can delete them all. Present only when `OPENAI_API_KEY` is set.
+- Every write the model proposes is **staged**, not committed: the Changes rail shows it as a pending change — a file edit as its diff — and you approve them together, one commit per touched file however many tool calls produced it, or discard one by one. Every applied change has a **Revert** button that commits the previous content back, or removes a file the change created.
+- A turn runs on the server until it finishes: the page follows it over a live event stream and picks it up again after a reload or a tab switch, the composer is disabled meanwhile, and the completion is streamed from the provider so a reasoning model may take as long as it needs — only an endpoint that sends nothing for three minutes is given up on.
+- The chat asks instead of assuming: an `ask_user` tool ends the turn with a question card — clickable options and, where sensible, a free-text field — and the answer resumes the turn.
+- `read_data_file` and `write_data_file` (MCP, `GET`/`PUT /api/files/{name}`, chat) serve `budget.json`, `accounts.json` and `config.json` whole, for what the narrower tools cannot express — a moved dividend, a new category or account, a new dated rule. A write must pass the file's own validation, becomes one commit with the reason as its message, and reports the diff.
 - `derive_transaction_ids` (MCP) and `POST /api/actuals/ids` (REST) hand an agent the stable id of every statement line — a short hash of account, date, amount and description, suffixed `-2`, `-3` for identical lines in one call — so ids are computed by the app rather than by the agent, and a re-imported statement still dedups line for line.
+- `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` and `OPENAI_EXTRA_BODY` configure the chat: any OpenAI-compatible endpoint, the model passed through verbatim (an OpenRouter preset works), and a JSON object merged into every request for provider-specific fields such as OpenRouter's zero-data-retention routing. The key alone is enough to boot: an unset model falls back to `gpt-5` (`openai/gpt-5` on OpenRouter) with a log line.
+- Release candidates: a tag such as `v2.0.0-rc.1` publishes the image under its own tag and `:next` — never `:latest` — is marked pre-release on GitHub, and does not notify the data repo, so a test deployment can follow `:next` while production stays on stable tags. The `release-it` skill cuts and later promotes them.
+
+### Changed
+- `STATE_DIR` is the one writable directory the app keeps between restarts — `cache/` for Toggl, `chat/` for the chats — set to `/var/data/pocketcfo` by the image, so a deployment mounts one volume there and sets nothing else. `TOGGL_CACHE_DIR` stays as an override, so an existing deployment keeps working; `CHAT_DIR` overrides the chat half.
 
 ## [1.0.1] - 2026-09-04
 
@@ -556,11 +531,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0-rc.4...HEAD
-[2.0.0-rc.4]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0-rc.3...v2.0.0-rc.4
-[2.0.0-rc.3]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0-rc.2...v2.0.0-rc.3
-[2.0.0-rc.2]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0-rc.1...v2.0.0-rc.2
-[2.0.0-rc.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v1.0.1...v2.0.0-rc.1
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v1.0.1...v2.0.0
 [1.0.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v0.35.3...v1.0.0
 [0.35.3]: https://github.com/titaniumcoder/pocket-cfo/compare/v0.35.2...v0.35.3

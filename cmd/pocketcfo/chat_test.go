@@ -322,3 +322,31 @@ func TestPurgeDeletesEveryChatFromInfo(t *testing.T) {
 		t.Errorf("push may not purge: %d", w.Code)
 	}
 }
+
+func TestTranscriptRowsGroupLogsBetweenTheUserAndTheAnswer(t *testing.T) {
+	c := &chat.Chat{Messages: []chat.Message{
+		{Role: "user", Content: "reconcile"},
+		{Role: "assistant", Reasoning: "look at august first", ToolCalls: []chat.ToolCall{{ID: "c1", Type: "function", Function: chat.FunctionCall{Name: "get_actuals", Arguments: `{"month":"2026-08"}`}}}},
+		{Role: "tool", ToolCallID: "c1", Name: "get_actuals", Content: `{"month":"2026-08","transactions":[]}`},
+		{Role: "assistant", Content: "Nothing recorded yet. **Attach** the statement."},
+		{Role: "user", Content: "System note: the user approved and committed data/actuals/2026-08.json."},
+	}}
+	rows := rowsOf(c)
+	kinds := []string{}
+	for _, r := range rows {
+		kinds = append(kinds, r.Kind)
+	}
+	if strings.Join(kinds, " ") != "user logs answer note" {
+		t.Fatalf("rows = %v", kinds)
+	}
+	logs := rows[1].Logs
+	if len(logs) != 3 || logs[0].Kind != "thinking" || logs[1].Kind != "call" || logs[1].Name != "get_actuals" || logs[2].Kind != "result" {
+		t.Errorf("logs = %+v", logs)
+	}
+	if !strings.Contains(string(rows[2].HTML), "<strong>Attach</strong>") {
+		t.Errorf("answer html = %s", rows[2].HTML)
+	}
+	if strings.HasPrefix(rows[3].Text, "System note") {
+		t.Error("the note prefix is not shown")
+	}
+}

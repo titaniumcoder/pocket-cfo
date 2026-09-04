@@ -8,6 +8,9 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Changed
+- The chat transcript tells logs from answers: the model's reasoning, its tool calls and their results are gray, collapsed monospace lines between your message and the answer, and the answer is a white card with light formatting (lists, bold, code), everything wrapped.
+
 ### Fixed
 - A chat turn no longer dies with the browser tab: it runs on the server until it finishes, the page follows it over a live event stream and picks it up again after a reload or a tab switch, and the composer is disabled while it runs.
 

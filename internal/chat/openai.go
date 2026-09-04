@@ -36,9 +36,15 @@ type Client struct {
 type Message struct {
 	Role       string     `json:"role"`
 	Content    string     `json:"content,omitempty"`
+	Reasoning  string     `json:"reasoning,omitempty"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
 	Name       string     `json:"name,omitempty"`
+}
+
+func (m Message) outbound() Message {
+	m.Reasoning = ""
+	return m
 }
 
 type ToolCall struct {
@@ -132,7 +138,7 @@ func (c *Client) params(messages []Message, tools []ToolDef) (openai.ChatComplet
 		Store: openai.Bool(false),
 	}
 	for i, m := range messages {
-		raw, err := json.Marshal(m)
+		raw, err := json.Marshal(m.outbound())
 		if err != nil {
 			return params, err
 		}
@@ -163,6 +169,14 @@ func decodeCompletion(resp *openai.ChatCompletion) (Completion, error) {
 	}
 	if msg.Role == "" {
 		msg.Role = "assistant"
+	}
+	if msg.Reasoning == "" {
+		var alt struct {
+			ReasoningContent string `json:"reasoning_content"`
+		}
+		if json.Unmarshal([]byte(choice.Message.RawJSON()), &alt) == nil {
+			msg.Reasoning = alt.ReasoningContent
+		}
 	}
 	return Completion{
 		Message:      msg,

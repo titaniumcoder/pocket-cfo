@@ -50,6 +50,24 @@
     box.scrollIntoView({ block: 'end' });
   }
 
+  var logBox = null;
+  function log(kind, name, text) {
+    if (!logBox) {
+      logBox = document.createElement('div');
+      logBox.className = 'msg logs';
+      transcript.appendChild(logBox);
+    }
+    var line = document.createElement('div');
+    line.className = 'log';
+    var k = document.createElement('span'); k.className = 'log-kind'; k.textContent = kind;
+    var n = document.createElement('span'); n.className = 'log-name'; n.textContent = name;
+    var t = document.createElement('span'); t.className = 'log-text'; t.textContent = text;
+    line.appendChild(k); line.appendChild(n); line.appendChild(t);
+    logBox.appendChild(line);
+    line.scrollIntoView({ block: 'end' });
+  }
+  function excerpt(s) { s = (s || '').replace(/\s+/g, ' '); return s.length > 240 ? s.slice(0, 240) + '…' : s; }
+
   function readFiles(input) {
     return Promise.all(Array.prototype.map.call(input.files, function (file) {
       return new Promise(function (resolve, reject) {
@@ -69,13 +87,16 @@
       var ev = JSON.parse(e.data);
       switch (ev.event) {
         case 'assistant':
-          if (ev.message.content) show('assistant', ev.message.content);
+          if (ev.message.reasoning) log('thinking', '', excerpt(ev.message.reasoning));
           if (ev.message.tool_calls) {
-            show('assistant calls', ev.message.tool_calls.map(function (c) { return c.function.name; }).join(', '));
+            ev.message.tool_calls.forEach(function (c) { log('call', c.function.name, excerpt(c.function.arguments)); });
+          } else if (ev.message.content) {
+            logBox = null;
+            show('answer', ev.message.content);
           }
           break;
         case 'tool':
-          show('tool', ev.message.name + ' → ' + (ev.message.content || '').slice(0, 400));
+          log('→', ev.message.name, excerpt(ev.message.content));
           break;
         case 'pending':
           status.textContent = ev.pending.error ? ev.pending.tool + ' failed: ' + ev.pending.error : 'Staged ' + ev.pending.tool + ' — waiting for your approval';

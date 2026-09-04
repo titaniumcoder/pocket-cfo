@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 	"strconv"
@@ -136,11 +137,64 @@ func (s *server) chatNew(w http.ResponseWriter, r *http.Request) {
 }
 
 type chatRow struct {
+	Kind string
+	Text string
+	HTML template.HTML
+	Logs []logLine
+}
+
+type logLine struct {
 	Kind    string
+	Name    string
 	Text    string
-	Calls   []string
-	Tool    string
 	Content string
+}
+
+const logExcerpt = 240
+
+func rowsOf(c *chat.Chat) []chatRow {
+	var rows []chatRow
+	var logs []logLine
+	flushLogs := func() {
+		if len(logs) > 0 {
+			rows = append(rows, chatRow{Kind: "logs", Logs: logs})
+			logs = nil
+		}
+	}
+	for _, m := range c.Messages {
+		switch m.Role {
+		case "user":
+			flushLogs()
+			if strings.HasPrefix(m.Content, "System note: ") {
+				rows = append(rows, chatRow{Kind: "note", Text: strings.TrimPrefix(m.Content, "System note: ")})
+			} else {
+				rows = append(rows, chatRow{Kind: "user", Text: m.Content})
+			}
+		case "assistant":
+			if m.Reasoning != "" {
+				logs = append(logs, logLine{Kind: "thinking", Text: m.Reasoning})
+			}
+			for _, tc := range m.ToolCalls {
+				logs = append(logs, logLine{Kind: "call", Name: tc.Function.Name, Text: excerpt(tc.Function.Arguments), Content: tc.Function.Arguments})
+			}
+			if len(m.ToolCalls) == 0 && strings.TrimSpace(m.Content) != "" {
+				flushLogs()
+				rows = append(rows, chatRow{Kind: "answer", Text: m.Content, HTML: chat.Markdown(m.Content)})
+			}
+		case "tool":
+			logs = append(logs, logLine{Kind: "result", Name: m.Name, Text: excerpt(m.Content), Content: m.Content})
+		}
+	}
+	flushLogs()
+	return rows
+}
+
+func excerpt(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) > logExcerpt {
+		return s[:logExcerpt] + "…"
+	}
+	return s
 }
 
 type chatView struct {
@@ -150,29 +204,6 @@ type chatView struct {
 	Writable bool
 	Running  bool
 	Model    string
-}
-
-func rowsOf(c *chat.Chat) []chatRow {
-	var rows []chatRow
-	for _, m := range c.Messages {
-		switch m.Role {
-		case "user":
-			kind := "user"
-			if strings.HasPrefix(m.Content, "System note: ") {
-				kind = "note"
-			}
-			rows = append(rows, chatRow{Kind: kind, Text: m.Content})
-		case "assistant":
-			row := chatRow{Kind: "assistant", Text: m.Content}
-			for _, tc := range m.ToolCalls {
-				row.Calls = append(row.Calls, tc.Function.Name+" "+tc.Function.Arguments)
-			}
-			rows = append(rows, row)
-		case "tool":
-			rows = append(rows, chatRow{Kind: "tool", Tool: m.Name, Content: m.Content})
-		}
-	}
-	return rows
 }
 
 func (s *server) chatShow(w http.ResponseWriter, r *http.Request) {

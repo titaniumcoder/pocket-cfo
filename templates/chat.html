@@ -26,9 +26,14 @@
       {{if not .Rows}}<p class="not-configured">Say what you want to do, or attach a bank statement (CSV) and ask to reconcile it.</p>{{end}}
       {{range .Rows}}
       {{if eq .Kind "user"}}<div class="msg user"><pre>{{.Text}}</pre></div>
-      {{else if eq .Kind "note"}}<div class="msg note"><pre>{{.Text}}</pre></div>
-      {{else if eq .Kind "assistant"}}<div class="msg assistant">{{if .Text}}<pre>{{.Text}}</pre>{{end}}{{if .Calls}}<ul class="calls">{{range .Calls}}<li><code>{{.}}</code></li>{{end}}</ul>{{end}}</div>
-      {{else}}<details class="msg tool"><summary><code>{{.Tool}}</code></summary><pre>{{.Content}}</pre></details>
+      {{else if eq .Kind "note"}}<div class="msg note">{{.Text}}</div>
+      {{else if eq .Kind "answer"}}<div class="msg answer">{{.HTML}}</div>
+      {{else if eq .Kind "logs"}}<div class="msg logs">
+        {{range .Logs}}{{if eq .Kind "thinking"}}<div class="log"><span class="log-kind">thinking</span><span class="log-text">{{.Text}}</span></div>
+        {{else if eq .Kind "call"}}<details class="log"><summary><span class="log-kind">call</span><span class="log-name">{{.Name}}</span><span class="log-text">{{.Text}}</span></summary><pre>{{.Content}}</pre></details>
+        {{else}}<details class="log"><summary><span class="log-kind">→</span><span class="log-name">{{.Name}}</span><span class="log-text">{{.Text}}</span></summary><pre>{{.Content}}</pre></details>
+        {{end}}{{end}}
+      </div>
       {{end}}
       {{end}}
     </div>

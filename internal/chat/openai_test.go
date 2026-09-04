@@ -93,6 +93,21 @@ func TestCompleteRoundTripsMessagesToolsAndExtraBody(t *testing.T) {
 	}
 }
 
+func TestReasoningIsKeptForThePageButNeverSentBack(t *testing.T) {
+	c, bodies, _ := stub(t, http.StatusOK, `{"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"hi","reasoning":"first I checked the month"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`)
+	out, err := c.Complete(context.Background(), []Message{{Role: "assistant", Content: "earlier", Reasoning: "old thoughts"}, {Role: "user", Content: "x"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Message.Reasoning != "first I checked the month" {
+		t.Errorf("reasoning not captured: %+v", out.Message)
+	}
+	sent := (*bodies)[0]["messages"].([]any)[0].(map[string]any)
+	if _, leaked := sent["reasoning"]; leaked {
+		t.Error("reasoning must not be sent back to the provider")
+	}
+}
+
 func TestAnErrorInsideA200BodyIsAnError(t *testing.T) {
 	c, _, _ := stub(t, http.StatusOK, `{"error":{"code":403,"message":"no ZDR endpoint for this model"},"user_id":"u"}`)
 	_, err := c.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil)

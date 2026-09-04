@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const toolCallAnswer = `{"id":"c1","object":"chat.completion","model":"m","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"get_actuals","arguments":"{\"month\":\"2026-08\"}"}}]}}],"usage":{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15}}`
@@ -28,6 +29,11 @@ func stub(t *testing.T, status int, answer string) (*Client, *[]map[string]any, 
 		}
 		bodies = append(bodies, body)
 		header = r.Header.Clone()
+		if status == http.StatusOK {
+			w.Header().Set("Content-Type", "text/event-stream")
+			io.WriteString(w, sseOf(answer))
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		io.WriteString(w, answer)
@@ -125,6 +131,75 @@ func TestAnHTTPErrorCarriesItsStatus(t *testing.T) {
 	if len(*bodies) != 1 {
 		t.Errorf("a 401 must not be retried, got %d requests", len(*bodies))
 	}
+}
+
+func TestTheRequestStreamsAndReadsReasoningDeltas(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		json.Unmarshal(raw, &body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"reasoning\":\"first \"}}]}\n\n")
+		io.WriteString(w, ": OPENROUTER PROCESSING\n\n")
+		io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning\":\"look\",\"content\":\"Hel\"}}]}\n\n")
+		io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"lo\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":2}}\n\n")
+		io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	t.Cleanup(srv.Close)
+	c, _ := NewClient(ClientConfig{Key: "k", BaseURL: srv.URL, Model: "m"})
+	out, err := c.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Message.Content != "Hello" || out.Message.Reasoning != "first look" || out.Usage.PromptTokens != 7 || out.FinishReason != "stop" {
+		t.Errorf("completion = %+v", out)
+	}
+	if body["stream"] != true || body["stream_options"].(map[string]any)["include_usage"] != true {
+		t.Errorf("the request must stream with usage: %v %v", body["stream"], body["stream_options"])
+	}
+}
+
+func TestAQuietEndpointIsGivenUpOn(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	t.Cleanup(srv.Close)
+	c, _ := NewClient(ClientConfig{Key: "k", BaseURL: srv.URL, Model: "m"})
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	_, err := c.Complete(ctx, []Message{{Role: "user", Content: "hi"}}, nil)
+	if err == nil {
+		t.Fatal("a stream that never answers must fail")
+	}
+}
+
+func sseOf(completion string) string {
+	var full struct {
+		Choices []struct {
+			FinishReason string          `json:"finish_reason"`
+			Message      json.RawMessage `json:"message"`
+		} `json:"choices"`
+		Usage json.RawMessage `json:"usage"`
+	}
+	if err := json.Unmarshal([]byte(completion), &full); err != nil || len(full.Choices) == 0 {
+		return "data: " + completion + "\n\ndata: [DONE]\n\n"
+	}
+	var delta map[string]any
+	json.Unmarshal(full.Choices[0].Message, &delta)
+	if calls, ok := delta["tool_calls"].([]any); ok {
+		for i, c := range calls {
+			c.(map[string]any)["index"] = i
+		}
+	}
+	first, _ := json.Marshal(map[string]any{"id": "c", "object": "chat.completion.chunk", "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": nil}}})
+	last := map[string]any{"id": "c", "object": "chat.completion.chunk", "choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": full.Choices[0].FinishReason}}}
+	if len(full.Usage) > 0 {
+		last["usage"] = full.Usage
+	}
+	second, _ := json.Marshal(last)
+	return "data: " + string(first) + "\n\n: keepalive\n\ndata: " + string(second) + "\n\ndata: [DONE]\n\n"
 }
 
 func TestClientNeedsAKeyAndAModelAndAnObjectExtraBody(t *testing.T) {

@@ -8,6 +8,9 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Fixed
+- The chat no longer fails with "reaching the model endpoint: error reading response body: context deadline exceeded" on a long answer: the completion is streamed from the provider and assembled as it arrives, so a reasoning model may take as long as it needs; only an endpoint that sends nothing for three minutes is given up on, and a turn has nine minutes per model call in total.
+
 ## [2.0.0-rc.3] - 2026-09-04
 
 The third candidate for 2.0: the chat becomes usable — laid out for the job, turns that survive a tab switch, questions instead of guesses, and the three hand-maintained files editable with a diff to approve. Published as `:next`, not `:latest`.

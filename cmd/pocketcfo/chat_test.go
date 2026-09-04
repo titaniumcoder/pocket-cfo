@@ -26,11 +26,11 @@ func enableChat(t *testing.T, s *server, answers ...string) *server {
 	n := 0
 	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.ReadAll(r.Body)
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", "text/event-stream")
 		if n < len(answers) {
-			io.WriteString(w, answers[n])
+			io.WriteString(w, sseOf(answers[n]))
 		} else {
-			io.WriteString(w, answers[len(answers)-1])
+			io.WriteString(w, sseOf(answers[len(answers)-1]))
 		}
 		n++
 	}))
@@ -172,8 +172,8 @@ func slowChatRunner(t *testing.T, s *server) *chat.Runner {
 	t.Helper()
 	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(400 * time.Millisecond)
-		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, textAnswer("slow answer"))
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, sseOf(textAnswer("slow answer")))
 	}))
 	t.Cleanup(stub.Close)
 	client, err := chat.NewClient(chat.ClientConfig{Key: s.cfg.openAIKey, BaseURL: stub.URL, Model: s.cfg.openAIModel, HTTP: &http.Client{Timeout: 5 * time.Second}})
@@ -369,4 +369,31 @@ func TestAnOpenQuestionRendersOptionsAndAnAnswerStartsATurn(t *testing.T) {
 	if saved.Question != nil || len(saved.Messages) != 4 {
 		t.Errorf("saved = %+v", saved.Messages)
 	}
+}
+
+func sseOf(completion string) string {
+	var full struct {
+		Choices []struct {
+			FinishReason string          `json:"finish_reason"`
+			Message      json.RawMessage `json:"message"`
+		} `json:"choices"`
+		Usage json.RawMessage `json:"usage"`
+	}
+	if err := json.Unmarshal([]byte(completion), &full); err != nil || len(full.Choices) == 0 {
+		return "data: " + completion + "\n\ndata: [DONE]\n\n"
+	}
+	var delta map[string]any
+	json.Unmarshal(full.Choices[0].Message, &delta)
+	if calls, ok := delta["tool_calls"].([]any); ok {
+		for i, c := range calls {
+			c.(map[string]any)["index"] = i
+		}
+	}
+	first, _ := json.Marshal(map[string]any{"id": "c", "object": "chat.completion.chunk", "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": nil}}})
+	last := map[string]any{"id": "c", "object": "chat.completion.chunk", "choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": full.Choices[0].FinishReason}}}
+	if len(full.Usage) > 0 {
+		last["usage"] = full.Usage
+	}
+	second, _ := json.Marshal(last)
+	return "data: " + string(first) + "\n\n: keepalive\n\ndata: " + string(second) + "\n\ndata: [DONE]\n\n"
 }

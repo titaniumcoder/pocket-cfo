@@ -67,8 +67,8 @@ func (s *scripted) handler(t *testing.T) http.Handler {
 		s.requests = append(s.requests, body)
 		n := len(s.requests)
 		s.mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
 		if s.status != 0 {
+			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(s.status)
 			io.WriteString(w, `{"error":{"message":"down"}}`)
 			return
@@ -76,7 +76,8 @@ func (s *scripted) handler(t *testing.T) http.Handler {
 		if n > len(s.answers) {
 			n = len(s.answers)
 		}
-		io.WriteString(w, s.answers[n-1])
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, sseOf(s.answers[n-1]))
 	})
 }
 

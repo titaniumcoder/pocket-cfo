@@ -16,7 +16,10 @@ import (
 
 const DefaultBaseURL = "https://api.openai.com/v1"
 
-const completionTimeout = 180 * time.Second
+const (
+	completionTimeout = 9 * time.Minute
+	completionIdle    = 3 * time.Minute
+)
 
 type ClientConfig struct {
 	Key       string
@@ -125,17 +128,90 @@ func (c *Client) Complete(ctx context.Context, messages []Message, tools []ToolD
 	for key, value := range c.extra {
 		perRequest = append(perRequest, option.WithJSONSet(key, value))
 	}
-	resp, err := c.api.Chat.Completions.New(ctx, params, perRequest...)
-	if err != nil {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	quiet := false
+	idle := time.AfterFunc(completionIdle, func() { quiet = true; cancel() })
+	defer idle.Stop()
+
+	stream := c.api.Chat.Completions.NewStreaming(ctx, params, perRequest...)
+	var acc openai.ChatCompletionAccumulator
+	var reasoning strings.Builder
+	var streamed *streamedExtras
+	for stream.Next() {
+		idle.Reset(completionIdle)
+		chunk := stream.Current()
+		acc.AddChunk(chunk)
+		streamed = readExtras(chunk.RawJSON(), &reasoning, streamed)
+	}
+	if err := stream.Err(); err != nil {
+		if quiet {
+			return Completion{}, fmt.Errorf("the model endpoint sent nothing for %s", completionIdle)
+		}
 		return Completion{}, describe(err)
 	}
-	return decodeCompletion(resp)
+	if streamed != nil && streamed.err != "" {
+		return Completion{}, fmt.Errorf("the model endpoint refused the request: %s", streamed.err)
+	}
+	return completionOf(acc, reasoning.String())
+}
+
+type streamedExtras struct {
+	err string
+}
+
+func readExtras(raw string, reasoning *strings.Builder, so *streamedExtras) *streamedExtras {
+	var chunk struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+		Choices []struct {
+			Delta struct {
+				Reasoning        string `json:"reasoning"`
+				ReasoningContent string `json:"reasoning_content"`
+			} `json:"delta"`
+		} `json:"choices"`
+	}
+	if json.Unmarshal([]byte(raw), &chunk) != nil {
+		return so
+	}
+	if chunk.Error.Message != "" {
+		if so == nil {
+			so = &streamedExtras{}
+		}
+		so.err = chunk.Error.Message
+	}
+	for _, ch := range chunk.Choices {
+		reasoning.WriteString(ch.Delta.Reasoning)
+		reasoning.WriteString(ch.Delta.ReasoningContent)
+	}
+	return so
+}
+
+func completionOf(acc openai.ChatCompletionAccumulator, reasoning string) (Completion, error) {
+	if len(acc.Choices) == 0 {
+		return Completion{}, errors.New("the model endpoint answered without a choice")
+	}
+	choice := acc.Choices[0]
+	msg := Message{Role: "assistant", Content: choice.Message.Content, Reasoning: reasoning}
+	for _, tc := range choice.Message.ToolCalls {
+		msg.ToolCalls = append(msg.ToolCalls, ToolCall{
+			ID: tc.ID, Type: "function",
+			Function: FunctionCall{Name: tc.Function.Name, Arguments: tc.Function.Arguments},
+		})
+	}
+	return Completion{
+		Message:      msg,
+		FinishReason: string(choice.FinishReason),
+		Usage:        Usage{PromptTokens: acc.Usage.PromptTokens, CompletionTokens: acc.Usage.CompletionTokens},
+	}, nil
 }
 
 func (c *Client) params(messages []Message, tools []ToolDef) (openai.ChatCompletionNewParams, error) {
 	params := openai.ChatCompletionNewParams{
-		Model: c.model,
-		Store: openai.Bool(false),
+		Model:         c.model,
+		Store:         openai.Bool(false),
+		StreamOptions: openai.ChatCompletionStreamOptionsParam{IncludeUsage: openai.Bool(true)},
 	}
 	for i, m := range messages {
 		raw, err := json.Marshal(m.outbound())
@@ -156,46 +232,6 @@ func (c *Client) params(messages []Message, tools []ToolDef) (openai.ChatComplet
 		}))
 	}
 	return params, nil
-}
-
-func decodeCompletion(resp *openai.ChatCompletion) (Completion, error) {
-	if len(resp.Choices) == 0 {
-		return Completion{}, bodyError(resp.RawJSON())
-	}
-	choice := resp.Choices[0]
-	var msg Message
-	if err := json.Unmarshal([]byte(choice.Message.RawJSON()), &msg); err != nil {
-		return Completion{}, fmt.Errorf("chat: the model's answer is not a message: %v", err)
-	}
-	if msg.Role == "" {
-		msg.Role = "assistant"
-	}
-	if msg.Reasoning == "" {
-		var alt struct {
-			ReasoningContent string `json:"reasoning_content"`
-		}
-		if json.Unmarshal([]byte(choice.Message.RawJSON()), &alt) == nil {
-			msg.Reasoning = alt.ReasoningContent
-		}
-	}
-	return Completion{
-		Message:      msg,
-		FinishReason: string(choice.FinishReason),
-		Usage:        Usage{PromptTokens: resp.Usage.PromptTokens, CompletionTokens: resp.Usage.CompletionTokens},
-	}, nil
-}
-
-func bodyError(raw string) error {
-	var body struct {
-		Error struct {
-			Code    any    `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if json.Unmarshal([]byte(raw), &body) == nil && body.Error.Message != "" {
-		return fmt.Errorf("the model endpoint refused the request: %s", body.Error.Message)
-	}
-	return errors.New("the model endpoint answered without a choice")
 }
 
 func describe(err error) error {

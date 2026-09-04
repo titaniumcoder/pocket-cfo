@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,8 +23,8 @@ func slowRunner(t *testing.T, delay time.Duration) *Runner {
 		if first {
 			time.Sleep(delay)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(textAnswer("done after the wait")))
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, sseOf(textAnswer("done after the wait")))
 	}))
 	t.Cleanup(srv.Close)
 	r, _ := runner(t, &scripted{answers: []string{textAnswer("x")}})

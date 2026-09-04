@@ -49,6 +49,10 @@ COPY --from=builder /usr/src/app/build ./build
 # Which data checkout is mounted, shown under the title. The data is
 # bind-mounted at run time (see above), so only whoever deploys knows its date
 # and commit — set these there. Unset renders nothing at all.
+# Everything the app keeps between restarts lives under one directory —
+# cache/ for Toggl, chat/ for the chats — so a deployment mounts one volume
+# here and sets nothing else.
+ENV STATE_DIR=/var/data/pocketcfo
 ENV DATA_UPDATED_AT=""
 ENV DATA_COMMIT=""
 

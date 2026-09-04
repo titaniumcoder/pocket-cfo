@@ -24,9 +24,10 @@ export GITHUB_DATA_TOKEN=
 export GITHUB_API_URL=
 # The in-app Chat tab (admins only) talks to any OpenAI-compatible chat
 # completions endpoint. Unset key means the tab does not exist: no menu entry,
-# and /chat is a 404. With the key set, OPENAI_MODEL is required and is passed
-# through verbatim — an OpenAI model, an OpenRouter reference such as
-# anthropic/claude-sonnet-4.5, or an OpenRouter preset such as @preset/pocket-cfo.
+# and /chat is a 404. OPENAI_MODEL is passed through verbatim — an OpenAI
+# model, an OpenRouter reference such as anthropic/claude-sonnet-4.5, or an
+# OpenRouter preset such as @preset/pocket-cfo. Unset, the chat uses gpt-5
+# (openai/gpt-5 when OPENAI_BASE_URL points at OpenRouter) and says so in the log.
 export OPENAI_API_KEY=
 export OPENAI_MODEL=
 # Optional, default https://api.openai.com/v1; https://openrouter.ai/api/v1 for
@@ -38,9 +39,9 @@ export OPENAI_BASE_URL=
 # anything beyond that is a contract with the provider, not a flag.
 export OPENAI_EXTRA_BODY=
 # Where chats are kept, one JSON file per chat under a directory per user.
-# Optional when TOGGL_CACHE_DIR is set: it then defaults to <TOGGL_CACHE_DIR>/chats,
-# i.e. the same volume. Required otherwise once OPENAI_API_KEY is set.
-# export CHAT_DIR=/var/cache/pocketcfo/chats
+# Defaults to <STATE_DIR>/chat; with neither set, chats land in a temporary
+# directory that a restart wipes, and the log warns about it at start.
+# export CHAT_DIR=/var/data/pocketcfo/chat
 
 # Used by `pocket-cfo-ctl translate` to fill missing Bulgarian text on drafts.
 export DEEPL_API_KEY=
@@ -110,13 +111,15 @@ export TOGGL_MODE=
 # Premium) and the client stops at that limit by itself, so the default
 # fits every plan.
 # export TOGGL_REFRESH_INTERVAL=15m
-# Optional: a writable directory for the Toggl cache, one small JSON file
-# per backend. Set, a restart (or a Fly machine waking from auto-stop)
-# serves the last hours at once and asks Toggl only for what is due;
-# unset, the cache lives in memory and every start pulls the year again.
-# On Fly, mount a volume and point this at it. Derived, disposable data:
-# /info has a "Reset Toggl cache" button that wipes it.
-# export TOGGL_CACHE_DIR=/var/cache/pocketcfo
+# Optional: one writable directory for everything kept between restarts —
+# <STATE_DIR>/cache holds the Toggl cache, <STATE_DIR>/chat the chats. The
+# image sets it to /var/data/pocketcfo, so on Fly you mount a volume there
+# and set nothing else. Unset (a local run), the Toggl cache lives in memory
+# and every start pulls the year again. Derived, disposable data: /info has
+# buttons that wipe each part.
+# export STATE_DIR=/var/data/pocketcfo
+# Optional overrides for either part on its own.
+# export TOGGL_CACHE_DIR=/var/data/pocketcfo/cache
 # Optional. Default to config.json — non-secret finance tunables
 # (hoursPerDay, togglProjectIds, toggl2ProjectIds, holidayCountry,
 # holidaySubdivision, hourlyRateCents, currency, annualVacationDays) plus

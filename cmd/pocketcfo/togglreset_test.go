@@ -94,7 +94,7 @@ func TestInfoPageShowsCacheStatisticsPerConfiguredBackend(t *testing.T) {
 	w := httptest.NewRecorder()
 	s.handleInfo(w, authorizedRequest(t, s))
 	body := w.Body.String()
-	for _, want := range []string{"Months cached</td><td>12 (0 stale", "HTTP requests to Toggl</td><td>2, 0 of them retries", "none — memory only (TOGGL_CACHE_DIR unset)"} {
+	for _, want := range []string{"Months cached</td><td>12 (0 stale", "HTTP requests to Toggl</td><td>2, 0 of them retries", "none — memory only (neither STATE_DIR nor TOGGL_CACHE_DIR is set)"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("info page lacks %q", want)
 		}

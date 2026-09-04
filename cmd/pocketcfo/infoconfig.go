@@ -64,6 +64,9 @@ func (s *server) configGroups() []configGroup {
 			{Name: "CATALOG_DIR", Value: getenv("CATALOG_DIR", "catalog")},
 			{Name: "CONFIG_FILE", Value: getenv("CONFIG_FILE", "config.json")},
 			{Name: "users.json", Value: usersFile},
+			{Name: "STATE_DIR", Value: orUnset(c.stateDir)},
+			{Name: "TOGGL_CACHE_DIR", Value: orUnset(c.togglCacheDir)},
+			{Name: "CHAT_DIR", Value: orUnset(c.chatDir)},
 		}},
 		{Name: "Credentials", Rows: []configRow{
 			{Name: "GITHUB_OAUTH_CLIENT_ID", Value: maskSecret(c.clientID), Secret: true},
@@ -97,7 +100,6 @@ func (s *server) configGroups() []configGroup {
 			{Name: "OPENAI_BASE_URL", Value: orUnset(c.openAIBaseURL)},
 			{Name: "OPENAI_MODEL", Value: orUnset(c.openAIModel)},
 			{Name: "OPENAI_EXTRA_BODY", Value: orUnset(c.openAIExtraBody)},
-			{Name: "CHAT_DIR", Value: orUnset(c.chatDir)},
 			{Name: "Chat tab", Value: enabledIf(c.chatEnabled())},
 		}},
 		{Name: "Email (Amazon SES)", Rows: []configRow{

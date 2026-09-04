@@ -27,7 +27,6 @@ var (
 	templatesDir       = getenv("TEMPLATES_DIR", "templates")
 	staticDir          = getenv("STATIC_DIR", "static")
 	budgetDir          = dataDir
-	togglCacheDir      = os.Getenv("TOGGL_CACHE_DIR")
 )
 
 // catalogNotesPath is read per call rather than at init, so tests can point
@@ -77,7 +76,10 @@ type config struct {
 	openAIBaseURL   string
 	openAIModel     string
 	openAIExtraBody string
-	chatDir         string
+
+	stateDir      string
+	togglCacheDir string
+	chatDir       string
 
 	finance   financeconfig.Config
 	togglMode string
@@ -108,6 +110,8 @@ func loadConfig() config {
 		openAIBaseURL:    os.Getenv("OPENAI_BASE_URL"),
 		openAIModel:      os.Getenv("OPENAI_MODEL"),
 		openAIExtraBody:  os.Getenv("OPENAI_EXTRA_BODY"),
+		stateDir:         os.Getenv("STATE_DIR"),
+		togglCacheDir:    os.Getenv("TOGGL_CACHE_DIR"),
 		chatDir:          os.Getenv("CHAT_DIR"),
 		finance:          financeconfig.Load(financeFileConfig),
 	}
@@ -130,7 +134,8 @@ func loadConfig() config {
 	}
 	c.togglMode = mode
 	applyDefaults(&c)
-	if err := resolveChat(&c, togglCacheDir); err != nil {
+	resolveStateDirs(&c)
+	if err := resolveChat(&c); err != nil {
 		log.Fatalf("pocketcfo: %v", err)
 	}
 	if c.env == envProd {
@@ -193,12 +198,20 @@ func resolveTogglMode(f financeconfig.Config) (string, error) {
 
 func (c config) chatEnabled() bool { return c.openAIKey != "" }
 
-func resolveChat(c *config, cacheDir string) error {
+const defaultChatModel = "gpt-5"
+
+func resolveStateDirs(c *config) {
+	if c.togglCacheDir == "" && c.stateDir != "" {
+		c.togglCacheDir = filepath.Join(c.stateDir, "cache")
+	}
+	if c.chatDir == "" && c.stateDir != "" {
+		c.chatDir = filepath.Join(c.stateDir, "chat")
+	}
+}
+
+func resolveChat(c *config) error {
 	if !c.chatEnabled() {
 		return nil
-	}
-	if c.openAIModel == "" {
-		return fmt.Errorf("OPENAI_API_KEY is set but OPENAI_MODEL is not — name the model (or OpenRouter preset) the chat should use (see .envrc.example)")
 	}
 	if _, err := chat.ParseExtraBody(c.openAIExtraBody); err != nil {
 		return fmt.Errorf("OPENAI_EXTRA_BODY %v", err)
@@ -206,13 +219,22 @@ func resolveChat(c *config, cacheDir string) error {
 	if c.openAIBaseURL == "" {
 		c.openAIBaseURL = chat.DefaultBaseURL
 	}
-	if c.chatDir == "" && cacheDir != "" {
-		c.chatDir = filepath.Join(cacheDir, "chats")
+	if c.openAIModel == "" {
+		c.openAIModel = defaultModelFor(c.openAIBaseURL)
+		log.Printf("pocketcfo: OPENAI_MODEL is not set — the chat uses %s; set it to choose another model or an OpenRouter preset", c.openAIModel)
 	}
 	if c.chatDir == "" {
-		return fmt.Errorf("OPENAI_API_KEY is set but there is nowhere to keep chats — set CHAT_DIR, or TOGGL_CACHE_DIR to put them beside the Toggl cache (see .envrc.example)")
+		c.chatDir = filepath.Join(os.TempDir(), "pocketcfo-chats")
+		log.Printf("pocketcfo: neither STATE_DIR nor CHAT_DIR is set — chats are kept in %s and do NOT survive a restart; mount a volume and set STATE_DIR", c.chatDir)
 	}
 	return nil
+}
+
+func defaultModelFor(baseURL string) string {
+	if strings.Contains(baseURL, "openrouter.ai") {
+		return "openai/" + defaultChatModel
+	}
+	return defaultChatModel
 }
 
 func toggl2Complete(f financeconfig.Config) bool {

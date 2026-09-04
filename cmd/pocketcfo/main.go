@@ -122,7 +122,7 @@ func main() {
 	cfg := loadConfig()
 
 	httpClient := &http.Client{Timeout: 15 * time.Second}
-	track, focus := buildTogglClients(cfg.finance, httpClient, togglCacheDir)
+	track, focus := buildTogglClients(cfg.finance, httpClient, cfg.togglCacheDir)
 	if track != nil && focus != nil {
 		log.Printf("pocketcfo: %s feeds the dashboard (TOGGL_MODE=%q)", togglModeLabel(cfg.togglMode), cfg.finance.TogglMode)
 	}

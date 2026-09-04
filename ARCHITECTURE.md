@@ -1363,9 +1363,10 @@ reverted twice. The reasoning is the same as §11's: it is audited, not trusted;
 is itself a readable commit.
 
 **Chats are files on the volume, and a format bump deletes them.** The app still never
-writes to `DATA_DIR`; chats live under `CHAT_DIR`, by default beside the Toggl cache on
-the same mounted volume (the Toggl wipe skips subdirectories, so the two do not collide),
-one JSON file per chat under a `0700` directory per user, written atomically. A chat
+writes to `DATA_DIR`; chats live under `STATE_DIR/chat`, next to the Toggl cache in
+`STATE_DIR/cache` — one mounted volume, `/var/data/pocketcfo` in the image, holding
+everything the app keeps between restarts — one JSON file per chat under a `0700`
+directory per user, written atomically. A chat
 therefore survives a reload, a redeploy and Fly's auto-stop, which browser-held state or
 process memory would not — every approval triggers the very redeploy that would have lost
 it. A `VERSION` marker mirrors the Toggl cache's, and a release that changes the format

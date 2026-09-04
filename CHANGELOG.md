@@ -8,6 +8,10 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Changed
+- `STATE_DIR` is the one writable directory the app keeps between restarts — `cache/` for Toggl, `chat/` for the chats — set to `/var/data/pocketcfo` by the image, so a deployment mounts one volume there and sets nothing else. `TOGGL_CACHE_DIR` and `CHAT_DIR` remain as overrides; chats no longer default to a subdirectory of the Toggl cache.
+- `OPENAI_API_KEY` alone is enough to boot: an unset `OPENAI_MODEL` falls back to `gpt-5` (`openai/gpt-5` on OpenRouter) and an unset chat directory falls back to a temporary one, each with a log line — 2.0.0-rc.1 refused to start in both cases, which would have crashed a deploy that already carried the key.
+
 ## [2.0.0-rc.1] - 2026-09-04
 
 A release candidate for 2.0: the in-app chat. Published as `:next`, not `:latest`.

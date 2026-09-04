@@ -167,7 +167,7 @@ func cacheStatsRows(s tracker.CacheStats, q tracker.QuotaStatus, now time.Time) 
 	}
 	switch {
 	case s.SnapshotPath == "":
-		rows = append(rows, configRow{Name: "Snapshot", Value: "none — memory only (TOGGL_CACHE_DIR unset)"})
+		rows = append(rows, configRow{Name: "Snapshot", Value: "none — memory only (neither STATE_DIR nor TOGGL_CACHE_DIR is set)"})
 	case s.SnapshotBytes == 0:
 		rows = append(rows, configRow{Name: "Snapshot", Value: s.SnapshotPath + " — not written yet"})
 	default:

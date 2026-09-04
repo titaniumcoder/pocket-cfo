@@ -2,6 +2,8 @@ package main
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -253,26 +255,48 @@ func TestBuildTracker(t *testing.T) {
 	})
 }
 
+func TestResolveStateDirs(t *testing.T) {
+	tests := []struct {
+		name      string
+		in        config
+		wantCache string
+		wantChat  string
+	}{
+		{name: "nothing set keeps the cache in memory and leaves chats to resolveChat", in: config{}},
+		{name: "STATE_DIR is the base for both", in: config{stateDir: "/var/data/pocketcfo"}, wantCache: "/var/data/pocketcfo/cache", wantChat: "/var/data/pocketcfo/chat"},
+		{name: "explicit directories win over the base", in: config{stateDir: "/var/data/pocketcfo", togglCacheDir: "/var/cache/pocketcfo", chatDir: "/chats"}, wantCache: "/var/cache/pocketcfo", wantChat: "/chats"},
+		{name: "a lone TOGGL_CACHE_DIR does not adopt the chats", in: config{togglCacheDir: "/var/cache/pocketcfo"}, wantCache: "/var/cache/pocketcfo"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := tt.in
+			resolveStateDirs(&c)
+			if c.togglCacheDir != tt.wantCache || c.chatDir != tt.wantChat {
+				t.Errorf("cache %q chat %q, want %q %q", c.togglCacheDir, c.chatDir, tt.wantCache, tt.wantChat)
+			}
+		})
+	}
+}
+
 func TestResolveChat(t *testing.T) {
 	tests := []struct {
-		name     string
-		in       config
-		cacheDir string
-		wantErr  string
-		wantDir  string
-		wantBase string
+		name      string
+		in        config
+		wantErr   string
+		wantDir   string
+		wantBase  string
+		wantModel string
 	}{
-		{name: "no key means no chat and no complaint", in: config{openAIModel: "m"}},
-		{name: "a key needs a model", in: config{openAIKey: "k", chatDir: "/c"}, wantErr: "OPENAI_MODEL"},
-		{name: "a key needs somewhere for chats", in: config{openAIKey: "k", openAIModel: "m"}, wantErr: "CHAT_DIR"},
-		{name: "the Toggl cache volume is the default home", in: config{openAIKey: "k", openAIModel: "m"}, cacheDir: "/var/cache/pocketcfo", wantDir: "/var/cache/pocketcfo/chats", wantBase: "https://api.openai.com/v1"},
-		{name: "an explicit CHAT_DIR wins", in: config{openAIKey: "k", openAIModel: "m", chatDir: "/chats", openAIBaseURL: "https://openrouter.ai/api/v1"}, cacheDir: "/var/cache/pocketcfo", wantDir: "/chats", wantBase: "https://openrouter.ai/api/v1"},
+		{name: "no key means no chat and no complaint", in: config{openAIModel: "m"}, wantModel: "m"},
+		{name: "a key alone boots with the default model and a temporary home", in: config{openAIKey: "k"}, wantDir: filepath.Join(os.TempDir(), "pocketcfo-chats"), wantBase: "https://api.openai.com/v1", wantModel: "gpt-5"},
+		{name: "on OpenRouter the default model carries its provider prefix", in: config{openAIKey: "k", openAIBaseURL: "https://openrouter.ai/api/v1", chatDir: "/c"}, wantDir: "/c", wantBase: "https://openrouter.ai/api/v1", wantModel: "openai/gpt-5"},
+		{name: "a resolved chat directory is kept", in: config{openAIKey: "k", openAIModel: "m", chatDir: "/var/data/pocketcfo/chat"}, wantDir: "/var/data/pocketcfo/chat", wantBase: "https://api.openai.com/v1", wantModel: "m"},
 		{name: "the extra body must be an object", in: config{openAIKey: "k", openAIModel: "m", chatDir: "/c", openAIExtraBody: "zdr"}, wantErr: "OPENAI_EXTRA_BODY"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := tt.in
-			err := resolveChat(&c, tt.cacheDir)
+			err := resolveChat(&c)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("want an error naming %s, got %v", tt.wantErr, err)
@@ -282,8 +306,8 @@ func TestResolveChat(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if c.chatDir != tt.wantDir || c.openAIBaseURL != tt.wantBase {
-				t.Errorf("resolved dir %q base %q, want %q %q", c.chatDir, c.openAIBaseURL, tt.wantDir, tt.wantBase)
+			if c.chatDir != tt.wantDir || c.openAIBaseURL != tt.wantBase || c.openAIModel != tt.wantModel {
+				t.Errorf("resolved dir %q base %q model %q, want %q %q %q", c.chatDir, c.openAIBaseURL, c.openAIModel, tt.wantDir, tt.wantBase, tt.wantModel)
 			}
 		})
 	}

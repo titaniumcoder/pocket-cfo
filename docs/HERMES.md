@@ -100,9 +100,13 @@ reads work and writes return `write_not_configured`.
 5. If the answer is "this needs a new budget category", **ask the user**. Hermes does not
    create categories.
 
-6. Derive `id` deterministically — a short hash of account + date + amount + description,
-   with a `-2` suffix on collision — so a re-uploaded statement produces identical ids and
-   importing twice is idempotent. This is what makes step 7 safe to repeat.
+6. **`derive_transaction_ids`** (or `POST /api/actuals/ids`) gives every line its `id`:
+   send the whole statement — account, date, amount, description — in one call and the
+   ids come back in the same order. Each is a short hash of those four values, with a
+   `-2`, `-3` suffix for identical lines in the same call, so a re-uploaded statement
+   produces identical ids and importing twice is idempotent. This is what makes step 7
+   safe to repeat, and it is the only place an id comes from — never compute one
+   yourself.
 
 7. **`add_transactions`** records the lines that are not in the file yet. Send only those:
    it never touches, reorders or removes anything already recorded, so there is no

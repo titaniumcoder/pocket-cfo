@@ -119,7 +119,7 @@ type splitArg struct {
 }
 
 type txArg struct {
-	ID          string     `json:"id" jsonschema:"stable id for this statement line, derived deterministically from account+date+amount+description with a -2 suffix on collision. Re-sending the same statement must produce the same ids, which is what makes a repeat import a no-op instead of a duplicate"`
+	ID          string     `json:"id" jsonschema:"stable id for this statement line, as derive_transaction_ids returned it for exactly this account, date, amount and description. Never make one up: the same line must always get the same id, which is what makes a repeat import a no-op instead of a duplicate"`
 	Date        string     `json:"date" jsonschema:"YYYY-MM-DD. This decides which month the line is filed under, so it must be the date the bank gave it"`
 	Description string     `json:"description" jsonschema:"the statement line as the bank wrote it, not a tidied-up version"`
 	Amount      float64    `json:"amount" jsonschema:"euros. POSITIVE = money out; a refund is negative against the same category. Never 0"`
@@ -146,6 +146,21 @@ type editArg struct {
 	Untracked string     `json:"untracked,omitempty" jsonschema:"park the line as not decided yet, with a note, clearing whatever it had before"`
 	Splits    []splitArg `json:"splits,omitempty" jsonschema:"replace the line's attribution with these parts, which must add up to its amount. Set exactly one of category, ignored, untracked or splits per edit"`
 	Movement  string     `json:"movement,omitempty" jsonschema:"send WITH ignored to mark what this line moved between the company and its owner. An edit that does not send it clears it, so re-attributing a transfer to a category cannot leave the marker behind. what this line moved between the company and its owner, set ALONGSIDE ignored rather than instead of it. One of salary_transfer, owner_draw, dividend_payout, owner_contribution, corporate_tax, dividend_tax. The first four settle the director's loan; the last two leave the company for the state and settle nothing. RECORD IT ONCE, ON THE COMPANY STATEMENT: both sides of a transfer are imported, and marking both counts it twice. The sign enforces it — everything except owner_contribution must be money OUT of the company, so the mirror line on the private statement is refused"`
+}
+
+type idsArgs struct {
+	Lines []idLineArg `json:"lines" jsonschema:"every line of the statement, in statement order"`
+}
+
+type idLineArg struct {
+	Account     string  `json:"account" jsonschema:"which account it was charged to, spelled exactly as list_accounts spells it"`
+	Date        string  `json:"date" jsonschema:"YYYY-MM-DD, the date the bank gave the line"`
+	Amount      float64 `json:"amount" jsonschema:"euros, POSITIVE = money out, exactly the number you will send to add_transactions"`
+	Description string  `json:"description" jsonschema:"the statement line as the bank wrote it, not a tidied-up version"`
+}
+
+type idsResult struct {
+	IDs []string `json:"ids"`
 }
 
 type addArgs struct {
@@ -395,6 +410,21 @@ func (s *Service) Tools() []Tool {
 			"What the company owes its owner at the end of one month, or what the owner owes the company — the running balance between them. It opens on the figure stated in accounts.json, accrues that month's net income (which includes a dividend, net of its dividend tax), and is settled by the lines you marked with a movement. Positive means the company owes the owner. A month before every stated figure answers known:false — that is 'nobody has said', not 'nothing is owed', and the fix is a reading in the data repo rather than a tool here. The loan itself feeds only the company's worth, but the crossings it is built from are not private to it: what reached the owner outside payroll — a draw, a distribution actually paid, money paid back in — also raises or lowers the Actual column of Available to spend, because it is money he has. The residual this figure reports is net salary the company accrued and never transferred. Read notes: they say when one transfer looks marked twice.",
 			true, func(ctx context.Context, a monthArgs) (any, error) {
 				return reply(s.DirectorLoanFor(ctx, a.Month))
+			}),
+
+		tool("derive_transaction_ids",
+			"The stable id of each statement line — the id add_transactions requires, and the ONLY place ids come from; never compute or invent one yourself. Send every line of the statement in one call, as account, date (YYYY-MM-DD), amount (euros, exactly the number you will send to add_transactions) and description exactly as the bank wrote it; the ids come back under an ids key, in the same order. "+
+				"The id is a short hash of those four values, so the same line always gets the same id and re-importing a statement is a no-op rather than a duplicate; two identical lines in one call get -2, -3 suffixes in statement order. Pure computation: nothing is read or written.",
+			true, func(_ context.Context, a idsArgs) (any, error) {
+				lines := make([]IDLine, 0, len(a.Lines))
+				for _, l := range a.Lines {
+					lines = append(lines, IDLine{Account: l.Account, Date: l.Date, Amount: l.Amount, Description: l.Description})
+				}
+				out, err := s.DeriveIDs(DeriveIDsRequest{Lines: lines})
+				if err != nil {
+					return nil, err
+				}
+				return idsResult{IDs: out.IDs}, nil
 			}),
 
 		tool("add_transactions",

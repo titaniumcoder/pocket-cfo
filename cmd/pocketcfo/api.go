@@ -39,6 +39,7 @@ func (s *server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/invoices/paid", s.apiSetInvoicePaid)
 	mux.HandleFunc("POST /api/invoices/draft", s.apiSaveInvoiceDraft)
 	mux.HandleFunc("POST /api/invoices/issue", s.apiIssueInvoice)
+	mux.HandleFunc("POST /api/actuals/ids", s.apiDeriveIDs)
 	mux.HandleFunc("POST /api/actuals/add", s.apiAddActuals)
 	mux.HandleFunc("POST /api/actuals/edit", s.apiEditActuals)
 	mux.HandleFunc("POST /api/accounts/balance", s.apiRecordAccountBalance)
@@ -500,6 +501,22 @@ func (s *server) apiScheduleAmountChange(w http.ResponseWriter, r *http.Request)
 	defer cancel()
 
 	out, err := s.apiService().ScheduleAmountChange(ctx, req)
+	if err != nil {
+		writeAPIError(w, err, apiStatus(err))
+		return
+	}
+	writeAPIJSON(w, http.StatusOK, out)
+}
+
+func (s *server) apiDeriveIDs(w http.ResponseWriter, r *http.Request) {
+	if !s.apiAuthorized(w, r) {
+		return
+	}
+	var req api.DeriveIDsRequest
+	if !decodeAPIBody(w, r, &req) {
+		return
+	}
+	out, err := s.apiService().DeriveIDs(req)
 	if err != nil {
 		writeAPIError(w, err, apiStatus(err))
 		return

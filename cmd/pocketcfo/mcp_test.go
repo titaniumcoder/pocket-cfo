@@ -119,6 +119,7 @@ func TestMCPToolsList(t *testing.T) {
 		"record_account_balance": true, "get_finance_config": true, "get_director_loan": true,
 		"list_invoices": true, "set_invoice_paid": true,
 		"get_invoice_document": true, "save_draft_invoice": true, "issue_invoice": true,
+		"derive_transaction_ids": true,
 	}
 	got := map[string]bool{}
 	for _, raw := range tools {

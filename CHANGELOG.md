@@ -8,6 +8,10 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [2.0.0-rc.3] - 2026-09-04
+
+The third candidate for 2.0: the chat becomes usable — laid out for the job, turns that survive a tab switch, questions instead of guesses, and the three hand-maintained files editable with a diff to approve. Published as `:next`, not `:latest`.
+
 ### Added
 - `read_data_file` and `write_data_file` (MCP, `GET`/`PUT /api/files/{name}`, chat) serve `budget.json`, `accounts.json` and `config.json` whole, for what the narrower tools cannot express — a moved dividend, a new category or account, a new dated rule. A write must pass the file's own validation, becomes one commit with the reason as its message, and reports the diff; in the chat it is staged and reviewed as that diff.
 - The chat asks instead of assuming: an `ask_user` tool ends the turn with a question card — clickable options and, where sensible, a free-text field — and the answer resumes the turn. The system prompt makes this the normal way to resolve an unknown account, category or line.
@@ -545,7 +549,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0-rc.2...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0-rc.3...HEAD
+[2.0.0-rc.3]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0-rc.2...v2.0.0-rc.3
 [2.0.0-rc.2]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0-rc.1...v2.0.0-rc.2
 [2.0.0-rc.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v1.0.1...v2.0.0-rc.1
 [1.0.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v1.0.0...v1.0.1

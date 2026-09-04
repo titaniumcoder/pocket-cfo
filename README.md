@@ -13,6 +13,10 @@ A freelancer's finance tracker and invoicing tool in one Go binary, MIT licensed
 - **An agent-facing write API** (`/api`, `/mcp`) — so a reconciliation agent can record
   and correct transactions, and bring an account's balance up to date, without a shell.
   Every accepted write is a git commit; see [`docs/HERMES.md`](docs/HERMES.md).
+- **A Chat tab** (`/chat`, administrators only) — the same loop driven from inside the app:
+  upload a bank statement, talk it through with a model behind any OpenAI-compatible
+  endpoint, approve the changes it proposes — one commit per touched file — and revert one
+  with a click. Present only when `OPENAI_API_KEY` is set; see ARCHITECTURE.md §12.
 
 Clone it, `make generate`, `go run ./cmd/pocketcfo`, and it serves the fabricated sample
 data in `data/`. That is enough to look around, and not enough to run a business — for
@@ -100,8 +104,10 @@ a script.
 ### What the app never does
 
 It does not write to `DATA_DIR`. A deployment's data directory is a baked image layer or a
-mount, so a write landing there would be lost on restart and diverge from the repo. The one
-thing it writes anywhere is the Toggl cache, and only under `TOGGL_CACHE_DIR` when that is set.
+mount, so a write landing there would be lost on restart and diverge from the repo. The only
+things it writes anywhere are the Toggl cache, under `TOGGL_CACHE_DIR` when that is set, and
+the chats, under `CHAT_DIR` — by default beside the cache — when the Chat tab is enabled.
+Both are disposable: nothing in either is a record, and `/info` can wipe each.
 Everything the agent API accepts is committed through the GitHub Contents API instead, and
 the pipeline rebuilds. That is what makes an agent-facing write surface tolerable: it is
 not trusted, it is audited, and every change is one you can read in `git log` and revert.
@@ -259,7 +265,7 @@ Prebuilt binaries for Linux, macOS and Windows are attached to every
 ## Further reading
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — the design: data model, tax regimes, rendering,
-  the finance tracker, the agent API.
+  the finance tracker, the agent API, the in-app chat.
 - [`docs/HERMES.md`](docs/HERMES.md) — the contract a reconciliation agent works to.
 - [`AGENTS.md`](AGENTS.md) — conventions, and how releases are cut.
 

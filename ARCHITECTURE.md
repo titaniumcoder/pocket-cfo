@@ -1315,7 +1315,72 @@ webhooks, for its own reasons.)
 `docs/HERMES.md` is the contract the agent works to, and the MCP tool descriptions are
 where it actually reads it.
 
-## 12. What is built, and what is deliberately not
+## 12. In-app chat
+
+The 2.0 feature: the reconciliation loop of §11 driven from inside the app rather than by
+an external agent. A **Chat** tab, for administrators only, where a bank statement is
+uploaded and reconciled in a conversation with a model. It reuses the §11 service as its
+tool surface — `internal/api/tools.go` is one SDK-free catalog that both the MCP adapter
+and the chat read, so the two cannot drift — and adds four things around it.
+
+**The model is reached through an OpenAI-compatible endpoint, via the OpenAI Go SDK.**
+Not through Anthropic's or any one vendor's API: `OPENAI_BASE_URL` points at OpenAI,
+OpenRouter or anything else speaking the chat-completions protocol, and `OPENAI_MODEL` is
+passed through verbatim, which is what lets an OpenRouter preset stand in for a model. The
+SDK is the second third-party dependency linked into the binary and is held to the same
+three rules as the MCP SDK: one importing file (`internal/chat/openai.go`), no SDK type
+past its boundary, and tests that drive a stub endpoint with hand-written JSON. Calls are
+not streamed token by token; the browser sees the *steps* — each assistant message, tool
+result and staged change — as newline-delimited JSON, which is enough to follow along and
+far simpler than SSE parsing on both ends. Retention is the provider's contract, not a
+request flag: the app always sends `store: false`, and `OPENAI_EXTRA_BODY` merges any
+provider-specific field into every request (OpenRouter's `{"provider":{"zdr":true}}`
+routes only to zero-data-retention endpoints); beyond that there is nothing a request can
+enforce, and the doc says so rather than pretending otherwise.
+
+**Ids come from a tool.** A model cannot hash, so `derive_transaction_ids` (§11, MCP and
+REST alike) returns the stable id of every statement line; `add_transactions` keeps
+requiring `id`, and nothing in the service derives one silently.
+
+**Writes are staged, not committed.** Hermes committed whatever it decided, one commit per
+call; the chat does not. Every write tool runs against a *staging store* — a `Store`
+overlay that answers reads from its buffer and turns `Put` into a pending file — with
+throwaway loaders and a copy of the tracker, so every validator and the read-after-write
+overlay behave exactly as for a real write while nothing reaches GitHub or the dashboard.
+The chat shows the dry run as a pending change; the user approves them all at once or
+discards one. Approval replays the pending calls on a fresh staging (base shas are read
+afresh, so a change that no longer applies fails its own call and stops the approval) and
+flushes **one commit per touched file**, however many calls produced it, with the joined
+messages and who approved. This is the "minimise commits" rule made mechanical, and the
+approval step is the guard rail an external agent never had.
+
+**Revert is a git-level undo, deliberately outside the no-removal rule.** §11's writes
+cannot remove anything, and that stays true. But an applied change is one commit whose
+before-state is known — the receipt carries the previous blob's sha — so the chat can
+commit it back (`git/blobs/{sha}` then `PUT`), or delete a file the change created. It
+refuses once the file has moved on since, and a reverted change is marked so it cannot be
+reverted twice. The reasoning is the same as §11's: it is audited, not trusted; the revert
+is itself a readable commit.
+
+**Chats are files on the volume, and a format bump deletes them.** The app still never
+writes to `DATA_DIR`; chats live under `CHAT_DIR`, by default beside the Toggl cache on
+the same mounted volume (the Toggl wipe skips subdirectories, so the two do not collide),
+one JSON file per chat under a `0700` directory per user, written atomically. A chat
+therefore survives a reload, a redeploy and Fly's auto-stop, which browser-held state or
+process memory would not — every approval triggers the very redeploy that would have lost
+it. A `VERSION` marker mirrors the Toggl cache's, and a release that changes the format
+deletes every old chat on its first start rather than migrating it. That is a deliberate
+small-project trade-off: a chat is a working document, not a record — everything that
+matters is in the data repo — so a migration would be code nobody reads for data nobody
+misses. `/info` counts the chats and can delete them all, for the same reason.
+
+The transcript is also the model's memory of what the user did: an approval, a discard or
+a revert is written into it as a system note, so the next turn does not re-stage what was
+just committed or undo what was just reverted. The turn loop saves the chat after every
+completed round — the assistant message together with all its tool results — so a restart
+mid-turn never leaves a dangling tool call for the next request to trip on.
+
+## 13. What is built, and what is deliberately not
 
 Steps 1–8 of the original build order are done and released: schema and `money`,
 `tax.Resolve` and the §4.3 validators, the template against both reference invoices,
@@ -1333,7 +1398,7 @@ What remains is additive, and each item is deferred for a reason rather than pen
 
 ---
 
-## 13. Settled questions
+## 14. Settled questions
 
 - **Number format.** Frozen as `10 200,00 €` — non-breaking space for thousands, comma
   for the decimal, symbol last. `render.formatMoney` is the only implementation and

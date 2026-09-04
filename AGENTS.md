@@ -23,7 +23,11 @@ that aren't obvious from the code itself.
   SDK-free in `internal/api/tools.go`, which uses `github.com/google/jsonschema-go`
   (the schema library the MCP SDK itself is built on) to derive a schema from each
   argument struct, so the same catalog serves `/mcp` and the in-app chat and neither
-  adapter can drift from the other.
+  adapter can drift from the other. The third dependency linked into a binary is
+  `github.com/openai/openai-go/v3`, for the chat's calls to an OpenAI-compatible endpoint
+  (ARCHITECTURE.md §12): a wire protocol with the same failure mode as MCP's, held to the
+  same three rules — imported by exactly one file (`internal/chat/openai.go`), no SDK
+  type past it, and tests that drive a stub endpoint with hand-written JSON.
 - **Schema documents are `go:embed`ed**, never read from disk at runtime — every file
   under `schemas/` plus all three under `internal/finance/data/` (`budget`, `accounts`,
   `actuals`). This does not apply to `data/**`, which is hand-edited and read fresh from

@@ -13,6 +13,11 @@ are not registered at all: an unauthenticated caller gets a 404 and learns nothi
 even that the surface exists. Writes additionally need `GITHUB_DATA_TOKEN`; without it
 reads work and writes return `write_not_configured`.
 
+The in-app **Chat** tab (ARCHITECTURE.md §12) works the same tools from inside the app,
+with one difference an external agent should know about: there, every write is *staged*
+and committed only once the user approves it, one commit per touched file. Through MCP and
+REST a write is still committed on the spot, as described below.
+
 ## The loop
 
 1. **`list_budget_categories`** — that list is the only legal set of `category` values.

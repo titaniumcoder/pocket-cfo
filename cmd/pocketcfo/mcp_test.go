@@ -300,7 +300,7 @@ func TestMCPSDKIsImportedOnce(t *testing.T) {
 			return nil
 		}
 		if info.IsDir() {
-			if info.Name() == ".git" || info.Name() == "build" {
+			if path != "../.." && (strings.HasPrefix(info.Name(), ".") || info.Name() == "build") {
 				return filepath.SkipDir
 			}
 			return nil

@@ -11,15 +11,19 @@ that aren't obvious from the code itself.
   strong reason. The CLI uses `flag`/`os.Args`, not `cobra`. The web app uses
   `net/http` + `html/template`, not a router library. The one named exception:
   `go-jsonschema`, used as a dev-time `tool` dependency (Go 1.24+ `tool` directive) to
-  generate Go structs from `schemas/*.json` — never imported by runtime code. The second,
-  and the only one linked into a binary, is `github.com/modelcontextprotocol/go-sdk` for
-  the MCP server at `/mcp`: a moving external wire protocol with strict framing, where
-  being subtly wrong presents as *silence* — the agent sees no tools at the moment you
-  need it — rather than as an error. It is kept reversible by three rules, enforced by
-  tests: it is imported by exactly one file (`internal/api/mcp.go`), no SDK type crosses
-  into the service layer, and the `/mcp` conformance tests drive raw HTTP with
-  hand-written JSON-RPC rather than the SDK's own client, so they would equally validate
-  a hand-rolled replacement.
+  generate Go structs from `schemas/*.json` — never imported by runtime code. The second
+  is `github.com/modelcontextprotocol/go-sdk` for the MCP server at `/mcp`: a moving
+  external wire protocol with strict framing, where being subtly wrong presents as
+  *silence* — the agent sees no tools at the moment you need it — rather than as an
+  error. It is kept reversible by three rules, enforced by tests: it is imported by
+  exactly one file (`internal/api/mcp.go`), no SDK type crosses into the service layer,
+  and the `/mcp` conformance tests drive raw HTTP with hand-written JSON-RPC rather than
+  the SDK's own client, so they would equally validate a hand-rolled replacement. The
+  tools themselves — names, descriptions, argument structs and their JSON schemas — live
+  SDK-free in `internal/api/tools.go`, which uses `github.com/google/jsonschema-go`
+  (the schema library the MCP SDK itself is built on) to derive a schema from each
+  argument struct, so the same catalog serves `/mcp` and the in-app chat and neither
+  adapter can drift from the other.
 - **Schema documents are `go:embed`ed**, never read from disk at runtime — every file
   under `schemas/` plus all three under `internal/finance/data/` (`budget`, `accounts`,
   `actuals`). This does not apply to `data/**`, which is hand-edited and read fresh from

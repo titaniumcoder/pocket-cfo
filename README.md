@@ -260,7 +260,11 @@ air                                                   # hot reload
 
 Prebuilt binaries for Linux, macOS and Windows are attached to every
 [release](https://github.com/titaniumcoder/pocket-cfo/releases), and the image is
-`ghcr.io/titaniumcoder/pocket-cfo`.
+`ghcr.io/titaniumcoder/pocket-cfo`. A release candidate (`v2.0.0-rc.1`) is published the
+same way but marked pre-release, and its image moves `:next` rather than `:latest` — so a
+test deployment can pin `:next` while a production `FROM` line on a stable tag is never
+offered a candidate: this repo does not notify the data repo for one, and Dependabot does
+not propose a pre-release tag to a project running a stable one.
 
 ## Further reading
 

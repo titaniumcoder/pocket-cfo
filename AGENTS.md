@@ -88,11 +88,24 @@ pushes. Pushing the tag is what triggers `.github/workflows/release.yml`'s two p
 jobs; nothing else does, and day-to-day commits to `main` never publish anything by
 themselves. One Docker image (`ghcr.io/titaniumcoder/pocket-cfo`), containing **both**
 executables (`pocketcfo`, the web server; `pocket-cfo-ctl`, the CLI), ships both the finance
-tracker and invoicing, tagged with the release version and `latest`. The same two
+tracker and invoicing, tagged with the release version and `latest` — or, for a
+pre-release, `next`. The same two
 executables are also cross-compiled (no CGO dependencies anywhere in the module, so
 one Linux runner builds every target) and attached directly to the GitHub Release as
 downloadable archives — `pocketcfo_<version>_<os>_<arch>.{tar.gz,zip}` for
 linux/{amd64,arm64}, darwin/{amd64,arm64}, and windows/amd64.
+
+**Pre-releases.** A tag with a suffix — `v2.0.0-rc.1`, anything with a `-` — is a release
+candidate: `release-it` cuts one on request ("cut a pre-release"), numbering it after the
+candidates the version already has, and later promotes the series to the plain `vX.Y.Z`.
+The workflow publishes a candidate's image under its own tag and `:next`, never `latest`,
+and does not notify the data repo, so production only ever sees stable tags while a test
+deployment can follow `:next`. In `CHANGELOG.md` each candidate gets its own section, and
+promoting folds every `[X.Y.Z-rc.N]` section into the single `[X.Y.Z]` entry — nobody
+stays on a candidate, so its section is only needed while the series is open. Versions
+are computed from the commits since the last *stable* tag, with one deliberate exception:
+the user may name the major themselves ("this is 2.0") even when the commits alone would
+give a minor, and the proposal says so.
 
 A subtask's own commit message (see the ritual below) doesn't need to be a release-worthy
 `feat`/`fix` itself — only commits that land on `main` do, and even those, `release-it`

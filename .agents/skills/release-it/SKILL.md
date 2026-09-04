@@ -179,5 +179,9 @@ Only after Phase 3's confirmation:
    to fix, not a footnote — do not describe the release as done. For a
    pre-release, also confirm what the workflow promised: `:next` moved to
    the new image, `latest` did not
-   (`gh api /users/titaniumcoder/packages/container/pocket-cfo/versions --jq '.[].metadata.container.tags'`),
-   and the "Notify pocket-cfo-data" job was skipped.
+   (`gh api /users/titaniumcoder/packages/container/pocket-cfo/versions --jq '.[].metadata.container.tags'`
+   needs a token with `read:packages`; without it, the tags the job pushed
+   are in the run log:
+   `gh run view <id> --log | grep -oE 'ghcr.io/titaniumcoder/pocket-cfo:[^ ]+' | sort -u`),
+   and the "Notify pocket-cfo-data" job was skipped
+   (`gh run view <id> --json jobs -q '.jobs[] | "\(.name): \(.conclusion)"'`).

@@ -224,7 +224,7 @@ func (r *Runner) replayPending(ctx context.Context, c *Chat, emit func(Event) er
 		calls = append(calls, api.ToolCall{Name: p.Tool, Arguments: p.Arguments})
 	}
 	for i, s := range api.Replay(ctx, r.Service, calls) {
-		c.Pending[i].Summary, c.Pending[i].Error = summarize(s.Result), errorMessage(s.Err)
+		c.Pending[i].Summary, c.Pending[i].Diff, c.Pending[i].Error = summarize(s.Result), diffOf(s.Result), errorMessage(s.Err)
 		if err := emit(Event{Event: "pending", Index: i, Pending: &c.Pending[i]}); err != nil {
 			return err
 		}
@@ -258,7 +258,7 @@ func (r *Runner) execute(ctx context.Context, c *Chat, byName map[string]api.Too
 	if staged.Err != nil {
 		return reply(errorJSON(staged.Err)), nil
 	}
-	c.Pending = append(c.Pending, PendingChange{Tool: tool.Name, Arguments: args, Summary: summarize(staged.Result)})
+	c.Pending = append(c.Pending, PendingChange{Tool: tool.Name, Arguments: args, Summary: summarize(staged.Result), Diff: diffOf(staged.Result)})
 	index := len(c.Pending) - 1
 	return reply(stagedJSON(staged.Result)), &Event{Event: "pending", Index: index, Pending: &c.Pending[index]}
 }
@@ -308,6 +308,13 @@ func errorMessage(e *api.Error) string {
 		return ""
 	}
 	return e.Message
+}
+
+func diffOf(v any) string {
+	if fr, ok := v.(*api.FileWriteResult); ok {
+		return fr.Diff
+	}
+	return ""
 }
 
 func summarize(v any) string {

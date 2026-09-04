@@ -69,8 +69,8 @@
         <details>
           <summary><code>{{$p.Tool}}</code>{{if $p.Error}} <span class="badge error">failed</span>{{end}}</summary>
           {{if $p.Error}}<p class="error">{{$p.Error}}</p>{{end}}
-          {{if $p.Summary}}<pre class="summary">{{$p.Summary}}</pre>{{end}}
-          <pre class="args">{{printf "%s" $p.Arguments}}</pre>
+          {{if $p.Diff}}<pre class="diff">{{$p.Diff}}</pre>{{else}}{{if $p.Summary}}<pre class="summary">{{$p.Summary}}</pre>{{end}}{{end}}
+          <details class="args-details"><summary>arguments</summary><pre class="args">{{printf "%s" $p.Arguments}}</pre></details>
         </details>
         <button class="link chat-action" type="button" data-action="discard" data-index="{{$i}}">Discard</button>
       </li>

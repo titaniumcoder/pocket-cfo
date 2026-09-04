@@ -39,6 +39,8 @@ func (s *server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/invoices/paid", s.apiSetInvoicePaid)
 	mux.HandleFunc("POST /api/invoices/draft", s.apiSaveInvoiceDraft)
 	mux.HandleFunc("POST /api/invoices/issue", s.apiIssueInvoice)
+	mux.HandleFunc("GET /api/files/{name}", s.apiReadFile)
+	mux.HandleFunc("PUT /api/files/{name}", s.apiWriteFile)
 	mux.HandleFunc("POST /api/actuals/ids", s.apiDeriveIDs)
 	mux.HandleFunc("POST /api/actuals/add", s.apiAddActuals)
 	mux.HandleFunc("POST /api/actuals/edit", s.apiEditActuals)
@@ -517,6 +519,32 @@ func (s *server) apiDeriveIDs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out, err := s.apiService().DeriveIDs(req)
+	if err != nil {
+		writeAPIError(w, err, apiStatus(err))
+		return
+	}
+	writeAPIJSON(w, http.StatusOK, out)
+}
+
+func (s *server) apiReadFile(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	s.serveAPI(w, r, func(ctx context.Context, svc *api.Service) (any, error) {
+		return svc.ReadDataFile(ctx, name)
+	})
+}
+
+func (s *server) apiWriteFile(w http.ResponseWriter, r *http.Request) {
+	if !s.apiAuthorized(w, r) {
+		return
+	}
+	var req api.FileWriteRequest
+	if !decodeAPIBody(w, r, &req) {
+		return
+	}
+	req.Name = r.PathValue("name")
+	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
+	defer cancel()
+	out, err := s.apiService().WriteDataFile(ctx, req)
 	if err != nil {
 		writeAPIError(w, err, apiStatus(err))
 		return

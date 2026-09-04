@@ -57,6 +57,7 @@ type PendingChange struct {
 	Tool      string          `json:"tool"`
 	Arguments json.RawMessage `json:"arguments"`
 	Summary   string          `json:"summary,omitempty"`
+	Diff      string          `json:"diff,omitempty"`
 	Error     string          `json:"error,omitempty"`
 }
 

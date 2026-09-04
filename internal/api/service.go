@@ -30,6 +30,7 @@ type Service struct {
 	InvoicesPrefix   string
 	PaidInvoicesPath string
 	CatalogPath      string
+	ConfigPath       string
 
 	Now func() time.Time
 

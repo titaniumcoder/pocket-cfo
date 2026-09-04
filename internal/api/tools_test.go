@@ -25,8 +25,8 @@ func TestToolCatalogIsWellFormed(t *testing.T) {
 			t.Errorf("tool %q cannot be called", tool.Name)
 		}
 	}
-	if len(seen) != 19 {
-		t.Errorf("catalog lists %d tools, want 19", len(seen))
+	if len(seen) != 21 {
+		t.Errorf("catalog lists %d tools, want 21", len(seen))
 	}
 }
 

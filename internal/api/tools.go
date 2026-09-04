@@ -163,6 +163,16 @@ type idsResult struct {
 	IDs []string `json:"ids"`
 }
 
+type fileNameArgs struct {
+	Name string `json:"name" jsonschema:"which file: budget.json, accounts.json or config.json"`
+}
+
+type fileWriteArgs struct {
+	Name    string `json:"name" jsonschema:"which file: budget.json, accounts.json or config.json"`
+	Content string `json:"content" jsonschema:"the COMPLETE new content of the file, as JSON text — start from what read_data_file returned and change only what the user asked for, keeping the rest byte for byte so the diff stays small and readable"`
+	Reason  string `json:"reason" jsonschema:"why, in one line, as the user would say it; it becomes the commit message"`
+}
+
 type addArgs struct {
 	Transactions []txArg       `json:"transactions,omitempty" jsonschema:"the statement lines to record. Send only lines not already in the file. May be omitted when you are only reporting coverage"`
 	Coverage     []coverageArg `json:"coverage,omitempty" jsonschema:"which account was read through which dates. One range per month — a range may not cross a month boundary. Required for any month that has never been reconciled"`
@@ -410,6 +420,21 @@ func (s *Service) Tools() []Tool {
 			"What the company owes its owner at the end of one month, or what the owner owes the company — the running balance between them. It opens on the figure stated in accounts.json, accrues that month's net income (which includes a dividend, net of its dividend tax), and is settled by the lines you marked with a movement. Positive means the company owes the owner. A month before every stated figure answers known:false — that is 'nobody has said', not 'nothing is owed', and the fix is a reading in the data repo rather than a tool here. The loan itself feeds only the company's worth, but the crossings it is built from are not private to it: what reached the owner outside payroll — a draw, a distribution actually paid, money paid back in — also raises or lowers the Actual column of Available to spend, because it is money he has. The residual this figure reports is net salary the company accrued and never transferred. Read notes: they say when one transfer looks marked twice.",
 			true, func(ctx context.Context, a monthArgs) (any, error) {
 				return reply(s.DirectorLoanFor(ctx, a.Month))
+			}),
+
+		tool("read_data_file",
+			"The complete current content of one of the three hand-maintained data files, with its sha: budget.json (the plan — groups, categories with their amounts, dates, from/until windows and amount_changes, and the dividends planned for the owner), accounts.json (the accounts, which pot each belongs to, their month-end balance readings and the director's loan opening figure) or config.json (the dated rules every figure is computed from: legislation, the salary plan, the target balance, the start month, the hourly rate). Read it before write_data_file, so the edit starts from what is committed.",
+			true, func(ctx context.Context, a fileNameArgs) (any, error) {
+				return reply(s.ReadDataFile(ctx, a.Name))
+			}),
+
+		tool("write_data_file",
+			"Replace one of the three data files — budget.json, accounts.json or config.json — with new content, for anything the narrower tools cannot express: a new or renamed budget category, a changed amount, a dividend moved to another month or changed, a new account, a corrected balance reading, a changed rule in config.json. "+
+				"Send the COMPLETE file: start from read_data_file's content and change only what was asked, so the diff is a few lines a reviewer can read. The content must parse and pass the file's own validation before anything is committed; a refusal names the problem. "+
+				"HANDLE WITH CARE and always confirm with the user first: a dividend is a decision taken with the accountant and moves both the company's balance and the owner's income; a balance reading closes a month for good; a rule in config.json reprices every payslip computed under it, so a past rule is never edited, a new dated entry is added. "+
+				"reason is required and becomes the commit message. Each accepted call is a git commit that redeploys the app; budget.json and accounts.json read back at once, config.json only once the deploy has restarted the app. The result carries the unified diff and the number of changed lines.",
+			false, func(ctx context.Context, a fileWriteArgs) (any, error) {
+				return reply(s.WriteDataFile(ctx, FileWriteRequest{Name: a.Name, Content: a.Content, Reason: a.Reason}))
 			}),
 
 		tool("derive_transaction_ids",

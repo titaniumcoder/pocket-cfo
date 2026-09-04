@@ -9,6 +9,7 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 ## [Unreleased]
 
 ### Added
+- `read_data_file` and `write_data_file` (MCP, `GET`/`PUT /api/files/{name}`, chat) serve `budget.json`, `accounts.json` and `config.json` whole, for what the narrower tools cannot express — a moved dividend, a new category or account, a new dated rule. A write must pass the file's own validation, becomes one commit with the reason as its message, and reports the diff; in the chat it is staged and reviewed as that diff.
 - The chat asks instead of assuming: an `ask_user` tool ends the turn with a question card — clickable options and, where sensible, a free-text field — and the answer resumes the turn. The system prompt makes this the normal way to resolve an unknown account, category or line.
 
 ### Changed

@@ -402,6 +402,9 @@ func (s *server) chatApply(w http.ResponseWriter, r *http.Request) {
 	failed := false
 	for i, staged := range api.Replay(ctx, svc, calls) {
 		c.Pending[i].Summary, c.Pending[i].Error = summaryOf(staged), errorOf(staged)
+		if fr, ok := staged.Result.(*api.FileWriteResult); ok {
+			c.Pending[i].Diff = fr.Diff
+		}
 		failed = failed || staged.Err != nil
 	}
 	if failed {

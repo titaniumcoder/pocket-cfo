@@ -259,9 +259,16 @@ A draft you saved reads back immediately through `get_invoice_document`, which r
 data repo directly; `list_invoices` lags until the commit has deployed, like every read
 over the invoice documents.
 
-## What you cannot write, and why
+## What needs care: the three hand-maintained files
 
-Three things are readable here and only editable in the data repo, deliberately:
+Three things used to be readable here and editable only in the data repo. They are still
+what they were — decisions, not bookkeeping — but `read_data_file` and `write_data_file`
+now serve them (`GET`/`PUT /api/files/{name}`), for what the narrower tools cannot express:
+a new or renamed category, a dividend moved to another month, a new account, a corrected
+reading, a new dated rule. Send the complete file, changed only where asked, so the commit
+is a few readable lines; the file must pass its own validation before it is committed, and
+the result carries the diff. In the in-app chat such a write is staged and shown as that
+diff for approval. Confirm with the user before touching any of them:
 
 - **The rates** (`config.json`). Deployment configuration, changed by redeploying. A past
   payslip has to stay reproducible against the rates it was actually computed under.
@@ -284,8 +291,9 @@ leave the bank. So a company with almost nothing in the account can still declar
 distribution that clears what its owner already drew — `get_director_loan` sizes it, and
 `cash_needed_cents` is the figure that has to be affordable, not the gross.
 
-If the user asks you to change one of these, say where it lives rather than looking for a
-tool. There isn't one.
+A rule in `config.json` is never edited in place: a past payslip must stay reproducible
+under the rates it was computed with, so a change is a new dated entry. Say so, and then
+`write_data_file` with the entry added.
 
 ## Balances close a month, and never sit in the middle of one
 

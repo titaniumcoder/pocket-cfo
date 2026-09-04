@@ -50,28 +50,37 @@ func LoadFileConfig(path string) (FileConfig, error) {
 		}
 		return FileConfig{}, fmt.Errorf("reading %s: %w", path, err)
 	}
-	var fc FileConfig
-	if err := json.Unmarshal(data, &fc); err != nil {
+	fc, err := ParseFileConfig(data)
+	if err != nil {
 		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	return fc, nil
+}
+
+func ParseFileConfig(data []byte) (FileConfig, error) {
+	var fc FileConfig
+	var err error
+	if err := json.Unmarshal(data, &fc); err != nil {
+		return FileConfig{}, err
 	}
 	if fc.legislation, err = tracker.ParseLegislation(fc.Legislation); err != nil {
-		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
+		return FileConfig{}, err
 	}
 	if fc.salary, err = tracker.ParseSalaryPlan(fc.Salary); err != nil {
-		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
+		return FileConfig{}, err
 	}
 	if err := tracker.ValidateSalaryAgainstLegislation(fc.salary, fc.legislation); err != nil {
-		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
+		return FileConfig{}, err
 	}
 	if fc.targetBalance, err = tracker.ParseTargetPlan(fc.TargetBalance); err != nil {
-		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
+		return FileConfig{}, err
 	}
 	if err := tracker.RequireMinimumWageForTargets(fc.targetBalance, fc.legislation); err != nil {
-		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
+		return FileConfig{}, err
 	}
 	fc.targetIdle = tracker.ValidateTargetAgainstSalary(fc.targetBalance, fc.salary)
 	if fc.startMonth, err = tracker.ParseStartMonth(strOr(fc.StartMonth, "")); err != nil {
-		return FileConfig{}, fmt.Errorf("parsing %s: %w", path, err)
+		return FileConfig{}, err
 	}
 	return fc, nil
 }

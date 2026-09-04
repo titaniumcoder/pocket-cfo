@@ -1381,6 +1381,34 @@ just committed or undo what was just reverted. The turn loop saves the chat afte
 completed round — the assistant message together with all its tool results — so a restart
 mid-turn never leaves a dangling tool call for the next request to trip on.
 
+**A turn runs on the server, not in the request.** The first version streamed the turn on
+the request that started it, so switching tabs aborted the fetch, cancelled the context
+and lost the answer. A turn now runs in a goroutine under its own ten-minute timeout,
+holding the chat's lock; a per-process registry buffers its events, and
+`GET /chat/{id}/events` replays them from any index as Server-Sent Events and follows the
+rest live. The page opens that stream on load when a turn is running, disables the
+composer, and reloads on `done` — so a tab switch, a reload or a closed laptop changes
+nothing: the chat file has every completed round and the stream has the rest. Approvals,
+discards, reverts and closing answer 409 while a turn runs. The registry is memory on one
+machine, which is the §11 verdict again: one instance is the normal case, and a turn that
+dies with the process leaves a chat that is exactly as complete as its last saved round.
+
+**Asking is the normal mode.** An `ask_user` tool, offered only in the chat, ends the turn
+with a question and clickable options; the question is stored with the chat and rendered
+as a card, and the answer resumes the turn as that call's result. A new message sent
+while a question is open answers it too, so the model is never left with a tool call it
+cannot account for. The system prompt says so plainly: nothing unsure is staged, it is
+asked.
+
+**The three hand-maintained files are editable, whole, with the approval as the guard.**
+`read_data_file` and `write_data_file` serve `budget.json`, `accounts.json` and
+`config.json` for what the narrower tools cannot express — a dividend moved, a category
+created, a rule added. A write must parse as the file's own type and pass its validator
+before anything is committed, and the result carries a unified diff, which is what the
+Changes rail shows and what the approval is a decision about. The narrower tools stay
+the first choice because they cannot express a wrong shape; the whole-file write is the
+escape hatch, and its guard is the human reading three changed lines.
+
 ## 13. What is built, and what is deliberately not
 
 Steps 1–8 of the original build order are done and released: schema and `money`,

@@ -22,6 +22,26 @@ export GITHUB_DATA_TOKEN=
 # Optional, defaults to https://api.github.com — point the Contents client at
 # a scratch instance or a stub while verifying the write path.
 export GITHUB_API_URL=
+# The in-app Chat tab (admins only) talks to any OpenAI-compatible chat
+# completions endpoint. Unset key means the tab does not exist: no menu entry,
+# and /chat is a 404. With the key set, OPENAI_MODEL is required and is passed
+# through verbatim — an OpenAI model, an OpenRouter reference such as
+# anthropic/claude-sonnet-4.5, or an OpenRouter preset such as @preset/pocket-cfo.
+export OPENAI_API_KEY=
+export OPENAI_MODEL=
+# Optional, default https://api.openai.com/v1; https://openrouter.ai/api/v1 for
+# OpenRouter, or whatever else speaks the same protocol.
+export OPENAI_BASE_URL=
+# Optional JSON object merged into every request, for fields the provider
+# understands and the app does not — e.g. {"provider":{"zdr":true}} asks
+# OpenRouter for zero-data-retention routing. The app always sends store:false;
+# anything beyond that is a contract with the provider, not a flag.
+export OPENAI_EXTRA_BODY=
+# Where chats are kept, one JSON file per chat under a directory per user.
+# Optional when TOGGL_CACHE_DIR is set: it then defaults to <TOGGL_CACHE_DIR>/chats,
+# i.e. the same volume. Required otherwise once OPENAI_API_KEY is set.
+# export CHAT_DIR=/var/cache/pocketcfo/chats
+
 # Used by `pocket-cfo-ctl translate` to fill missing Bulgarian text on drafts.
 export DEEPL_API_KEY=
 

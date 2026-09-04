@@ -181,6 +181,11 @@ Secrets and deployment-specific paths come from the environment. Copy `.envrc.ex
 | `PORT` | `cmd/pocketcfo`, optional | default `8080` |
 | `CLIENT_LINK_SECRET` | `cmd/pocketcfo`, prod | any random string; signs the stateless client-portal links |
 | `GITHUB_API_URL` | `cmd/pocketcfo`, optional | default `https://api.github.com`; points the Contents client at a stub while verifying the write path |
+| `OPENAI_API_KEY` | `cmd/pocketcfo`, optional | the in-app Chat tab (admins only) talks to an OpenAI-compatible chat completions endpoint with this key. Unset means the tab does not exist: no menu entry, and `/chat` is a 404 |
+| `OPENAI_MODEL` | `cmd/pocketcfo`, with the key | required once the key is set; passed through verbatim — an OpenAI model, an OpenRouter reference such as `anthropic/claude-sonnet-4.5`, or an OpenRouter preset such as `@preset/pocket-cfo` |
+| `OPENAI_BASE_URL` | `cmd/pocketcfo`, optional | default `https://api.openai.com/v1`; `https://openrouter.ai/api/v1` for OpenRouter, or any other endpoint speaking the same protocol |
+| `OPENAI_EXTRA_BODY` | `cmd/pocketcfo`, optional | a JSON object merged into every request, for fields the provider understands and the app does not — `{"provider":{"zdr":true}}` asks OpenRouter for zero-data-retention routing. The app always sends `store: false`; retention beyond that is a contract with the provider, not something a request can enforce |
+| `CHAT_DIR` | `cmd/pocketcfo`, optional | where chats are kept: one JSON file per chat under a directory per user, format-versioned — a release that changes the format deletes every old chat. Defaults to `<TOGGL_CACHE_DIR>/chats` when that is set, so both live on the same volume; required otherwise once `OPENAI_API_KEY` is set |
 | `DEEPL_API_KEY` | `pocket-cfo-ctl translate` | fills missing Bulgarian text on drafts |
 | `DATA_DIR` | both binaries, optional | default `data` |
 | `BUILD_DIR` | both binaries, optional | default `build` — rendered PDFs, kept apart from hand-edited data |

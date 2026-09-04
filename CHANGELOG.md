@@ -9,6 +9,7 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 ## [Unreleased]
 
 ### Added
+- `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_EXTRA_BODY` and `CHAT_DIR` configure the coming in-app Chat tab: any OpenAI-compatible endpoint, the model passed through verbatim, and a directory for the chats. The key set without a model or without anywhere to keep chats refuses to boot; `/info` shows the resolved values.
 - `derive_transaction_ids` (MCP) and `POST /api/actuals/ids` (REST) hand an agent the stable id of every statement line — a short hash of account, date, amount and description, suffixed `-2`, `-3` for identical lines in one call — so ids are computed by the app rather than by the agent, and a re-imported statement still dedups line for line.
 
 ## [1.0.1] - 2026-09-04

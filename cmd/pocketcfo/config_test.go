@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	financeconfig "github.com/titaniumcoder/pocket-cfo/internal/finance/config"
@@ -250,4 +251,40 @@ func TestBuildTracker(t *testing.T) {
 			t.Error("want Budget always non-nil (backed by budgetDir)")
 		}
 	})
+}
+
+func TestResolveChat(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       config
+		cacheDir string
+		wantErr  string
+		wantDir  string
+		wantBase string
+	}{
+		{name: "no key means no chat and no complaint", in: config{openAIModel: "m"}},
+		{name: "a key needs a model", in: config{openAIKey: "k", chatDir: "/c"}, wantErr: "OPENAI_MODEL"},
+		{name: "a key needs somewhere for chats", in: config{openAIKey: "k", openAIModel: "m"}, wantErr: "CHAT_DIR"},
+		{name: "the Toggl cache volume is the default home", in: config{openAIKey: "k", openAIModel: "m"}, cacheDir: "/var/cache/pocketcfo", wantDir: "/var/cache/pocketcfo/chats", wantBase: "https://api.openai.com/v1"},
+		{name: "an explicit CHAT_DIR wins", in: config{openAIKey: "k", openAIModel: "m", chatDir: "/chats", openAIBaseURL: "https://openrouter.ai/api/v1"}, cacheDir: "/var/cache/pocketcfo", wantDir: "/chats", wantBase: "https://openrouter.ai/api/v1"},
+		{name: "the extra body must be an object", in: config{openAIKey: "k", openAIModel: "m", chatDir: "/c", openAIExtraBody: "zdr"}, wantErr: "OPENAI_EXTRA_BODY"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := tt.in
+			err := resolveChat(&c, tt.cacheDir)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("want an error naming %s, got %v", tt.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.chatDir != tt.wantDir || c.openAIBaseURL != tt.wantBase {
+				t.Errorf("resolved dir %q base %q, want %q %q", c.chatDir, c.openAIBaseURL, tt.wantDir, tt.wantBase)
+			}
+		})
+	}
 }

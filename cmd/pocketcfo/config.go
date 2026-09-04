@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/buildinfo"
+	"github.com/titaniumcoder/pocket-cfo/internal/chat"
 	financeconfig "github.com/titaniumcoder/pocket-cfo/internal/finance/config"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
@@ -72,6 +73,12 @@ type config struct {
 	githubDataToken string
 	githubAPIURL    string
 
+	openAIKey       string
+	openAIBaseURL   string
+	openAIModel     string
+	openAIExtraBody string
+	chatDir         string
+
 	finance   financeconfig.Config
 	togglMode string
 }
@@ -97,6 +104,11 @@ func loadConfig() config {
 		hermesAPIToken:   os.Getenv("HERMES_API_TOKEN"),
 		githubDataToken:  os.Getenv("GITHUB_DATA_TOKEN"),
 		githubAPIURL:     os.Getenv("GITHUB_API_URL"),
+		openAIKey:        os.Getenv("OPENAI_API_KEY"),
+		openAIBaseURL:    os.Getenv("OPENAI_BASE_URL"),
+		openAIModel:      os.Getenv("OPENAI_MODEL"),
+		openAIExtraBody:  os.Getenv("OPENAI_EXTRA_BODY"),
+		chatDir:          os.Getenv("CHAT_DIR"),
 		finance:          financeconfig.Load(financeFileConfig),
 	}
 	// Which data checkout is mounted. Only the deployment knows — the data is
@@ -118,6 +130,9 @@ func loadConfig() config {
 	}
 	c.togglMode = mode
 	applyDefaults(&c)
+	if err := resolveChat(&c, togglCacheDir); err != nil {
+		log.Fatalf("pocketcfo: %v", err)
+	}
 	if c.env == envProd {
 		if err := requireProdVars(c); err != nil {
 			log.Fatalf("pocketcfo: %v", err)
@@ -174,6 +189,30 @@ func resolveTogglMode(f financeconfig.Config) (string, error) {
 		return "", fmt.Errorf("TOGGL_MODE=%q is not a mode — use %s, %s or %s, or leave it unset with one set of Toggl credentials", f.TogglMode, togglModeTrack, togglModeFocus, togglModeBoth)
 	}
 	return f.TogglMode, nil
+}
+
+func (c config) chatEnabled() bool { return c.openAIKey != "" }
+
+func resolveChat(c *config, cacheDir string) error {
+	if !c.chatEnabled() {
+		return nil
+	}
+	if c.openAIModel == "" {
+		return fmt.Errorf("OPENAI_API_KEY is set but OPENAI_MODEL is not — name the model (or OpenRouter preset) the chat should use (see .envrc.example)")
+	}
+	if _, err := chat.ParseExtraBody(c.openAIExtraBody); err != nil {
+		return fmt.Errorf("OPENAI_EXTRA_BODY %v", err)
+	}
+	if c.openAIBaseURL == "" {
+		c.openAIBaseURL = chat.DefaultBaseURL
+	}
+	if c.chatDir == "" && cacheDir != "" {
+		c.chatDir = filepath.Join(cacheDir, "chats")
+	}
+	if c.chatDir == "" {
+		return fmt.Errorf("OPENAI_API_KEY is set but there is nowhere to keep chats — set CHAT_DIR, or TOGGL_CACHE_DIR to put them beside the Toggl cache (see .envrc.example)")
+	}
+	return nil
 }
 
 func toggl2Complete(f financeconfig.Config) bool {

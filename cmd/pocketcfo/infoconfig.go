@@ -92,6 +92,14 @@ func (s *server) configGroups() []configGroup {
 			{Name: "Write target", Value: orUnset(c.repo)},
 			{Name: "GITHUB_API_URL", Value: orUnset(c.githubAPIURL)},
 		}},
+		{Name: "Chat", Rows: []configRow{
+			{Name: "OPENAI_API_KEY", Value: maskSecret(c.openAIKey), Secret: true},
+			{Name: "OPENAI_BASE_URL", Value: orUnset(c.openAIBaseURL)},
+			{Name: "OPENAI_MODEL", Value: orUnset(c.openAIModel)},
+			{Name: "OPENAI_EXTRA_BODY", Value: orUnset(c.openAIExtraBody)},
+			{Name: "CHAT_DIR", Value: orUnset(c.chatDir)},
+			{Name: "Chat tab", Value: enabledIf(c.chatEnabled())},
+		}},
 		{Name: "Email (Amazon SES)", Rows: []configRow{
 			{Name: "AWS_REGION", Value: orUnset(c.sesRegion)},
 			{Name: "SES_FROM_EMAIL", Value: orUnset(c.sesFromEmail)},

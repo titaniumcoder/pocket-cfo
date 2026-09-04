@@ -39,6 +39,7 @@ func enableChat(t *testing.T, s *server, answers ...string) *server {
 	s.chatsTmpl = mustPageTemplate("../../templates/chats.html")
 	s.chatTmpl = mustPageTemplate("../../templates/chat.html")
 	s.chatStore, s.chatClient = mustOpenChat(s.cfg, &http.Client{Timeout: 5 * time.Second})
+	s.chatRuns = chat.NewRuns()
 	return s
 }
 
@@ -92,7 +93,7 @@ func textAnswer(text string) string {
 	return `{"id":"c","object":"chat.completion","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"` + text + `"}}],"usage":{"prompt_tokens":5,"completion_tokens":1}}`
 }
 
-func TestATurnStreamsEventsAndTheChatPageShowsThem(t *testing.T) {
+func TestATurnRunsInTheBackgroundAndTheEventsStreamReplaysIt(t *testing.T) {
 	s := chatServer(t, textAnswer("Hello from the model"))
 
 	w := sessionRequest(t, s, http.MethodPost, "/chat/new", "admin", "", "")
@@ -105,12 +106,21 @@ func TestATurnStreamsEventsAndTheChatPageShowsThem(t *testing.T) {
 	}
 
 	w = sessionRequest(t, s, http.MethodPost, location+"/turn", "admin", `{"text":"hi","files":[{"name":"a.csv","content":"x;y\n"}]}`, "application/json")
-	if w.Code != http.StatusOK || !strings.HasPrefix(w.Header().Get("Content-Type"), "application/x-ndjson") {
-		t.Fatalf("turn = %d %s %s", w.Code, w.Header().Get("Content-Type"), w.Body)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("turn = %d %s", w.Code, w.Body)
 	}
-	lines := strings.Split(strings.TrimSpace(w.Body.String()), "\n")
-	if len(lines) != 2 || !strings.Contains(lines[0], `"event":"assistant"`) || !strings.Contains(lines[1], `"event":"done"`) {
-		t.Fatalf("stream = %q", lines)
+
+	w = sessionRequest(t, s, http.MethodGet, location+"/events", "admin", "", "")
+	if w.Code != http.StatusOK || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("events = %d %s %s", w.Code, w.Header().Get("Content-Type"), w.Body)
+	}
+	stream := w.Body.String()
+	if !strings.Contains(stream, `"event":"assistant"`) || !strings.Contains(stream, `"event":"done"`) || !strings.Contains(stream, "id: 0\n") {
+		t.Fatalf("stream = %q", stream)
+	}
+	w = sessionRequest(t, s, http.MethodGet, location+"/events?since=2", "admin", "", "")
+	if w.Code != http.StatusOK || strings.Contains(w.Body.String(), "data:") {
+		t.Errorf("a subscriber past the end gets nothing more: %d %q", w.Code, w.Body.String())
 	}
 
 	w = sessionRequest(t, s, http.MethodGet, location, "admin", "", "")
@@ -121,10 +131,57 @@ func TestATurnStreamsEventsAndTheChatPageShowsThem(t *testing.T) {
 	if !strings.Contains(body, `<title>Pocket CFO — hi</title>`) {
 		t.Error("the first line names the chat")
 	}
+	if strings.Contains(body, `data-running="true"`) {
+		t.Error("a finished turn must not leave the composer disabled")
+	}
 	w = sessionRequest(t, s, http.MethodGet, "/chat", "admin", "", "")
 	if !strings.Contains(w.Body.String(), `href="`+location+`"`) {
 		t.Error("the list must link the chat")
 	}
+}
+
+func TestWhileATurnRunsThePageSaysSoAndChangesWait(t *testing.T) {
+	s := chatServer(t, textAnswer("x"))
+	c, _ := s.chatStore.Create("octocat")
+	r, started := s.chatRuns.Start(c, chat.Input{Text: "slow"}, slowChatRunner(t, s), func() {})
+	if !started {
+		t.Fatal("run must start")
+	}
+	page := sessionRequest(t, s, http.MethodGet, "/chat/"+c.ID, "admin", "", "").Body.String()
+	if !strings.Contains(page, `data-running="true"`) || !strings.Contains(page, "Thinking…") {
+		t.Error("the page must show the running turn and disable the composer")
+	}
+	for _, path := range []string{"/apply", "/discard", "/revert"} {
+		if w := sessionRequest(t, s, http.MethodPost, "/chat/"+c.ID+path, "admin", `{"index":0}`, "application/json"); w.Code != http.StatusConflict {
+			t.Errorf("%s during a run = %d", path, w.Code)
+		}
+	}
+	if w := sessionRequest(t, s, http.MethodPost, "/chat/"+c.ID+"/turn", "admin", `{"text":"again"}`, "application/json"); w.Code != http.StatusConflict {
+		t.Errorf("a second turn during a run = %d", w.Code)
+	}
+	if w := sessionRequest(t, s, http.MethodPost, "/chat/"+c.ID+"/close", "admin", "", "application/x-www-form-urlencoded"); w.Code != http.StatusConflict {
+		t.Errorf("close during a run = %d", w.Code)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !r.Done() && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func slowChatRunner(t *testing.T, s *server) *chat.Runner {
+	t.Helper()
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(400 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, textAnswer("slow answer"))
+	}))
+	t.Cleanup(stub.Close)
+	client, err := chat.NewClient(chat.ClientConfig{Key: s.cfg.openAIKey, BaseURL: stub.URL, Model: s.cfg.openAIModel, HTTP: &http.Client{Timeout: 5 * time.Second}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, _ := s.stagedService()
+	return &chat.Runner{Client: client, Store: s.chatStore, Service: svc}
 }
 
 func TestATurnNeedsJSONAndSomethingToSay(t *testing.T) {

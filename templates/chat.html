@@ -33,12 +33,12 @@
       {{end}}
     </div>
 
-    <form id="composer" class="composer" action="/chat/{{.Chat.ID}}/turn" method="post">
-      <textarea name="text" rows="3" placeholder="Reconcile the attached statement for August…"></textarea>
+    <form id="composer" class="composer" action="/chat/{{.Chat.ID}}/turn" method="post" data-events="/chat/{{.Chat.ID}}/events"{{if .Running}} data-running="true"{{end}}>
+      <textarea name="text" rows="3" placeholder="Reconcile the attached statement for August…"{{if .Running}} disabled{{end}}></textarea>
       <div class="composer-row">
-        <input type="file" name="files" accept=".csv,.txt,text/csv,text/plain" multiple>
-        <span id="turn-status" class="turn-status"></span>
-        <button class="button" type="submit">Send</button>
+        <input type="file" name="files" accept=".csv,.txt,text/csv,text/plain" multiple{{if .Running}} disabled{{end}}>
+        <span id="turn-status" class="turn-status">{{if .Running}}Thinking…{{end}}</span>
+        <button class="button" type="submit"{{if .Running}} disabled{{end}}>Send</button>
       </div>
     </form>
     <p class="section-note usage">{{.Model}} · {{.Chat.Usage.PromptTokens}} prompt / {{.Chat.Usage.CompletionTokens}} completion tokens in this chat</p>

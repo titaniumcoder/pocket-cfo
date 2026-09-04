@@ -39,6 +39,7 @@ type server struct {
 
 	chatStore  *chat.Store
 	chatClient *chat.Client
+	chatRuns   *chat.Runs
 
 	tracker    *tracker.Tracker
 	togglTrack *tracker.Toggl
@@ -141,6 +142,7 @@ func main() {
 		s.chatsTmpl = mustPageTemplate(templatesDir + "/chats.html")
 		s.chatTmpl = mustPageTemplate(templatesDir + "/chat.html")
 		s.chatStore, s.chatClient = mustOpenChat(cfg, httpClient)
+		s.chatRuns = chat.NewRuns()
 	}
 
 	warmCtx, stopWarming := context.WithCancel(context.Background())

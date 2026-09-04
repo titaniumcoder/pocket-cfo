@@ -34,7 +34,11 @@
   if (!form) return;
   var transcript = document.getElementById('transcript');
   var status = document.getElementById('turn-status');
-  var submit = form.querySelector('button[type=submit]');
+  var controls = [form.elements.text, form.elements.files, form.querySelector('button[type=submit]')];
+
+  function setRunning(running) {
+    controls.forEach(function (el) { el.disabled = running; });
+  }
 
   function show(kind, text) {
     var box = document.createElement('div');
@@ -57,43 +61,42 @@
     }));
   }
 
-  var failed = false;
-
-  function handle(line) {
-    if (!line.trim()) return;
-    var ev = JSON.parse(line);
-    switch (ev.event) {
-      case 'assistant':
-        if (ev.message.content) show('assistant', ev.message.content);
-        if (ev.message.tool_calls) {
-          show('assistant calls', ev.message.tool_calls.map(function (c) { return c.function.name; }).join(', '));
-        }
-        break;
-      case 'tool':
-        show('tool', ev.message.name + ' → ' + (ev.message.content || '').slice(0, 400));
-        break;
-      case 'pending':
-        status.textContent = ev.pending.error ? ev.pending.tool + ' failed: ' + ev.pending.error : 'Staged ' + ev.pending.tool + ' — waiting for your approval';
-        break;
-      case 'error':
-        failed = true;
-        status.textContent = ev.error;
-        break;
-      case 'done':
-        status.textContent = 'Done';
-        break;
-    }
+  // The turn runs on the server whether or not this page is watching; the
+  // page only follows it. Reloading on "done" renders exactly what was saved.
+  function follow(since) {
+    var source = new EventSource(form.dataset.events + '?since=' + since);
+    source.onmessage = function (e) {
+      var ev = JSON.parse(e.data);
+      switch (ev.event) {
+        case 'assistant':
+          if (ev.message.content) show('assistant', ev.message.content);
+          if (ev.message.tool_calls) {
+            show('assistant calls', ev.message.tool_calls.map(function (c) { return c.function.name; }).join(', '));
+          }
+          break;
+        case 'tool':
+          show('tool', ev.message.name + ' → ' + (ev.message.content || '').slice(0, 400));
+          break;
+        case 'pending':
+          status.textContent = ev.pending.error ? ev.pending.tool + ' failed: ' + ev.pending.error : 'Staged ' + ev.pending.tool + ' — waiting for your approval';
+          break;
+        case 'error':
+          source.close();
+          status.textContent = ev.error;
+          setRunning(false);
+          break;
+        case 'done':
+          source.close();
+          status.textContent = 'Done';
+          location.reload();
+          break;
+      }
+    };
   }
 
-  function pump(reader, decoder, buffer) {
-    return reader.read().then(function (chunk) {
-      if (chunk.done) { if (buffer) handle(buffer); return; }
-      buffer += decoder.decode(chunk.value, { stream: true });
-      var lines = buffer.split('\n');
-      buffer = lines.pop();
-      lines.forEach(handle);
-      return pump(reader, decoder, buffer);
-    });
+  if (form.dataset.running === 'true') {
+    setRunning(true);
+    follow(0);
   }
 
   form.addEventListener('submit', function (e) {
@@ -101,8 +104,7 @@
     var text = form.elements.text.value;
     readFiles(form.elements.files).then(function (files) {
       if (!text.trim() && !files.length) return;
-      submit.disabled = true;
-      failed = false;
+      setRunning(true);
       show('user', text + (files.length ? '\n[attached: ' + files.map(function (f) { return f.name; }).join(', ') + ']' : ''));
       status.textContent = 'Thinking…';
       return fetch(form.action, {
@@ -111,15 +113,13 @@
         body: JSON.stringify({ text: text, files: files })
       }).then(function (resp) {
         if (!resp.ok) return resp.text().then(function (t) { throw new Error(t || ('HTTP ' + resp.status)); });
-        return pump(resp.body.getReader(), new TextDecoder(), '');
-      }).then(function () {
-        if (!failed) location.reload();
-        submit.disabled = false;
+        form.elements.text.value = '';
+        form.elements.files.value = '';
+        follow(0);
       });
     }).catch(function (err) {
-      failed = true;
       status.textContent = 'Failed: ' + err.message;
-      submit.disabled = false;
+      setRunning(false);
     });
   });
 })();

@@ -8,6 +8,9 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Fixed
+- A chat turn no longer dies with the browser tab: it runs on the server until it finishes, the page follows it over a live event stream and picks it up again after a reload or a tab switch, and the composer is disabled while it runs.
+
 ## [2.0.0-rc.2] - 2026-09-04
 
 The second candidate for 2.0: rc.1 refused to boot on a deployment that carried `OPENAI_API_KEY` without the rest of the chat configuration. Published as `:next`, not `:latest`.

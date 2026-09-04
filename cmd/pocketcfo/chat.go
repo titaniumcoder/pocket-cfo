@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,6 +56,7 @@ func (s *server) registerChat(mux *http.ServeMux) {
 	mux.HandleFunc("POST /chat/new", s.chatNew)
 	mux.HandleFunc("GET /chat/{id}", s.chatShow)
 	mux.HandleFunc("POST /chat/{id}/turn", s.chatTurn)
+	mux.HandleFunc("GET /chat/{id}/events", s.chatEvents)
 	mux.HandleFunc("POST /chat/{id}/close", s.chatClose)
 	mux.HandleFunc("POST /chat/{id}/apply", s.chatApply)
 	mux.HandleFunc("POST /chat/{id}/discard", s.chatDiscard)
@@ -145,6 +148,7 @@ type chatView struct {
 	Chat     *chat.Chat
 	Rows     []chatRow
 	Writable bool
+	Running  bool
 	Model    string
 }
 
@@ -181,6 +185,7 @@ func (s *server) chatShow(w http.ResponseWriter, r *http.Request) {
 		Chat:     c,
 		Rows:     rowsOf(c),
 		Writable: s.cfg.githubDataToken != "",
+		Running:  s.chatRuns.Active(c.ID),
 		Model:    s.chatClient.Model(),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -192,6 +197,10 @@ func (s *server) chatShow(w http.ResponseWriter, r *http.Request) {
 func (s *server) chatClose(w http.ResponseWriter, r *http.Request) {
 	sess, c, ok := s.chatFor(w, r)
 	if !ok {
+		return
+	}
+	if s.chatRuns.Active(c.ID) {
+		http.Error(w, "a turn is still running; wait for it to finish", http.StatusConflict)
 		return
 	}
 	unlock := s.chatStore.Lock(c.ID)
@@ -235,52 +244,76 @@ func (s *server) chatTurn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, chat.ErrEmptyTurn.Error(), http.StatusBadRequest)
 		return
 	}
-	unlock := s.chatStore.Lock(r.PathValue("id"))
-	defer unlock()
-	c, err := s.chatStore.Load(sess.Login, r.PathValue("id"))
+	id := r.PathValue("id")
+	if s.chatRuns.Active(id) {
+		writeAPIError(w, &api.Error{Code: api.CodeConflict, Message: "a turn is already running"}, http.StatusConflict)
+		return
+	}
+	unlock := s.chatStore.Lock(id)
+	c, err := s.chatStore.Load(sess.Login, id)
 	if errors.Is(err, chat.ErrNotFound) {
+		unlock()
 		http.NotFound(w, r)
 		return
 	}
 	if err != nil {
+		unlock()
 		serverError(w, r, "loading chat", err)
 		return
 	}
+	svc, _ := s.stagedService()
+	runner := &chat.Runner{Client: s.chatClient, Store: s.chatStore, Service: svc}
+	if _, started := s.chatRuns.Start(c, in, runner, unlock); !started {
+		unlock()
+		writeAPIError(w, &api.Error{Code: api.CodeConflict, Message: "a turn is already running"}, http.StatusConflict)
+		return
+	}
+	log.Printf("chat: %s turn started by %s", c.ID, sess.Login)
+	writeAPIJSON(w, http.StatusAccepted, map[string]any{"running": true})
+}
 
-	ctx, cancel := context.WithTimeout(r.Context(), chatTurnTimeout)
-	defer cancel()
+func (s *server) chatEvents(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.chatSession(w, r)
+	if !ok {
+		return
+	}
+	id := r.PathValue("id")
+	if _, err := s.chatStore.Load(sess.Login, id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	run, ok := s.chatRuns.Get(id)
+	if !ok {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	since, _ := strconv.Atoi(r.URL.Query().Get("since"))
+	if since < 0 {
+		since = 0
+	}
 	http.NewResponseController(w).SetWriteDeadline(time.Now().Add(chatTurnTimeout))
-	w.Header().Set("Content-Type", "application/x-ndjson; charset=utf-8")
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
-	stream := newEventStream(w)
-
-	svc, _ := s.stagedService()
-	runner := &chat.Runner{Client: s.chatClient, Store: s.chatStore, Service: svc}
-	if err := runner.Run(ctx, c, in, stream.emit); err != nil {
-		log.Printf("chat: %s turn by %s: %v", c.ID, sess.Login, err)
-		stream.emit(chat.Event{Event: "error", Error: err.Error()})
+	flusher, _ := w.(http.Flusher)
+	for {
+		events, done := run.Next(r.Context(), since)
+		for _, ev := range events {
+			body, err := json.Marshal(ev)
+			if err != nil {
+				return
+			}
+			fmt.Fprintf(w, "id: %d\ndata: %s\n\n", since, body)
+			since++
+		}
+		if flusher != nil {
+			flusher.Flush()
+		}
+		if done || r.Context().Err() != nil {
+			return
+		}
 	}
-}
-
-type eventStream struct {
-	w   http.ResponseWriter
-	enc *json.Encoder
-}
-
-func newEventStream(w http.ResponseWriter) *eventStream {
-	return &eventStream{w: w, enc: json.NewEncoder(w)}
-}
-
-func (e *eventStream) emit(ev chat.Event) error {
-	if err := e.enc.Encode(ev); err != nil {
-		return err
-	}
-	if f, ok := e.w.(http.Flusher); ok {
-		f.Flush()
-	}
-	return nil
 }
 
 const chatApplyTimeout = 2 * time.Minute
@@ -292,6 +325,10 @@ type indexRequest struct {
 func (s *server) lockedChat(w http.ResponseWriter, r *http.Request) (auth.Session, *chat.Chat, func(), bool) {
 	sess, ok := s.chatSession(w, r)
 	if !ok {
+		return sess, nil, nil, false
+	}
+	if s.chatRuns.Active(r.PathValue("id")) {
+		writeAPIError(w, &api.Error{Code: api.CodeConflict, Message: "a turn is still running; wait for it to finish"}, http.StatusConflict)
 		return sess, nil, nil, false
 	}
 	unlock := s.chatStore.Lock(r.PathValue("id"))

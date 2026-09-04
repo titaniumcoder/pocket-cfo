@@ -271,7 +271,7 @@ func (s *server) chatTurn(w http.ResponseWriter, r *http.Request) {
 	if !decodeChatJSON(w, r, &in) {
 		return
 	}
-	if strings.TrimSpace(in.Text) == "" && len(in.Files) == 0 {
+	if in.Empty() {
 		http.Error(w, chat.ErrEmptyTurn.Error(), http.StatusBadRequest)
 		return
 	}

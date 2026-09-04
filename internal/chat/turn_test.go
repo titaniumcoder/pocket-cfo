@@ -258,3 +258,77 @@ func TestAnEmptyTurnIsRefused(t *testing.T) {
 		t.Errorf("got %v", err)
 	}
 }
+
+func TestAQuestionStopsTheTurnAndAnAnswerResumesIt(t *testing.T) {
+	s := &scripted{answers: []string{
+		callAnswer("q1", AskUserTool, `{"question":"Which account is this?","options":["Private Checking","Company Checking"]}`),
+		textAnswer("Thanks, Private Checking it is."),
+	}}
+	r, _ := runner(t, s)
+	c, _ := r.Store.Create("octocat")
+	emit, events := collect()
+	if err := r.Run(context.Background(), c, Input{Text: "reconcile"}, emit); err != nil {
+		t.Fatal(err)
+	}
+	kinds := []string{}
+	for _, e := range *events {
+		kinds = append(kinds, e.Event)
+	}
+	if strings.Join(kinds, " ") != "assistant question done" {
+		t.Fatalf("events = %v", kinds)
+	}
+	if c.Question == nil || c.Question.ToolCallID != "q1" || len(c.Question.Options) != 2 || !c.Question.AllowFreeText {
+		t.Fatalf("question = %+v", c.Question)
+	}
+	saved, _ := r.Store.Load("octocat", c.ID)
+	if saved.Question == nil || len(saved.Messages) != 2 {
+		t.Fatalf("saved = %+v", saved)
+	}
+
+	emit, events = collect()
+	if err := r.Run(context.Background(), saved, Input{Answer: &Answer{ToolCallID: "q1", Text: "Private Checking"}}, emit); err != nil {
+		t.Fatal(err)
+	}
+	if saved.Question != nil {
+		t.Error("the question must be closed by the answer")
+	}
+	roles := []string{}
+	for _, m := range saved.Messages {
+		roles = append(roles, m.Role)
+	}
+	if strings.Join(roles, " ") != "user assistant tool assistant" || saved.Messages[2].ToolCallID != "q1" || !strings.Contains(saved.Messages[2].Content, "Private Checking") {
+		t.Errorf("messages = %v / %+v", roles, saved.Messages[2])
+	}
+	sent := s.requests[1]["messages"].([]any)
+	last := sent[len(sent)-1].(map[string]any)
+	if last["role"] != "tool" || last["tool_call_id"] != "q1" {
+		t.Errorf("the answer must reach the model as the tool result: %v", last)
+	}
+	if (*events)[len(*events)-1].Event != "done" || !strings.Contains(saved.Messages[3].Content, "Thanks") {
+		t.Errorf("the turn must continue to the answer: %+v", *events)
+	}
+}
+
+func TestAPlainMessageAnswersAnOpenQuestionToo(t *testing.T) {
+	s := &scripted{answers: []string{textAnswer("ok")}}
+	r, _ := runner(t, s)
+	c, _ := r.Store.Create("octocat")
+	c.Messages = []Message{{Role: "user", Content: "x"}, {Role: "assistant", ToolCalls: []ToolCall{{ID: "q1", Type: "function", Function: FunctionCall{Name: AskUserTool, Arguments: `{"question":"Which?"}`}}}}}
+	c.Question = &Question{ToolCallID: "q1", Text: "Which?", AllowFreeText: true}
+	if err := r.Run(context.Background(), c, Input{Text: "neither, skip it"}, func(Event) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if c.Question != nil || c.Messages[2].Role != "tool" || !strings.Contains(c.Messages[2].Content, "skip it") || c.Messages[3].Role != "user" {
+		t.Errorf("messages = %+v", c.Messages)
+	}
+}
+
+func TestTheAskUserToolIsOfferedFirst(t *testing.T) {
+	defs, err := Definitions(nil)
+	if err != nil || len(defs) != 1 || defs[0].Name != AskUserTool {
+		t.Fatalf("defs = %+v %v", defs, err)
+	}
+	if _, ok := defs[0].Parameters["properties"].(map[string]any)["options"]; !ok {
+		t.Error("the question tool takes options")
+	}
+}

@@ -98,6 +98,9 @@
         case 'tool':
           log('→', ev.message.name, excerpt(ev.message.content));
           break;
+        case 'question':
+          status.textContent = 'Waiting for your answer';
+          break;
         case 'pending':
           status.textContent = ev.pending.error ? ev.pending.tool + ' failed: ' + ev.pending.error : 'Staged ' + ev.pending.tool + ' — waiting for your approval';
           break;
@@ -120,24 +123,48 @@
     follow(0);
   }
 
+  function start(payload) {
+    setRunning(true);
+    status.textContent = 'Thinking…';
+    return fetch(form.action, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function (resp) {
+      if (!resp.ok) return resp.text().then(function (t) { throw new Error(t || ('HTTP ' + resp.status)); });
+      follow(0);
+    }).catch(function (err) {
+      status.textContent = 'Failed: ' + err.message;
+      setRunning(false);
+    });
+  }
+
+  var question = document.getElementById('question');
+  if (question) {
+    var answer = function (text) {
+      if (!text.trim()) return;
+      question.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+      show('user', text);
+      start({ answer: { tool_call_id: question.dataset.call, text: text } });
+    };
+    question.addEventListener('click', function (e) {
+      var option = e.target.closest('.question-option');
+      if (option) answer(option.dataset.answer);
+      if (e.target.closest('.question-send')) answer(document.getElementById('question-free').value);
+    });
+    var free = document.getElementById('question-free');
+    if (free) free.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); answer(free.value); } });
+  }
+
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     var text = form.elements.text.value;
     readFiles(form.elements.files).then(function (files) {
       if (!text.trim() && !files.length) return;
-      setRunning(true);
       show('user', text + (files.length ? '\n[attached: ' + files.map(function (f) { return f.name; }).join(', ') + ']' : ''));
-      status.textContent = 'Thinking…';
-      return fetch(form.action, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text, files: files })
-      }).then(function (resp) {
-        if (!resp.ok) return resp.text().then(function (t) { throw new Error(t || ('HTTP ' + resp.status)); });
-        form.elements.text.value = '';
-        form.elements.files.value = '';
-        follow(0);
-      });
+      form.elements.text.value = '';
+      form.elements.files.value = '';
+      return start({ text: text, files: files });
     }).catch(function (err) {
       status.textContent = 'Failed: ' + err.message;
       setRunning(false);

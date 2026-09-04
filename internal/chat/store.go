@@ -36,7 +36,15 @@ type Chat struct {
 	Files     []File          `json:"files,omitempty"`
 	Pending   []PendingChange `json:"pending,omitempty"`
 	Applied   []AppliedChange `json:"applied,omitempty"`
+	Question  *Question       `json:"question,omitempty"`
 	Usage     Usage           `json:"usage"`
+}
+
+type Question struct {
+	ToolCallID    string   `json:"tool_call_id"`
+	Text          string   `json:"text"`
+	Options       []string `json:"options,omitempty"`
+	AllowFreeText bool     `json:"allow_free_text"`
 }
 
 type File struct {

@@ -23,8 +23,18 @@ const (
 )
 
 type Input struct {
-	Text  string   `json:"text"`
-	Files []Upload `json:"files,omitempty"`
+	Text   string   `json:"text"`
+	Files  []Upload `json:"files,omitempty"`
+	Answer *Answer  `json:"answer,omitempty"`
+}
+
+type Answer struct {
+	ToolCallID string `json:"tool_call_id"`
+	Text       string `json:"text"`
+}
+
+func (in Input) Empty() bool {
+	return strings.TrimSpace(in.Text) == "" && len(in.Files) == 0 && (in.Answer == nil || strings.TrimSpace(in.Answer.Text) == "")
 }
 
 type Upload struct {
@@ -33,12 +43,13 @@ type Upload struct {
 }
 
 type Event struct {
-	Event   string         `json:"event"`
-	Message *Message       `json:"message,omitempty"`
-	Pending *PendingChange `json:"pending,omitempty"`
-	Index   int            `json:"index,omitempty"`
-	Error   string         `json:"error,omitempty"`
-	Usage   *Usage         `json:"usage,omitempty"`
+	Event    string         `json:"event"`
+	Message  *Message       `json:"message,omitempty"`
+	Pending  *PendingChange `json:"pending,omitempty"`
+	Question *Question      `json:"question,omitempty"`
+	Index    int            `json:"index,omitempty"`
+	Error    string         `json:"error,omitempty"`
+	Usage    *Usage         `json:"usage,omitempty"`
 }
 
 type Runner struct {
@@ -52,7 +63,15 @@ type Runner struct {
 var ErrEmptyTurn = errors.New("say something or attach a file")
 
 func (r *Runner) Run(ctx context.Context, c *Chat, in Input, emit func(Event) error) error {
-	if err := r.appendUserMessage(c, in); err != nil {
+	if in.Empty() {
+		return ErrEmptyTurn
+	}
+	r.answerOpenQuestion(c, in)
+	if strings.TrimSpace(in.Text) != "" || len(in.Files) > 0 {
+		if err := r.appendUserMessage(c, in); err != nil {
+			return err
+		}
+	} else if err := r.Store.Save(c); err != nil {
 		return err
 	}
 	if err := r.replayPending(ctx, c, emit); err != nil {
@@ -84,7 +103,12 @@ func (r *Runner) Run(ctx context.Context, c *Chat, in Input, emit func(Event) er
 			break
 		}
 		var events []Event
+		var question *Question
 		for _, tc := range assistant.ToolCalls {
+			if tc.Function.Name == AskUserTool {
+				question = parseQuestion(tc)
+				continue
+			}
 			result, ev := r.execute(ctx, c, byName, tc)
 			c.Messages = append(c.Messages, result)
 			events = append(events, Event{Event: "tool", Message: &result})
@@ -92,6 +116,7 @@ func (r *Runner) Run(ctx context.Context, c *Chat, in Input, emit func(Event) er
 				events = append(events, *ev)
 			}
 		}
+		c.Question = question
 		if err := r.Store.Save(c); err != nil {
 			return err
 		}
@@ -102,6 +127,12 @@ func (r *Runner) Run(ctx context.Context, c *Chat, in Input, emit func(Event) er
 			if err := emit(ev); err != nil {
 				return err
 			}
+		}
+		if question != nil {
+			if err := emit(Event{Event: "question", Question: question}); err != nil {
+				return err
+			}
+			return emit(Event{Event: "done", Usage: &c.Usage})
 		}
 		if round == rounds-1 {
 			return r.fail(c, emit, fmt.Sprintf("stopped after %d tool rounds without an answer — say how to continue", rounds))
@@ -119,11 +150,41 @@ func (r *Runner) Run(ctx context.Context, c *Chat, in Input, emit func(Event) er
 	return emit(Event{Event: "done", Usage: &c.Usage})
 }
 
+func parseQuestion(tc ToolCall) *Question {
+	var args askUserArgs
+	if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil || strings.TrimSpace(args.Question) == "" {
+		args.Question = strings.TrimSpace(tc.Function.Arguments)
+	}
+	q := &Question{ToolCallID: tc.ID, Text: args.Question, Options: args.Options, AllowFreeText: true}
+	if args.AllowFreeText != nil {
+		q.AllowFreeText = *args.AllowFreeText
+	}
+	if len(q.Options) == 0 {
+		q.AllowFreeText = true
+	}
+	return q
+}
+
+func (r *Runner) answerOpenQuestion(c *Chat, in Input) {
+	q := c.Question
+	if q == nil {
+		return
+	}
+	answer := ""
+	switch {
+	case in.Answer != nil && in.Answer.ToolCallID == q.ToolCallID:
+		answer = strings.TrimSpace(in.Answer.Text)
+	case strings.TrimSpace(in.Text) != "":
+		answer = "the user replied in a new message instead of picking an option: " + strings.TrimSpace(in.Text)
+	default:
+		answer = "the user attached a file instead of answering"
+	}
+	c.Messages = append(c.Messages, Message{Role: "tool", ToolCallID: q.ToolCallID, Name: AskUserTool, Content: resultJSON(map[string]string{"answer": answer})})
+	c.Question = nil
+}
+
 func (r *Runner) appendUserMessage(c *Chat, in Input) error {
 	text := strings.TrimSpace(in.Text)
-	if text == "" && len(in.Files) == 0 {
-		return ErrEmptyTurn
-	}
 	var b strings.Builder
 	b.WriteString(text)
 	for _, f := range in.Files {

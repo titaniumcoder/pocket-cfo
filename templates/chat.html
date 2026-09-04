@@ -38,6 +38,14 @@
       {{end}}
     </div>
 
+    {{if and .Chat.Question (not .Running)}}
+    <div class="msg question" id="question" data-call="{{.Chat.Question.ToolCallID}}">
+      <p class="question-text">{{.Chat.Question.Text}}</p>
+      {{if .Chat.Question.Options}}<div class="question-options">{{range .Chat.Question.Options}}<button type="button" class="button-outline question-option" data-answer="{{.}}">{{.}}</button>{{end}}</div>{{end}}
+      {{if .Chat.Question.AllowFreeText}}<div class="question-free"><input type="text" id="question-free" placeholder="Or answer in your own words…"><button type="button" class="button question-send">Answer</button></div>{{end}}
+    </div>
+    {{end}}
+
     <form id="composer" class="composer" action="/chat/{{.Chat.ID}}/turn" method="post" data-events="/chat/{{.Chat.ID}}/events"{{if .Running}} data-running="true"{{end}}>
       <textarea name="text" rows="3" placeholder="Reconcile the attached statement for August…"{{if .Running}} disabled{{end}}></textarea>
       <div class="composer-row">

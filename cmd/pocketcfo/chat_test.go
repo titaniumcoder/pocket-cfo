@@ -350,3 +350,23 @@ func TestTranscriptRowsGroupLogsBetweenTheUserAndTheAnswer(t *testing.T) {
 		t.Error("the note prefix is not shown")
 	}
 }
+
+func TestAnOpenQuestionRendersOptionsAndAnAnswerStartsATurn(t *testing.T) {
+	s := chatServer(t, textAnswer("thanks"))
+	c, _ := s.chatStore.Create("octocat")
+	c.Messages = []chat.Message{{Role: "user", Content: "x"}, {Role: "assistant", ToolCalls: []chat.ToolCall{{ID: "q1", Type: "function", Function: chat.FunctionCall{Name: chat.AskUserTool, Arguments: `{}`}}}}}
+	c.Question = &chat.Question{ToolCallID: "q1", Text: "Which account?", Options: []string{"Private Checking", "Company Checking"}, AllowFreeText: true}
+	s.chatStore.Save(c)
+	page := sessionRequest(t, s, http.MethodGet, "/chat/"+c.ID, "admin", "", "").Body.String()
+	if !strings.Contains(page, `data-call="q1"`) || strings.Count(page, `class="button-outline question-option"`) != 2 || !strings.Contains(page, `id="question-free"`) {
+		t.Errorf("question card missing:\n%s", page)
+	}
+	if w := sessionRequest(t, s, http.MethodPost, "/chat/"+c.ID+"/turn", "admin", `{"answer":{"tool_call_id":"q1","text":"Private Checking"}}`, "application/json"); w.Code != http.StatusAccepted {
+		t.Fatalf("answer = %d %s", w.Code, w.Body)
+	}
+	sessionRequest(t, s, http.MethodGet, "/chat/"+c.ID+"/events", "admin", "", "")
+	saved, _ := s.chatStore.Load("octocat", c.ID)
+	if saved.Question != nil || len(saved.Messages) != 4 {
+		t.Errorf("saved = %+v", saved.Messages)
+	}
+}

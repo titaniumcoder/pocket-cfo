@@ -36,6 +36,16 @@ func (a *Actuals) Publish(monthKey string, body []byte) {
 	a.mu.Unlock()
 }
 
+func (a *Actuals) Unpublish(monthKey string) {
+	if a == nil {
+		return
+	}
+	a.justWrote.forget(monthKey)
+	a.mu.Lock()
+	delete(a.cache, monthKey)
+	a.mu.Unlock()
+}
+
 type actualsResult struct {
 	file    actualsdata.ActualsFile
 	present bool

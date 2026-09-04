@@ -26,6 +26,8 @@ import (
 // committed".
 type fakeGitHub struct {
 	files    map[string][]byte
+	blobs    map[string][]byte
+	deletes  []string
 	puts     int
 	lastBody []byte
 	lastMsg  string
@@ -34,9 +36,10 @@ type fakeGitHub struct {
 }
 
 func newFakeGitHub(files map[string]string) *fakeGitHub {
-	f := &fakeGitHub{files: map[string][]byte{}}
+	f := &fakeGitHub{files: map[string][]byte{}, blobs: map[string][]byte{}}
 	for k, v := range files {
 		f.files[k] = []byte(v)
+		f.blobs[shaOf([]byte(v))] = []byte(v)
 	}
 	return f
 }
@@ -92,10 +95,33 @@ func (f *fakeGitHub) server(t *testing.T) *httptest.Server {
 				return
 			}
 			f.files[path] = decoded
+			f.blobs[shaOf(decoded)] = decoded
 			json.NewEncoder(w).Encode(map[string]any{"content": map[string]string{"sha": shaOf(decoded)}})
+		case http.MethodDelete:
+			raw, _ := io.ReadAll(r.Body)
+			var req deleteRequest
+			if err := json.Unmarshal(raw, &req); err != nil {
+				t.Fatalf("DELETE body is not JSON: %v", err)
+			}
+			if body, ok := f.files[path]; !ok || shaOf(body) != req.SHA {
+				w.WriteHeader(http.StatusConflict)
+				return
+			}
+			delete(f.files, path)
+			f.deletes = append(f.deletes, path)
+			f.lastMsg = req.Message
+			json.NewEncoder(w).Encode(map[string]any{"content": nil})
 		default:
 			t.Fatalf("unexpected method %s", r.Method)
 		}
+	})
+	mux.HandleFunc("GET /repos/{owner}/{repo}/git/blobs/{sha}", func(w http.ResponseWriter, r *http.Request) {
+		body, ok := f.blobs[r.PathValue("sha")]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"content": base64.StdEncoding.EncodeToString(body), "encoding": "base64"})
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

@@ -164,3 +164,57 @@ func (c *ContentsClient) Put(ctx context.Context, path string, content []byte, b
 	}
 	return "", fmt.Errorf("github PUT %s: %s", path, resp.Status)
 }
+
+type blobResponse struct {
+	Content  string `json:"content"`
+	Encoding string `json:"encoding"`
+}
+
+func (c *ContentsClient) Blob(ctx context.Context, sha string) ([]byte, error) {
+	url := fmt.Sprintf("%s/repos/%s/git/blobs/%s", c.baseURL(), c.Repo, sha)
+	resp, err := c.do(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github GET blob %s: %s", sha, resp.Status)
+	}
+	var body blobResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("github GET blob %s: %w", sha, err)
+	}
+	if body.Encoding != "base64" {
+		return nil, fmt.Errorf("github GET blob %s: encoding %q", sha, body.Encoding)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(body.Content, "\n", ""))
+	if err != nil {
+		return nil, fmt.Errorf("github GET blob %s: decoding content: %w", sha, err)
+	}
+	return decoded, nil
+}
+
+type deleteRequest struct {
+	Message string `json:"message"`
+	SHA     string `json:"sha"`
+}
+
+func (c *ContentsClient) Delete(ctx context.Context, path, sha, message string) error {
+	url := fmt.Sprintf("%s/repos/%s/contents/%s", c.baseURL(), c.Repo, path)
+	body, err := json.Marshal(deleteRequest{Message: message, SHA: sha})
+	if err != nil {
+		return err
+	}
+	resp, err := c.do(ctx, http.MethodDelete, url, body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusConflict:
+		return &Error{Code: CodeConflict, Message: fmt.Sprintf("%s changed underneath us; re-read and merge", path)}
+	}
+	return fmt.Errorf("github DELETE %s: %s", path, resp.Status)
+}

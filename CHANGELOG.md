@@ -13,6 +13,7 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 - The chat asks instead of assuming: an `ask_user` tool ends the turn with a question card — clickable options and, where sensible, a free-text field — and the answer resumes the turn. The system prompt makes this the normal way to resolve an unknown account, category or line.
 
 ### Changed
+- The chat page is laid out for the job: the conversation fills the screen with the composer pinned at the bottom — a full-width box, an Attach button with removable file chips, Enter to send — and the Changes rail sits beside it on a wide screen and below it on a phone.
 - The chat transcript tells logs from answers: the model's reasoning, its tool calls and their results are gray, collapsed monospace lines between your message and the answer, and the answer is a white card with light formatting (lists, bold, code), everything wrapped.
 
 ### Fixed

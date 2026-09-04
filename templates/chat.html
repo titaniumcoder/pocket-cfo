@@ -16,8 +16,8 @@
 
   <div class="chat-layout">
   <section class="panel chat-main">
-    <div class="panel-title-row">
-      <h2 class="panel-title"><a href="/chat">Chats</a> › {{.Chat.Title}}</h2>
+    <div class="chat-head">
+      <div class="chat-crumbs"><a href="/chat">Chats</a><span class="crumb-sep">›</span><span class="chat-title">{{.Chat.Title}}</span></div>
       <form method="post" action="/chat/{{.Chat.ID}}/close" class="inline-form"><button class="link" type="submit">Close chat</button></form>
     </div>
     {{if not .Writable}}<p class="stale-note">Writes are not configured (<code>GITHUB_DATA_TOKEN</code> is unset), so this chat can read and explain but nothing it stages can be applied.</p>{{end}}
@@ -36,52 +36,50 @@
       </div>
       {{end}}
       {{end}}
+      {{if and .Chat.Question (not .Running)}}
+      <div class="msg question" id="question" data-call="{{.Chat.Question.ToolCallID}}">
+        <p class="question-text">{{.Chat.Question.Text}}</p>
+        {{if .Chat.Question.Options}}<div class="question-options">{{range .Chat.Question.Options}}<button type="button" class="button-outline question-option" data-answer="{{.}}">{{.}}</button>{{end}}</div>{{end}}
+        {{if .Chat.Question.AllowFreeText}}<div class="question-free"><input type="text" id="question-free" placeholder="Or answer in your own words…"><button type="button" class="button question-send">Answer</button></div>{{end}}
+      </div>
+      {{end}}
     </div>
-
-    {{if and .Chat.Question (not .Running)}}
-    <div class="msg question" id="question" data-call="{{.Chat.Question.ToolCallID}}">
-      <p class="question-text">{{.Chat.Question.Text}}</p>
-      {{if .Chat.Question.Options}}<div class="question-options">{{range .Chat.Question.Options}}<button type="button" class="button-outline question-option" data-answer="{{.}}">{{.}}</button>{{end}}</div>{{end}}
-      {{if .Chat.Question.AllowFreeText}}<div class="question-free"><input type="text" id="question-free" placeholder="Or answer in your own words…"><button type="button" class="button question-send">Answer</button></div>{{end}}
-    </div>
-    {{end}}
 
     <form id="composer" class="composer" action="/chat/{{.Chat.ID}}/turn" method="post" data-events="/chat/{{.Chat.ID}}/events"{{if .Running}} data-running="true"{{end}}>
-      <textarea name="text" rows="3" placeholder="Reconcile the attached statement for August…"{{if .Running}} disabled{{end}}></textarea>
+      <textarea name="text" rows="3" placeholder="Ask anything, or attach a statement and say what to do with it. Enter sends, Shift+Enter breaks a line."{{if .Running}} disabled{{end}}></textarea>
       <div class="composer-row">
-        <input type="file" name="files" accept=".csv,.txt,text/csv,text/plain" multiple{{if .Running}} disabled{{end}}>
+        <input type="file" name="files" id="composer-files" accept=".csv,.txt,text/csv,text/plain" multiple hidden{{if .Running}} disabled{{end}}>
+        <button type="button" class="button-outline attach" id="attach"{{if .Running}} disabled{{end}}><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg><span>Attach</span></button>
+        <div id="chips" class="chips"></div>
         <span id="turn-status" class="turn-status">{{if .Running}}Thinking…{{end}}</span>
-        <button class="button" type="submit"{{if .Running}} disabled{{end}}>Send</button>
+        <button class="button send" type="submit"{{if .Running}} disabled{{end}}><span>Send</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg></button>
       </div>
+      <p class="usage">{{.Model}} · {{.Chat.Usage.PromptTokens}} prompt / {{.Chat.Usage.CompletionTokens}} completion tokens in this chat</p>
     </form>
-    <p class="section-note usage">{{.Model}} · {{.Chat.Usage.PromptTokens}} prompt / {{.Chat.Usage.CompletionTokens}} completion tokens in this chat</p>
   </section>
 
   <aside class="panel chat-changes" id="changes" data-chat="{{.Chat.ID}}">
     <h2 class="panel-title">Changes</h2>
     <p id="changes-status" class="turn-status"></p>
-    <h3 class="config-group">Pending</h3>
+    <h3 class="config-group">Pending{{if .Chat.Pending}} · {{len .Chat.Pending}}{{end}}</h3>
     {{if not .Chat.Pending}}<p class="not-configured">Nothing waiting for approval.</p>{{else}}
-    {{if .Writable}}<p><button class="button chat-action" type="button" data-action="apply" data-confirm="Commit every pending change to the data repo?">Approve all</button></p>{{end}}
     <ol class="pending">
       {{range $i, $p := .Chat.Pending}}
-      <li class="{{if $p.Error}}failed{{end}}">
-        <details>
-          <summary><code>{{$p.Tool}}</code>{{if $p.Error}} <span class="badge error">failed</span>{{end}}</summary>
-          {{if $p.Error}}<p class="error">{{$p.Error}}</p>{{end}}
-          {{if $p.Diff}}<pre class="diff">{{$p.Diff}}</pre>{{else}}{{if $p.Summary}}<pre class="summary">{{$p.Summary}}</pre>{{end}}{{end}}
-          <details class="args-details"><summary>arguments</summary><pre class="args">{{printf "%s" $p.Arguments}}</pre></details>
-        </details>
-        <button class="link chat-action" type="button" data-action="discard" data-index="{{$i}}">Discard</button>
+      <li class="change{{if $p.Error}} failed{{end}}">
+        <div class="change-head"><code>{{$p.Tool}}</code>{{if $p.Error}} <span class="badge error">failed</span>{{end}}<button class="link chat-action" type="button" data-action="discard" data-index="{{$i}}">Discard</button></div>
+        {{if $p.Error}}<p class="error">{{$p.Error}}</p>{{end}}
+        {{if $p.Diff}}<pre class="diff">{{$p.Diff}}</pre>{{else}}{{if $p.Summary}}<pre class="summary">{{$p.Summary}}</pre>{{end}}{{end}}
+        <details class="args-details"><summary>arguments</summary><pre class="args">{{printf "%s" $p.Arguments}}</pre></details>
       </li>
       {{end}}
     </ol>
+    {{if .Writable}}<p><button class="button chat-action" type="button" data-action="apply" data-confirm="Commit every pending change to the data repo?">Approve all</button></p>{{end}}
     {{end}}
     <h3 class="config-group">Applied</h3>
     {{if not .Chat.Applied}}<p class="not-configured">Nothing applied from this chat yet.</p>{{else}}
     <ol class="applied">
       {{range $i, $a := .Chat.Applied}}
-      <li class="{{if $a.Reverted}}reverted{{end}}"><code>{{$a.Path}}</code> — {{$a.Message}} <span class="since">{{$a.At.Format "02 Jan 15:04"}}</span>{{if $a.Reverted}} <span class="badge">reverted</span>{{else if $.Writable}} <button class="link chat-action" type="button" data-action="revert" data-index="{{$i}}" data-confirm="Commit a revert of this change to the data repo?">Revert</button>{{end}}</li>
+      <li class="{{if $a.Reverted}}reverted{{end}}"><div class="applied-what"><code>{{$a.Path}}</code><span class="applied-msg">{{$a.Message}} <span class="since">{{$a.At.Format "02 Jan 15:04"}}</span></span></div>{{if $a.Reverted}}<span class="badge">reverted</span>{{else if $.Writable}}<button class="link chat-action" type="button" data-action="revert" data-index="{{$i}}" data-confirm="Commit a revert of this change to the data repo?">Revert</button>{{end}}</li>
       {{end}}
     </ol>
     {{end}}

@@ -1,7 +1,7 @@
-// The chat page: sends a turn as JSON, renders the NDJSON events as they
-// stream in, and reloads once the turn is over so the page shows exactly what
-// the server persisted. The page holds no state of its own — everything a
-// reload needs is in the chat file on the server.
+// The chat page. A turn runs on the server whether or not this page is
+// watching; the page only starts it and follows its events, then reloads so
+// it shows exactly what was saved. Nothing here holds state a reload would
+// lose. CSP forbids inline scripts, which is why every handler lives here.
 (function () {
   var changes = document.getElementById('changes');
   if (changes) {
@@ -34,11 +34,67 @@
   if (!form) return;
   var transcript = document.getElementById('transcript');
   var status = document.getElementById('turn-status');
-  var controls = [form.elements.text, form.elements.files, form.querySelector('button[type=submit]')];
+  var textarea = form.elements.text;
+  var fileInput = document.getElementById('composer-files');
+  var attach = document.getElementById('attach');
+  var chips = document.getElementById('chips');
+  var send = form.querySelector('button[type=submit]');
+  var files = [];
 
   function setRunning(running) {
-    controls.forEach(function (el) { el.disabled = running; });
+    [textarea, fileInput, attach, send].forEach(function (el) { el.disabled = running; });
   }
+
+  function grow() {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 220) + 'px';
+  }
+  textarea.addEventListener('input', grow);
+  textarea.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  });
+
+  function kb(n) { return n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB'; }
+  function renderChips() {
+    chips.innerHTML = '';
+    files.forEach(function (file, i) {
+      var chip = document.createElement('span');
+      chip.className = 'chip';
+      var label = document.createElement('span');
+      label.textContent = file.name + ' · ' + kb(file.size);
+      var remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'chip-remove';
+      remove.setAttribute('aria-label', 'Remove ' + file.name);
+      remove.textContent = '×';
+      remove.addEventListener('click', function () { files.splice(i, 1); renderChips(); });
+      chip.appendChild(label);
+      chip.appendChild(remove);
+      chips.appendChild(chip);
+    });
+  }
+  attach.addEventListener('click', function () { fileInput.click(); });
+  fileInput.addEventListener('change', function () {
+    Array.prototype.forEach.call(fileInput.files, function (f) { files.push(f); });
+    fileInput.value = '';
+    renderChips();
+  });
+
+  function readFiles() {
+    return Promise.all(files.map(function (file) {
+      return new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function () { resolve({ name: file.name, content: reader.result }); };
+        reader.onerror = function () { reject(new Error('could not read ' + file.name)); };
+        reader.readAsText(file);
+      });
+    }));
+  }
+
+  function scrollToEnd(el) { el.scrollIntoView({ block: 'end' }); }
 
   function show(kind, text) {
     var box = document.createElement('div');
@@ -47,7 +103,8 @@
     pre.textContent = text;
     box.appendChild(pre);
     transcript.appendChild(box);
-    box.scrollIntoView({ block: 'end' });
+    scrollToEnd(box);
+    return box;
   }
 
   var logBox = null;
@@ -59,28 +116,17 @@
     }
     var line = document.createElement('div');
     line.className = 'log';
-    var k = document.createElement('span'); k.className = 'log-kind'; k.textContent = kind;
-    var n = document.createElement('span'); n.className = 'log-name'; n.textContent = name;
-    var t = document.createElement('span'); t.className = 'log-text'; t.textContent = text;
-    line.appendChild(k); line.appendChild(n); line.appendChild(t);
+    [['log-kind', kind], ['log-name', name], ['log-text', text]].forEach(function (part) {
+      var span = document.createElement('span');
+      span.className = part[0];
+      span.textContent = part[1];
+      line.appendChild(span);
+    });
     logBox.appendChild(line);
-    line.scrollIntoView({ block: 'end' });
+    scrollToEnd(line);
   }
   function excerpt(s) { s = (s || '').replace(/\s+/g, ' '); return s.length > 240 ? s.slice(0, 240) + '…' : s; }
 
-  function readFiles(input) {
-    return Promise.all(Array.prototype.map.call(input.files, function (file) {
-      return new Promise(function (resolve, reject) {
-        var reader = new FileReader();
-        reader.onload = function () { resolve({ name: file.name, content: reader.result }); };
-        reader.onerror = function () { reject(new Error('could not read ' + file.name)); };
-        reader.readAsText(file);
-      });
-    }));
-  }
-
-  // The turn runs on the server whether or not this page is watching; the
-  // page only follows it. Reloading on "done" renders exactly what was saved.
   function follow(since) {
     var source = new EventSource(form.dataset.events + '?since=' + since);
     source.onmessage = function (e) {
@@ -118,11 +164,6 @@
     };
   }
 
-  if (form.dataset.running === 'true') {
-    setRunning(true);
-    follow(0);
-  }
-
   function start(payload) {
     setRunning(true);
     status.textContent = 'Thinking…';
@@ -137,6 +178,11 @@
       status.textContent = 'Failed: ' + err.message;
       setRunning(false);
     });
+  }
+
+  if (form.dataset.running === 'true') {
+    setRunning(true);
+    follow(0);
   }
 
   var question = document.getElementById('question');
@@ -158,16 +204,21 @@
 
   form.addEventListener('submit', function (e) {
     e.preventDefault();
-    var text = form.elements.text.value;
-    readFiles(form.elements.files).then(function (files) {
-      if (!text.trim() && !files.length) return;
-      show('user', text + (files.length ? '\n[attached: ' + files.map(function (f) { return f.name; }).join(', ') + ']' : ''));
-      form.elements.text.value = '';
-      form.elements.files.value = '';
-      return start({ text: text, files: files });
+    var text = textarea.value;
+    if (!text.trim() && !files.length) return;
+    readFiles().then(function (uploads) {
+      show('user', text + (uploads.length ? '\n[attached: ' + uploads.map(function (f) { return f.name; }).join(', ') + ']' : ''));
+      textarea.value = '';
+      grow();
+      files = [];
+      renderChips();
+      return start({ text: text, files: uploads });
     }).catch(function (err) {
       status.textContent = 'Failed: ' + err.message;
       setRunning(false);
     });
   });
+
+  var last = transcript.lastElementChild;
+  if (last) last.scrollIntoView({ block: 'end' });
 })();

@@ -79,6 +79,7 @@ type Figures struct {
 	ReadOnly          bool
 	ShowInvoicingLink bool
 	ShowInfoLink      bool
+	ShowChatLink      bool
 
 	Mode         string
 	Year         int
@@ -207,6 +208,7 @@ func (f Figures) Header() webui.Header {
 		ShowSpending:  f.ShowSpendingLink,
 		ShowInvoicing: f.ShowInvoicingLink,
 		ShowInfo:      f.ShowInfoLink,
+		ShowChat:      f.ShowChatLink,
 		Period:        webui.Period{Year: f.Year, Month: f.NavMonth, YearView: f.Mode == "year"},
 	}
 }

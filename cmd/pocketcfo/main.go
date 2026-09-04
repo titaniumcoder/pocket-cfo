@@ -17,6 +17,7 @@ import (
 	"github.com/atombender/go-jsonschema/pkg/types"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
+	"github.com/titaniumcoder/pocket-cfo/internal/chat"
 	financeconfig "github.com/titaniumcoder/pocket-cfo/internal/finance/config"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 	"github.com/titaniumcoder/pocket-cfo/internal/money"
@@ -33,6 +34,11 @@ type server struct {
 	indexTmpl  *template.Template
 	clientTmpl *template.Template
 	infoTmpl   *template.Template
+	chatsTmpl  *template.Template
+	chatTmpl   *template.Template
+
+	chatStore  *chat.Store
+	chatClient *chat.Client
 
 	tracker    *tracker.Tracker
 	togglTrack *tracker.Toggl
@@ -130,6 +136,11 @@ func main() {
 		clientTmpl:       template.Must(template.New("client.html").Funcs(templateFuncs).ParseFiles(templatesDir + "/client.html")),
 		infoTmpl:         mustPageTemplate(templatesDir + "/info.html"),
 		emailRequestedAt: map[string]time.Time{},
+	}
+	if cfg.chatEnabled() {
+		s.chatsTmpl = mustPageTemplate(templatesDir + "/chats.html")
+		s.chatTmpl = mustPageTemplate(templatesDir + "/chat.html")
+		s.chatStore, s.chatClient = mustOpenChat(cfg, httpClient)
 	}
 
 	warmCtx, stopWarming := context.WithCancel(context.Background())
@@ -387,6 +398,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /{year}/{month}/{action}", s.financeMonthSub)
 
 	s.registerAPI(mux)
+	s.registerChat(mux)
 
 	return securityHeaders(mux)
 }

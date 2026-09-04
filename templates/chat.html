@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pocket CFO — {{.Chat.Title}}</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIGZpbGw9IiMxYTczZTgiLz48cmVjdCB4PSIxNCIgeT0iMzYiIHdpZHRoPSI5IiBoZWlnaHQ9IjE2IiByeD0iMiIgZmlsbD0iI2ZmZiIvPjxyZWN0IHg9IjI3LjUiIHk9IjI2IiB3aWR0aD0iOSIgaGVpZ2h0PSIyNiIgcng9IjIiIGZpbGw9IiNmZmYiLz48cmVjdCB4PSI0MSIgeT0iMTQiIHdpZHRoPSI5IiBoZWlnaHQ9IjM4IiByeD0iMiIgZmlsbD0iI2ZmZiIvPjwvc3ZnPgo=">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
+  <script src="/static/chat.js" defer></script>
+</head>
+<body>
+<main class="chat-page">
+  <h1 class="print-title">Pocket CFO — Chat</h1>
+  {{template "sitehead" .Header}}
+
+  <div class="chat-layout">
+  <section class="panel chat-main">
+    <div class="panel-title-row">
+      <h2 class="panel-title"><a href="/chat">Chats</a> › {{.Chat.Title}}</h2>
+      <form method="post" action="/chat/{{.Chat.ID}}/close" class="inline-form"><button class="link" type="submit">Close chat</button></form>
+    </div>
+    {{if not .Writable}}<p class="stale-note">Writes are not configured (<code>GITHUB_DATA_TOKEN</code> is unset), so this chat can read and explain but nothing it stages can be applied.</p>{{end}}
+
+    <div id="transcript" class="transcript">
+      {{if not .Rows}}<p class="not-configured">Say what you want to do, or attach a bank statement (CSV) and ask to reconcile it.</p>{{end}}
+      {{range .Rows}}
+      {{if eq .Kind "user"}}<div class="msg user"><pre>{{.Text}}</pre></div>
+      {{else if eq .Kind "assistant"}}<div class="msg assistant">{{if .Text}}<pre>{{.Text}}</pre>{{end}}{{if .Calls}}<ul class="calls">{{range .Calls}}<li><code>{{.}}</code></li>{{end}}</ul>{{end}}</div>
+      {{else}}<details class="msg tool"><summary><code>{{.Tool}}</code></summary><pre>{{.Content}}</pre></details>
+      {{end}}
+      {{end}}
+    </div>
+
+    <form id="composer" class="composer" action="/chat/{{.Chat.ID}}/turn" method="post">
+      <textarea name="text" rows="3" placeholder="Reconcile the attached statement for August…"></textarea>
+      <div class="composer-row">
+        <input type="file" name="files" accept=".csv,.txt,text/csv,text/plain" multiple>
+        <span id="turn-status" class="turn-status"></span>
+        <button class="button" type="submit">Send</button>
+      </div>
+    </form>
+    <p class="section-note usage">{{.Model}} · {{.Chat.Usage.PromptTokens}} prompt / {{.Chat.Usage.CompletionTokens}} completion tokens in this chat</p>
+  </section>
+
+  <aside class="panel chat-changes">
+    <h2 class="panel-title">Changes</h2>
+    <h3 class="config-group">Pending</h3>
+    {{if not .Chat.Pending}}<p class="not-configured">Nothing waiting for approval.</p>{{else}}
+    <ol class="pending">
+      {{range $i, $p := .Chat.Pending}}
+      <li class="{{if $p.Error}}failed{{end}}">
+        <details>
+          <summary><code>{{$p.Tool}}</code>{{if $p.Error}} <span class="badge error">failed</span>{{end}}</summary>
+          {{if $p.Error}}<p class="error">{{$p.Error}}</p>{{end}}
+          {{if $p.Summary}}<pre class="summary">{{$p.Summary}}</pre>{{end}}
+          <pre class="args">{{printf "%s" $p.Arguments}}</pre>
+        </details>
+      </li>
+      {{end}}
+    </ol>
+    {{end}}
+    <h3 class="config-group">Applied</h3>
+    {{if not .Chat.Applied}}<p class="not-configured">Nothing applied from this chat yet.</p>{{else}}
+    <ol class="applied">
+      {{range $i, $a := .Chat.Applied}}
+      <li class="{{if $a.Reverted}}reverted{{end}}"><code>{{$a.Path}}</code> — {{$a.Message}} <span class="since">{{$a.At.Format "02 Jan 15:04"}}</span>{{if $a.Reverted}} <span class="badge">reverted</span>{{end}}</li>
+      {{end}}
+    </ol>
+    {{end}}
+  </aside>
+  </div>
+</main>
+</body>
+</html>

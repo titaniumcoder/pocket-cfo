@@ -17,6 +17,7 @@ const (
 	PageSpending  = "spending"
 	PageInvoicing = "invoicing"
 	PageInfo      = "info"
+	PageChat      = "chat"
 )
 
 type Header struct {
@@ -27,6 +28,7 @@ type Header struct {
 	ShowSpending  bool
 	ShowInvoicing bool
 	ShowInfo      bool
+	ShowChat      bool
 
 	Period Period
 }
@@ -82,6 +84,8 @@ func (p Period) InvoicingHref() string { return "/invoicing" + p.Query() }
 
 func (p Period) InfoHref() string { return "/info" + p.Query() }
 
+func (p Period) ChatHref() string { return "/chat" + p.Query() }
+
 func (h Header) AvatarURL() string {
 	login := strings.ToLower(strings.TrimSpace(h.Login))
 	if login == "" {
@@ -120,7 +124,7 @@ func (h Header) Initials() string {
 
 func (h Header) HasNav() bool {
 	n := 0
-	for _, shown := range []bool{h.ShowFinance, h.ShowSpending, h.ShowInvoicing, h.ShowInfo} {
+	for _, shown := range []bool{h.ShowFinance, h.ShowSpending, h.ShowInvoicing, h.ShowInfo, h.ShowChat} {
 		if shown {
 			n++
 		}
@@ -151,6 +155,7 @@ const HeaderTemplate = `
     {{if .ShowSpending}}<a{{if .IsActive "spending"}} class="active"{{end}} href="{{.Period.SpendingHref}}">Spending</a>{{end}}
     {{if .ShowInvoicing}}<a{{if .IsActive "invoicing"}} class="active"{{end}} href="{{.Period.InvoicingHref}}">Invoicing</a>{{end}}
     {{if .ShowInfo}}<a{{if .IsActive "info"}} class="active"{{end}} href="{{.Period.InfoHref}}">Info</a>{{end}}
+    {{if .ShowChat}}<a{{if .IsActive "chat"}} class="active"{{end}} href="{{.Period.ChatHref}}">Chat</a>{{end}}
   </nav>
   {{end}}
   <div class="hdr-right">

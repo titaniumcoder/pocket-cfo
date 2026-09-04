@@ -15,7 +15,7 @@ import (
 func TestNavOrder(t *testing.T) {
 	h := Header{
 		Login: "octocat", Active: PageSpending,
-		ShowFinance: true, ShowSpending: true, ShowInvoicing: true, ShowInfo: true,
+		ShowFinance: true, ShowSpending: true, ShowInvoicing: true, ShowInfo: true, ShowChat: true,
 		Period: Period{Year: 2026, Month: 8},
 	}
 	tmpl := htmltemplate.Must(htmltemplate.New("t").Parse(HeaderTemplate + `{{template "sitehead" .}}`))
@@ -26,7 +26,7 @@ func TestNavOrder(t *testing.T) {
 	body := b.String()
 
 	var order []int
-	for _, label := range []string{">Finance<", ">Spending<", ">Invoicing<", ">Info<"} {
+	for _, label := range []string{">Finance<", ">Spending<", ">Invoicing<", ">Info<", ">Chat<"} {
 		i := strings.Index(body, label)
 		if i < 0 {
 			t.Fatalf("%s is missing from the menu", label)
@@ -35,14 +35,14 @@ func TestNavOrder(t *testing.T) {
 	}
 	for i := 1; i < len(order); i++ {
 		if order[i] < order[i-1] {
-			t.Fatalf("menu order is wrong: want Finance, Spending, Invoicing, Info")
+			t.Fatalf("menu order is wrong: want Finance, Spending, Invoicing, Info, Chat")
 		}
 	}
 	if !strings.Contains(body, `class="active" href="/2026/8/spending"`) {
 		t.Error("the Spending entry should be marked current and carry the viewed month")
 	}
 	// Every entry carries the month, not just the one that has it in its path.
-	for _, want := range []string{`href="/2026/8"`, `href="/invoicing?year=2026&amp;month=8"`, `href="/info?year=2026&amp;month=8"`} {
+	for _, want := range []string{`href="/2026/8"`, `href="/invoicing?year=2026&amp;month=8"`, `href="/info?year=2026&amp;month=8"`, `href="/chat?year=2026&amp;month=8"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("menu link %s is missing — changing page should not change the month", want)
 		}
@@ -82,8 +82,8 @@ func TestPeriodWithoutAMonthStaysAYear(t *testing.T) {
 // way it did before periods existed, rather than to /0/0.
 func TestZeroPeriodIsTodayShaped(t *testing.T) {
 	var p Period
-	if p.FinanceHref() != "/" || p.InvoicingHref() != "/invoicing" || p.InfoHref() != "/info" {
-		t.Errorf("zero period produced %q %q %q", p.FinanceHref(), p.InvoicingHref(), p.InfoHref())
+	if p.FinanceHref() != "/" || p.InvoicingHref() != "/invoicing" || p.InfoHref() != "/info" || p.ChatHref() != "/chat" {
+		t.Errorf("zero period produced %q %q %q %q", p.FinanceHref(), p.InvoicingHref(), p.InfoHref(), p.ChatHref())
 	}
 }
 

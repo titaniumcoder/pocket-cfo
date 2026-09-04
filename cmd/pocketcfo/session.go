@@ -49,6 +49,14 @@ func (s *server) authorized(sess auth.Session) bool {
 	return sess.Permission == "push" || sess.Permission == "admin"
 }
 
+func (s *server) admin(sess auth.Session) bool {
+	return sess.Permission == "admin"
+}
+
+func (s *server) chatVisible(sess auth.Session) bool {
+	return s.cfg.chatEnabled() && s.chatStore != nil && s.admin(sess)
+}
+
 func (s *server) readOnly(sess auth.Session) bool {
 	return sess.Permission == "readonly"
 }
@@ -68,6 +76,7 @@ func (s *server) header(sess auth.Session, active string, period webui.Period) w
 		ShowSpending:  s.showSpending(sess),
 		ShowInvoicing: sess.HasPart(users.PartInvoicing),
 		ShowInfo:      s.authorized(sess),
+		ShowChat:      s.chatVisible(sess),
 		Period:        period,
 	}
 }

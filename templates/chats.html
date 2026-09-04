@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pocket CFO — Chat</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIGZpbGw9IiMxYTczZTgiLz48cmVjdCB4PSIxNCIgeT0iMzYiIHdpZHRoPSI5IiBoZWlnaHQ9IjE2IiByeD0iMiIgZmlsbD0iI2ZmZiIvPjxyZWN0IHg9IjI3LjUiIHk9IjI2IiB3aWR0aD0iOSIgaGVpZ2h0PSIyNiIgcng9IjIiIGZpbGw9IiNmZmYiLz48cmVjdCB4PSI0MSIgeT0iMTQiIHdpZHRoPSI5IiBoZWlnaHQ9IjM4IiByeD0iMiIgZmlsbD0iI2ZmZiIvPjwvc3ZnPgo=">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+<main>
+  <h1 class="print-title">Pocket CFO — Chat</h1>
+  {{template "sitehead" .Header}}
+
+  <section class="panel">
+    <div class="panel-title-row">
+      <h2 class="panel-title">Chats</h2>
+      <form method="post" action="/chat/new" class="inline-form"><button class="button" type="submit">New chat</button></form>
+    </div>
+    <p class="section-note">Each chat reconciles statements with <code>{{.Model}}</code>. Writes the model proposes wait in the chat's Changes panel until you approve them; closing a chat deletes it and discards whatever is still pending.</p>
+    {{if not .Chats}}
+    <p class="not-configured">No chats yet.</p>
+    {{else}}
+    <div class="table-wrap">
+    <table class="data chats">
+      <thead><tr><th>Chat</th><th>Last activity</th><th>Pending</th><th></th></tr></thead>
+      <tbody>
+        {{range .Chats}}
+        <tr>
+          <td><a href="/chat/{{.ID}}">{{.Title}}</a></td>
+          <td>{{.UpdatedAt.Format "02 Jan 2006 15:04"}}</td>
+          <td>{{if .Pending}}<span class="badge">{{.Pending}} waiting</span>{{else}}—{{end}}</td>
+          <td><form method="post" action="/chat/{{.ID}}/close" class="inline-form"><button class="link" type="submit">Close</button></form></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{end}}
+  </section>
+</main>
+</body>
+</html>

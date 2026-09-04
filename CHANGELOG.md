@@ -8,8 +8,14 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [2.0.0-rc.2] - 2026-09-04
+
+The second candidate for 2.0: rc.1 refused to boot on a deployment that carried `OPENAI_API_KEY` without the rest of the chat configuration. Published as `:next`, not `:latest`.
+
 ### Changed
 - `STATE_DIR` is the one writable directory the app keeps between restarts — `cache/` for Toggl, `chat/` for the chats — set to `/var/data/pocketcfo` by the image, so a deployment mounts one volume there and sets nothing else. `TOGGL_CACHE_DIR` and `CHAT_DIR` remain as overrides; chats no longer default to a subdirectory of the Toggl cache.
+
+### Fixed
 - `OPENAI_API_KEY` alone is enough to boot: an unset `OPENAI_MODEL` falls back to `gpt-5` (`openai/gpt-5` on OpenRouter) and an unset chat directory falls back to a temporary one, each with a log line — 2.0.0-rc.1 refused to start in both cases, which would have crashed a deploy that already carried the key.
 
 ## [2.0.0-rc.1] - 2026-09-04
@@ -528,7 +534,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0-rc.1...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0-rc.2...HEAD
+[2.0.0-rc.2]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0-rc.1...v2.0.0-rc.2
 [2.0.0-rc.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v1.0.1...v2.0.0-rc.1
 [1.0.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v0.35.3...v1.0.0

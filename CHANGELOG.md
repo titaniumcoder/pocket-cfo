@@ -8,6 +8,10 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [2.0.0-rc.4] - 2026-09-05
+
+The fourth candidate for 2.0: rc.3 lost long answers to a request deadline. Published as `:next`, not `:latest`.
+
 ### Fixed
 - The chat no longer fails with "reaching the model endpoint: error reading response body: context deadline exceeded" on a long answer: the completion is streamed from the provider and assembled as it arrives, so a reasoning model may take as long as it needs; only an endpoint that sends nothing for three minutes is given up on, and a turn has nine minutes per model call in total.
 
@@ -552,7 +556,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0-rc.3...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0-rc.4...HEAD
+[2.0.0-rc.4]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0-rc.3...v2.0.0-rc.4
 [2.0.0-rc.3]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0-rc.2...v2.0.0-rc.3
 [2.0.0-rc.2]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0-rc.1...v2.0.0-rc.2
 [2.0.0-rc.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v1.0.1...v2.0.0-rc.1

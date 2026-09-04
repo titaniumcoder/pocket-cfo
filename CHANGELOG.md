@@ -8,6 +8,12 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Fixed
+
+- The year view's Income row no longer claims a shifted period such as "March 2026 –
+  February 2027". A year's income is January to December of that year; only the month
+  pages say which month their income funds.
+
 ## [1.0.0] - 2026-09-03
 
 The first stable release. Nothing changes in the application beyond the two points below;

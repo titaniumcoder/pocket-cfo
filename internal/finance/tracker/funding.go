@@ -60,12 +60,6 @@ func spendRangeForMonth(year int, month time.Month) (start, end yearMonth) {
 	return shifted, shifted
 }
 
-func spendRangeForYear(year int) (start, end yearMonth) {
-	start = yearMonth{year, time.January}.addMonths(-fundingShiftMonths)
-	end = yearMonth{year, time.December}.addMonths(-fundingShiftMonths)
-	return start, end
-}
-
 func rangeLabel(start, end yearMonth) string {
 	if start == end {
 		return start.String()

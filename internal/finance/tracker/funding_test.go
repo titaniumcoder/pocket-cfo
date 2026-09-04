@@ -132,19 +132,6 @@ func TestSpendRangeForMonth(t *testing.T) {
 	}
 }
 
-func TestSpendRangeForYear(t *testing.T) {
-	// Personal income in year view always spans the full viewed year
-	// (Jan-Dec), so its spendable range always crosses into the next
-	// calendar year at the end: Jan+2..Dec+2 = March(year)..February(year+1).
-	start, end := spendRangeForYear(2026)
-	if start != (yearMonth{2026, time.March}) {
-		t.Errorf("start = %+v, want March 2026", start)
-	}
-	if end != (yearMonth{2027, time.February}) {
-		t.Errorf("end = %+v, want February 2027", end)
-	}
-}
-
 func TestLinkForRangeSingleMonth(t *testing.T) {
 	got := linkForRange(yearMonth{2026, time.May}, yearMonth{2026, time.May}, 2026)
 	if got != "/2026/5" {

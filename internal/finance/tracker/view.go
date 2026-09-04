@@ -521,15 +521,10 @@ func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months 
 }
 
 func (f *Figures) computeSpendable(months, year int, start time.Time, hasHours bool) {
-	if f.TotalErr != "" || !hasHours {
+	if f.TotalErr != "" || !hasHours || months > 1 {
 		return
 	}
-	var spendStart, spendEnd yearMonth
-	if months > 1 {
-		spendStart, spendEnd = spendRangeForYear(year)
-	} else {
-		spendStart, spendEnd = spendRangeForMonth(year, start.Month())
-	}
+	spendStart, spendEnd := spendRangeForMonth(year, start.Month())
 	f.SpendableLabel = rangeLabel(spendStart, spendEnd)
 	f.SpendableURL = linkForRange(spendStart, spendEnd, spendStart.Year)
 }

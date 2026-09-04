@@ -857,6 +857,10 @@ money earned in month M is invoiced at the end of M, paid during M+1, and is spe
 M+2. So the expenses shown for a month are funded by the income of two months earlier,
 and every range that touches income is shifted against the range that touches expenses.
 `funding.go` holds both, and they are derived from one function so they cannot drift.
+The shift is a fact about a month, not about a year: a month page says which month its
+income funds ("Income (for July 2026)"), but a year's income is January through December
+of that year and carries no shifted annotation. Only the funding side of the year page —
+which income pays for the year's expenses — is shifted.
 
 **The salary cascade** turns company income into net personal income: company income less
 company expenses, less the employer's contributions, gives gross salary; the employee's

@@ -613,6 +613,25 @@ func TestComputeSpendableOnlySetWhenHasHours(t *testing.T) {
 	}
 }
 
+// TestYearViewIncomeCarriesNoShiftedPeriod: the two-month funding shift is
+// a fact about a month (May's income is spendable in July), not about a
+// year. A year's income is January through December of that year, so the
+// year view's Income row must not claim a shifted window such as
+// "March 2026 – February 2027".
+func TestYearViewIncomeCarriesNoShiftedPeriod(t *testing.T) {
+	var year Figures
+	year.computeSpendable(12, 2026, date(2026, 1, 1), true)
+	if year.SpendableLabel != "" || year.SpendableURL != "" {
+		t.Errorf("year view: SpendableLabel/URL = %q/%q, want both empty", year.SpendableLabel, year.SpendableURL)
+	}
+
+	var month Figures
+	month.computeSpendable(1, 2026, date(2026, 5, 1), true)
+	if month.SpendableLabel != "July 2026" || month.SpendableURL != "/2026/7" {
+		t.Errorf("month view: SpendableLabel/URL = %q/%q, want July 2026 at /2026/7", month.SpendableLabel, month.SpendableURL)
+	}
+}
+
 func TestEvictMonthAndYear(t *testing.T) {
 	trk := fullTracker()
 	// A month compute now fetches (and caches) the whole year.

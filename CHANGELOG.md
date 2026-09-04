@@ -8,9 +8,13 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [2.0.0-rc.1] - 2026-09-04
+
+A release candidate for 2.0: the in-app chat. Published as `:next`, not `:latest`.
+
 ### Added
 - A **Chat** tab, for admins only, where a bank statement is uploaded and reconciled in a conversation with a model: read tools run at once, every write the model proposes is staged as a pending change that nothing commits, and the conversation is kept on the server so it survives a reload or a redeploy. Several chats per user; a chat can be closed. Present only when `OPENAI_API_KEY` is set. Pending changes are approved together — one commit per touched file, however many tool calls produced it — or discarded one by one, and every applied change has a **Revert** button that commits the previous content back (or removes a file the change created). `/info` counts the stored chats and can delete them all.
-- `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_EXTRA_BODY` and `CHAT_DIR` configure the coming in-app Chat tab: any OpenAI-compatible endpoint, the model passed through verbatim, and a directory for the chats. The key set without a model or without anywhere to keep chats refuses to boot; `/info` shows the resolved values.
+- `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_EXTRA_BODY` and `CHAT_DIR` configure the in-app Chat tab: any OpenAI-compatible endpoint, the model passed through verbatim, and a directory for the chats. The key set without a model or without anywhere to keep chats refuses to boot; `/info` shows the resolved values.
 - Release candidates: a tag such as `v2.0.0-rc.1` publishes the image under its own tag and `:next` — never `:latest` — is marked pre-release on GitHub, and does not notify the data repo, so a test deployment can follow `:next` while production stays on stable tags. The `release-it` skill cuts and later promotes them.
 - `derive_transaction_ids` (MCP) and `POST /api/actuals/ids` (REST) hand an agent the stable id of every statement line — a short hash of account, date, amount and description, suffixed `-2`, `-3` for identical lines in one call — so ids are computed by the app rather than by the agent, and a re-imported statement still dedups line for line.
 
@@ -520,7 +524,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0-rc.1...HEAD
+[2.0.0-rc.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v1.0.1...v2.0.0-rc.1
 [1.0.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v0.35.3...v1.0.0
 [0.35.3]: https://github.com/titaniumcoder/pocket-cfo/compare/v0.35.2...v0.35.3

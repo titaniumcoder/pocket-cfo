@@ -30,6 +30,11 @@
 /internal/schema/users/users.go
 /internal/schema/paidinvoices/paidinvoices.go
 
+# Local run artifacts: rendered PDFs (BUILD_DIR) and the ephemeral DATA_DIR
+# checkout created by running the web server from cmd/pocketcfo.
+/cmd/pocketcfo/build/
+/cmd/pocketcfo/data/
+
 # Test binary, built with `go test -c`
 *.test
 

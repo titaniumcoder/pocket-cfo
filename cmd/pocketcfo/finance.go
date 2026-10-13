@@ -21,6 +21,10 @@ func buildInvoicedFacts() ([]tracker.InvoicedFact, error) {
 	if err != nil {
 		return nil, err
 	}
+	usable, err := stats.LoadUsable(usableInvoicesPath)
+	if err != nil {
+		return nil, err
+	}
 
 	var facts []tracker.InvoicedFact
 	for _, inv := range invoices {
@@ -32,10 +36,11 @@ func buildInvoicedFacts() ([]tracker.InvoicedFact, error) {
 			continue
 		}
 		facts = append(facts, tracker.InvoicedFact{
-			Number:     inv.Number,
-			IssueDate:  inv.IssueDate.Time,
-			DueDate:    inv.DueDate.Time,
-			TotalCents: int(totals.GrandTotal),
+			Number:      inv.Number,
+			IssueDate:   inv.IssueDate.Time,
+			DueDate:     inv.DueDate.Time,
+			TotalCents:  int(totals.GrandTotal),
+			IncomeMonth: usable[inv.Number],
 		})
 	}
 	return facts, nil

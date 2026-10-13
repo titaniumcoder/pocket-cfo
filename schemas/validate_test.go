@@ -107,6 +107,7 @@ func TestValidateAcceptsTheRepoData(t *testing.T) {
 		{Issuer, filepath.Join("..", "data", "issuer.json")},
 		{Users, filepath.Join("..", "data", "users.json")},
 		{PaidInvoices, filepath.Join("..", "data", "paid-invoices.json")},
+		{UsableInvoices, filepath.Join("..", "data", "usable-invoices.json")},
 		{Notes, filepath.Join("..", "catalog", "notes.json")},
 	}
 	for _, c := range cases {

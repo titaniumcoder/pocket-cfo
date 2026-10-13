@@ -21,6 +21,7 @@ var (
 	recipientsDir      = dataDir + "/recipients"
 	invoicesDir        = dataDir + "/invoices"
 	paidInvoicesPath   = dataDir + "/paid-invoices.json"
+	usableInvoicesPath = dataDir + "/usable-invoices.json"
 	usersFile          = dataDir + "/users.json"
 	buildDir           = getenv("BUILD_DIR", "build")
 	renderManifestPath = buildDir + "/render-manifest.json"

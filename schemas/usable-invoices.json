@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://titaniumcoder.com/schemas/usable-invoices.json",
+  "title": "UsableInvoices",
+  "description": "Which invoices count as income in which month, overriding the default. The default rule is: an invoice is usable in the month after it fell due. Only entries the owner wrote down live here — an invoice not listed follows the default, and this file staying empty is the ordinary case. An override cannot put income before the invoice was due: its month must not precede the due month.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["overrides"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "overrides": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/override" }
+    }
+  },
+  "$defs": {
+    "override": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["invoice", "month"],
+      "properties": {
+        "invoice": { "type": "string", "pattern": "^INV-\\d{10}$" },
+        "month": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+          "description": "The month this invoice counts as income, YYYY-MM. Must not precede the invoice's due month."
+        }
+      }
+    }
+  }
+}

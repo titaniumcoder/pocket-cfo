@@ -11,12 +11,13 @@ import (
 type ID string
 
 const (
-	Invoice      ID = "invoice.json"
-	Recipient    ID = "recipient.json"
-	Issuer       ID = "issuer.json"
-	Notes        ID = "notes.json"
-	Users        ID = "users.json"
-	PaidInvoices ID = "paid-invoices.json"
+	Invoice        ID = "invoice.json"
+	Recipient      ID = "recipient.json"
+	Issuer         ID = "issuer.json"
+	Notes          ID = "notes.json"
+	Users          ID = "users.json"
+	PaidInvoices   ID = "paid-invoices.json"
+	UsableInvoices ID = "usable-invoices.json"
 )
 
 func Validate(id ID, raw []byte) error {

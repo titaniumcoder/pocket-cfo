@@ -102,3 +102,26 @@ func TestInvoicedInvoicesForMonthEmptyForUnrelatedMonth(t *testing.T) {
 		t.Errorf("invoicedInvoicesForMonth(unrelated month) = %+v, want empty", got)
 	}
 }
+
+// TestAnOverridePinsTheIncomeMonth: the owner's written-down month wins over
+// the default rule — the whole point of data/usable-invoices.json.
+func TestAnOverridePinsTheIncomeMonth(t *testing.T) {
+	trk := &Tracker{Invoiced: ComputeInvoiced([]InvoicedFact{
+		{Number: "0001", IssueDate: date(2026, 7, 5), DueDate: date(2026, 7, 19), TotalCents: 500000, IncomeMonth: "2026-07"},
+	})}
+	if got := trk.invoicedCentsForMonth(yearMonth{2026, time.July}); got != 500000 {
+		t.Errorf("July income = %d, want the invoice moved into its due month", got)
+	}
+	if got := trk.invoicedCentsForMonth(yearMonth{2026, time.August}); got != 0 {
+		t.Errorf("August income = %d, want 0 — the override moved it out", got)
+	}
+}
+
+func TestTheDefaultRuleStillAppliesWithoutAnOverride(t *testing.T) {
+	trk := &Tracker{Invoiced: ComputeInvoiced([]InvoicedFact{
+		{Number: "0001", IssueDate: date(2026, 7, 5), DueDate: date(2026, 7, 19), TotalCents: 500000},
+	})}
+	if got := trk.invoicedCentsForMonth(yearMonth{2026, time.August}); got != 500000 {
+		t.Errorf("August income = %d, want the invoice the month after it fell due", got)
+	}
+}

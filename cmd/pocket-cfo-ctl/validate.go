@@ -17,6 +17,7 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/notes"
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/paidinvoices"
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/recipient"
+	"github.com/titaniumcoder/pocket-cfo/internal/schema/usableinvoices"
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/users"
 	"github.com/titaniumcoder/pocket-cfo/internal/stats"
 	"github.com/titaniumcoder/pocket-cfo/internal/validate"
@@ -238,6 +239,9 @@ func validatePaidInvoices(dataDir string) int {
 		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: %s: %v\n", path, err)
 		return 1
 	}
+	if p := validateUsableInvoices(dataDir, invoices); p > 0 {
+		return p
+	}
 	return 0
 }
 
@@ -270,6 +274,31 @@ func validateFile(path string, check func([]byte) error) int {
 		return 1
 	}
 	if err := check(b); err != nil {
+		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: %s: %v\n", path, err)
+		return 1
+	}
+	return 0
+}
+
+func validateUsableInvoices(dataDir string, invoices []*invoice.InvoiceJson) int {
+	path := filepath.Join(dataDir, "usable-invoices.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return 0
+		}
+		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: %s: %v\n", path, err)
+		return 1
+	}
+	if p := report(path, schemas.Validate(schemas.UsableInvoices, b)); p > 0 {
+		return p
+	}
+	var uf usableinvoices.UsableInvoicesJson
+	if err := json.Unmarshal(b, &uf); err != nil {
+		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: %s: %v\n", path, err)
+		return 1
+	}
+	if err := stats.ValidateUsable(uf, invoices); err != nil {
 		fmt.Fprintf(os.Stderr, "pocket-cfo-ctl validate: %s: %v\n", path, err)
 		return 1
 	}

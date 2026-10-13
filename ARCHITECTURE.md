@@ -210,9 +210,9 @@ flip `status` to `issued` when you're happy.
 
 status `draft` leads to rendering into .......-DRAFT.pdf, the only one that will always gets overwritten during CI CD
 
-The same loop exists through the agent API (§11): a draft is created, edited and
-re-uploaded there any number of times, and `issue_invoice` is the only way the flag
-comes off — an issued document is exactly as write-once over the API as it is by hand.
+A draft is created and edited by hand in the data repo any number of times, and flipping
+`status` to `issued` is the only way the flag comes off — an issued document is
+write-once however it is changed.
 
 ### 3.4 Computation
 
@@ -289,6 +289,13 @@ write it now anyway.
 
 Payment lives in its own file, `data/paid-invoices.json`, not in the invoice document:
 
+**When an invoice counts as income is the owner's call, written down.** The default rule:
+an invoice is usable the month after it fell due. `data/usable-invoices.json` overrides
+it per invoice — an early-paying client whose January invoice should fund January, a
+December invoice booked in January. Only written-down overrides live there; the file
+staying empty is the ordinary case, and an override cannot move income before the
+invoice was due (`pocket-cfo-ctl validate` refuses a month that precedes the due month).
+
 ```json
 {
   "paid": [
@@ -311,13 +318,12 @@ attached later without a schema break. `pocket-cfo-ctl validate` enforces what J
 can't: no duplicate invoice numbers, every number resolves to an invoice that exists, and
 no draft is marked paid.
 
-Recording a payment is also the one invoicing write the Hermes API offers
-(`set_invoice_paid`, with `list_invoices` beside it): `paid: true` with the day the money
-arrived replaces a wrong date as a correction, `paid: false` removes the entry, an
-identical re-send is a no-op that commits nothing, and the optional free-text `note` is
-where a bank reference — or which account the money landed on — goes. There is
-deliberately no account or method field to record it in; if the date-plus-note ever
-stops being enough, the schema grows a field and nothing else changes.
+Recording a payment is a hand edit to `paid-invoices.json` in the data repo — the agent
+API's write tools are gone (§11), so `pocket-cfo-ctl validate` is what checks the edit.
+The optional free-text `note` is where a bank reference — or which account the money
+landed on — goes. There is deliberately no account or method field to record it in; if
+the date-plus-note ever stops being enough, the schema grows a field and nothing else
+changes.
 
 Partial payments are deliberately unsupported. If that ever changes, this field becomes
 an array and the derived rules in §3.7 grow one line; nothing else in the design cares.
@@ -718,13 +724,9 @@ must be requested first.
 
 Deploy: single Go binary, any host, scale-to-zero fine — no local state.
 
-**Payment through the API, added since**: `set_invoice_paid` (and `list_invoices`) under
-the Hermes surface — `POST /api/invoices/paid`, appending to `data/paid-invoices.json`
-through the GitHub Contents API under `GITHUB_DATA_TOKEN`, rather than the visitor's OAuth
-token sketched here first. Splitting payment out of the invoice document is what makes
-this a small, additive write rather than a rewrite of an issued invoice. No database
-appears, the commit is attributed through the token's identity, and GitHub enforces write
-permission for you.
+Payment is a hand edit to `data/paid-invoices.json` in the data repo; `list_invoices`
+reports the states over the read API. Splitting payment out of the invoice document is
+what keeps the edit small — one entry appended, never a rewrite of an issued invoice.
 
 ---
 
@@ -740,7 +742,9 @@ permission for you.
   not per line.
 - Validator tests: AT invoice missing "обратно начисляване" rejected; sequence gap
   rejected; a `paid-invoices.json` entry that duplicates a number, names no existing
-  invoice, or marks a draft paid rejected; discounts driving the total below zero
+  invoice, or marks a draft paid rejected; a `usable-invoices.json` override for a draft,
+  an unknown number or a month before the due month rejected; discounts driving the
+  total below zero
   rejected.
 - **Staleness tests** over a git fixture repo, fake renderer counting calls: second build
   renders nothing; `status: draft` renders nothing; editing the template renders nothing;
@@ -869,7 +873,9 @@ exactly the invoices whose due date fell in the previous month — `ComputeInvoi
 each due date to the month after it, and `fundingIncome` reads that map. There is no
 estimate and no shift: Toggl tracks the hours and prices the work record panel, but the
 budget is priced by what was actually billed. A month nobody invoiced for shows zero
-income and says so in its figures.
+income and says so in its figures. When reality deviates — an early-paying client, a
+December invoice booked in January — the owner writes the month down per invoice in
+`data/usable-invoices.json` (§3.6), and the written-down month wins.
 
 **The salary cascade** turns company income into net personal income: company income less
 company expenses, less the employer's contributions, gives gross salary; the employee's

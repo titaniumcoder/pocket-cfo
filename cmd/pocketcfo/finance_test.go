@@ -886,3 +886,24 @@ func infoTemplate(t *testing.T) *template.Template {
 	}
 	return mustPageTemplate(filepath.Join(wd, "..", "..", "templates", "info.html"))
 }
+
+// TestBuildInvoicedFacts_CarriesTheUsableOverride: a month written down in
+// usable-invoices.json travels with the fact, so the owner's decision about
+// when an invoice counts as income reaches the budget.
+func TestBuildInvoicedFacts_CarriesTheUsableOverride(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustMkdirAll(t, invoicesDir)
+	writeJSON(t, invoicesDir+"/INV-0000000001.json", invoiceFixture("INV-0000000001", 1, invoice.InvoiceJsonStatusIssued))
+	writeJSON(t, usableInvoicesPath, map[string]any{
+		"$schema":   "../schemas/usable-invoices.json",
+		"overrides": []map[string]string{{"invoice": "INV-0000000001", "month": "2026-01"}},
+	})
+
+	facts, err := buildInvoicedFacts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts) != 1 || facts[0].IncomeMonth != "2026-01" {
+		t.Fatalf("facts = %+v, want the override month carried", facts)
+	}
+}

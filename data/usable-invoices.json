@@ -1,0 +1,9 @@
+{
+  "$schema": "../schemas/usable-invoices.json",
+  "overrides": [
+    {
+      "invoice": "INV-0000000001",
+      "month": "2026-01"
+    }
+  ]
+}

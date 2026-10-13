@@ -6,3 +6,4 @@ package schema
 //go:generate go tool go-jsonschema -p notes     -o notes/notes.go         ../../schemas/notes.json
 //go:generate go tool go-jsonschema -p users     -o users/users.go        ../../schemas/users.json
 //go:generate go tool go-jsonschema -p paidinvoices -o paidinvoices/paidinvoices.go ../../schemas/paid-invoices.json
+//go:generate go tool go-jsonschema -p usableinvoices -o usableinvoices/usableinvoices.go ../../schemas/usable-invoices.json

@@ -47,8 +47,8 @@ type infoView struct {
 
 	Rules []tracker.RuleChange
 
-	ChatEnabled bool
-	ChatCount   int
+	ShowUploads  bool
+	UploadsCount int
 
 	HolidaysErr string
 	Countries   []infoCountryView
@@ -72,6 +72,7 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	view := infoView{
 		Header:       s.header(sess, webui.PageInfo, webui.ParsePeriod(r.URL.Query().Get("year"), r.URL.Query().Get("month"))),
 		ConfigGroups: s.configGroups(),
+		ShowUploads:  s.admin(sess),
 	}
 	view.ConfigGroups = append(view.ConfigGroups, configGroup{
 		Name: "This session",
@@ -83,8 +84,8 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	})
 
 	view.Rules = tracker.RulesTimeline(s.tracker.Personal, s.tracker.Start, time.Now())
-	if s.chatStore != nil {
-		view.ChatEnabled, view.ChatCount = true, s.chatStore.Count()
+	if s.uploads != nil {
+		view.UploadsCount = s.uploads.count()
 	}
 
 	mode := s.cfg.togglMode

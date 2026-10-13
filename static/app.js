@@ -118,3 +118,25 @@ document.addEventListener('DOMContentLoaded', function () {
   rulesCards().forEach(function (card) { card.open = card.hasAttribute('open'); });
   showRulesCard(location.hash.slice(1));
 });
+
+// The uploads page polls itself while a file is being parsed: the parse runs
+// on the server, so a plain reload is all the live update this page needs.
+function uploadsBusy() {
+  return document.querySelector('[data-uploads-busy]');
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  if (!uploadsBusy()) return;
+  var timer = setInterval(function () {
+    fetch('/uploads/status', { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        var busy = (data.uploads || []).some(function (u) {
+          return u.status === 'pending' || u.status === 'parsing';
+        });
+        if (!busy) { clearInterval(timer); location.reload(); }
+      })
+      .catch(function () { /* the next tick retries */ });
+  }, 3000);
+});

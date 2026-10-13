@@ -17,9 +17,9 @@ import (
 	"github.com/atombender/go-jsonschema/pkg/types"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
-	"github.com/titaniumcoder/pocket-cfo/internal/chat"
 	financeconfig "github.com/titaniumcoder/pocket-cfo/internal/finance/config"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
+	"github.com/titaniumcoder/pocket-cfo/internal/llm"
 	"github.com/titaniumcoder/pocket-cfo/internal/money"
 	"github.com/titaniumcoder/pocket-cfo/internal/render"
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/invoice"
@@ -29,17 +29,16 @@ import (
 )
 
 type server struct {
-	cfg        config
-	httpClient *http.Client
-	indexTmpl  *template.Template
-	clientTmpl *template.Template
-	infoTmpl   *template.Template
-	chatsTmpl  *template.Template
-	chatTmpl   *template.Template
+	cfg         config
+	httpClient  *http.Client
+	indexTmpl   *template.Template
+	clientTmpl  *template.Template
+	infoTmpl    *template.Template
+	uploadsTmpl *template.Template
 
-	chatStore  *chat.Store
-	chatClient *chat.Client
-	chatRuns   *chat.Runs
+	uploads    *uploadsStore
+	llm        *llm.Client
+	uploadJobs *uploadJobs
 
 	tracker    *tracker.Tracker
 	togglTrack *tracker.Toggl
@@ -138,11 +137,11 @@ func main() {
 		infoTmpl:         mustPageTemplate(templatesDir + "/info.html"),
 		emailRequestedAt: map[string]time.Time{},
 	}
-	if cfg.chatEnabled() {
-		s.chatsTmpl = mustPageTemplate(templatesDir + "/chats.html")
-		s.chatTmpl = mustPageTemplate(templatesDir + "/chat.html")
-		s.chatStore, s.chatClient = mustOpenChat(cfg, httpClient)
-		s.chatRuns = chat.NewRuns()
+	s.uploads = mustOpenUploads(cfg)
+	s.uploadJobs = newUploadJobs()
+	s.uploadsTmpl = mustPageTemplate(templatesDir + "/uploads.html")
+	if cfg.openAIKey != "" {
+		s.llm = mustOpenParser(cfg, httpClient)
 	}
 
 	warmCtx, stopWarming := context.WithCancel(context.Background())
@@ -186,6 +185,9 @@ var templateFuncs = template.FuncMap{
 	},
 	"amount": func(v float64) string {
 		return render.FormatAmount(int64(math.Round(v * 100)))
+	},
+	"datetime": func(t time.Time) string {
+		return t.Format("02.01.2006 15:04")
 	},
 	"join": strings.Join,
 }
@@ -400,7 +402,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /{year}/{month}/{action}", s.financeMonthSub)
 
 	s.registerAPI(mux)
-	s.registerChat(mux)
+	s.registerUploads(mux)
 
 	return securityHeaders(mux)
 }

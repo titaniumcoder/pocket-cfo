@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/buildinfo"
-	"github.com/titaniumcoder/pocket-cfo/internal/chat"
 	financeconfig "github.com/titaniumcoder/pocket-cfo/internal/finance/config"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
+	"github.com/titaniumcoder/pocket-cfo/internal/llm"
 )
 
 var (
@@ -79,8 +79,8 @@ type config struct {
 	openAIExtraBody string
 
 	stateDir      string
+	uploadsDir    string
 	togglCacheDir string
-	chatDir       string
 
 	finance   financeconfig.Config
 	togglMode string
@@ -112,8 +112,8 @@ func loadConfig() config {
 		openAIModel:      os.Getenv("OPENAI_MODEL"),
 		openAIExtraBody:  os.Getenv("OPENAI_EXTRA_BODY"),
 		stateDir:         os.Getenv("STATE_DIR"),
+		uploadsDir:       os.Getenv("UPLOADS_DIR"),
 		togglCacheDir:    os.Getenv("TOGGL_CACHE_DIR"),
-		chatDir:          os.Getenv("CHAT_DIR"),
 		finance:          financeconfig.Load(financeFileConfig),
 	}
 	// Which data checkout is mounted. Only the deployment knows — the data is
@@ -136,7 +136,8 @@ func loadConfig() config {
 	c.togglMode = mode
 	applyDefaults(&c)
 	resolveStateDirs(&c)
-	if err := resolveChat(&c); err != nil {
+	resolveUploadsDir(&c)
+	if err := resolveParser(&c); err != nil {
 		log.Fatalf("pocketcfo: %v", err)
 	}
 	if c.env == envProd {
@@ -197,45 +198,42 @@ func resolveTogglMode(f financeconfig.Config) (string, error) {
 	return f.TogglMode, nil
 }
 
-func (c config) chatEnabled() bool { return c.openAIKey != "" }
-
-const defaultChatModel = "gpt-5"
+const defaultParserModel = "gpt-5"
 
 func resolveStateDirs(c *config) {
 	if c.togglCacheDir == "" && c.stateDir != "" {
 		c.togglCacheDir = filepath.Join(c.stateDir, "cache")
 	}
-	if c.chatDir == "" && c.stateDir != "" {
-		c.chatDir = filepath.Join(c.stateDir, "chat")
+}
+
+func resolveUploadsDir(c *config) {
+	if c.uploadsDir == "" && c.stateDir != "" {
+		c.uploadsDir = filepath.Join(c.stateDir, "uploads")
 	}
 }
 
-func resolveChat(c *config) error {
-	if !c.chatEnabled() {
+func resolveParser(c *config) error {
+	if c.openAIKey == "" {
 		return nil
 	}
-	if _, err := chat.ParseExtraBody(c.openAIExtraBody); err != nil {
+	if _, err := llm.ParseExtraBody(c.openAIExtraBody); err != nil {
 		return fmt.Errorf("OPENAI_EXTRA_BODY %v", err)
 	}
 	if c.openAIBaseURL == "" {
-		c.openAIBaseURL = chat.DefaultBaseURL
+		c.openAIBaseURL = llm.DefaultBaseURL
 	}
 	if c.openAIModel == "" {
 		c.openAIModel = defaultModelFor(c.openAIBaseURL)
-		log.Printf("pocketcfo: OPENAI_MODEL is not set — the chat uses %s; set it to choose another model or an OpenRouter preset", c.openAIModel)
-	}
-	if c.chatDir == "" {
-		c.chatDir = filepath.Join(os.TempDir(), "pocketcfo-chats")
-		log.Printf("pocketcfo: neither STATE_DIR nor CHAT_DIR is set — chats are kept in %s and do NOT survive a restart; mount a volume and set STATE_DIR", c.chatDir)
+		log.Printf("pocketcfo: OPENAI_MODEL is not set — uploaded statements are parsed with %s; set it to choose another model or an OpenRouter preset", c.openAIModel)
 	}
 	return nil
 }
 
 func defaultModelFor(baseURL string) string {
 	if strings.Contains(baseURL, "openrouter.ai") {
-		return "openai/" + defaultChatModel
+		return "openai/" + defaultParserModel
 	}
-	return defaultChatModel
+	return defaultParserModel
 }
 
 func toggl2Complete(f financeconfig.Config) bool {

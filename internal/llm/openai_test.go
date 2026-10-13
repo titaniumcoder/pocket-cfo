@@ -1,4 +1,4 @@
-package chat
+package llm
 
 import (
 	"context"
@@ -175,6 +175,59 @@ func TestAQuietEndpointIsGivenUpOn(t *testing.T) {
 	}
 }
 
+func TestPartsGoOutAsContentParts(t *testing.T) {
+	c, bodies, _ := stub(t, http.StatusOK, `{"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`)
+	messages := []Message{
+		{Role: "system", Content: "parse the statement"},
+		{Role: "user", Parts: []Part{
+			TextPart("what did I spend?"),
+			ImagePart("image/png", []byte("PNGDATA")),
+			FilePart("statement.pdf", "application/pdf", []byte("PDFDATA")),
+		}},
+	}
+	out, err := c.Complete(context.Background(), messages, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Message.Content != "ok" {
+		t.Errorf("completion = %+v", out)
+	}
+	sent := (*bodies)[0]["messages"].([]any)
+	if len(sent) != 2 {
+		t.Fatalf("messages sent: %v", sent)
+	}
+	user := sent[1].(map[string]any)
+	if user["role"] != "user" {
+		t.Errorf("parts message lost its role: %v", user)
+	}
+	content, ok := user["content"].([]any)
+	if !ok {
+		t.Fatalf("parts must be sent as an array of content parts: %v", user["content"])
+	}
+	if len(content) != 3 {
+		t.Fatalf("%d content parts, want 3", len(content))
+	}
+	if text := content[0].(map[string]any); text["type"] != "text" || text["text"] != "what did I spend?" {
+		t.Errorf("text part: %v", text)
+	}
+	if image := content[1].(map[string]any); image["type"] != "image_url" {
+		t.Errorf("image part: %v", image)
+	} else if url := image["image_url"].(map[string]any)["url"]; !strings.HasPrefix(url.(string), "data:image/png;base64,") {
+		t.Errorf("image data URL: %v", url)
+	}
+	if file := content[2].(map[string]any); file["type"] != "file" {
+		t.Errorf("file part: %v", file)
+	} else {
+		inner := file["file"].(map[string]any)
+		if inner["filename"] != "statement.pdf" {
+			t.Errorf("file name: %v", inner)
+		}
+		if !strings.HasPrefix(inner["file_data"].(string), "data:application/pdf;base64,") {
+			t.Errorf("file data URL: %v", inner["file_data"])
+		}
+	}
+}
+
 func sseOf(completion string) string {
 	var full struct {
 		Choices []struct {
@@ -245,7 +298,7 @@ func TestOpenAISDKIsImportedOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(importers) != 1 || !strings.HasSuffix(importers[0], "internal/chat/openai.go") {
-		t.Errorf("the SDK is imported by %v; it belongs only in internal/chat/openai.go, so deleting that file drops the dependency", importers)
+	if len(importers) != 1 || !strings.HasSuffix(importers[0], "internal/llm/openai.go") {
+		t.Errorf("the SDK is imported by %v; it belongs only in internal/llm/openai.go, so deleting that file drops the dependency", importers)
 	}
 }

@@ -130,6 +130,8 @@ func (s *Service) actualsPath(month string) string {
 	return prefix + "/" + month + ".json"
 }
 
+func (s *Service) ActualsPath(month string) string { return s.actualsPath(month) }
+
 func (s *Service) budgetSHA(ctx context.Context) string {
 	if s.Store == nil {
 		return ""

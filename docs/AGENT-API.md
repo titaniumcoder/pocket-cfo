@@ -17,8 +17,12 @@ even that the surface exists.
 behind a different token: data changes happen in the data repo, committed via git, by a
 person. An agent that wants something changed says where the change belongs and stops.
 
-The in-app **Chat** tab (ARCHITECTURE.md §12) asks the same tools the same questions and
-has no write path at all.
+An **uploads page** (`/uploads`, administrators only) receives the statements the data
+repo cannot produce by itself — CSV exports, PDFs, photos — parses them into transactions
+through an OpenAI-compatible endpoint (`OPENAI_API_KEY` set, or files wait un-parsed),
+lets the administrator correct the categories, and commits the confirmed lines to
+`data/actuals/<month>.json` in the data repo via the GitHub Contents API. See
+ARCHITECTURE.md §12.
 
 ## The reads
 

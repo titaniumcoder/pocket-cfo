@@ -14,9 +14,9 @@ A freelancer's finance tracker and invoicing tool in one Go binary, MIT licensed
   committed actuals, the search history, the accounts and the invoices, so an agent can
   answer questions about the company's money. Data changes happen in the data repo, via
   git; see [`docs/AGENT-API.md`](docs/AGENT-API.md).
-- **A Chat tab** (`/chat`, administrators only) — a finance Q&A driven from inside the
-  app, grounded in the same read tools, behind any OpenAI-compatible endpoint. Present
-  only when `OPENAI_API_KEY` is set; see ARCHITECTURE.md §12.
+- **An uploads inbox** (`/uploads`, administrators only) — CSV, PDF and photo statements
+  parsed into transactions by an OpenAI-compatible endpoint, reviewed, and committed to
+  the data repo via the GitHub Contents API. See ARCHITECTURE.md §12.
 
 Clone it, `make generate`, `go run ./cmd/pocketcfo`, and it serves the fabricated sample
 data in `data/`. That is enough to look around, and not enough to run a business — for
@@ -105,11 +105,11 @@ a script.
 
 It does not write to `DATA_DIR`. A deployment's data directory is a baked image layer or a
 mount, so a write landing there would be lost on restart and diverge from the repo. The only
-things it writes anywhere are the Toggl cache and the chats, both under `STATE_DIR` (the
+things it writes anywhere are the Toggl cache and the uploads inbox, both under `STATE_DIR` (the
 image's `/var/data/pocketcfo`, meant to be a mounted volume) when that is set. Both are
 disposable: nothing in either is a record, and `/info` can wipe each.
-Everything the agent API accepts is committed through the GitHub Contents API instead, and
-the pipeline rebuilds. That is what makes an agent-facing write surface tolerable: it is
+Everything confirmed on the uploads page is committed through the GitHub Contents API instead, and
+the pipeline rebuilds. That is what makes the write path tolerable: it is
 not trusted, it is audited, and every change is one you can read in `git log` and revert.
 
 ## Customizing the look
@@ -183,16 +183,16 @@ Secrets and deployment-specific paths come from the environment. Copy `.envrc.ex
 | `TOGGL2_API_KEY` / `TOGGL2_ORGANIZATION_ID` / `TOGGL2_WORKSPACE_ID` | `cmd/pocketcfo`, optional | Toggl 2.0 (focus.toggl.com): a `toggl_sk_…` key from its settings page, plus an organization id and a workspace id the API cannot list. Set the key first: `/info` then shows the workspace the key sees and, where Toggl allows it, the organization — otherwise both sit in the focus.toggl.com address. Nothing changes on the dashboard until all three are set and `TOGGL_MODE` says so. The key **expires** after the period chosen when it was generated (30 or 90 days, …); once Toggl rejects it, the finance page and `/info` say so until a new one is set |
 | `TOGGL2_API_KEY_EXPIRES_AT` | `cmd/pocketcfo`, optional | `YYYY-MM-DD` the 2.0 key expires; the pages warn during its last seven days and after |
 | `TOGGL_REFRESH_INTERVAL` | `cmd/pocketcfo`, optional | default `15m`; a Go duration. How often the current month's tracked hours (and last month's, through the 7th) are refreshed in the background — one request or two per refresh, not the whole year. Older months are refetched every 42 hours or on Reload. Toggl counts requests per hour (30 on its Free plan, 240 Starter, 600 Premium) and the client stops at that limit by itself, so the default fits every plan |
-| `STATE_DIR` | `cmd/pocketcfo`, optional | one writable directory for everything the app keeps between restarts: `<STATE_DIR>/cache` holds the Toggl cache, `<STATE_DIR>/chat` the chats. The image sets it to `/var/data/pocketcfo`, so on Fly you mount a volume there (`[mounts] source = "pocketcfo_data", destination = "/var/data/pocketcfo"`) and set nothing else. Unset, as in a local run, the cache lives in process memory and chats in a temporary directory |
+| `STATE_DIR` | `cmd/pocketcfo`, optional | one writable directory for everything the app keeps between restarts: `<STATE_DIR>/cache` holds the Toggl cache, `<STATE_DIR>/uploads` the uploaded statements. The image sets it to `/var/data/pocketcfo`, so on Fly you mount a volume there (`[mounts] source = "pocketcfo_data", destination = "/var/data/pocketcfo"`) and set nothing else. Unset, as in a local run, the cache lives in process memory and uploads land in a temporary directory |
 | `TOGGL_CACHE_DIR` | `cmd/pocketcfo`, optional | overrides where the Toggl cache goes — one small JSON file per backend. With a directory, a restart or a Fly machine waking from auto-stop serves the last hours at once and asks Toggl only for what is due; without one, every start pulls the year again. Derived, disposable data, nothing from your data repo; `/info` has a **Reset Toggl cache** button that wipes it, and deleting the files over `fly ssh console` does the same. The directory carries a `VERSION` marker: a release that changes the cache format deletes the old cache files there on its first start and begins afresh |
 | `PORT` | `cmd/pocketcfo`, optional | default `8080` |
 | `CLIENT_LINK_SECRET` | `cmd/pocketcfo`, prod | any random string; signs the stateless client-portal links |
 | `GITHUB_API_URL` | `cmd/pocketcfo`, optional | default `https://api.github.com`; points the Contents client at a stub while verifying the write path |
-| `OPENAI_API_KEY` | `cmd/pocketcfo`, optional | the in-app Chat tab (admins only) talks to an OpenAI-compatible chat completions endpoint with this key. Unset means the tab does not exist: no menu entry, and `/chat` is a 404 |
-| `OPENAI_MODEL` | `cmd/pocketcfo`, optional | passed through verbatim — an OpenAI model, an OpenRouter reference such as `anthropic/claude-sonnet-4.5`, or an OpenRouter preset such as `@preset/pocket-cfo`. Unset, the chat uses `gpt-5` (`openai/gpt-5` when `OPENAI_BASE_URL` is OpenRouter) and the log says so |
+| `OPENAI_API_KEY` | `cmd/pocketcfo`, optional | the uploads parser talks to an OpenAI-compatible chat completions endpoint with this key to turn uploaded statements into transactions. Unset means uploaded files stay in the inbox un-parsed |
+| `OPENAI_MODEL` | `cmd/pocketcfo`, optional | passed through verbatim — an OpenAI model, an OpenRouter reference such as `anthropic/claude-sonnet-4.5`, or an OpenRouter preset such as `@preset/pocket-cfo`. Unset, the parser uses `gpt-5` (`openai/gpt-5` when `OPENAI_BASE_URL` is OpenRouter) and the log says so |
 | `OPENAI_BASE_URL` | `cmd/pocketcfo`, optional | default `https://api.openai.com/v1`; `https://openrouter.ai/api/v1` for OpenRouter, or any other endpoint speaking the same protocol |
 | `OPENAI_EXTRA_BODY` | `cmd/pocketcfo`, optional | a JSON object merged into every request, for fields the provider understands and the app does not — `{"provider":{"zdr":true}}` asks OpenRouter for zero-data-retention routing. The app always sends `store: false`; retention beyond that is a contract with the provider, not something a request can enforce |
-| `CHAT_DIR` | `cmd/pocketcfo`, optional | where chats are kept: one JSON file per chat under a directory per user, format-versioned — a release that changes the format deletes every old chat. Defaults to `<STATE_DIR>/chat`; with neither set, chats land in a temporary directory that a restart wipes, and the log warns at start |
+| `UPLOADS_DIR` | `cmd/pocketcfo`, optional | where uploaded statements are kept, one directory per upload with the original and its metadata. Defaults to `<STATE_DIR>/uploads`; with neither set, uploads land in a temporary directory that a restart wipes, and the log warns at start |
 | `DEEPL_API_KEY` | `pocket-cfo-ctl translate` | fills missing Bulgarian text on drafts |
 | `DATA_DIR` | both binaries, optional | default `data` |
 | `BUILD_DIR` | both binaries, optional | default `build` — rendered PDFs, kept apart from hand-edited data |
@@ -267,7 +267,7 @@ not propose a pre-release tag to a project running a stable one.
 ## Further reading
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — the design: data model, tax regimes, rendering,
-  the finance tracker, the agent API, the in-app chat.
+  the finance tracker, the agent API, the uploads flow.
 - [`docs/AGENT-API.md`](docs/AGENT-API.md) — the contract an AI client works to.
 - [`AGENTS.md`](AGENTS.md) — conventions, and how releases are cut.
 

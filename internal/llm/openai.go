@@ -1,7 +1,8 @@
-package chat
+package llm
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,6 +40,7 @@ type Client struct {
 type Message struct {
 	Role       string     `json:"role"`
 	Content    string     `json:"content,omitempty"`
+	Parts      []Part     `json:"parts,omitempty"`
 	Reasoning  string     `json:"reasoning,omitempty"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
@@ -48,6 +50,36 @@ type Message struct {
 func (m Message) outbound() Message {
 	m.Reasoning = ""
 	return m
+}
+
+type PartKind string
+
+const (
+	PartText  PartKind = "text"
+	PartImage PartKind = "image"
+	PartFile  PartKind = "file"
+)
+
+type Part struct {
+	Kind PartKind
+	Text string
+	Name string
+	MIME string
+	Data []byte
+}
+
+func TextPart(text string) Part { return Part{Kind: PartText, Text: text} }
+
+func ImagePart(mime string, data []byte) Part {
+	return Part{Kind: PartImage, MIME: mime, Data: data}
+}
+
+func FilePart(name, mime string, data []byte) Part {
+	return Part{Kind: PartFile, Name: name, MIME: mime, Data: data}
+}
+
+func (p Part) dataURL() string {
+	return "data:" + p.MIME + ";base64," + base64.StdEncoding.EncodeToString(p.Data)
 }
 
 type ToolCall struct {
@@ -91,11 +123,11 @@ func ParseExtraBody(raw string) (map[string]any, error) {
 
 func NewClient(cfg ClientConfig) (*Client, error) {
 	if cfg.Key == "" || cfg.Model == "" {
-		return nil, errors.New("chat: a key and a model are required")
+		return nil, errors.New("llm: a key and a model are required")
 	}
 	extra, err := ParseExtraBody(cfg.ExtraBody)
 	if err != nil {
-		return nil, fmt.Errorf("chat: extra body %v", err)
+		return nil, fmt.Errorf("llm: extra body %v", err)
 	}
 	base := cfg.BaseURL
 	if base == "" {
@@ -214,13 +246,17 @@ func (c *Client) params(messages []Message, tools []ToolDef) (openai.ChatComplet
 		StreamOptions: openai.ChatCompletionStreamOptionsParam{IncludeUsage: openai.Bool(true)},
 	}
 	for i, m := range messages {
+		if len(m.Parts) > 0 {
+			params.Messages = append(params.Messages, userPartsMessage(m))
+			continue
+		}
 		raw, err := json.Marshal(m.outbound())
 		if err != nil {
 			return params, err
 		}
 		var u openai.ChatCompletionMessageParamUnion
 		if err := u.UnmarshalJSON(raw); err != nil {
-			return params, fmt.Errorf("chat: message %d (%s): %v", i, m.Role, err)
+			return params, fmt.Errorf("llm: message %d (%s): %v", i, m.Role, err)
 		}
 		params.Messages = append(params.Messages, u)
 	}
@@ -232,6 +268,28 @@ func (c *Client) params(messages []Message, tools []ToolDef) (openai.ChatComplet
 		}))
 	}
 	return params, nil
+}
+
+func userPartsMessage(m Message) openai.ChatCompletionMessageParamUnion {
+	parts := make([]openai.ChatCompletionContentPartUnionParam, 0, len(m.Parts))
+	for _, p := range m.Parts {
+		switch p.Kind {
+		case PartImage:
+			parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{URL: p.dataURL()}))
+		case PartFile:
+			parts = append(parts, openai.FileContentPart(openai.ChatCompletionContentPartFileFileParam{
+				Filename: openai.String(p.Name),
+				FileData: openai.String(p.dataURL()),
+			}))
+		default:
+			parts = append(parts, openai.TextContentPart(p.Text))
+		}
+	}
+	return openai.ChatCompletionMessageParamUnion{
+		OfUser: &openai.ChatCompletionUserMessageParam{
+			Content: openai.ChatCompletionUserMessageParamContentUnion{OfArrayOfContentParts: parts},
+		},
+	}
 }
 
 func describe(err error) error {

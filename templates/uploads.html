@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pocket CFO — Uploads</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIGZpbGw9IiMxYTczZTgiLz48cmVjdCB4PSIxNCIgeT0iMzYiIHdpZHRoPSI5IiBoZWlnaHQ9IjE2IiByeD0iMiIgZmlsbD0iI2ZmZiIvPjxyZWN0IHg9IjI3LjUiIHk9IjI2IiB3aWR0aD0iOSIgaGVpZ2h0PSIyNiIgcng9IjIiIGZpbGw9IiNmZmYiLz48cmVjdCB4PSI0MSIgeT0iMTQiIHdpZHRoPSI5IiBoZWlnaHQ9IjM4IiByeD0iMiIgZmlsbD0iI2ZmZiIvPjwvc3ZnPgo=">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+<main>
+  <h1 class="print-title">Pocket CFO — Uploads</h1>
+  {{template "sitehead" .Header}}
+
+  <section class="panel">
+    <h2 class="section-title">Send in a statement</h2>
+    <p class="section-note">CSV exports, PDF statements or photos of payment confirmations — several at once is fine. Each file is parsed into transactions, you review the categories below, and confirming commits them to <code>data/actuals/&lt;month&gt;.json</code> in the data repo. Re-uploading the same statement is idempotent: identical lines are recognised and skipped.</p>
+    {{if not .Parsing}}
+    <p class="stale-note">Parsing is not configured (OPENAI_API_KEY unset). Files are kept in the inbox but not parsed.</p>
+    {{end}}
+    {{if not .Writes}}
+    <p class="stale-note">Committing is not configured (GITHUB_DATA_TOKEN unset). You can review parsed transactions, but confirming would fail.</p>
+    {{end}}
+    <form method="post" action="/uploads" enctype="multipart/form-data" class="inline-form upload-form">
+      <input type="file" name="files" multiple accept=".csv,.txt,.pdf,image/*" required>
+      <input type="text" name="account" placeholder="Account, when the statements do not name one" class="upload-account">
+      <button type="submit">Upload</button>
+    </form>
+  </section>
+
+  {{range .Uploads}}
+  <section class="panel upload" data-status="{{.Status}}">
+    <h2 class="section-title">{{.Name}} <span class="badge {{if eq .Status "parsed"}}badge-issued{{else if eq .Status "failed"}}badge-overdue{{else if eq .Status "imported"}}badge-paid{{else}}badge-draft{{end}}">{{.Status}}</span></h2>
+    <p class="section-note">{{.Size}} bytes, uploaded {{datetime .UploadedAt}} by {{.UploadedBy}}{{if .Model}} — parsed with {{.Model}}{{end}}{{if .ImportedTo}} — imported into {{range .ImportedTo}}<code>{{.}}.json</code> {{end}}{{end}}</p>
+    {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+    {{if eq .Status "pending" "parsing"}}<p class="stale-note" data-uploads-busy>Being parsed; the page refreshes itself until it is done.</p>{{end}}
+    {{if and (eq .Status "failed") $.Parsing}}
+    <form class="inline-form" method="post" action="/uploads/{{.ID}}/parse"><button type="submit">Parse again</button></form>
+    {{end}}
+    {{if and (eq .Status "pending") $.Parsing}}
+    <form class="inline-form" method="post" action="/uploads/{{.ID}}/parse"><button type="submit">Parse now</button></form>
+    {{end}}
+
+    {{if eq .Status "parsed"}}
+    <form method="post" action="/uploads/{{.ID}}/category">
+      <div class="table-wrap">
+        <table class="data">
+          <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Account</th><th>Category</th></tr></thead>
+          <tbody>
+            {{range $i, $t := .Transactions}}
+            <tr>
+              <td>{{$t.Date}}</td>
+              <td class="tx-description">{{$t.Description}}</td>
+              <td class="code">{{amount $t.Amount}}</td>
+              <td>{{$t.Account}}</td>
+              <td>
+                <select name="cat-{{$i}}">
+                  {{$current := ""}}{{if $t.Category}}{{$current = $t.Category}}{{else}}{{$current = "untracked"}}{{end}}
+                  {{range $.Categories}}
+                  <option value="{{.ID}}"{{if eq $current .ID}} selected{{end}}>{{.Group}} / {{.Name}}</option>
+                  {{end}}
+                  <option value="untracked"{{if eq $current "untracked"}} selected{{end}}>Untracked</option>
+                </select>
+              </td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      <div class="inline-form">
+        <button type="submit">Save categories</button>
+      </div>
+    </form>
+    <form class="inline-form" method="post" action="/uploads/{{.ID}}/confirm">
+      <button type="submit"{{if not $.Writes}} disabled title="GITHUB_DATA_TOKEN is not set"{{end}}>Confirm — commit to the data repo</button>
+    </form>
+    {{end}}
+
+    <form class="inline-form" method="post" action="/uploads/{{.ID}}/delete"><button class="link" type="submit">Delete this upload</button></form>
+  </section>
+  {{else}}
+  <section class="panel">
+    <p class="section-note">Nothing in the inbox yet.</p>
+  </section>
+  {{end}}
+</main>
+</body>
+</html>

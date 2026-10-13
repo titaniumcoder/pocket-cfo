@@ -1133,64 +1133,50 @@ write overlay to reason about, no deploy lag between surfaces: what is committed
 every reader sees. `docs/AGENT-API.md` is the contract an AI client works to, and the MCP tool
 descriptions are where it actually reads it.
 
-## 12. In-app chat
+## 12. Uploads
 
-The 2.0 feature, in its current shape: a **Chat** tab, for administrators only, where the
-administrator asks questions about the company's money and gets answers grounded in the
-same tools §11 exposes. `internal/api/tools.go` is one SDK-free catalog that both the MCP
-adapter and the chat read, so the two cannot drift — six read tools, no write path, and
-the chat adds nothing around them but the conversation.
+The in-app chat is gone; it returns later as a standalone app. In its place sits the
+**uploads flow** — the one place the app turns paper and exports into recorded data, and
+the one deliberate exception to §11's read-only verdict, because the thing being written
+is exactly what the data repo cannot produce by itself: the statement lines only the
+administrator's phone or bank can supply.
 
-**The model is reached through an OpenAI-compatible endpoint, via the OpenAI Go SDK.**
-Not through Anthropic's or any one vendor's API: `OPENAI_BASE_URL` points at OpenAI,
-OpenRouter or anything else speaking the chat-completions protocol, and `OPENAI_MODEL` is
-passed through verbatim, which is what lets an OpenRouter preset stand in for a model. The
-SDK is the second third-party dependency linked into the binary and is held to the same
-three rules as the MCP SDK: one importing file (`internal/chat/openai.go`), no SDK type
-past its boundary, and tests that drive a stub endpoint with hand-written JSON. Calls are
-not streamed token by token; the browser sees the *steps* — each assistant message and
-tool result — as newline-delimited JSON, which is enough to follow along and far simpler
-than SSE parsing on both ends. Retention is the provider's contract, not a request flag:
-the app always sends `store: false`, and `OPENAI_EXTRA_BODY` merges any provider-specific
-field into every request (OpenRouter's `{"provider":{"zdr":true}}` routes only to
-zero-data-retention endpoints); beyond that there is nothing a request can enforce, and
-the doc says so rather than pretending otherwise.
+**An inbox, a parser, a review, a commit.** `GET /uploads` is an administrator-only page.
+`POST /uploads` takes several files at once — CSV exports, PDF statements, photos of
+payment confirmations — and stores the originals untouched under `UPLOADS_DIR` (default
+`<STATE_DIR>/uploads`, one `0700` directory per upload). Parsing runs in a background
+goroutine per file — a statement photo can take minutes — and the page polls
+`GET /uploads/status` and reloads itself when everything is done. A file the parser
+cannot read stays in the inbox marked failed, with the model's complaint, and can be
+retried. Nothing is written to `DATA_DIR`; the inbox is state, like the Toggl cache, and
+`/info` counts it and can purge it.
 
-The chat originally drove §11's write tools with a staging layer — pending changes, an
-approval rail, apply/discard/revert — because reconciliation-in-chat was the point. With
-the writes gone the staging layer went with them: the reads execute directly, and a data
-change is asked for, not made. What remains of the machinery is the part that makes a
-conversation work.
+**The parser is the chat's model client, minus the conversation.** The OpenAI-compatible
+client lives in `internal/llm` — the same one-file rule as before (`openai.go` is the only
+importer of the SDK), the same `OPENAI_*` configuration, the same streamed
+chat-completions protocol against OpenAI or OpenRouter. What changed is the call's shape:
+one system prompt carrying the actuals conventions — positive is money out, the date is
+the booking date, the description is the statement line verbatim — and the budget's
+category ids, then one user message holding the document: text for a CSV, a base64 data
+URL for an image, a file part for a PDF. The answer must be a bare JSON array of
+transactions. Lines the model will not vouch for come back with no category, and are
+staged as untracked with a reason — an honest empty beats a confident wrong guess, and
+the schema's "a category that no longer resolves fails validation loudly" rule makes a
+hallucinated id a broken commit rather than a silent one.
 
-**Chats are files on the volume, and a format bump deletes them.** The app still never
-writes to `DATA_DIR`; chats live under `STATE_DIR/chat`, next to the Toggl cache in
-`STATE_DIR/cache` — one mounted volume, `/var/data/pocketcfo` in the image, holding
-everything the app keeps between restarts — one JSON file per chat under a `0700`
-directory per user, written atomically. A chat
-therefore survives a reload, a redeploy and Fly's auto-stop, which browser-held state or
-process memory would not. A `VERSION` marker mirrors the Toggl cache's, and a release
-that changes the format deletes every old chat on its first start rather than migrating
-it. That is a deliberate small-project trade-off: a chat is a working conversation, not a
-record. `/info` counts the chats and can delete them all, for the same reason.
-
-**A turn runs on the server, not in the request.** The first version streamed the turn on
-the request that started it, so switching tabs aborted the fetch, cancelled the context
-and lost the answer. A turn now runs in a goroutine under its own ten-minute timeout,
-holding the chat's lock; a per-process registry buffers its events, and
-`GET /chat/{id}/events` replays them from any index as Server-Sent Events and follows the
-rest live. The page opens that stream on load when a turn is running, disables the
-composer, and reloads on `done` — so a tab switch, a reload or a closed laptop changes
-nothing: the chat file has every completed round and the stream has the rest. The
-registry is memory on one machine, which is the §11 verdict again: one instance is the
-normal case, and a turn that dies with the process leaves a chat that is exactly as
-complete as its last saved round.
-
-**Asking is the normal mode.** An `ask_user` tool, offered only in the chat, ends the turn
-with a question and clickable options; the question is stored with the chat and rendered
-as a card, and the answer resumes the turn as that call's result. A new message sent
-while a question is open answers it too, so the model is never left with a tool call it
-cannot account for. The system prompt says so plainly: what is not in the data is asked,
-not guessed.
+**Nothing reaches the data repo without a person.** Parsed lines are staged, and the page
+renders every one with a category dropdown — the budget's categories plus untracked — so
+a wrong guess is corrected before anything is committed. Confirm reads the month's
+`data/actuals/<month>.json` through the Contents client, merges, validates the merged
+file with the same `ValidateActuals` the data repo's CI runs, and commits it back with a
+message naming the upload. The ids are derived deterministically from
+account+date+amount+description, so re-uploading the same statement is idempotent: the
+second confirm finds every line already there and commits nothing. A statement that
+spans a month boundary commits as two month files, because the schema demands it.
+Without `GITHUB_DATA_TOKEN` the confirm button refuses — the same write gate the agent
+API's Put path always had. This is the write path §11 removed, in its one legitimate
+form: not the agent writing to the data repo it could edit anyway, but the app recording
+what only a human's phone could capture.
 
 ## 13. What is built, and what is deliberately not
 

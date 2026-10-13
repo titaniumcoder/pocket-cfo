@@ -66,7 +66,7 @@ func (s *server) configGroups() []configGroup {
 			{Name: "users.json", Value: usersFile},
 			{Name: "STATE_DIR", Value: orUnset(c.stateDir)},
 			{Name: "TOGGL_CACHE_DIR", Value: orUnset(c.togglCacheDir)},
-			{Name: "CHAT_DIR", Value: orUnset(c.chatDir)},
+			{Name: "UPLOADS_DIR", Value: orUnset(c.uploadsDir)},
 		}},
 		{Name: "Credentials", Rows: []configRow{
 			{Name: "GITHUB_OAUTH_CLIENT_ID", Value: maskSecret(c.clientID), Secret: true},
@@ -95,12 +95,12 @@ func (s *server) configGroups() []configGroup {
 			{Name: "Write target", Value: orUnset(c.repo)},
 			{Name: "GITHUB_API_URL", Value: orUnset(c.githubAPIURL)},
 		}},
-		{Name: "Chat", Rows: []configRow{
+		{Name: "Upload parser", Rows: []configRow{
 			{Name: "OPENAI_API_KEY", Value: maskSecret(c.openAIKey), Secret: true},
 			{Name: "OPENAI_BASE_URL", Value: orUnset(c.openAIBaseURL)},
 			{Name: "OPENAI_MODEL", Value: orUnset(c.openAIModel)},
 			{Name: "OPENAI_EXTRA_BODY", Value: orUnset(c.openAIExtraBody)},
-			{Name: "Chat tab", Value: enabledIf(c.chatEnabled())},
+			{Name: "Parsing", Value: enabledIf(c.openAIKey != "")},
 		}},
 		{Name: "Email (Amazon SES)", Rows: []configRow{
 			{Name: "AWS_REGION", Value: orUnset(c.sesRegion)},

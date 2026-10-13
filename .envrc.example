@@ -18,12 +18,13 @@ export AGENT_API_TOKEN=
 # Optional, defaults to https://api.github.com — point the Contents client at
 # a scratch instance or a stub while verifying the write path.
 export GITHUB_API_URL=
-# The in-app Chat tab (admins only) talks to any OpenAI-compatible chat
-# completions endpoint. Unset key means the tab does not exist: no menu entry,
-# and /chat is a 404. OPENAI_MODEL is passed through verbatim — an OpenAI
-# model, an OpenRouter reference such as anthropic/claude-sonnet-4.5, or an
-# OpenRouter preset such as @preset/pocket-cfo. Unset, the chat uses gpt-5
-# (openai/gpt-5 when OPENAI_BASE_URL points at OpenRouter) and says so in the log.
+# The upload parser talks to any OpenAI-compatible chat completions endpoint
+# to turn uploaded statements (CSV, PDF, images) into transactions. An unset
+# key means uploaded files stay in the inbox un-parsed. OPENAI_MODEL is passed
+# through verbatim — an OpenAI model, an OpenRouter reference such as
+# anthropic/claude-sonnet-4.5, or an OpenRouter preset such as
+# @preset/pocket-cfo. Unset, the parser uses gpt-5 (openai/gpt-5 when
+# OPENAI_BASE_URL points at OpenRouter) and says so in the log.
 export OPENAI_API_KEY=
 export OPENAI_MODEL=
 # Optional, default https://api.openai.com/v1; https://openrouter.ai/api/v1 for
@@ -34,10 +35,10 @@ export OPENAI_BASE_URL=
 # OpenRouter for zero-data-retention routing. The app always sends store:false;
 # anything beyond that is a contract with the provider, not a flag.
 export OPENAI_EXTRA_BODY=
-# Where chats are kept, one JSON file per chat under a directory per user.
-# Defaults to <STATE_DIR>/chat; with neither set, chats land in a temporary
+# Where uploaded statements are kept until they are imported or deleted.
+# Defaults to <STATE_DIR>/uploads; with neither set, uploads land in a temporary
 # directory that a restart wipes, and the log warns about it at start.
-# export CHAT_DIR=/var/data/pocketcfo/chat
+# export UPLOADS_DIR=/var/data/pocketcfo/uploads
 
 # Used by `pocket-cfo-ctl translate` to fill missing Bulgarian text on drafts.
 export DEEPL_API_KEY=
@@ -108,7 +109,8 @@ export TOGGL_MODE=
 # fits every plan.
 # export TOGGL_REFRESH_INTERVAL=15m
 # Optional: one writable directory for everything kept between restarts —
-# <STATE_DIR>/cache holds the Toggl cache, <STATE_DIR>/chat the chats. The
+# <STATE_DIR>/cache holds the Toggl cache, <STATE_DIR>/uploads the uploaded
+# statements. The
 # image sets it to /var/data/pocketcfo, so on Fly you mount a volume there
 # and set nothing else. Unset (a local run), the Toggl cache lives in memory
 # and every start pulls the year again. Derived, disposable data: /info has

@@ -8,6 +8,26 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Removed
+- **The in-app chat is gone.** It returns later as a standalone app; until then
+  `/chat` is a 404, the menu no longer offers it, and the `openai-go` dependency
+  moved with the model client rather than leaving with it. `CHAT_DIR` is no longer
+  read; existing chats under the old directory are simply abandoned, and `/info` no
+  longer counts or purges them.
+
+### Added
+- **An uploads page (`/uploads`, administrators only)** — send in several CSV exports,
+  PDF statements or photos of payment confirmations at once; each is stored in an inbox
+  under `<STATE_DIR>/uploads` (or `UPLOADS_DIR`) and parsed in the background by an
+  OpenAI-compatible model (the chat's client, now in `internal/llm`, configured with the
+  same `OPENAI_*` variables). Lines the model cannot classify are staged as untracked;
+  the page renders every staged transaction with a category dropdown before anything is
+  written, and confirming merges them into `data/actuals/<month>.json` in the data repo
+  via the GitHub Contents API (needs `GITHUB_DATA_TOKEN`), deduplicating by the schema's
+  deterministic account+date+amount+description id so re-uploading the same statement
+  changes nothing. A statement spanning a month boundary commits as two month files.
+  `/info` counts the inbox and can purge it.
+
 ### Fixed
 - **The Last entry table on the spending page starts each account at the beginning of the line again.** The section borrowed the coverage grid's four-column tracks with only two cells per row, so CSS auto-placement put the first account into the header row's third column and the rest drifted from there. It now declares its own two-column layout, and on a phone the date — the one thing the table exists to show — stays visible beside its account instead of the accounts scattering across both columns.
 

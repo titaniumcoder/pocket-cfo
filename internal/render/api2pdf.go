@@ -16,7 +16,7 @@ type Renderer interface {
 
 const api2pdfEndpoint = "https://v2.api2pdf.com/chrome/pdf/html"
 
-const fontDelay = 1500 * time.Millisecond
+const printDelay = 3000 * time.Millisecond
 
 const maxRetries = 3
 
@@ -56,7 +56,7 @@ func (r *API2PDF) Render(ctx context.Context, html []byte) ([]byte, error) {
 	body, err := json.Marshal(api2pdfRequest{
 		HTML:         string(html),
 		OutputBinary: true,
-		Options:      api2pdfOptions{Delay: fontDelay.Milliseconds()},
+		Options:      api2pdfOptions{Delay: printDelay.Milliseconds()},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("api2pdf: encode request: %w", err)

@@ -2,6 +2,7 @@ package render
 
 import (
 	"encoding/json"
+	"html/template"
 	"os"
 	"path/filepath"
 	"strings"
@@ -231,3 +232,88 @@ func TestHTML_LineDescriptionRendersRichText(t *testing.T) {
 }
 
 func strptr(s string) *string { return &s }
+
+// TestHTML_CarriesTheRunningHeaderForContinuationPages: the paged.js running
+// element, its column row and the per-page stamp handler must all ship in the
+// rendered HTML — the page-2 letterhead lives in these pieces, not anywhere
+// else.
+func TestHTML_CarriesTheRunningHeaderForContinuationPages(t *testing.T) {
+	inv := loadFixture(t, "INV-0000000001")
+	totals, err := money.Compute(inv)
+	if err != nil {
+		t.Fatalf("compute: %v", err)
+	}
+	wd, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(wd) })
+	if err := os.Chdir(filepath.Join("..", "..")); err != nil {
+		t.Fatal(err)
+	}
+
+	html, err := HTML(inv, totals, nil)
+	if err != nil {
+		t.Fatalf("HTML: %v", err)
+	}
+	out := string(html)
+
+	for _, want := range []string{
+		"position: running(running-header)",
+		"content: element(running-header)",
+		"@page :first",
+		`class="running-header"`,
+		`class="rh-cols"`,
+		"PageStamps",
+		inv.Issuer.LegalName,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered HTML missing %q", want)
+		}
+	}
+}
+
+// TestHTML_SummaryNotesAndPaymentRideInTheTable: the cards after the line
+// items are table rows, so a page that holds only them still carries the
+// repeated column header above instead of orphaned boxes.
+func TestHTML_SummaryNotesAndPaymentRideInTheTable(t *testing.T) {
+	inv := loadFixture(t, "INV-0000000001")
+	totals, err := money.Compute(inv)
+	if err != nil {
+		t.Fatalf("compute: %v", err)
+	}
+	wd, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(wd) })
+	if err := os.Chdir(filepath.Join("..", "..")); err != nil {
+		t.Fatal(err)
+	}
+
+	html, err := HTML(inv, totals, nil)
+	if err != nil {
+		t.Fatalf("HTML: %v", err)
+	}
+	out := string(html)
+
+	if got := strings.Count(out, `<tr class="afteritems">`); got != 3 {
+		t.Errorf("want summary, notes and payment as three table rows, got %d", got)
+	}
+	if strings.Contains(out, `<div class="summary">`) && !strings.Contains(out, `<tr class="afteritems"><td`) {
+		t.Error("the summary card escaped the line-items table")
+	}
+}
+
+// TestRunningLogoRewritesIds: the running header's logo copy carries its own
+// ids. Two svgs sharing gradient ids resolve their url(#…) references against
+// whichever copy sorts first in the document — the page-1 logo went invisible
+// exactly that way once the running copy existed.
+func TestRunningLogoRewritesIds(t *testing.T) {
+	in := template.HTML(`<svg id="Layer_1"><defs><linearGradient id="g1"/></defs><path fill="url(#g1)" xlink:href="#a" href="#a"/></svg>`)
+	out := string(runningLogo(in))
+	for _, bad := range []string{`id="Layer_1"`, `id="g1"`, `url(#g1)`, `href="#a"`} {
+		if strings.Contains(out, bad) {
+			t.Errorf("rewritten logo still contains %q", bad)
+		}
+	}
+	for _, want := range []string{`id="rh-Layer_1"`, `url(#rh-g1)`, `href="#rh-a"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rewritten logo missing %q", want)
+		}
+	}
+}

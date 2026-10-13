@@ -5,6 +5,27 @@
 <title>{{.Invoice.Number}}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=block&subset=cyrillic,latin-ext" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/pagedjs@0.4.3/dist/paged.polyfill.js" integrity="sha384-JkjBt3FPbcQ3WBc3qp+maUIw8YLoZxNNj8H+tn73mljkC1ba8aEPWlgwfCRPpAxV" crossorigin="anonymous"></script>
+<script>
+if (window.Paged) {
+  class PageStamps extends Paged.Handler {
+    afterParsed(content) {
+      this.stamps = [...document.querySelectorAll(".watermark, .paid-stamp")];
+      this.stamps.forEach(el => el.remove());
+    }
+    afterPageLayout(pageElement) {
+      const area = pageElement.querySelector(".pagedjs_area");
+      if (!area) return;
+      for (const el of this.stamps) area.appendChild(el.cloneNode(true));
+    }
+  }
+  Paged.registerHandlers(PageStamps);
+} else {
+  document.addEventListener("DOMContentLoaded", () => {
+    document.querySelectorAll(".running-header").forEach(el => el.remove());
+  });
+}
+</script>
 <style>
   :root {
     --accent: #2454e8;
@@ -18,14 +39,43 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
-  @page { size: A4; margin: 0; }
+  @page {
+    size: A4;
+    margin: 88px 44px 32px 44px;
+    @top-left { content: element(running-header); }
+  }
+  @page :first {
+    margin-top: 32px;
+    @top-left { content: none; }
+  }
   body {
     font-family: 'PT Sans', 'DejaVu Sans', sans-serif;
     color: var(--text);
     font-size: 12px;
     line-height: 1.4;
-    padding: 32px 44px;
   }
+  .running-header {
+    position: running(running-header);
+    width: 100%;
+    font-size: 12px;
+    color: var(--text);
+  }
+  .running-header .rh-strip {
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+  }
+  .running-header .rh-strip .rh-issuer { display: flex; gap: 10px; align-items: center; font-weight: 700; }
+  .running-header .rh-strip svg { display: block; width: 18px; height: 18px; }
+  .running-header .rh-strip .rh-no { color: var(--muted); }
+  .running-header .rh-cols { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 10px; }
+  .running-header .rh-cols th {
+    text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--muted); white-space: normal;
+    border-bottom: 1px solid var(--border); padding: 8px 6px;
+  }
+  .running-header .rh-cols th.num { text-align: right; }
+
   header { display: flex; justify-content: space-between; align-items: flex-start; }
   header .issuer { display: flex; gap: 14px; align-items: flex-start; }
   header .issuer .logo svg { display: block; width: 44px; height: 44px; }
@@ -66,15 +116,29 @@
     font-weight: 700; font-size: 14px;
   }
 
-  table { width: 100%; border-collapse: collapse; }
+  /* Fixed layout + cell widths: the running header's column row and every
+     table fragment must measure their columns identically, and col elements
+     do not survive pagination. */
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  td { overflow-wrap: break-word; }
+  tbody td:nth-child(2), thead th:nth-child(2), .rh-cols th:nth-child(2) { width: 12%; }
+  tbody td:nth-child(3), thead th:nth-child(3), .rh-cols th:nth-child(3) { width: 13%; }
+  {{if .HasVAT}}
+  tbody td:nth-child(4), thead th:nth-child(4), .rh-cols th:nth-child(4) { width: 10%; }
+  tbody td:nth-child(5), thead th:nth-child(5), .rh-cols th:nth-child(5) { width: 15%; }
+  {{else}}
+  tbody td:nth-child(4), thead th:nth-child(4), .rh-cols th:nth-child(4) { width: 15%; }
+  {{end}}
   thead { display: table-header-group; }
   thead th {
     text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .04em;
-    text-transform: uppercase; color: var(--muted);
+    text-transform: uppercase; color: var(--muted); white-space: normal;
     border-bottom: 1px solid var(--border); padding: 8px 6px;
   }
   tbody td { padding: 10px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  th.num, td.num { text-align: right; white-space: nowrap; }
+  tbody tr.afteritems td { padding: 0; border-bottom: none; }
+  th.num, td.num { text-align: right; }
+  td.num { white-space: nowrap; }
   .desc-bg { color: var(--muted); font-size: 11px; margin-top: 2px; }
   .desc-bg-inline { color: var(--muted); font-size: inherit; margin-left: 6px; }
   /* A line item's own row (description + translation line) must never be
@@ -112,6 +176,9 @@
     margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--pay-border);
   }
 
+  .pagedjs_area .watermark, .pagedjs_area .paid-stamp {
+    position: absolute; top: 50%; left: 50%;
+  }
   .watermark, .paid-stamp {
     position: fixed; top: 50%; left: 50%;
     transform: translate(-50%, -50%) rotate(-32deg);
@@ -134,6 +201,24 @@
 <body>
   {{if .IsDraft}}<div class="watermark">ENTWURF &middot; ЧЕРНОВА &middot; DRAFT</div>{{end}}
   {{if .IsPaid}}<div class="paid-stamp">BEZAHLT &middot; ПЛАТЕНО &middot; PAID<div class="stamp-date">{{dateptr .PaidOn}}</div></div>{{end}}
+  <div class="running-header">
+    <div class="rh-strip">
+      <span class="rh-issuer">{{if .LogoSVG}}{{rhlogo .LogoSVG}}{{end}}{{.Invoice.Issuer.LegalName}}</span>
+      <span class="rh-no">{{.Labels.DocTitle}} {{.Invoice.Number}}</span>
+    </div>
+    {{$c := colCount .HasVAT}}
+    <table class="rh-cols">
+      <thead>
+      <tr>
+        <th>{{.Labels.DescriptionCol}}</th>
+        <th class="num">{{.Labels.QtyCol}}</th>
+        <th class="num">{{.Labels.UnitPriceCol}}</th>
+        {{if .HasVAT}}<th class="num">{{.Labels.VatCol}}</th>{{end}}
+        <th class="num">{{.Labels.AmountCol}}</th>
+      </tr>
+      </thead>
+    </table>
+  </div>
   <header>
     <div class="issuer">
       {{if .LogoSVG}}<div class="logo">{{.LogoSVG}}</div>{{end}}
@@ -202,6 +287,11 @@
     </tbody>
   </table>
 
+  <tr class="afteritems"><td colspan="{{$c}}">{{template "summaryCard" $}}</td></tr>
+  {{$n := bilingual .Invoice.Tax.Note .Invoice.Language}}
+  {{if $n.Primary}}<tr class="afteritems"><td colspan="{{$c}}">{{template "notesCard" $}}</td></tr>{{end}}
+  <tr class="afteritems"><td colspan="{{$c}}">{{template "paymentCard" $}}</td></tr>
+  {{define "summaryCard"}}
   <div class="summary">
     <div class="row"><span>{{.Labels.Subtotal}}</span><span>{{money .Totals.Subtotal}}</span></div>
     {{range .Totals.Discounts}}
@@ -214,9 +304,10 @@
     {{end}}{{end}}
     <div class="row total"><span>{{.Labels.GrandTotal}}</span><span>{{money .Totals.GrandTotal}}</span></div>
   </div>
+  {{end}}
 
+  {{define "notesCard"}}
   {{$n := bilingual .Invoice.Tax.Note .Invoice.Language}}
-  {{if $n.Primary}}
   <div class="notes">
     <div class="label">{{.Labels.NotesTitle}}</div>
     <p>{{$n.Primary}}</p>
@@ -224,6 +315,7 @@
   </div>
   {{end}}
 
+  {{define "paymentCard"}}
   <div class="payment">
     <div class="label">{{.Labels.PaymentTitle}}</div>
     <div class="row"><span>{{.Labels.AccountHolder}}</span><span>{{.Invoice.Issuer.LegalName}}</span></div>
@@ -233,5 +325,6 @@
     {{with str .Invoice.Issuer.Bank.IntermediaryBic}}<div class="row"><span>{{$.Labels.IntermediaryBic}}</span><span>{{.}}</span></div>{{end}}
     <div class="row reference"><span>{{.Labels.Reference}}</span><span>{{.Invoice.Number}}</span></div>
   </div>
+  {{end}}
 </body>
 </html>

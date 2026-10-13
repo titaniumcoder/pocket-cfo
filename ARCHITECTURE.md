@@ -586,12 +586,52 @@ reason.
 - `display=block`, not `swap`. With `swap` Chrome paints fallback text immediately and
   substitutes later; capture in between and you get the fallback font, or tofu where it
   has no Cyrillic.
-- Set `delay` (~1500ms) on the api2pdf request. Their Chrome is a fresh serverless
-  container per call, so the font is fetched cold every time — the cache you're thinking
-  of is your browser's, not theirs.
+- Set `delay` on the api2pdf request (`printDelay`, 3000ms). Their Chrome is a fresh
+  serverless container per call, so the font is fetched cold every time — the cache
+  you're thinking of is your browser's, not theirs. The delay now has to cover the font
+  *and* the paged.js pagination pass below, which needs about a second for a long
+  invoice; capturing mid-pagination prints an empty document.
 
 If you ever see boxes in the Bulgarian column, this is the cause, and base64-inlining a
 subset is the fix.
+
+**Pagination — paged.js.** Chrome prints `position: fixed` on every page but offers
+nothing else from paged media: no running headers, no way to keep one element off page 1.
+A fixed letterhead was the obvious cheap answer and fails twice — it cannot be kept off
+page 1 (which already carries the full header), and it cannot reserve room for itself, so
+it collides with flow content on every continuation page. Offsetting it upward does not
+paint into the margin either: Chrome clamps an overflowing fixed element onto the *next*
+page instead. paged.js polyfills what's missing, pinned by version and SRI hash:
+
+- The running header (logo, issuer, invoice number, and the column-header row) lives in a
+  `@top-left` margin box via `content: element(running-header)`, suppressed on page 1 with
+  `@page :first`. Page margins moved from body padding to `@page`, which is what gives
+  every continuation page a real top margin.
+- paged.js drops `position: fixed` outright, so the draft watermark and paid stamp are
+  lifted out of the flow by the `PageStamps` handler and re-anchored into each laid-out
+  page. Without paged.js they keep their native fixed behaviour; the handler never runs.
+
+Three constraints are load-bearing, each learned by breaking it:
+
+- **Column widths live on the cells, not on `<col>` elements** — paged.js drops cols, and
+  with `table-layout: fixed` every table fragment falls back to equal widths. The running
+  header's column row and the fragments read the same nth-child widths, which is what
+  keeps them aligned.
+- **Summary, notes and payment are table rows** (`tr.afteritems`), not boxes after the
+  table. A final page holding only the payment card would otherwise show the margin-box
+  column headers above nothing. An earlier attempt repeated the real `thead` with an
+  `afterPageLayout` handler instead — inserting content after layout swallowed the
+  following page's content, which is why the margin box carries the columns.
+- **The running header's logo is a second inline copy with rewritten ids** (`rhlogo`):
+  two svgs sharing gradient ids make `url(#…)` resolve against whichever copy sorts first
+  in the document, and the page-1 logo went invisible exactly that way.
+
+If the CDN is unreachable, printing degrades to native Chrome: margins still come from
+`@page`, the column headers still repeat via `thead`, the stamps stay fixed, and a
+fallback script removes the running header from the flow. The committed sample PDFs in
+`build/` are pinned to the rendered HTML by `build/render-manifest.json` — a template
+change means re-rendering them (`pocket-cfo-ctl render`) before the manifest test passes
+again; the current samples were re-rendered with the same headless Chrome locally.
 
 **Both artifacts** are the same template with a flag in the context:
 

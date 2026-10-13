@@ -106,6 +106,28 @@ var funcMap = template.FuncMap{
 	"country":   CountryName,
 	"bilingual": bilingual,
 	"rich":      RichText,
+	"rhlogo":    runningLogo,
+	"colCount":  colCount,
+}
+
+func colCount(hasVAT bool) int {
+	if hasVAT {
+		return 5
+	}
+	return 4
+}
+
+// runningLogo rewrites the ids inside a copy of the logo so the running
+// header's svg carries its own defs. Without it the copy shares the ids of
+// the page-1 logo, and gradient references resolve against whichever copy
+// sorts first in the document — which is not the one being painted.
+func runningLogo(svg template.HTML) template.HTML {
+	s := string(svg)
+	s = strings.ReplaceAll(s, `id="`, `id="rh-`)
+	s = strings.ReplaceAll(s, `url(#`, `url(#rh-`)
+	s = strings.ReplaceAll(s, `xlink:href="#`, `xlink:href="#rh-`)
+	s = strings.ReplaceAll(s, `href="#`, `href="#rh-`)
+	return template.HTML(s)
 }
 
 const thousandsSeparator = ' '

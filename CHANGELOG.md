@@ -8,6 +8,8 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-10-13
+
 ### Changed
 - **The chat is a finance Q&A.** Its system prompt is rewritten for the read-only surface: grounded answers from the tools, no statement loop, no staging language, and the Changes rail is gone from the page.
 - **Breaking: a month's company income is what its invoices brought in.** Company income for a month is the invoices that fell due the month before — no Toggl estimate, no two-month funding shift, and the "(from …)" and "Income (for …)" period links leave the dashboard. Toggl still tracks the hours themselves; it no longer prices the budget.
@@ -551,7 +553,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v3.0.0...v4.0.0
 [3.0.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v1.0.1...v2.0.0
 [1.0.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v1.0.0...v1.0.1

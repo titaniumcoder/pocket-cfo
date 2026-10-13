@@ -133,6 +133,10 @@ BIC), logo, default currency. Example shape:
 }
 ```
 
+The optional `tracking_client_id` ties the recipient to a Toggl client: invoices for it
+scope the estimate machinery (§10) to that client's hours, and its tracked work shows on
+the dashboard as invoiced work rather than as an unlinked mistake.
+
 ### 3.3 Invoice — `data/invoices/INV-0000000002.json`
 
 ```json
@@ -145,6 +149,7 @@ BIC), logo, default currency. Example shape:
   "title": "Example Project / January 2026",
   "issue_date": "2026-01-15",
   "due_date": "2026-01-22",
+  "tracking_until": "2026-01-10",
   "currency": "EUR",
   "language": "de",
 
@@ -844,10 +849,8 @@ salary, and **private** expenses come out of net income after payroll. A budget 
 declares which by the `kind` of the group it sits in, and so does a bank account in
 `accounts.json` — the same two words, because it is the same two pots.
 
-**Income** is predicted from an hourly rate and, when Toggl is configured, from hours
-actually tracked. Once an invoice is issued for a linked client, the invoice supersedes
-the hours it covers — otherwise the same work would be counted as both a prediction and a
-receipt.
+**Income** is what the issued invoices brought in, plus an estimate for the worked
+months no invoice covers yet — the two paragraphs below carry the whole rule.
 
 **Toggl comes in two APIs**, and the tracker reads either or both (`TOGGL_MODE`; unset
 means Track whenever its credentials exist, so a deployment that adds the 2.0 variables
@@ -940,15 +943,41 @@ Fly's auto-stop is not a problem to solve here: the idle delay is not configurab
 machine kept awake makes more requests rather than fewer, and the snapshot makes a wake
 cost nothing.
 
-**A month's income is the invoices that fell due the month before.** Money earned in
-month M is invoiced at the end of M and paid in M+1, so the income shown for a month is
-exactly the invoices whose due date fell in the previous month — `ComputeInvoiced` maps
-each due date to the month after it, and `fundingIncome` reads that map. There is no
-estimate and no shift: Toggl tracks the hours and prices the work record panel, but the
-budget is priced by what was actually billed. A month nobody invoiced for shows zero
-income and says so in its figures. When reality deviates — an early-paying client, a
+**A month's income is the invoices that fell due the month before — plus the estimates
+for the work no invoice covers yet.** Money earned in month M is invoiced and paid after
+the hours are in, so the income shown for a month is exactly the invoices whose due date
+fell in the previous month — `ComputeInvoiced` maps each due date to the month after it,
+and `fundingIncome` reads that map. When reality deviates — an early-paying client, a
 December invoice booked in January — the owner writes the month down per invoice in
 `data/usable-invoices.json` (§3.6), and the written-down month wins.
+
+**A worked month without its invoice yet is an estimated invoice.** The hours are tracked
+in Toggl continuously, but the invoice for a worked month only comes into existence later
+— the hours are compiled and billed the following month — so a model of invoices alone
+would predict zero income for every month the bookkeeping has not caught up with. For
+each income month I, `fundingIncome` therefore also counts the estimate for the worked
+month I−2: the tracked hours the client's invoices do not already cover, plus the
+workdays still unbilled after that, at the standard rate — the same tracked-plus-expected
+arithmetic the work record panel prices, landing as income two months after the work,
+where the real invoice will land once the hours are in. The estimate is modelled as an
+invoice, not as direct labor income: the old two-month shift of the income *figure* stays
+gone, the estimate simply enters the same due-month → income-month map. The dashboard
+renders it as a grey row beside the real invoices, and the Income panel's total prices
+only what no invoice exists for yet.
+
+What the invoices already cover is decided per client by a **coverage frontier**: the
+latest extent over the client's issued invoices, where an invoice without further
+specification covers through the end of the month it was issued in, and the optional
+`tracking_until` field on an invoice names the exact day its coverage ends, up to and
+including it — the clean separation for clients charged more often than monthly. A
+month the frontier covers whole contributes nothing; a month the frontier ends inside
+contributes the workdays after it, priced by day, since the monthly aggregates cannot
+price individual days. A worked month whose Toggl client no recipient links
+(`tracking_client_id`, §3.2) is estimated anyway — and flagged on the work record panel
+as a likely mistake, the fix being a linked recipient in the data repo — while a client
+on `togglIgnoredClientIds` in config.json, the owner's own company among them, is
+excluded from income and estimates outright. When Toggl cannot answer, the estimates
+drop and the real invoices alone remain, with the usual error note.
 
 **The salary cascade** turns company income into net personal income: company income less
 company expenses, less the employer's contributions, gives gross salary; the employee's

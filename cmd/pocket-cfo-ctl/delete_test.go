@@ -24,7 +24,7 @@ func setupDeleteFixture(t *testing.T, number string, withManifestEntry bool) {
 	}
 
 	if withManifestEntry {
-		m := render.Manifest{number + "-DRAFT.pdf": "deadbeef"}
+		m := render.Manifest{number + "-DRAFT.pdf": render.ManifestEntry{HTMLHash: "deadbeef"}}
 		if err := m.Save(renderManifestPath); err != nil {
 			t.Fatal(err)
 		}

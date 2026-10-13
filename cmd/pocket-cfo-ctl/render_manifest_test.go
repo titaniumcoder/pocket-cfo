@@ -10,17 +10,21 @@ import (
 
 	"github.com/titaniumcoder/pocket-cfo/internal/money"
 	"github.com/titaniumcoder/pocket-cfo/internal/render"
+	"github.com/titaniumcoder/pocket-cfo/internal/schema/invoice"
 	"github.com/titaniumcoder/pocket-cfo/internal/stats"
 )
 
 // TestSampleDataStillMatchesCommittedManifest is the central assertion behind
-// splitting payment out of the invoice documents: it changed no rendered
-// HTML, so every hash in the committed build/render-manifest.json is still
-// correct and `pocket-cfo-ctl render` has nothing to re-render.
+// splitting payment out of the invoice documents and behind pinning issued
+// PDFs to their own bytes: the committed build/render-manifest.json must
+// match the committed build/ artifacts exactly as they stand, so
+// `pocket-cfo-ctl render` has nothing to re-render and no issued invoice is
+// ever flagged stale by a rendering change.
 //
-// It runs against the real sample data rather than a fixture, because the
-// committed manifest is what that data was rendered into. If this fails, some
-// PDF on disk no longer matches its JSON and the split was not transparent.
+// The two kinds of entry are judged by their own kind of drift:
+// an issued entry pins the PDF's bytes, a draft entry pins the rendered
+// HTML. If this fails, an artifact on disk no longer matches its pin and
+// the change was not transparent.
 func TestSampleDataStillMatchesCommittedManifest(t *testing.T) {
 	wd, err := os.Getwd()
 	if err != nil {
@@ -57,12 +61,23 @@ func TestSampleDataStillMatchesCommittedManifest(t *testing.T) {
 			if !ok {
 				continue // never rendered, so nothing is pinned for it
 			}
+			if inv.Status != invoice.InvoiceJsonStatusDraft {
+				got, err := render.HashPDFFile(tgt.path)
+				if err != nil {
+					t.Fatalf("hash %s: %v", tgt.path, err)
+				}
+				if got != want.PDFHash {
+					t.Errorf("%s: pdf hash %s, manifest says %s — the stored PDF drifted from its pin", name, got, want.PDFHash)
+				}
+				checked++
+				continue
+			}
 			html, err := render.HTML(inv, totals, tgt.paidOn)
 			if err != nil {
 				t.Fatalf("render %s: %v", name, err)
 			}
-			if got := render.HashHTML(html); got != want {
-				t.Errorf("%s: hash %s, manifest says %s — the rendered HTML changed, so this PDF would need re-rendering", name, got, want)
+			if got := render.HashHTML(html); got != want.HTMLHash {
+				t.Errorf("%s: html hash %s, manifest says %s — the rendered HTML changed, so this draft would need re-rendering", name, got, want.HTMLHash)
 			}
 			checked++
 		}
@@ -122,8 +137,15 @@ func TestRenderOne_BackfillsManifestWithoutTouchingExistingPDF(t *testing.T) {
 	}
 
 	got, ok := manifest["INV-0000000001.pdf"]
-	if !ok || got == "" {
+	if !ok {
 		t.Error("expected a backfilled manifest entry for INV-0000000001.pdf")
+	}
+	want, err := render.HashPDFFile(pdfPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PDFHash != want {
+		t.Errorf("backfilled entry = %+v, want it pinned to the stored PDF's bytes (%s)", got, want)
 	}
 
 	after, err := os.ReadFile(pdfPath)

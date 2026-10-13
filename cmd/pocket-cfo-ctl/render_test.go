@@ -173,7 +173,7 @@ func TestRemoveStaleDraftPDF(t *testing.T) {
 		}
 
 		inv := invoice.InvoiceJson{Number: "INV-0000000009", Status: invoice.InvoiceJsonStatusIssued}
-		manifest := render.Manifest{"INV-0000000009-DRAFT.pdf": "somehash"}
+		manifest := render.Manifest{"INV-0000000009-DRAFT.pdf": render.ManifestEntry{HTMLHash: "somehash"}}
 		if err := removeStaleDraftPDF(inv, manifest, false); err != nil {
 			t.Fatalf("removeStaleDraftPDF: %v", err)
 		}

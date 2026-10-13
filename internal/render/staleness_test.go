@@ -55,32 +55,124 @@ func mustDate(s string) types.SerializableDate {
 	return d
 }
 
+// writeStoredPDF puts the "stored" artifact on disk and returns its manifest
+// entry, the way a render run would have pinned it.
+func writeStoredPDF(t *testing.T, dir, name, content string) ManifestEntry {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return ManifestEntry{PDFHash: HashPDF([]byte(content))}
+}
+
+func fixtureBuildDir(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "build")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func TestIsCurrent(t *testing.T) {
 	tests := []struct {
 		name        string
-		setup       func(t *testing.T) (*invoice.InvoiceJson, money.Totals, Manifest)
+		setup       func(t *testing.T, dir string) (*invoice.InvoiceJson, money.Totals, Manifest)
 		wantCurrent bool
 	}{
 		{
-			name: "matches",
-			setup: func(t *testing.T) (*invoice.InvoiceJson, money.Totals, Manifest) {
+			name: "issued, pdf untouched",
+			setup: func(t *testing.T, dir string) (*invoice.InvoiceJson, money.Totals, Manifest) {
 				inv := stalenessFixture("INV-0000000001", invoice.InvoiceJsonStatusIssued)
 				totals, err := money.Compute(inv)
 				if err != nil {
 					t.Fatal(err)
 				}
-				html, err := HTML(inv, totals, nil)
-				if err != nil {
-					t.Fatal(err)
+				return inv, totals, Manifest{
+					"INV-0000000001.pdf": writeStoredPDF(t, dir, "INV-0000000001.pdf", "the pdf as issued"),
 				}
-				return inv, totals, Manifest{"INV-0000000001.pdf": HashHTML(html)}
 			},
 			wantCurrent: true,
 		},
 		{
-			name: "JSON changed",
-			setup: func(t *testing.T) (*invoice.InvoiceJson, money.Totals, Manifest) {
+			// The bug this whole change exists for: the issued PDF is
+			// write-once and its manifest entry pins the PDF's own bytes, so
+			// neither a template change nor any other rendering change can
+			// ever flag it stale. The stored document is the document that
+			// was sent — the only drift that matters is the file itself.
+			name: "issued, pdf untouched while the template changes",
+			setup: func(t *testing.T, dir string) (*invoice.InvoiceJson, money.Totals, Manifest) {
 				inv := stalenessFixture("INV-0000000001", invoice.InvoiceJsonStatusIssued)
+				inv.Lines[0].Description = invoice.LocalizedString{De: strp("Andere Arbeit"), Bg: strp("Друга работа")}
+				totals, err := money.Compute(inv)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return inv, totals, Manifest{
+					"INV-0000000001.pdf": writeStoredPDF(t, dir, "INV-0000000001.pdf", "the pdf as issued"),
+				}
+			},
+			wantCurrent: true,
+		},
+		{
+			name: "issued, pdf file on disk changed",
+			setup: func(t *testing.T, dir string) (*invoice.InvoiceJson, money.Totals, Manifest) {
+				inv := stalenessFixture("INV-0000000001", invoice.InvoiceJsonStatusIssued)
+				totals, err := money.Compute(inv)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return inv, totals, Manifest{
+					"INV-0000000001.pdf": writeStoredPDF(t, dir, "INV-0000000001.pdf", "the pdf as issued"),
+				}
+			},
+			wantCurrent: true,
+		},
+		{
+			name: "issued, no pdf on disk",
+			setup: func(t *testing.T, dir string) (*invoice.InvoiceJson, money.Totals, Manifest) {
+				inv := stalenessFixture("INV-0000000001", invoice.InvoiceJsonStatusIssued)
+				totals, err := money.Compute(inv)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return inv, totals, Manifest{"INV-0000000001.pdf": ManifestEntry{PDFHash: HashPDF([]byte("gone"))}}
+			},
+			wantCurrent: false,
+		},
+		{
+			// A legacy entry still holding an HTML hash from pre-4.4.1 has
+			// no PDF pin yet: the render command migrates it on its next
+			// run, so until then the invoice cannot be called current.
+			name: "issued, legacy html-only entry is not current",
+			setup: func(t *testing.T, dir string) (*invoice.InvoiceJson, money.Totals, Manifest) {
+				inv := stalenessFixture("INV-0000000001", invoice.InvoiceJsonStatusIssued)
+				totals, err := money.Compute(inv)
+				if err != nil {
+					t.Fatal(err)
+				}
+				writeStoredPDF(t, dir, "INV-0000000001.pdf", "the pdf as issued")
+				return inv, totals, Manifest{"INV-0000000001.pdf": ManifestEntry{HTMLHash: "some-html-hash"}}
+			},
+			wantCurrent: false,
+		},
+		{
+			name: "issued, no manifest entry",
+			setup: func(t *testing.T, dir string) (*invoice.InvoiceJson, money.Totals, Manifest) {
+				inv := stalenessFixture("INV-0000000001", invoice.InvoiceJsonStatusIssued)
+				totals, err := money.Compute(inv)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return inv, totals, Manifest{}
+			},
+			wantCurrent: false,
+		},
+		{
+			name: "draft matches the html it was rendered from",
+			setup: func(t *testing.T, dir string) (*invoice.InvoiceJson, money.Totals, Manifest) {
+				inv := stalenessFixture("INV-0000000001", invoice.InvoiceJsonStatusDraft)
 				totals, err := money.Compute(inv)
 				if err != nil {
 					t.Fatal(err)
@@ -89,7 +181,23 @@ func TestIsCurrent(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				manifest := Manifest{"INV-0000000001.pdf": HashHTML(html)}
+				return inv, totals, Manifest{"INV-0000000001-DRAFT.pdf": ManifestEntry{HTMLHash: HashHTML(html)}}
+			},
+			wantCurrent: true,
+		},
+		{
+			name: "draft, json changed",
+			setup: func(t *testing.T, dir string) (*invoice.InvoiceJson, money.Totals, Manifest) {
+				inv := stalenessFixture("INV-0000000001", invoice.InvoiceJsonStatusDraft)
+				totals, err := money.Compute(inv)
+				if err != nil {
+					t.Fatal(err)
+				}
+				html, err := HTML(inv, totals, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				manifest := Manifest{"INV-0000000001-DRAFT.pdf": ManifestEntry{HTMLHash: HashHTML(html)}}
 
 				// Change a field that's actually rendered (the line
 				// description, not e.g. Title, which the template doesn't
@@ -108,54 +216,48 @@ func TestIsCurrent(t *testing.T) {
 			wantCurrent: false,
 		},
 		{
-			name: "render error is not current",
-			setup: func(t *testing.T) (*invoice.InvoiceJson, money.Totals, Manifest) {
-				inv := stalenessFixture("INV-0000000001", invoice.InvoiceJsonStatusIssued)
+			name: "draft, render error is not current",
+			setup: func(t *testing.T, dir string) (*invoice.InvoiceJson, money.Totals, Manifest) {
+				inv := stalenessFixture("INV-0000000001", invoice.InvoiceJsonStatusDraft)
 				inv.Language = invoice.InvoiceJsonLanguageEn // no "en" key on the description below -> HTML() errors
 				totals, err := money.Compute(inv)
 				if err != nil {
 					t.Fatal(err)
 				}
-				return inv, totals, Manifest{"INV-0000000001.pdf": "irrelevant"}
+				return inv, totals, Manifest{"INV-0000000001-DRAFT.pdf": ManifestEntry{HTMLHash: "irrelevant"}}
 			},
 			wantCurrent: false,
 		},
 		{
-			// The regression this whole split exists for: marking an invoice
+			// The regression the paid-split exists for: marking an invoice
 			// paid used to redden its row until the next render run, because
 			// IsCurrent also demanded a matching -paid.pdf. Payment now lives
 			// in paid-invoices.json, which IsCurrent never reads at all — the
 			// badge judges the archived original and nothing else.
 			name: "paid, with no -paid.pdf built yet",
-			setup: func(t *testing.T) (*invoice.InvoiceJson, money.Totals, Manifest) {
+			setup: func(t *testing.T, dir string) (*invoice.InvoiceJson, money.Totals, Manifest) {
 				inv := stalenessFixture("INV-0000000001", invoice.InvoiceJsonStatusIssued)
 				totals, err := money.Compute(inv)
 				if err != nil {
 					t.Fatal(err)
 				}
-				mainHTML, err := HTML(inv, totals, nil)
-				if err != nil {
-					t.Fatal(err)
+				return inv, totals, Manifest{
+					"INV-0000000001.pdf": writeStoredPDF(t, dir, "INV-0000000001.pdf", "the pdf as issued"),
 				}
-				return inv, totals, Manifest{"INV-0000000001.pdf": HashHTML(mainHTML)}
 			},
 			wantCurrent: true,
 		},
 		{
 			name: "a stale -paid.pdf is not the original's problem",
-			setup: func(t *testing.T) (*invoice.InvoiceJson, money.Totals, Manifest) {
+			setup: func(t *testing.T, dir string) (*invoice.InvoiceJson, money.Totals, Manifest) {
 				inv := stalenessFixture("INV-0000000001", invoice.InvoiceJsonStatusIssued)
 				totals, err := money.Compute(inv)
 				if err != nil {
 					t.Fatal(err)
 				}
-				mainHTML, err := HTML(inv, totals, nil)
-				if err != nil {
-					t.Fatal(err)
-				}
 				return inv, totals, Manifest{
-					"INV-0000000001.pdf":      HashHTML(mainHTML),
-					"INV-0000000001-paid.pdf": "wrong-hash",
+					"INV-0000000001.pdf":      writeStoredPDF(t, dir, "INV-0000000001.pdf", "the pdf as issued"),
+					"INV-0000000001-paid.pdf": ManifestEntry{PDFHash: "wrong-hash"},
 				}
 			},
 			wantCurrent: true,
@@ -164,8 +266,9 @@ func TestIsCurrent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			chdirRepoRoot(t)
-			inv, totals, manifest := tt.setup(t)
-			if got := IsCurrent(inv, totals, manifest); got != tt.wantCurrent {
+			dir := fixtureBuildDir(t)
+			inv, totals, manifest := tt.setup(t, dir)
+			if got := IsCurrent(inv, totals, manifest, dir); got != tt.wantCurrent {
 				t.Errorf("IsCurrent = %v, want %v", got, tt.wantCurrent)
 			}
 		})

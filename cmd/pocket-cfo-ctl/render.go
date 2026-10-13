@@ -198,8 +198,7 @@ func renderOne(ctx context.Context, renderer render.Renderer, number string, for
 					fmt.Printf("skip  %s (already rendered, use --force to overwrite)\n", t.path)
 
 					if !dryRun {
-						totals, haveTotals, err = backfillManifestEntry(&inv, t, filename, manifest, totals, haveTotals)
-						if err != nil {
+						if err := pinStoredPDF(filename, t.path, manifest); err != nil {
 							return err
 						}
 					}
@@ -236,31 +235,42 @@ func renderOne(ctx context.Context, renderer render.Renderer, number string, for
 		if err := writeAtomic(t.path, pdf); err != nil {
 			return err
 		}
-		manifest[filename] = render.HashHTML(html)
+		manifest[filename] = manifestEntryFor(inv.Status, html, pdf)
 		fmt.Printf("wrote %s\n", t.path)
 	}
 	return nil
 }
 
-func backfillManifestEntry(inv *invoice.InvoiceJson, t target, filename string, manifest render.Manifest, totals money.Totals, haveTotals bool) (money.Totals, bool, error) {
-	if _, ok := manifest[filename]; ok {
-		return totals, haveTotals, nil
+// manifestEntryFor pins what the artifact must keep matching: a draft is
+// re-rendered every run, so it is pinned to the HTML it was rendered from;
+// an issued PDF is write-once, so it is pinned to its own bytes.
+func manifestEntryFor(status invoice.InvoiceJsonStatus, html, pdf []byte) render.ManifestEntry {
+	if status == invoice.InvoiceJsonStatusDraft {
+		return render.ManifestEntry{HTMLHash: render.HashHTML(html)}
 	}
-	if !haveTotals {
-		var err error
-		totals, err = money.Compute(inv)
-		if err != nil {
-			return totals, haveTotals, fmt.Errorf("compute totals: %w", err)
-		}
-		haveTotals = true
+	return render.ManifestEntry{PDFHash: render.HashPDF(pdf)}
+}
+
+// pinStoredPDF records an already-rendered issued PDF's own bytes as its
+// manifest entry — for an entry that is missing entirely, and for a legacy
+// entry that predates PDF pinning and still holds an HTML hash. Either way
+// the PDF file itself is never touched.
+func pinStoredPDF(filename, path string, manifest render.Manifest) error {
+	want, ok := manifest[filename]
+	if ok && want.PDFHash != "" {
+		return nil
 	}
-	html, err := render.HTML(inv, totals, t.paidOn)
+	hash, err := render.HashPDFFile(path)
 	if err != nil {
-		return totals, haveTotals, fmt.Errorf("backfill manifest for %s: %w", filename, err)
+		return fmt.Errorf("pin %s: %w", path, err)
 	}
-	manifest[filename] = render.HashHTML(html)
-	fmt.Printf("backfilled manifest entry for %s\n", filename)
-	return totals, haveTotals, nil
+	manifest[filename] = render.ManifestEntry{PDFHash: hash}
+	if ok {
+		fmt.Printf("migrated manifest entry for %s (pinned to the stored PDF)\n", filename)
+	} else {
+		fmt.Printf("backfilled manifest entry for %s\n", filename)
+	}
+	return nil
 }
 
 func removeStaleDraftPDF(inv invoice.InvoiceJson, manifest render.Manifest, dryRun bool) error {

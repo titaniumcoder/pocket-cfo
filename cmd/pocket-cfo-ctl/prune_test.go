@@ -19,7 +19,7 @@ func TestRunPrune_RemovesDraftPDFWithoutJSON(t *testing.T) {
 	if err := os.WriteFile(orphanPDF, []byte("pdf"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m := render.Manifest{"INV-0000000009-DRAFT.pdf": "deadbeef"}
+	m := render.Manifest{"INV-0000000009-DRAFT.pdf": render.ManifestEntry{HTMLHash: "deadbeef"}}
 	if err := m.Save(renderManifestPath); err != nil {
 		t.Fatal(err)
 	}

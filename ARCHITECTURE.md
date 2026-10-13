@@ -499,6 +499,23 @@ Step 4 does **not** re-trigger the workflow, because commits made with the defau
 
 ### 5.1 Staleness
 
+The staleness badge (`IsCurrent`) judges each artifact against its manifest entry, and
+the two kinds of entry pin different things because the two kinds of artifact fail
+differently:
+
+- **Issued PDFs** are write-once, so their entry records the PDF's own bytes — an
+  immutability check. Re-deriving HTML from the *current* template and comparing it to
+  a hash captured under an older template would flag every issued invoice stale after
+  any template change, with no way to become current again short of violating
+  write-once. Template changes therefore leave issued invoices current; the only drift
+  the badge can report is the PDF file itself no longer matching its pin.
+- **Draft PDFs** are re-rendered on every run, so their entry records the rendered
+  HTML, which the badge re-derives from the current template.
+
+Entries written before the two-hash manifest (plain hash strings) load as HTML pins;
+the next `pocket-cfo-ctl render` run migrates them to PDF pins by hashing the stored
+PDF — without touching it.
+
 Three rules, one per artifact.
 
 | Artifact | Rule |
@@ -643,9 +660,11 @@ Three constraints are load-bearing, each learned by breaking it:
 If the CDN is unreachable, printing degrades to native Chrome: margins still come from
 `@page`, the column headers still repeat via `thead`, the stamps stay fixed, and a
 fallback script removes the running header from the flow. The committed sample PDFs in
-`build/` are pinned to the rendered HTML by `build/render-manifest.json` — a template
-change means re-rendering them (`pocket-cfo-ctl render`) before the manifest test passes
-again; the current samples were re-rendered with the same headless Chrome locally.
+`build/` are pinned by `build/render-manifest.json`, whose entries say what each
+artifact must keep matching — pinned to the rendered HTML for drafts (which get
+re-rendered on every run) and to the PDF's own bytes for issued documents (§5.1); a
+template change therefore leaves every issued sample untouched, and the committed
+samples were rendered with the same headless Chrome locally.
 
 **Both artifacts** are the same template with a flag in the context:
 

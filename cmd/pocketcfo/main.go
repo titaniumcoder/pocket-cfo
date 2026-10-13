@@ -303,7 +303,7 @@ func pdfCurrentMap(invoices []*invoice.InvoiceJson) map[string]bool {
 			current[inv.Number] = false
 			continue
 		}
-		current[inv.Number] = render.IsCurrent(inv, totals, manifest)
+		current[inv.Number] = render.IsCurrent(inv, totals, manifest, buildDir)
 	}
 	return current
 }

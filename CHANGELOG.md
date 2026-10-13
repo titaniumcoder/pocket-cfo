@@ -8,6 +8,8 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-10-13
+
 ### Removed
 - **The in-app chat is gone.** It returns later as a standalone app; until then
   `/chat` is a 404, the menu no longer offers it, and the `openai-go` dependency
@@ -41,8 +43,6 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 ### Changed
 - **Column headers repeat on continuation pages again — but only while the table continues.** The header row sits at the top of every page that still carries line items (aligned to the natural column widths), and a page holding only the payment card is headed by the strip alone. The fix behind it: a text line renders as a full-width block between table segments, because paged.js cannot split a table row that carries a colspan — the split failed silently and the whole table jumped to the next page.
 - **The invoicing page's recipient table sorts case-insensitively by name** ("acme GmbH" beside "Acme AG", not after every capital letter), with the recipient number as tie-break.
-
-## [Unreleased]
 
 ## [4.3.0] - 2026-10-13
 
@@ -611,7 +611,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.4.1...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.5.0...HEAD
+[4.5.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.4.1...v4.5.0
 [4.4.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.4.0...v4.4.1
 [4.4.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.3.0...v4.4.0
 [4.3.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.2.0...v4.3.0

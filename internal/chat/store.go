@@ -26,18 +26,16 @@ var ErrNotFound = errors.New("chat not found")
 var chatIDRE = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
 type Chat struct {
-	Version   int             `json:"version"`
-	ID        string          `json:"id"`
-	Login     string          `json:"login"`
-	Title     string          `json:"title"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
-	Messages  []Message       `json:"messages"`
-	Files     []File          `json:"files,omitempty"`
-	Pending   []PendingChange `json:"pending,omitempty"`
-	Applied   []AppliedChange `json:"applied,omitempty"`
-	Question  *Question       `json:"question,omitempty"`
-	Usage     Usage           `json:"usage"`
+	Version   int       `json:"version"`
+	ID        string    `json:"id"`
+	Login     string    `json:"login"`
+	Title     string    `json:"title"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Messages  []Message `json:"messages"`
+	Files     []File    `json:"files,omitempty"`
+	Question  *Question `json:"question,omitempty"`
+	Usage     Usage     `json:"usage"`
 }
 
 type Question struct {
@@ -53,29 +51,10 @@ type File struct {
 	Message int    `json:"message"`
 }
 
-type PendingChange struct {
-	Tool      string          `json:"tool"`
-	Arguments json.RawMessage `json:"arguments"`
-	Summary   string          `json:"summary,omitempty"`
-	Diff      string          `json:"diff,omitempty"`
-	Error     string          `json:"error,omitempty"`
-}
-
-type AppliedChange struct {
-	Path      string    `json:"path"`
-	Message   string    `json:"message"`
-	BeforeSHA string    `json:"before_sha,omitempty"`
-	AfterSHA  string    `json:"after_sha"`
-	Created   bool      `json:"created,omitempty"`
-	At        time.Time `json:"at"`
-	Reverted  bool      `json:"reverted,omitempty"`
-}
-
 type Summary struct {
 	ID        string
 	Title     string
 	UpdatedAt time.Time
-	Pending   int
 }
 
 type Store struct {
@@ -173,7 +152,7 @@ func (s *Store) List(login string) ([]Summary, error) {
 			log.Printf("chat: skipping %s: %v", e.Name(), err)
 			continue
 		}
-		out = append(out, Summary{ID: c.ID, Title: c.Title, UpdatedAt: c.UpdatedAt, Pending: len(c.Pending)})
+		out = append(out, Summary{ID: c.ID, Title: c.Title, UpdatedAt: c.UpdatedAt})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
 	return out, nil

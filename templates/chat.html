@@ -20,10 +20,9 @@
       <div class="chat-crumbs"><a href="/chat">Chats</a><span class="crumb-sep">›</span><span class="chat-title">{{.Chat.Title}}</span></div>
       <form method="post" action="/chat/{{.Chat.ID}}/close" class="inline-form"><button class="link" type="submit">Close chat</button></form>
     </div>
-    {{if not .Writable}}<p class="stale-note">Writes are not configured (<code>GITHUB_DATA_TOKEN</code> is unset), so this chat can read and explain but nothing it stages can be applied.</p>{{end}}
 
     <div id="transcript" class="transcript">
-      {{if not .Rows}}<p class="not-configured">Say what you want to do, or attach a bank statement (CSV) and ask to reconcile it.</p>{{end}}
+      {{if not .Rows}}<p class="not-configured">Ask anything about the company's money — the budget, a month's spending, an invoice.</p>{{end}}
       {{range .Rows}}
       {{if eq .Kind "user"}}<div class="msg user"><pre>{{.Text}}</pre></div>
       {{else if eq .Kind "note"}}<div class="msg note">{{.Text}}</div>
@@ -58,32 +57,6 @@
     </form>
   </section>
 
-  <aside class="panel chat-changes" id="changes" data-chat="{{.Chat.ID}}">
-    <h2 class="panel-title">Changes</h2>
-    <p id="changes-status" class="turn-status"></p>
-    <h3 class="config-group">Pending{{if .Chat.Pending}} · {{len .Chat.Pending}}{{end}}</h3>
-    {{if not .Chat.Pending}}<p class="not-configured">Nothing waiting for approval.</p>{{else}}
-    <ol class="pending">
-      {{range $i, $p := .Chat.Pending}}
-      <li class="change{{if $p.Error}} failed{{end}}">
-        <div class="change-head"><code>{{$p.Tool}}</code>{{if $p.Error}} <span class="badge error">failed</span>{{end}}<button class="link chat-action" type="button" data-action="discard" data-index="{{$i}}">Discard</button></div>
-        {{if $p.Error}}<p class="error">{{$p.Error}}</p>{{end}}
-        {{if $p.Diff}}<pre class="diff">{{$p.Diff}}</pre>{{else}}{{if $p.Summary}}<pre class="summary">{{$p.Summary}}</pre>{{end}}{{end}}
-        <details class="args-details"><summary>arguments</summary><pre class="args">{{printf "%s" $p.Arguments}}</pre></details>
-      </li>
-      {{end}}
-    </ol>
-    {{if .Writable}}<p><button class="button chat-action" type="button" data-action="apply" data-confirm="Commit every pending change to the data repo?">Approve all</button></p>{{end}}
-    {{end}}
-    <h3 class="config-group">Applied</h3>
-    {{if not .Chat.Applied}}<p class="not-configured">Nothing applied from this chat yet.</p>{{else}}
-    <ol class="applied">
-      {{range $i, $a := .Chat.Applied}}
-      <li class="{{if $a.Reverted}}reverted{{end}}"><div class="applied-what"><code>{{$a.Path}}</code><span class="applied-msg">{{$a.Message}} <span class="since">{{$a.At.Format "02 Jan 15:04"}}</span></span></div>{{if $a.Reverted}}<span class="badge">reverted</span>{{else if $.Writable}}<button class="link chat-action" type="button" data-action="revert" data-index="{{$i}}" data-confirm="Commit a revert of this change to the data repo?">Revert</button>{{end}}</li>
-      {{end}}
-    </ol>
-    {{end}}
-  </aside>
   </div>
 </main>
 </body>

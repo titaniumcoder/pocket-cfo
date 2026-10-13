@@ -10,13 +10,13 @@ A freelancer's finance tracker and invoicing tool in one Go binary, MIT licensed
   and shown beside the plan.
 - **Invoicing** (`/invoicing`) — one JSON file per invoice, PDFs rendered by CI, a
   read-only viewer, and per-client portal links.
-- **An agent-facing write API** (`/api`, `/mcp`) — so a reconciliation agent can record
-  and correct transactions, and bring an account's balance up to date, without a shell.
-  Every accepted write is a git commit; see [`docs/HERMES.md`](docs/HERMES.md).
-- **A Chat tab** (`/chat`, administrators only) — the same loop driven from inside the app:
-  upload a bank statement, talk it through with a model behind any OpenAI-compatible
-  endpoint, approve the changes it proposes — one commit per touched file — and revert one
-  with a click. Present only when `OPENAI_API_KEY` is set; see ARCHITECTURE.md §12.
+- **An agent-facing read API** (`/api`, `/mcp`) — six read tools over the budget, the
+  committed actuals, the search history, the accounts and the invoices, so an agent can
+  answer questions about the company's money. Data changes happen in the data repo, via
+  git; see [`docs/HERMES.md`](docs/HERMES.md).
+- **A Chat tab** (`/chat`, administrators only) — a finance Q&A driven from inside the
+  app, grounded in the same read tools, behind any OpenAI-compatible endpoint. Present
+  only when `OPENAI_API_KEY` is set; see ARCHITECTURE.md §12.
 
 Clone it, `make generate`, `go run ./cmd/pocketcfo`, and it serves the fabricated sample
 data in `data/`. That is enough to look around, and not enough to run a business — for
@@ -170,7 +170,7 @@ Secrets and deployment-specific paths come from the environment. Copy `.envrc.ex
 | `DATA_COMMIT` | `cmd/pocketcfo` | optional — that checkout's git commit, shortened to 7 characters for display. Set both from your data repo's deploy, since the data is bind-mounted and only you know which commit it is |
 | `API2PDF_KEY` | `pocket-cfo-ctl render` only | api2pdf API key; the web app never reads it |
 | `HERMES_API_TOKEN` | `cmd/pocketcfo` | optional — bearer token for the agent API. Unset means `/api/` and `/mcp` are never registered, so they do not exist rather than returning 401 |
-| `GITHUB_DATA_TOKEN` | `cmd/pocketcfo` | optional — fine-grained PAT with `contents: write` on the data repo only, for committing reconciled months |
+| `GITHUB_DATA_TOKEN` | `cmd/pocketcfo` | optional — fine-grained PAT with `contents: read` on the data repo only, for reading the committed months at once |
 | `GITHUB_OAUTH_CLIENT_ID` / `_SECRET` | `cmd/pocketcfo`, prod | the GitHub OAuth App; its callback is `PUBLIC_BASE_URL` + `/auth/callback` |
 | `SESSION_SECRET` | `cmd/pocketcfo`, prod | any random string; encrypts the session cookie |
 | `PUBLIC_BASE_URL` | `cmd/pocketcfo`, prod | the deployed URL |

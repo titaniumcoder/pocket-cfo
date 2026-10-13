@@ -193,12 +193,11 @@ func excerpt(s string) string {
 }
 
 type chatView struct {
-	Header   webui.Header
-	Chat     *chat.Chat
-	Rows     []chatRow
-	Writable bool
-	Running  bool
-	Model    string
+	Header  webui.Header
+	Chat    *chat.Chat
+	Rows    []chatRow
+	Running bool
+	Model   string
 }
 
 func (s *server) chatShow(w http.ResponseWriter, r *http.Request) {
@@ -207,12 +206,11 @@ func (s *server) chatShow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := chatView{
-		Header:   s.header(sess, webui.PageChat, webui.ParsePeriod(r.URL.Query().Get("year"), r.URL.Query().Get("month"))),
-		Chat:     c,
-		Rows:     rowsOf(c),
-		Writable: s.cfg.githubDataToken != "",
-		Running:  s.chatRuns.Active(c.ID),
-		Model:    s.chatClient.Model(),
+		Header:  s.header(sess, webui.PageChat, webui.ParsePeriod(r.URL.Query().Get("year"), r.URL.Query().Get("month"))),
+		Chat:    c,
+		Rows:    rowsOf(c),
+		Running: s.chatRuns.Active(c.ID),
+		Model:   s.chatClient.Model(),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.chatTmpl.Execute(w, view); err != nil {

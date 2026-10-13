@@ -24,7 +24,6 @@ func TestChatsAreCreatedListedSavedAndClosedPerUser(t *testing.T) {
 	}
 	c.Title = "August statement"
 	c.Messages = append(c.Messages, Message{Role: "user", Content: "hi"})
-	c.Pending = append(c.Pending, PendingChange{Tool: "add_transactions", Arguments: []byte(`{}`)})
 	if err := s.Save(c); err != nil {
 		t.Fatal(err)
 	}
@@ -33,12 +32,12 @@ func TestChatsAreCreatedListedSavedAndClosedPerUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Title != "August statement" || len(got.Messages) != 1 || len(got.Pending) != 1 || got.Version != FormatVersion {
+	if got.Title != "August statement" || len(got.Messages) != 1 || got.Version != FormatVersion {
 		t.Errorf("round trip lost something: %+v", got)
 	}
 
 	list, err := s.List("octocat")
-	if err != nil || len(list) != 1 || list[0].ID != c.ID || list[0].Pending != 1 {
+	if err != nil || len(list) != 1 || list[0].ID != c.ID {
 		t.Fatalf("list = %+v, %v", list, err)
 	}
 	if _, err := s.Load("someone-else", c.ID); !errors.Is(err, ErrNotFound) {

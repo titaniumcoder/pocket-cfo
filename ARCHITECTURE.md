@@ -1014,7 +1014,7 @@ fields from its actuals, the `director_loan` block from `accounts.json`, the
 `companyProfitTax` and `dividendTax` entries and any `targetBalance` block from
 config.json — the validators refuse them all rather than silently ignoring them.
 
-## 11. Agent-facing write API
+## 11. Agent-facing read API
 
 `internal/api` is one service with two adapters: REST under `/api` and MCP at `/mcp`.
 Both are gated by a bearer token, and when it is unset neither is registered at all — an
@@ -1022,117 +1022,34 @@ unauthenticated caller gets a 404 and learns nothing about the surface. The serv
 nothing of HTTP; the adapters translate and never compute, which is what stops the two
 drifting apart.
 
-Reads cover the budget, a month's transactions, a description search over committed
-history, and a reconciliation status per month. The search is deliberately the substitute
-for a rules file: an agent asks how a merchant was treated last time and gets the answer
-from what was actually recorded, rather than from a list that drifts out of sync with it.
+**The surface is read-only.** Six tools: the budget categories, the plan for a month or a
+year, a month's committed actuals, a description search over committed history, the
+accounts with their newest reading dates, and the invoices. The search is deliberately
+the substitute for a rules file: an agent asks how a merchant was treated last time and
+gets the answer from what was actually recorded, rather than from a list that drifts out
+of sync with it.
 
-Writes are narrow by construction. Transactions can be **added** and **re-attributed**, a
-planned one-off can be **moved** to the month it was really charged in, the recurring
-amount of a category can be **scheduled to step** from a future month on, and an account
-balance can be **recorded** for a month that has closed. Nothing can be removed — there is
-no flag, no override and no reason that unlocks it, and each write path checks its own
-output before committing rather than trusting itself to stay append-only. A line recorded
-in error is repaired by a human editing the data repo, where the change is reviewed like
-any other. Calling a *scheduled* step off is not a removal in this sense: it takes down a
-future change before it has taken effect, and a month that is already in force it cannot
-touch at all — an already closed budget is fixed in the file.
+Writes used to exist here — statement lines added and re-attributed, balances recorded,
+planned expenses moved, amounts scheduled to step, invoices drafted, issued and paid, and
+whole data files replaced — each one audited as a commit to the data repo. They were
+removed: the audit they provided was the argument for them, but the agent that wants them
+is the same agent that can edit the data repo with git and get a better review than a
+tool description can give. Nothing was lost that the data repo does not do better, and
+the surface that remains needs no trust at all.
 
-**Invoices have three writes, two of them about drafts.** `set_invoice_paid` records a
-payment beside the document (§3.6). `save_draft_invoice` uploads a whole invoice document
-**as a draft, always** — the upload must carry `status: draft` and can never change an
-invoice's state: a draft stays a draft, an upload claiming `issued` is refused rather
-than rewritten, so creating or flipping to issued is not expressible. A `number` left out creates: the next
-number is assigned as max + 1 through a directory listing (`Store.List`), which keeps the
-gapless-sequence check (§4.3) true without trusting the caller to count; a `number` that
-names an existing draft replaces it, as often as the agent likes, because a draft is a
-working document; a number that names an issued invoice is refused forever — the §3.3
-write-once rule holds across the API, and a correction is a new invoice rather than an
-edit. `issue_invoice` is the one way the flag ever moves: it splices `"draft"` →
-`"issued"` in the raw bytes and nothing else, so the committed diff is one line however
-the file is formatted — the same readable-diff discipline the budget byte-surgery uses —
-and the result must still pass the schema and the §4.3 validators before it is committed.
-Both write paths run the full invoice validators, including the regime cross-check and
-the mandatory wording of the note catalog, and **refuse to commit when the catalog cannot
-be loaded** rather than skipping a legal content requirement in silence. An upload
-identical to what is committed changes nothing and commits nothing.
-
-**A draft saved through the API reads back at once; its PDF does not.**
-`get_invoice_document` reads the data repo through the store, so it is current the
-moment the commit lands; the `-DRAFT.pdf` is rendered by the CI build that runs after
-the deploy, so `GET /api/invoices/{number}/pdf` can answer 404 for a few minutes —
-it says so, and the answer is to retry after the deploy rather than re-upload. The
-variants are guarded by state, not by file presence: an issued invoice's `-DRAFT.pdf`
-may still be on disk from before it was issued, and it must not be served.
-
-**A balance closes a month, so `as_of` is a month end and anything else is refused.**
-The reading is that month's closing figure — the figure the month shows beside its
-Available to spend — and only the month is ever read off it. A date in the middle of a
-month would be filed as that month's figure while the rest of the month's spending had not
-happened yet, so it is refused outright rather than silently rounded, as is a month that
-has not ended, since a balance is read off the bank and never projected. The rule belongs to the data rather than to the API: `ValidateAccounts` enforces
-it too, so a hand-edited `accounts.json` carrying a mid-month reading fails to load and
-says why, instead of anchoring every month after it on half a month's spending. Readings are appended and a month that already has one is a conflict: the
-history is what lets a past month keep the figure that was true then. Accounts themselves
-are not created here, because an account declares which pot it belongs to and that decides
-which side of the payroll cascade the money sits on.
-
-**A step may only start in a future month, so an in-force `from_month` is refused.** A
-month that is already in force is an already closed budget, and the answer to fixing it is
-the data repo, not a tool that re-plans the past — so the refusal says exactly that and
-points at `budget.json`. The same guard is why a one-off is out of reach at all: it has
-one price and no months, and a step outside the category's own window could never take
-effect. The write itself is the byte-surgery `move_planned_expense` uses: one category's
-`amount_changes` is spliced in place, the diff guard refuses a result that differs from
-the original by more than that one field, and the result must survive
-`ValidateBudget` before it is committed — the file is hand-maintained and the commit
-diff has to stay a few lines a reviewer can read.
-
-Every accepted write is a **commit to the data repo through the GitHub Contents API**,
-which redeploys the app. Nothing is written to the running container's own data directory:
-that is an image layer or a mount, so a write there would be lost on restart and diverge
-from the repo. This is what makes handing an agent an API tolerable — it is not trusted,
-it is audited, and every change can be read in `git log` and reverted.
-
-**Read-after-write.** A commit takes minutes to become a running image, so between the two
-the app serves the bytes it just committed from memory, keyed by month. The overlay sits in
-the tracker's loaders rather than in this package, because `Actuals.month()`,
-`Budget.File()` and `Accounts.File()` are the single funnels every read passes through —
-one insertion point makes the API and the web pages agree, where four call sites would
-eventually disagree. An
-entry is dropped as soon as the file on disk says the same thing, so nothing has to guess
-at a deploy's duration.
-
-It is memory, never disk. Writing the file would create a second source of truth, be
-replaced by the very deploy the commit triggers, and diverge between instances. The overlay
-cannot disagree with the commit because it *is* the commit, and it carries bytes through the
-same parse and validation a file gets, so it can surface nothing a file could not.
-
-The limit is per-process: a second instance has no overlay from the first, and a change made
-outside the app appears only once deployed. Both are stated in the tool descriptions.
-
-**A GitHub webhook is the obvious way to close that, and is deliberately not built.** It
-would not actually close it: a webhook is delivered to one instance through the load
-balancer, so the other instances stay exactly as stale — making it work would need fan-out
-across them, which means a shared store or a pub/sub channel, and at that point the overlay
-should live in the shared store instead. Against that: the commit triggers a deploy that
-restarts every instance within the same few minutes, which is total invalidation for free;
-`min_machines_running = 0` means one machine is the normal case; and a webhook is a new
-public endpoint with a secret to hold, for a few minutes of freshness on a second machine
-that usually is not running. If cross-instance freshness ever does matter, the honest fix is
-a shared store for the overlay, not a notification. (§10 reaches the same verdict for Toggl's
-webhooks, for its own reasons.)
-
-`docs/HERMES.md` is the contract the agent works to, and the MCP tool descriptions are
-where it actually reads it.
+Reads answer from the data repo directly — through the same loaders the pages use, so a
+figure this API reports and a figure on the page cannot drift. There is no read-after-
+write overlay to reason about, no deploy lag between surfaces: what is committed is what
+every reader sees. `docs/HERMES.md` is the contract the agent works to, and the MCP tool
+descriptions are where it actually reads it.
 
 ## 12. In-app chat
 
-The 2.0 feature: the reconciliation loop of §11 driven from inside the app rather than by
-an external agent. A **Chat** tab, for administrators only, where a bank statement is
-uploaded and reconciled in a conversation with a model. It reuses the §11 service as its
-tool surface — `internal/api/tools.go` is one SDK-free catalog that both the MCP adapter
-and the chat read, so the two cannot drift — and adds four things around it.
+The 2.0 feature, in its current shape: a **Chat** tab, for administrators only, where the
+administrator asks questions about the company's money and gets answers grounded in the
+same tools §11 exposes. `internal/api/tools.go` is one SDK-free catalog that both the MCP
+adapter and the chat read, so the two cannot drift — six read tools, no write path, and
+the chat adds nothing around them but the conversation.
 
 **The model is reached through an OpenAI-compatible endpoint, via the OpenAI Go SDK.**
 Not through Anthropic's or any one vendor's API: `OPENAI_BASE_URL` points at OpenAI,
@@ -1141,37 +1058,19 @@ passed through verbatim, which is what lets an OpenRouter preset stand in for a 
 SDK is the second third-party dependency linked into the binary and is held to the same
 three rules as the MCP SDK: one importing file (`internal/chat/openai.go`), no SDK type
 past its boundary, and tests that drive a stub endpoint with hand-written JSON. Calls are
-not streamed token by token; the browser sees the *steps* — each assistant message, tool
-result and staged change — as newline-delimited JSON, which is enough to follow along and
-far simpler than SSE parsing on both ends. Retention is the provider's contract, not a
-request flag: the app always sends `store: false`, and `OPENAI_EXTRA_BODY` merges any
-provider-specific field into every request (OpenRouter's `{"provider":{"zdr":true}}`
-routes only to zero-data-retention endpoints); beyond that there is nothing a request can
-enforce, and the doc says so rather than pretending otherwise.
+not streamed token by token; the browser sees the *steps* — each assistant message and
+tool result — as newline-delimited JSON, which is enough to follow along and far simpler
+than SSE parsing on both ends. Retention is the provider's contract, not a request flag:
+the app always sends `store: false`, and `OPENAI_EXTRA_BODY` merges any provider-specific
+field into every request (OpenRouter's `{"provider":{"zdr":true}}` routes only to
+zero-data-retention endpoints); beyond that there is nothing a request can enforce, and
+the doc says so rather than pretending otherwise.
 
-**Ids come from a tool.** A model cannot hash, so `derive_transaction_ids` (§11, MCP and
-REST alike) returns the stable id of every statement line; `add_transactions` keeps
-requiring `id`, and nothing in the service derives one silently.
-
-**Writes are staged, not committed.** Hermes committed whatever it decided, one commit per
-call; the chat does not. Every write tool runs against a *staging store* — a `Store`
-overlay that answers reads from its buffer and turns `Put` into a pending file — with
-throwaway loaders and a copy of the tracker, so every validator and the read-after-write
-overlay behave exactly as for a real write while nothing reaches GitHub or the dashboard.
-The chat shows the dry run as a pending change; the user approves them all at once or
-discards one. Approval replays the pending calls on a fresh staging (base shas are read
-afresh, so a change that no longer applies fails its own call and stops the approval) and
-flushes **one commit per touched file**, however many calls produced it, with the joined
-messages and who approved. This is the "minimise commits" rule made mechanical, and the
-approval step is the guard rail an external agent never had.
-
-**Revert is a git-level undo, deliberately outside the no-removal rule.** §11's writes
-cannot remove anything, and that stays true. But an applied change is one commit whose
-before-state is known — the receipt carries the previous blob's sha — so the chat can
-commit it back (`git/blobs/{sha}` then `PUT`), or delete a file the change created. It
-refuses once the file has moved on since, and a reverted change is marked so it cannot be
-reverted twice. The reasoning is the same as §11's: it is audited, not trusted; the revert
-is itself a readable commit.
+The chat originally drove §11's write tools with a staging layer — pending changes, an
+approval rail, apply/discard/revert — because reconciliation-in-chat was the point. With
+the writes gone the staging layer went with them: the reads execute directly, and a data
+change is asked for, not made. What remains of the machinery is the part that makes a
+conversation work.
 
 **Chats are files on the volume, and a format bump deletes them.** The app still never
 writes to `DATA_DIR`; chats live under `STATE_DIR/chat`, next to the Toggl cache in
@@ -1179,18 +1078,10 @@ writes to `DATA_DIR`; chats live under `STATE_DIR/chat`, next to the Toggl cache
 everything the app keeps between restarts — one JSON file per chat under a `0700`
 directory per user, written atomically. A chat
 therefore survives a reload, a redeploy and Fly's auto-stop, which browser-held state or
-process memory would not — every approval triggers the very redeploy that would have lost
-it. A `VERSION` marker mirrors the Toggl cache's, and a release that changes the format
-deletes every old chat on its first start rather than migrating it. That is a deliberate
-small-project trade-off: a chat is a working document, not a record — everything that
-matters is in the data repo — so a migration would be code nobody reads for data nobody
-misses. `/info` counts the chats and can delete them all, for the same reason.
-
-The transcript is also the model's memory of what the user did: an approval, a discard or
-a revert is written into it as a system note, so the next turn does not re-stage what was
-just committed or undo what was just reverted. The turn loop saves the chat after every
-completed round — the assistant message together with all its tool results — so a restart
-mid-turn never leaves a dangling tool call for the next request to trip on.
+process memory would not. A `VERSION` marker mirrors the Toggl cache's, and a release
+that changes the format deletes every old chat on its first start rather than migrating
+it. That is a deliberate small-project trade-off: a chat is a working conversation, not a
+record. `/info` counts the chats and can delete them all, for the same reason.
 
 **A turn runs on the server, not in the request.** The first version streamed the turn on
 the request that started it, so switching tabs aborted the fetch, cancelled the context
@@ -1199,26 +1090,17 @@ holding the chat's lock; a per-process registry buffers its events, and
 `GET /chat/{id}/events` replays them from any index as Server-Sent Events and follows the
 rest live. The page opens that stream on load when a turn is running, disables the
 composer, and reloads on `done` — so a tab switch, a reload or a closed laptop changes
-nothing: the chat file has every completed round and the stream has the rest. Approvals,
-discards, reverts and closing answer 409 while a turn runs. The registry is memory on one
-machine, which is the §11 verdict again: one instance is the normal case, and a turn that
-dies with the process leaves a chat that is exactly as complete as its last saved round.
+nothing: the chat file has every completed round and the stream has the rest. The
+registry is memory on one machine, which is the §11 verdict again: one instance is the
+normal case, and a turn that dies with the process leaves a chat that is exactly as
+complete as its last saved round.
 
 **Asking is the normal mode.** An `ask_user` tool, offered only in the chat, ends the turn
 with a question and clickable options; the question is stored with the chat and rendered
 as a card, and the answer resumes the turn as that call's result. A new message sent
 while a question is open answers it too, so the model is never left with a tool call it
-cannot account for. The system prompt says so plainly: nothing unsure is staged, it is
-asked.
-
-**The three hand-maintained files are editable, whole, with the approval as the guard.**
-`read_data_file` and `write_data_file` serve `budget.json`, `accounts.json` and
-`config.json` for what the narrower tools cannot express — a category
-created, a rule added. A write must parse as the file's own type and pass its validator
-before anything is committed, and the result carries a unified diff, which is what the
-Changes rail shows and what the approval is a decision about. The narrower tools stay
-the first choice because they cannot express a wrong shape; the whole-file write is the
-escape hatch, and its guard is the human reading three changed lines.
+cannot account for. The system prompt says so plainly: what is not in the data is asked,
+not guessed.
 
 ## 13. What is built, and what is deliberately not
 

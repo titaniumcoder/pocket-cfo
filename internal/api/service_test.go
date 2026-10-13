@@ -478,7 +478,7 @@ func TestScanYears(t *testing.T) {
 }
 
 // TestBudgetForMonthMatchesTheDashboard is the plan's central API assertion:
-// the figures Hermes matches against must be the ones the page shows. Drift
+// the figures an agent matches against must be the ones the page shows. Drift
 // here would poison its category matching silently.
 func TestBudgetForMonthMatchesTheDashboard(t *testing.T) {
 	s := newService(t)
@@ -542,7 +542,7 @@ func splitService(t *testing.T) *Service {
 	}
 }
 
-// TestSearchReportsSplitParts: Hermes searches history to learn how a merchant
+// TestSearchReportsSplitParts: an agent searches history to learn how a merchant
 // was treated last time, so "70 groceries, 30 pocket, out of 100" is the
 // answer — one result carrying its parts, not a result per part.
 func TestSearchReportsSplitParts(t *testing.T) {

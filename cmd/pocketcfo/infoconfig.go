@@ -87,10 +87,10 @@ func (s *server) configGroups() []configGroup {
 			{Name: "toggl2ProjectIds", Value: orUnset(f.Toggl2Projects)},
 			{Name: "TOGGL_REFRESH_INTERVAL", Value: togglRefreshInterval().String()},
 		}},
-		{Name: "Hermes API", Rows: []configRow{
-			{Name: "HERMES_API_TOKEN", Value: maskSecret(c.hermesAPIToken), Secret: true},
+		{Name: "Agent API", Rows: []configRow{
+			{Name: "AGENT_API_TOKEN", Value: maskSecret(c.agentAPIToken), Secret: true},
 			{Name: "GITHUB_DATA_TOKEN", Value: maskSecret(c.githubDataToken), Secret: true},
-			{Name: "API routes", Value: enabledIf(c.hermesAPIToken != "")},
+			{Name: "API routes", Value: enabledIf(c.agentAPIToken != "")},
 			{Name: "Writes", Value: enabledIf(c.githubDataToken != "")},
 			{Name: "Write target", Value: orUnset(c.repo)},
 			{Name: "GITHUB_API_URL", Value: orUnset(c.githubAPIURL)},

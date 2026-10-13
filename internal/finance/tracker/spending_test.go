@@ -22,7 +22,7 @@ func TestChangeRequestCarriesTheExactAmount(t *testing.T) {
 		t.Error("the amount was rounded")
 	}
 	// The screen reads 03.08.2026 and this deliberately does not: pasted to
-	// Hermes, a day-first date could be read as the 8th of January.
+	// an agent, a day-first date could be read as the 8th of January.
 	if strings.Contains(tx.ChangeRequest(), "03.08.2026") {
 		t.Error("the copy text uses the display format, which is ambiguous to a reader that does not know the convention")
 	}
@@ -155,7 +155,7 @@ func TestCopyLinkWorksWithoutASecureContext(t *testing.T) {
 	// The control is an icon, and both states ship inside the link so the
 	// confirmation swaps rather than rewrites — rewriting the contents is
 	// what would leave an empty control behind.
-	if strings.Contains(body, `title="Copy a change request for Hermes">copy</a>`) {
+	if strings.Contains(body, `title="Copy a change request for the agent">copy</a>`) {
 		t.Error("the copy control is still a word")
 	}
 	for _, want := range []string{`class="i-copy"`, `class="i-done"`} {

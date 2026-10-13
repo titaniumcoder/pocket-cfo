@@ -240,7 +240,7 @@ var templates = `
       {{if .Untracked}}
       <h3 class="sg-span sg-untracked">{{untracked .UntrackedCount}}Untracked cash &mdash; {{eur .UntrackedCents}}</h3>
       <div class="sg-row"><span class="sg-head col-secondary">Date</span><span class="sg-head sg-desc">Description</span><span class="sg-head col-secondary">Account</span><span class="sg-head num">Amount</span><span class="sg-head copy-col no-print"></span></div>
-      {{range .Untracked}}<div class="sg-row sg-untracked-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}{{if .Reason}} <span class="untracked-note">{{.Reason}}</span>{{end}}</span><span class="col-secondary">{{.Account}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
+      {{range .Untracked}}<div class="sg-row sg-untracked-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}{{if .Reason}} <span class="untracked-note">{{.Reason}}</span>{{end}}</span><span class="col-secondary">{{.Account}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for the agent" aria-label="Copy a change request for the agent">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
       {{end}}
 
       <div class="sg-row"><span class="sg-head col-secondary">Date</span><span class="sg-head sg-desc">Description</span><span class="sg-head col-secondary">Account</span><span class="sg-head num">Amount</span><span class="sg-head copy-col no-print"></span></div>
@@ -249,7 +249,7 @@ var templates = `
       <h3 class="sg-span">{{.Name}}{{if .Company}} <small>(company)</small>{{end}}</h3>
       {{range .Categories}}
       <h4 class="sg-span sg-cat" id="cat-{{.ID}}">{{.Name}}{{if .Mistimed}} <span class="mistimed-inline">{{mark "mistimed"}}{{.Note}}</span>{{end}}</h4>
-      {{range .Transactions}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}</span><span class="col-secondary">{{.Account}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
+      {{range .Transactions}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}</span><span class="col-secondary">{{.Account}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for the agent" aria-label="Copy a change request for the agent">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
       <div class="sg-row sg-foot"><span class="col-secondary"></span><span class="sg-desc"></span><span class="budget-of col-secondary">(Budget: {{eur .PlannedCents}})</span><span class="num{{if .Status}} flagged{{end}}">{{mark .Status}}{{eur .ActualCents}}</span><span class="copy-col no-print"></span></div>
       {{end}}
       {{end}}
@@ -257,13 +257,13 @@ var templates = `
       {{if .Unmatched}}
       <h3 class="sg-span">Not in this month&rsquo;s plan</h3>
       <div class="sg-row"><span class="sg-head col-secondary">Date</span><span class="sg-head sg-desc">Description</span><span class="sg-head col-secondary">Category</span><span class="sg-head num">Amount</span><span class="sg-head copy-col no-print"></span></div>
-      {{range .Unmatched}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}</span><span class="col-secondary">{{.Category}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
+      {{range .Unmatched}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}</span><span class="col-secondary">{{.Category}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for the agent" aria-label="Copy a change request for the agent">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
       {{end}}
 
       <h3 class="sg-span">Not budget expenses</h3>
       {{if .Ignored}}
       <div class="sg-row"><span class="sg-head col-secondary">Date</span><span class="sg-head sg-desc">Description</span><span class="sg-head col-secondary">Reason</span><span class="sg-head num">Amount</span><span class="sg-head copy-col no-print"></span></div>
-      {{range .Ignored}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}</span><span class="col-secondary">{{.Reason}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
+      {{range .Ignored}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}</span><span class="col-secondary">{{.Reason}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for the agent" aria-label="Copy a change request for the agent">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
       {{else}}<p class="sg-span muted">None.</p>{{end}}
     </div>
 

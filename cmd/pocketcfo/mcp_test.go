@@ -182,7 +182,7 @@ func TestMCPAndRESTAgree(t *testing.T) {
 }
 
 // TestMCPServiceErrorsSurfaceTheirCode: a refusal must carry the same code the
-// REST adapter would map, so Hermes can react identically either way.
+// REST adapter would map, so an agent can react identically either way.
 func TestMCPServiceErrorsSurfaceTheirCode(t *testing.T) {
 	s := apiServer(t, apiTestToken, "prod")
 

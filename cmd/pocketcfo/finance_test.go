@@ -620,7 +620,7 @@ func TestRoutesRegisterWithoutConflict(t *testing.T) {
 	// Both with and without the API, since it registers conditionally.
 	newTestClientServer(t).routes()
 	withAPI := newTestClientServer(t)
-	withAPI.cfg.hermesAPIToken = "token"
+	withAPI.cfg.agentAPIToken = "token"
 	withAPI.routes()
 }
 

@@ -2,7 +2,7 @@
 
 `ARCHITECTURE.md` is the canonical design doc for the **invoicing** side — read it first
 when working there. The finance tracker's design lives inline in `internal/finance`, and
-the agent-facing write surface in `docs/HERMES.md`. This file only records conventions
+the agent-facing read surface in `docs/AGENT-API.md`. This file only records conventions
 that aren't obvious from the code itself.
 
 ## Conventions
@@ -39,10 +39,10 @@ that aren't obvious from the code itself.
   exception is `config.json` (pure deployment tunables, not data — see
   `internal/finance/config`).
 - **Writes go through git, never to disk.** `DATA_DIR` is an ephemeral mounted checkout:
-  a write landing there is lost on restart and diverges from the repo. Everything the
-  Hermes API accepts is committed through the GitHub Contents API instead, which is what
-  makes an agent-facing write surface tolerable — it isn't trusted, it's audited. See
-  `docs/HERMES.md`.
+  a write landing there is lost on restart and diverges from the repo. Every data change
+  is a hand edit in the data repo, committed via git — nothing in the app or the agent
+  surface writes to disk, and `pocket-cfo-ctl validate` checks the result before it is
+  pushed. See `docs/AGENT-API.md`.
 - **The code explains itself; comments do not.** Go code here carries no comments.
   When a block needs explaining, that is the signal to extract it into a function
   whose name is the explanation — `refuseDestruction`, `privateExpenseStartMonth`,

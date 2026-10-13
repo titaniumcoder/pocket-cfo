@@ -12,6 +12,9 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 - **The month an invoice counts as income can be written down per invoice.** `data/usable-invoices.json` overrides the default (the month after the invoice fell due) — an early-paying client, a December invoice booked in January. Only written-down overrides live there; the file staying empty is the ordinary case, and `pocket-cfo-ctl validate` refuses an override for a draft, an unknown number, or a month before the invoice was due.
 - **Invoice line descriptions take a small formatting subset.** A newline is a line break, `**bold**` and `*italic*` are emphasis, and consecutive lines starting with `- ` render as a bullet list — in the PDF and the client portal. The text is escaped before the formatting pass, so nothing but those shapes can be produced.
 
+### Changed
+- **`HERMES_API_TOKEN` is now `AGENT_API_TOKEN`, and the agent-facing docs are `docs/AGENT-API.md`.** The surface was never Hermes-specific — any AI client speaks it — so the name no longer pretends otherwise. Same contract, same routes, one rename; unset means the routes are not registered, exactly as before.
+
 ## [4.0.0] - 2026-10-13
 
 ### Changed

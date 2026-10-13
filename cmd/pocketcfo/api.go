@@ -21,7 +21,7 @@ const apiRequestTimeout = 30 * time.Second
 const mcpServerVersion = "5"
 
 func (s *server) registerAPI(mux *http.ServeMux) {
-	if s.cfg.hermesAPIToken == "" {
+	if s.cfg.agentAPIToken == "" {
 		return
 	}
 	mux.HandleFunc("GET /api/budget/categories", s.apiBudgetCategories)
@@ -47,7 +47,7 @@ func (s *server) apiAuthorized(w http.ResponseWriter, r *http.Request) bool {
 	if strings.HasPrefix(header, prefix) {
 		token = header[len(prefix):]
 	}
-	want := s.cfg.hermesAPIToken
+	want := s.cfg.agentAPIToken
 	if want == "" || subtle.ConstantTimeCompare([]byte(token), []byte(want)) != 1 {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		writeAPIError(w, &api.Error{Code: "unauthorized", Message: "a valid bearer token is required"}, http.StatusUnauthorized)

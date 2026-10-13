@@ -13,7 +13,7 @@ A freelancer's finance tracker and invoicing tool in one Go binary, MIT licensed
 - **An agent-facing read API** (`/api`, `/mcp`) — six read tools over the budget, the
   committed actuals, the search history, the accounts and the invoices, so an agent can
   answer questions about the company's money. Data changes happen in the data repo, via
-  git; see [`docs/HERMES.md`](docs/HERMES.md).
+  git; see [`docs/AGENT-API.md`](docs/AGENT-API.md).
 - **A Chat tab** (`/chat`, administrators only) — a finance Q&A driven from inside the
   app, grounded in the same read tools, behind any OpenAI-compatible endpoint. Present
   only when `OPENAI_API_KEY` is set; see ARCHITECTURE.md §12.
@@ -169,7 +169,7 @@ Secrets and deployment-specific paths come from the environment. Copy `.envrc.ex
 | `DATA_UPDATED_AT` | `cmd/pocketcfo` | optional — when the mounted data checkout was last updated, `YYYY-MM-DD`. Shown under the title; unset shows nothing |
 | `DATA_COMMIT` | `cmd/pocketcfo` | optional — that checkout's git commit, shortened to 7 characters for display. Set both from your data repo's deploy, since the data is bind-mounted and only you know which commit it is |
 | `API2PDF_KEY` | `pocket-cfo-ctl render` only | api2pdf API key; the web app never reads it |
-| `HERMES_API_TOKEN` | `cmd/pocketcfo` | optional — bearer token for the agent API. Unset means `/api/` and `/mcp` are never registered, so they do not exist rather than returning 401 |
+| `AGENT_API_TOKEN` | `cmd/pocketcfo` | optional — bearer token for the agent API. Unset means `/api/` and `/mcp` are never registered, so they do not exist rather than returning 401 |
 | `GITHUB_DATA_TOKEN` | `cmd/pocketcfo` | optional — fine-grained PAT with `contents: read` on the data repo only, for reading the committed months at once |
 | `GITHUB_OAUTH_CLIENT_ID` / `_SECRET` | `cmd/pocketcfo`, prod | the GitHub OAuth App; its callback is `PUBLIC_BASE_URL` + `/auth/callback` |
 | `SESSION_SECRET` | `cmd/pocketcfo`, prod | any random string; encrypts the session cookie |
@@ -268,7 +268,7 @@ not propose a pre-release tag to a project running a stable one.
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — the design: data model, tax regimes, rendering,
   the finance tracker, the agent API, the in-app chat.
-- [`docs/HERMES.md`](docs/HERMES.md) — the contract a reconciliation agent works to.
+- [`docs/AGENT-API.md`](docs/AGENT-API.md) — the contract an AI client works to.
 - [`AGENTS.md`](AGENTS.md) — conventions, and how releases are cut.
 
 ## License

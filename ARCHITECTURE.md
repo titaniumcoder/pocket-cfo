@@ -2,15 +2,15 @@
 
 Two halves in one binary: **invoicing**, and a **finance tracker**. Sections 1–7 and 10
 are the invoicing side, which is the older and more constrained of the two; §8 covers the
-web app that serves both; §10 the finance tracker; §11 the agent-facing write API.
+web app that serves both; §10 the finance tracker; §11 the agent-facing read API.
 
 **Code and data are separate repos.** This one is public and MIT licensed and carries
 fabricated sample data; a private data repo holds one business's real data and bakes it
 into the published image. See README.md for setting up the second one.
 
 **One JSON file per invoice, and CI builds the PDFs.** Invoice data is edited by hand and
-committed; it is never edited by the app. Finance data has one exception — the agent API
-in §10 — and that writes by committing to the data repo, never to its own disk.
+committed; it is never edited by the app or by the agent surface (§11) — an agent asked
+for a change names the file and the edit and stops, and a person commits it.
 
 Reference documents: `INV-0000000001` (Swiss recipient, non-EU place of supply) and
 `INV-0000000002` (Austrian recipient, EU reverse charge). Between them they cover both
@@ -647,8 +647,8 @@ build step would be more machinery than the data justifies.
 ## 8. Web app
 
 Reads `data/` and `build/` from local disk (`DATA_DIR`/`BUILD_DIR`, see §2), same as
-`pocket-cfo-ctl`. No database. It is read-only for invoicing; the one write path is the
-agent API in §11, which commits to the data repo rather than to disk.
+`pocket-cfo-ctl`. No database. It is read-only — the agent-facing API in §11 is too;
+every data change is a git commit in the data repo, never a write to the app's disk.
 
 Reading `build/` from GitHub via the Contents API instead of disk, cached with an ETag,
 remains a possible direction and is not built. It would buy little now that the image
@@ -1057,7 +1057,7 @@ the surface that remains needs no trust at all.
 Reads answer from the data repo directly — through the same loaders the pages use, so a
 figure this API reports and a figure on the page cannot drift. There is no read-after-
 write overlay to reason about, no deploy lag between surfaces: what is committed is what
-every reader sees. `docs/HERMES.md` is the contract the agent works to, and the MCP tool
+every reader sees. `docs/AGENT-API.md` is the contract an AI client works to, and the MCP tool
 descriptions are where it actually reads it.
 
 ## 12. In-app chat

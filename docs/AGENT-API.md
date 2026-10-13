@@ -1,14 +1,15 @@
-# Hermes
+# The agent API
 
-How a read-only agent talks to PocketCFO. Most of the contract lives in the MCP tool
-descriptions, where the agent actually reads it; this file is the workflow around them.
+How a read-only AI client — an agent, a script, an assistant — talks to PocketCFO. Most
+of the contract lives in the MCP tool descriptions, where the model actually reads it;
+this file is the workflow around them.
 
 Both surfaces expose the same service, so they never disagree:
 
 - **MCP** at `/mcp` — typed tools with schemas. Preferred.
 - **REST** under `/api/` — the same operations for anything scripted.
 
-Both need `Authorization: Bearer $HERMES_API_TOKEN`. Without that variable set the routes
+Both need `Authorization: Bearer $AGENT_API_TOKEN`. Without that variable set the routes
 are not registered at all: an unauthenticated caller gets a 404 and learns nothing, not
 even that the surface exists.
 

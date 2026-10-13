@@ -130,7 +130,7 @@ func TestPlannedIgnoresMinimalMode(t *testing.T) {
 }
 
 // TestPlannedMatchesForMonth is the assertion that stops the API drifting from
-// the dashboard, which is the failure that would quietly poison Hermes'
+// the dashboard, which is the failure that would quietly poison an agent's
 // matching: every id it offers must carry the figure the page shows.
 func TestPlannedMatchesForMonth(t *testing.T) {
 	b := plannedBudget(t)

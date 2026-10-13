@@ -20,7 +20,7 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
 
-const apiTestToken = "test-hermes-token"
+const apiTestToken = "test-agent-token"
 
 const apiRentCategory = "00000000-0000-4000-8000-000000000001"
 
@@ -43,7 +43,7 @@ const apiActualsJSON = `{
   ]
 }`
 
-// apiServer builds a server with the Hermes routes configured, over in-memory
+// apiServer builds a server with the agent API routes configured, over in-memory
 // data. token empty means the routes are never registered.
 func apiServer(t *testing.T, token, env string) *server {
 	t.Helper()
@@ -68,7 +68,7 @@ func apiServer(t *testing.T, token, env string) *server {
 		"actuals/2025-11.json": &fstest.MapFile{Data: []byte(apiOldActualsJSON)},
 	}
 	return &server{
-		cfg: config{hermesAPIToken: token, env: env, sessionSecret: "test-secret"},
+		cfg: config{agentAPIToken: token, env: env, sessionSecret: "test-secret"},
 		tracker: &tracker.Tracker{
 			Budget:   &tracker.Budget{FS: budgetFS},
 			Accounts: &tracker.Accounts{FS: budgetFS},
@@ -339,7 +339,7 @@ func TestAPIReadEndpoints(t *testing.T) {
 }
 
 // TestAPIBudgetMatchesTheDashboard: the API drifting from the page is the
-// failure that would quietly poison Hermes' matching.
+// failure that would quietly poison an agent's matching.
 func TestAPIBudgetMatchesTheDashboard(t *testing.T) {
 	s := apiServer(t, apiTestToken, "prod")
 	w := apiGet(t, s, "/api/budget/2026-08", apiTestToken)
@@ -533,7 +533,7 @@ func TestAPIStatusMapping(t *testing.T) {
 	}
 }
 
-func TestRESTHonoursTheSearchFiltersHERMESRelieson(t *testing.T) {
+func TestRESTHonoursTheSearchFiltersAnAgentReliesOn(t *testing.T) {
 	s := apiServer(t, apiTestToken, "prod")
 
 	all := apiGet(t, s, "/api/transactions?include_ignored=true", apiTestToken)

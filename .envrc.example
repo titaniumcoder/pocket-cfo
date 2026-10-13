@@ -12,13 +12,9 @@ export DATA_COMMIT=
 
 # Only pocket-cfo-ctl render reads this; the web app does not need it.
 export API2PDF_KEY=
-# Shared bearer token for the Hermes API. Unset means /api/ is never
+# Shared bearer token for the agent API. Unset means /api/ is never
 # registered at all — the endpoints do not exist rather than returning 401.
-export HERMES_API_TOKEN=
-# Fine-grained PAT with contents:write on the data repo ONLY. Unset means the
-# read endpoints work and writes return 503.
-export GITHUB_DATA_TOKEN=
-# Both the /api/ endpoints and the /mcp server are gated on HERMES_API_TOKEN.
+export AGENT_API_TOKEN=
 # Optional, defaults to https://api.github.com — point the Contents client at
 # a scratch instance or a stub while verifying the write path.
 export GITHUB_API_URL=

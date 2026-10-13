@@ -80,14 +80,6 @@ func TestAnAccountWithNoReadingsIsRefused(t *testing.T) {
 			}
 		}
 	})
-
-	t.Run("the director's loan", func(t *testing.T) {
-		f := fileWith(reading("2026-07-31"))
-		f.DirectorLoan = &AccountsFileDirectorLoan{}
-		if err := ValidateAccounts(f); err == nil {
-			t.Error("a director's loan with no readings was accepted")
-		}
-	})
 }
 
 func TestTwoAccountsWithTheSameNameAreRefused(t *testing.T) {

@@ -139,10 +139,10 @@ func readingInForce(acc accountsdata.Account, viewed yearMonth) (accountsdata.Re
 	return newestReadingBefore(acc.Balances, viewed)
 }
 
-// newestReadingBefore is the whole rule a series of readings follows, and the
-// director's loan follows it too: a reading closes its month and opens the
-// next, the newest one before the month being looked at wins, and a month
-// before every reading has nothing in force — which is not the same as zero.
+// newestReadingBefore is the whole rule a series of readings follows: a
+// reading closes its month and opens the next, the newest one before the month
+// being looked at wins, and a month before every reading has nothing in force
+// — which is not the same as zero.
 func newestReadingBefore(readings []accountsdata.Reading, viewed yearMonth) (accountsdata.Reading, time.Time, bool) {
 	var best accountsdata.Reading
 	var bestDate time.Time
@@ -161,30 +161,6 @@ func newestReadingBefore(readings []accountsdata.Reading, viewed yearMonth) (acc
 		}
 	}
 	return best, bestDate, found
-}
-
-// directorLoanStock is the loan's own anchor, resolved independently of the
-// bank readings: the two are unrelated, and either can be known while the
-// other is not.
-type directorLoanStock struct {
-	Known        bool
-	OpeningCents int
-	OpensMonth   yearMonth
-}
-
-func directorLoanInForce(af accountsdata.AccountsFile, viewed yearMonth) directorLoanStock {
-	if af.DirectorLoan == nil {
-		return directorLoanStock{}
-	}
-	reading, d, ok := newestReadingBefore(af.DirectorLoan.Balances, viewed)
-	if !ok {
-		return directorLoanStock{}
-	}
-	return directorLoanStock{
-		Known:        true,
-		OpeningCents: round(reading.Balance * 100),
-		OpensMonth:   yearMonth{d.Year(), d.Month()}.addMonths(1),
-	}
 }
 
 func snapshotFor(af accountsdata.AccountsFile, viewed yearMonth) (AccountSnapshot, bool) {
@@ -230,15 +206,14 @@ const maxRollForwardMonths = 120
 type openings struct {
 	PrivateCents int
 	Company      companyStock
-	Loan         directorLoanStock
 }
 
 // rollForward walks the months between the read date and the one being looked
 // at, carrying both pots at once. They cannot be walked separately: the
 // company balance is an input to the payroll cascade, and the private balance
 // is fed by what that cascade pays out.
-func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, loan directorLoanStock, viewed yearMonth, now time.Time, rateCents int) (openings, error) {
-	from := walkStart(snap, loan, viewed)
+func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, viewed yearMonth, now time.Time, rateCents int) (openings, error) {
+	from := walkStart(snap, viewed)
 	if elapsed := viewed.ordinal() - from.ordinal(); elapsed > maxRollForwardMonths {
 		return openings{}, fmt.Errorf("accounts: a reading is %d months before this month (%s) — check the dates in accounts.json, that looks like a typo",
 			elapsed, from)
@@ -247,7 +222,6 @@ func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, loan di
 	open := openings{
 		PrivateCents: snap.PrivateCents,
 		Company:      companyStock{Known: snap.HasCompany, OpeningCents: snap.CompanyCents},
-		Loan:         loan,
 	}
 	companyAt := func(m yearMonth) (companyStock, bool) {
 		if !snap.Found {
@@ -274,15 +248,11 @@ func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, loan di
 		if err != nil {
 			return openings{}, err
 		}
-		// Each figure starts accruing only from its own anchor: the loan's
-		// reading and the bank's are unrelated, and either may be the earlier
-		// one. The months before a pot's own anchor contribute nothing to it.
+		// The months before the anchor contribute nothing: the walk starts
+		// there, but the guard keeps the intent legible beside the arithmetic.
 		if snap.Found && m.ordinal() >= snap.OpensMonth.ordinal() {
 			open.PrivateCents += closed.PrivateDeltaCents
 			open.Company.OpeningCents = closed.CompanyClosingCents
-		}
-		if loan.Known && m.ordinal() >= loan.OpensMonth.ordinal() {
-			open.Loan.OpeningCents += closed.NetIncomeCents - closed.CrossedCents
 		}
 	}
 
@@ -292,17 +262,9 @@ func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, loan di
 	return open, nil
 }
 
-// walkStart is the earlier of the two anchors, because the loan and the bank
-// balances are anchored independently and a loan stated further back would
-// otherwise never accrue the months in between.
-func walkStart(snap AccountSnapshot, loan directorLoanStock, viewed yearMonth) yearMonth {
-	switch {
-	case snap.Found && loan.Known && loan.OpensMonth.ordinal() < snap.OpensMonth.ordinal():
-		return loan.OpensMonth
-	case snap.Found:
+func walkStart(snap AccountSnapshot, viewed yearMonth) yearMonth {
+	if snap.Found {
 		return snap.OpensMonth
-	case loan.Known:
-		return loan.OpensMonth
 	}
 	return viewed
 }
@@ -310,8 +272,6 @@ func walkStart(snap AccountSnapshot, loan directorLoanStock, viewed yearMonth) y
 type monthClosing struct {
 	PrivateDeltaCents   int
 	CompanyClosingCents int
-	NetIncomeCents      int
-	CrossedCents        int
 }
 
 func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, rateCents int, company companyStock) (monthClosing, error) {
@@ -329,7 +289,6 @@ func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, ra
 	return monthClosing{
 		PrivateDeltaCents:   pv.NetIncomeCents - privateCents,
 		CompanyClosingCents: companyClosedOn(pv, imported, companyCents),
-		NetIncomeCents:      pv.NetIncomeCents,
 	}, nil
 }
 

@@ -33,14 +33,5 @@
         }
       ]
     }
-  ],
-  "director_loan": {
-    "balances": [
-      {
-        "as_of": "2026-07-31",
-        "balance": -4800,
-        "note": "The owner is overdrawn: he drew more than he had been owed"
-      }
-    ]
-  }
+  ]
 }

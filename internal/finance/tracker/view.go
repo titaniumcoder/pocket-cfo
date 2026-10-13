@@ -175,24 +175,9 @@ type Figures struct {
 	PrivateAccounts     []AccountRow
 	CompanyAccounts     []AccountRow
 
-	// ArrivedPrivatelyCents is the asset side of a draw, and ActualAvailable is
-	// what it changes. They are Actual-column figures only: a draw is in no
-	// plan, so it may not reach AvailableCents, which stays pure budget.
-	ArrivedPrivatelyCents int
-	ActualAvailableCents  int
+	ActualAvailableCents int
 
 	TargetNeedsBalanceNote string
-
-	ShowCompanyWorth  bool
-	OwedToOwnerCents  int
-	CompanyWorthCents int
-
-	ShowDirectorLoan    bool
-	LoanOpeningCents    int
-	LoanNetIncomeCents  int
-	LoanClosingCents    int
-	DirectorLoanUnknown string
-	DirectorLoanNotes   []string
 
 	AccountsErr string
 }
@@ -299,8 +284,6 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	result.computeSpendable(months, year, start, trackedHours > 0 || expectedNetHours > 0)
 
 	result.computeFundingBalance(t, ctx, year, start, now, months, rateCents, bv, carried, snap, opened)
-
-	result.computeDirectorLoan(t, ctx, viewed, months, carried)
 
 	if at, stale := t.hours().Status(start, end); !at.IsZero() {
 		result.LastUpdated = at.In(t.Loc).Format("02 Jan 15:04")
@@ -563,7 +546,7 @@ func (f *Figures) publishBalanceTheBankSaw(months int) {
 		return
 	}
 	f.ShowActualBalance = true
-	f.ActualAvailableCents = f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents + f.ArrivedPrivatelyCents
+	f.ActualAvailableCents = f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents
 	f.ActualBalanceCents = f.ActualAvailableCents - f.PrivateActualCents
 	pv := f.FundingPersonal
 	// The Actual column takes what the statements say left the bank, where the
@@ -610,80 +593,6 @@ func (t *Tracker) targetNeedsBalanceNote(viewed yearMonth, months int, carried o
 		"there is no balance to compare it against, so the target does nothing. Add the account with \"kind\": \"company\"."
 }
 
-// computeDirectorLoan carries the running balance between the owner and the
-// company into the month. It reaches no other figure on the page: the private
-// balance still rolls forward assuming net income lands in the account, and
-// this is precisely the number saying by how much that assumption is out.
-func (f *Figures) computeDirectorLoan(t *Tracker, ctx context.Context, viewed yearMonth, months int, carried openings) {
-	if months != 1 || t.Accounts == nil || f.AccountsErr != "" {
-		return
-	}
-	if !carried.Loan.Known {
-		f.DirectorLoanUnknown = "No opening figure is stated before this month, so what the company owes is not known — which is not the same as nothing. " +
-			"Add a reading to director_loan in accounts.json."
-		f.ShowDirectorLoan = t.hasDirectorLoanBlock(ctx)
-		return
-	}
-	if f.FundingPersonal.Err != "" {
-		f.DirectorLoanUnknown = "The month's net income could not be worked out, so what the company owes cannot be closed off either — see the error above."
-		f.ShowDirectorLoan = t.hasDirectorLoanBlock(ctx)
-		return
-	}
-	f.ShowDirectorLoan = true
-	f.LoanOpeningCents = carried.Loan.OpeningCents
-	f.LoanNetIncomeCents = f.FundingPersonal.NetIncomeCents
-	f.LoanClosingCents = f.LoanOpeningCents + f.LoanNetIncomeCents
-	f.publishCompanyWorth()
-}
-
-// publishCompanyWorth puts the loan beside the company's accounts, which is
-// where it belongs: a company holding nothing in the bank and owed a fortune by
-// its owner is not a poor company. The loan is owner-centric — positive means
-// the company owes him — so the company's side of the same figure is its
-// negative, and the label turns over with it.
-//
-// Deliberately not folded into "In the company". That figure is what the
-// cascade pays a salary from, and a salary cannot be paid out of money the
-// owner has not given back.
-func (f *Figures) publishCompanyWorth() {
-	if !f.FundingPersonal.ShowCompanyBalance || f.DirectorLoanUnknown != "" {
-		return
-	}
-	f.ShowCompanyWorth = true
-	f.OwedToOwnerCents = -f.LoanOpeningCents
-	f.CompanyWorthCents = f.FundingPersonal.CompanyOpeningCents + f.OwedToOwnerCents
-}
-
-// OwedLabel turns over with the direction, because the figure beside it is a
-// bare number and the noun alone does not say which way it points. Both sides
-// name it a loan: this is one director's-loan account that can sit either way
-// up, and calling only one direction a loan would read as two separate things.
-func (f Figures) OwedLabel() string {
-	if f.OwedToOwnerCents < 0 {
-		return "Loan from the owner"
-	}
-	return "Loan to the owner"
-}
-
-// ArrivedPrivatelyLabel turns over the same way, and says the money left the
-// company rather than that it landed in an account: a draw taken as cash and
-// never deposited is still the owner's to spend, so naming an account would be
-// a claim the statements do not make.
-func (f Figures) ArrivedPrivatelyLabel() string {
-	if f.ArrivedPrivatelyCents < 0 {
-		return "Paid into the company"
-	}
-	return "Drawn from the company"
-}
-
-// hasDirectorLoanBlock decides whether "not known" is worth saying at all: a
-// file that has never mentioned the loan is not being told anything by a note
-// about a figure it does not track.
-func (t *Tracker) hasDirectorLoanBlock(ctx context.Context) bool {
-	af, err := t.Accounts.File(ctx)
-	return err == nil && af.DirectorLoan != nil
-}
-
 // carriedBalances rolls both pots up to the month being looked at. It runs
 // before the cascade rather than after it, because the company balance is one
 // of the cascade's inputs now — what a full salary can afford includes what the
@@ -697,13 +606,10 @@ func (t *Tracker) carriedBalances(ctx context.Context, viewed yearMonth, now tim
 		return openings{}, AccountSnapshot{}, false, err.Error()
 	}
 	snap, ok := snapshotFor(af, viewed)
-	loan := directorLoanInForce(af, viewed)
-	// Either anchor is enough to walk: the loan can be stated when no bank
-	// balance has been read yet, and it opens on its own reading regardless.
-	if !ok && !loan.Known {
+	if !ok {
 		return openings{}, AccountSnapshot{}, false, ""
 	}
-	carried, err := t.rollForward(ctx, snap, loan, viewed, now, rateCents)
+	carried, err := t.rollForward(ctx, snap, viewed, now, rateCents)
 	if err != nil {
 		return openings{}, AccountSnapshot{}, false, err.Error()
 	}

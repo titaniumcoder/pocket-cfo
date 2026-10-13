@@ -32,7 +32,6 @@ func (s *server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/transactions", s.apiTransactions)
 	mux.HandleFunc("GET /api/reconciliation", s.apiReconciliation)
 	mux.HandleFunc("GET /api/config", s.apiFinanceConfig)
-	mux.HandleFunc("GET /api/director-loan/{month}", s.apiDirectorLoan)
 	mux.HandleFunc("GET /api/invoices", s.apiInvoices)
 	mux.HandleFunc("GET /api/invoices/{number}/document", s.apiInvoiceDocument)
 	mux.HandleFunc("GET /api/invoices/{number}/pdf", s.apiInvoicePDF)
@@ -204,13 +203,6 @@ func (s *server) apiBudgetPeriod(w http.ResponseWriter, r *http.Request) {
 func (s *server) apiFinanceConfig(w http.ResponseWriter, r *http.Request) {
 	s.serveAPI(w, r, func(ctx context.Context, svc *api.Service) (any, error) {
 		return svc.FinanceConfig(ctx)
-	})
-}
-
-func (s *server) apiDirectorLoan(w http.ResponseWriter, r *http.Request) {
-	month := r.PathValue("month")
-	s.serveAPI(w, r, func(ctx context.Context, svc *api.Service) (any, error) {
-		return svc.DirectorLoanFor(ctx, month)
 	})
 }
 

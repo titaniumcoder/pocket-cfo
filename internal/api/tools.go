@@ -335,7 +335,6 @@ func (s *Service) Tools() []Tool {
 				"Spell a transaction's account field exactly as listed here. "+
 				"as_of is the newest of however many readings that account has; it says how current the balance figures are, and it is not the set of accounts a statement line may arrive on. "+
 				"An as_of older than the month that just closed means that account is due a fresh reading — record_account_balance is how you give it one. "+
-				"One entry has kind director_loan and is NOT a bank account: it is the running balance between the company and its owner, listed here because it sits with the accounts on the page. There is no statement behind it, no coverage to report for it, and record_account_balance refuses it — read it with get_director_loan and otherwise leave it alone. "+
 				"A balance you recorded through this API is reflected here at once; an account added or edited directly in the data repo appears only after that commit has deployed.",
 			true, func(ctx context.Context, _ emptyArgs) (any, error) {
 				out, err := s.AccountsList(ctx)
@@ -401,14 +400,8 @@ func (s *Service) Tools() []Tool {
 				return reply(s.FinanceConfig(ctx))
 			}),
 
-		tool("get_director_loan",
-			"What the company owes its owner at the end of one month, or what the owner owes the company — the running balance between them. It opens on the figure stated in accounts.json, accrues that month's net income, and is settled by the lines you marked with a movement. Positive means the company owes the owner. A month before every stated figure answers known:false — that is 'nobody has said', not 'nothing is owed', and the fix is a reading in the data repo rather than a tool here. The loan itself feeds only the company's worth, but the crossings it is built from are not private to it: what reached the owner outside payroll — a draw, a distribution actually paid, money paid back in — also raises or lowers the Actual column of Available to spend, because it is money he has. The residual this figure reports is net salary the company accrued and never transferred. Read notes: they say when one transfer looks marked twice.",
-			true, func(ctx context.Context, a monthArgs) (any, error) {
-				return reply(s.DirectorLoanFor(ctx, a.Month))
-			}),
-
 		tool("read_data_file",
-			"The complete current content of one of the three hand-maintained data files, with its sha: budget.json (the plan — groups, categories with their amounts, dates, from/until windows and amount_changes), accounts.json (the accounts, which pot each belongs to, their month-end balance readings and the director's loan opening figure) or config.json (the dated rules every figure is computed from: legislation, the salary plan, the target balance, the start month, the hourly rate). Read it before write_data_file, so the edit starts from what is committed.",
+			"The complete current content of one of the three hand-maintained data files, with its sha: budget.json (the plan — groups, categories with their amounts, dates, from/until windows and amount_changes), accounts.json (the accounts, which pot each belongs to, and their month-end balance readings) or config.json (the dated rules every figure is computed from: legislation, the salary plan, the target balance, the start month, the hourly rate). Read it before write_data_file, so the edit starts from what is committed.",
 			true, func(ctx context.Context, a fileNameArgs) (any, error) {
 				return reply(s.ReadDataFile(ctx, a.Name))
 			}),

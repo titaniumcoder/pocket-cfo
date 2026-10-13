@@ -146,13 +146,6 @@ REST a write is still committed on the spot, as described below.
     account still sitting on an older month is one to ask about. See below — the date rule
     is not negotiable.
 
-12. **`get_director_loan`** is where the markers land: what the company owes the owner at
-    the end of a month, or what the owner owes the company. Read it to check a marker you
-    just wrote did what you meant, and read its `notes` — they say when a month is not
-    fully imported, so the figure reads high, and when one transfer looks marked twice. A
-    month before any figure has been stated answers `known: false`, which means *nobody has
-    said*, not *nothing is owed*.
-
 13. **`get_finance_config`** is the dated rules every figure is computed from — both
     contribution schedules, income tax, the salary plan
     and the target balance. Read it before explaining a figure rather than assuming a rate.
@@ -255,12 +248,6 @@ diff for approval. Confirm with the user before touching any of them:
   The one exception is a recurring category's *future* step: `schedule_amount_change` (step 10)
   can schedule, correct, or call off a month's amount — but only in a month that has not
   arrived yet, and never on a one-off or a month that is already in force.
-- **The director's loan's opening figure** (`accounts.json`). Unlike a bank balance there
-  is nothing to read it off; it is a year-end restatement from the accountant. Appending a
-  reading corrects everything after it without rewriting what was true before.
-  `list_accounts` reports the loan with `kind: director_loan` so you know it exists — it is
-  not a statement account, has no coverage, and `record_account_balance` refuses it. Read it
-  with `get_director_loan` and otherwise leave it alone.
 
 A rule in `config.json` is never edited in place: a past payslip must stay reproducible
 under the rates it was computed with, so a change is a new dated entry. Say so, and then

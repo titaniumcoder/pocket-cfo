@@ -119,8 +119,7 @@ func TestMCPToolsList(t *testing.T) {
 		"search_transactions": true, "get_reconciliation_status": true,
 		"list_accounts": true, "add_transactions": true, "edit_transactions": true,
 		"move_planned_expense": true, "schedule_amount_change": true,
-		"record_account_balance": true, "get_finance_config": true, "get_director_loan": true,
-		"list_invoices": true, "set_invoice_paid": true,
+		"record_account_balance": true, "get_finance_config": true, "list_invoices": true, "set_invoice_paid": true,
 		"get_invoice_document": true, "save_draft_invoice": true, "issue_invoice": true,
 		"derive_transaction_ids": true, "read_data_file": true, "write_data_file": true,
 	}

@@ -14,23 +14,8 @@ var tmpl = template.Must(template.Must(template.New("").Funcs(template.FuncMap{
 	"untracked":  untrackedMark,
 	"out":        outEuro,
 	"outClass":   outClass,
-	"owed":       owedClass,
 	"signed":     signedEuro,
 }).Parse(webui.HeaderTemplate)).Parse(templates))
-
-// owedClass is the director's loan's only signal, and it carries the
-// direction on its own: green where the figure is in the owner's favour, red
-// where it is against. No mark and no flag — those mean something is wrong,
-// and a direction is not.
-func owedClass(cents int) string {
-	switch {
-	case cents > 0:
-		return " goodamt"
-	case cents < 0:
-		return " neg"
-	}
-	return ""
-}
 
 // signedEuro keeps the sign on the two flow rows, so the four figures add
 // straight down the column to the one that closes them.
@@ -422,8 +407,6 @@ var templates = `
       {{if .ShowCompanyBalance}}
       <div class="row{{if lt .CompanyOpeningCents 0}} neg{{end}}"><span class="label">In the company</span><span class="mid"></span><span class="amt{{if lt .CompanyOpeningCents 0}} neg{{else}} goodamt{{end}}">{{eur .CompanyOpeningCents}}</span></div>
       {{range $.CompanyAccounts}}<div class="row acct"><span class="label">{{.Name}}</span><span class="mid"></span><span class="amt">{{eur .Cents}}</span></div>{{end}}
-      {{if $.ShowCompanyWorth}}<div class="row acct"><span class="label">{{$.OwedLabel}}</span><span class="mid"></span><span class="amt{{owed $.OwedToOwnerCents}}">{{eur $.OwedToOwnerCents}}</span></div>
-      <div class="row sub"><span class="label">The company is worth</span><span class="mid"></span><span class="amt total{{owed $.CompanyWorthCents}}">{{eur $.CompanyWorthCents}}</span></div>{{end}}
       {{end}}
       {{if $.Invoiced}}<div class="row gap-below"></div>{{end}}
       {{if $.ShowActuals}}<div class="row colhead"><span class="label"></span><span class="mid">Planned</span><span class="amt">Actual</span></div>{{end}}
@@ -447,7 +430,6 @@ var templates = `
       {{if .ShowOpeningBalance}}
       <div class="row net{{if lt .OpeningBalanceCents 0}} neg{{end}}"><span class="label">Private opening balance</span><span class="mid"></span><span class="amt netamt">{{eur .OpeningBalanceCents}}</span></div>
       {{range .PrivateAccounts}}<div class="row acct"><span class="label">{{.Name}}</span><span class="mid"></span><span class="amt">{{eur .Cents}}</span></div>{{end}}
-      {{if and .ShowActualBalance .ArrivedPrivatelyCents}}<div class="row acct gap-above"><span class="label">{{.ArrivedPrivatelyLabel}}</span><span class="mid"></span><span class="amt{{owed .ArrivedPrivatelyCents}}">{{signed .ArrivedPrivatelyCents}}</span></div>{{end}}
       <div class="row net gap-above{{if lt .HeadlineAvailableCents 0}} neg{{end}}"><span class="label">Available to spend</span>{{if .ShowActualBalance}}<span class="mid">{{eur .AvailableCents}}</span><span class="amt netamt">{{eur .ActualAvailableCents}}<span class="stack-m">planned {{eur .AvailableCents}}</span></span>{{else}}<span class="mid"></span><span class="amt netamt">{{eur .AvailableCents}}</span>{{end}}</div>
       {{end}}
     </div>
@@ -477,18 +459,6 @@ var templates = `
     </div>
     {{end}}
 
-    {{if .ShowDirectorLoan}}
-    <div class="ledger">
-      <h2>Director&rsquo;s loan</h2>
-      {{if .DirectorLoanUnknown}}<div class="row"><span class="stale-note">{{.DirectorLoanUnknown}}</span></div>
-      {{else}}
-      <div class="row net{{owed .LoanOpeningCents}}"><span class="label">At the start</span><span class="mid"></span><span class="amt netamt">{{eur .LoanOpeningCents}}</span></div>
-      <div class="row{{owed .LoanNetIncomeCents}}"><span class="label">Net income</span><span class="mid"></span><span class="amt">{{signed .LoanNetIncomeCents}}</span></div>
-      <div class="row net{{owed .LoanClosingCents}}"><span class="label">At the end</span><span class="mid"></span><span class="amt netamt">{{eur .LoanClosingCents}}</span></div>
-      {{range .DirectorLoanNotes}}<div class="row"><span class="stale-note">{{.}}</span></div>{{end}}
-      {{end}}
-    </div>
-    {{end}}
   </section>
 
   </div>

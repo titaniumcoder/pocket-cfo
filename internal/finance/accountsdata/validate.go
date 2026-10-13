@@ -17,17 +17,11 @@ func ValidateAccounts(f AccountsFile) error {
 			return err
 		}
 	}
-	if f.DirectorLoan != nil {
-		if err := readingProblems("the director's loan", f.DirectorLoan.Balances); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
 // readingProblems holds the rules a series of readings has to keep, applied
-// to the accounts and to the director's loan from one place so the two cannot
-// drift apart.
+// to every account from one place.
 func readingProblems(what string, readings []Reading) error {
 	if len(readings) == 0 {
 		return fmt.Errorf("%s has no readings — an account is declared by its first balance, and one with none can never be given one", what)

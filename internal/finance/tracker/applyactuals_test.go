@@ -569,10 +569,10 @@ func TestTheCurrentMonthShowsSpentAndProjectedTogether(t *testing.T) {
 	if want := f.ActualAvailableCents - f.PrivateActualCents; f.ActualBalanceCents != want {
 		t.Errorf("ActualBalanceCents = %d, want %d (what there was to spend, less what the bank has seen spent)", f.ActualBalanceCents, want)
 	}
-	// Nothing crossed this month and no dividend is declared, so what there was
-	// to spend is the same figure in both columns and the whole gap is spending.
+	// Nothing unexpected crossed this month, so what there was to spend is the
+	// same figure in both columns and the whole gap is spending.
 	if f.ActualAvailableCents != f.AvailableCents {
-		t.Fatalf("the fixture has money crossing it (%d), so the gap below is not spending alone", f.ArrivedPrivatelyCents)
+		t.Fatal("the fixture has money crossing it, so the gap below is not spending alone")
 	}
 	if want := f.PrivateTotalPlannedCents - f.PrivateActualCents; f.ActualBalanceCents-f.BalanceCents != want {
 		t.Errorf("the two balances differ by %d, want %d — the gap is the planned spending not yet on a statement",

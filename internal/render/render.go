@@ -105,6 +105,7 @@ var funcMap = template.FuncMap{
 	"str":       derefString,
 	"country":   CountryName,
 	"bilingual": bilingual,
+	"rich":      RichText,
 }
 
 const thousandsSeparator = ' '

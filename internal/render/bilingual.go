@@ -22,6 +22,7 @@ func bilingual(ls invoice.LocalizedString, lang invoice.InvoiceJsonLanguage) Bil
 	return Bilingual{
 		Primary:   primary,
 		Secondary: secondary,
-		Inline:    len([]rune(primary))+len([]rune(secondary)) <= inlineThreshold,
+		Inline: len([]rune(primary))+len([]rune(secondary)) <= inlineThreshold &&
+			!NeedsBlockLayout(primary) && !NeedsBlockLayout(secondary),
 	}
 }

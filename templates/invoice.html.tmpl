@@ -187,10 +187,10 @@
       <tr>
         <td>
           {{if $b.Inline}}
-          <div>{{$b.Primary}}{{with $b.Secondary}}<span class="desc-bg-inline">{{.}}</span>{{end}}</div>
+          <div>{{rich $b.Primary}}{{with $b.Secondary}}<span class="desc-bg-inline">{{rich .}}</span>{{end}}</div>
           {{else}}
-          <div>{{$b.Primary}}</div>
-          {{with $b.Secondary}}<div class="desc-bg">{{.}}</div>{{end}}
+          <div>{{rich $b.Primary}}</div>
+          {{with $b.Secondary}}<div class="desc-bg">{{rich .}}</div>{{end}}
           {{end}}
         </td>
         <td class="num">{{qty .Quantity}}{{with str .Unit}} {{.}}{{end}}</td>

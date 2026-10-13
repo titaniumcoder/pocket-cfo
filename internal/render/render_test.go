@@ -189,3 +189,45 @@ func TestHTML_NonEmptyTaxNoteRendersNotesBox(t *testing.T) {
 		t.Error("rendered HTML missing the notes box for a fixture with a real tax note")
 	}
 }
+
+// TestHTML_LineDescriptionRendersRichText: a line description may carry
+// newlines, bold and bullets; they render as line breaks and a list, and a
+// multi-line description forces the block layout instead of the inline one.
+func TestHTML_LineDescriptionRendersRichText(t *testing.T) {
+	inv := loadFixture(t, "INV-0000000001")
+	inv.Lines[0].Description.De = strptr("Migration of the mail server:\n- **export** the mailboxes\n- reimport them\nHandover *in person*")
+	totals, err := money.Compute(inv)
+	if err != nil {
+		t.Fatalf("compute: %v", err)
+	}
+	wd, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(wd) })
+	if err := os.Chdir(filepath.Join("..", "..")); err != nil {
+		t.Fatal(err)
+	}
+
+	html, err := HTML(inv, totals, nil)
+	if err != nil {
+		t.Fatalf("HTML: %v", err)
+	}
+	out := string(html)
+
+	for _, want := range []string{
+		"Migration of the mail server:<br>",
+		"<strong>export</strong> the mailboxes",
+		"<em>in person</em>",
+		"<li>reimport them</li>",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the rendered invoice lacks %q", want)
+		}
+	}
+	if strings.Contains(out, "**") {
+		t.Error("the raw markdown markers reached the page")
+	}
+	if strings.Contains(out, `<span class="desc-bg-inline">`) {
+		t.Error("a multi-line description still rendered in the single-line layout")
+	}
+}
+
+func strptr(s string) *string { return &s }

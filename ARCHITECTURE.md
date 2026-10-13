@@ -190,6 +190,17 @@ ths recipients ID is kept as reference to update it for duplicated invoices.
 
 `quantity` is a integer, the real quantity is the amount / 100, so 13600 = 136
 
+**A line description carries a small formatting subset**, because a line is often
+several things ("Migration of the mail server: — export the mailboxes — reimport them").
+A newline in the string is a line break, `**bold**` and `*italic*` are emphasis, and
+consecutive lines starting with `- ` render as a bullet list. The subset is deliberately
+not markdown: the text is HTML-escaped **before** the formatting pass, so the pass works
+on escaped text and can produce nothing but those three shapes — a `<` in a description
+stays a literal `<` in the PDF. A description that uses a line break or a bullet renders
+in the block layout; a one-line description keeps the compact inline one. The legal tax
+note stays plain text by the same token: it is drafted in the note catalog, not typed
+per invoice.
+
 `pocket-cfo-ctl new --recipient 7` stubs the file: recipient snapshot, next number, due date
 from `payment_terms_days`, resolved tax regime and note. You type only the lines, then
 flip `status` to `issued` when you're happy.

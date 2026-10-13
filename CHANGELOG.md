@@ -8,6 +8,9 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Added
+- **Invoice line descriptions take a small formatting subset.** A newline is a line break, `**bold**` and `*italic*` are emphasis, and consecutive lines starting with `- ` render as a bullet list — in the PDF and the client portal. The text is escaped before the formatting pass, so nothing but those shapes can be produced.
+
 ## [4.0.0] - 2026-10-13
 
 ### Changed

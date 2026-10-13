@@ -199,7 +199,11 @@ func aggregateRecipientRows(recipients []recipient.RecipientJson, all []computed
 		rows = append(rows, row)
 	}
 	sort.Slice(rows, func(i, j int) bool {
-		return rows[i].LegalName < rows[j].LegalName
+		a, b := strings.ToLower(rows[i].LegalName), strings.ToLower(rows[j].LegalName)
+		if a != b {
+			return a < b
+		}
+		return rows[i].Number < rows[j].Number
 	})
 	return rows
 }

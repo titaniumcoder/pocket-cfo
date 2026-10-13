@@ -1,8 +1,10 @@
 package stats
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -331,5 +333,42 @@ func TestOverdueTurnsOverAtTheIssuersMidnight(t *testing.T) {
 	}
 	if rows[0].State != "overdue" {
 		t.Errorf("state = %q the day after the due date, want overdue", rows[0].State)
+	}
+}
+
+func invFor(n int, recipientNumber int) *invoice.InvoiceJson {
+	return &invoice.InvoiceJson{
+		Number: fmt.Sprintf("INV-N%d", n), Title: fmt.Sprintf("N%d", n),
+		Status:    invoice.InvoiceJsonStatusIssued,
+		IssueDate: mustDate("2026-05-01"), DueDate: mustDate("2026-06-01"),
+		Recipient: invoice.RecipientSnapshot{Number: recipientNumber, LegalName: fmt.Sprintf("R%d", n)},
+		Lines:     []invoice.Line{line(10000)},
+	}
+}
+
+// TestRecipientRowsSortCaseInsensitively: the invoicing page's recipient
+// table is sorted by name the way a human reads it — "acme GmbH" belongs
+// beside "Acme AG", not after every capital letter.
+func TestRecipientRowsSortCaseInsensitively(t *testing.T) {
+	recipients := []recipient.RecipientJson{
+		{Number: 3, LegalName: "zeta AG"},
+		{Number: 1, LegalName: "Acme AG"},
+		{Number: 2, LegalName: "acme GmbH"},
+		{Number: 4, LegalName: "Alpha GmbH"},
+	}
+	invoices := []*invoice.InvoiceJson{
+		invFor(1, 1), invFor(2, 2), invFor(3, 3), invFor(4, 4),
+	}
+	_, rows, _, err := Aggregate(invoices, recipients, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, r := range rows {
+		got = append(got, r.LegalName)
+	}
+	want := []string{"Acme AG", "acme GmbH", "Alpha GmbH", "zeta AG"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("rows = %v, want %v", got, want)
 	}
 }

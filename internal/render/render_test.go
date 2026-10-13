@@ -260,6 +260,7 @@ func TestHTML_CarriesTheRunningHeaderForContinuationPages(t *testing.T) {
 		"content: element(running-header)",
 		"@page :first",
 		`class="running-header"`,
+		"RepeatColumns",
 		"PageStamps",
 		inv.Issuer.LegalName,
 	} {
@@ -291,17 +292,14 @@ func TestHTML_TextLineSpansTheWholeTable(t *testing.T) {
 	}
 	out := string(html)
 
-	if !strings.Contains(out, `<tr class="textline"><td colspan="`) {
-		t.Error("a text line did not render as a full-width row")
+	if strings.Count(out, `<div class="textline">`) != 1 {
+		t.Errorf("want exactly one full-width text block between table segments")
 	}
-	if strings.Contains(out, `<td class="num">{{`) {
-		t.Error("template leak: raw action text reached the page")
+	if strings.Count(out, "<table>") != 2 {
+		t.Errorf("the text line must split the table into two segments, got %d tables", strings.Count(out, "<table>"))
 	}
-	if strings.Count(out, `<tr class="textline"`) != 1 {
-		t.Errorf("want exactly one text line row")
-	}
-	if strings.Contains(out, "Beispielprojekt") && strings.Count(out, "textline") != 1 {
-		t.Error("the invoice's only line was not rendered as the text line")
+	if strings.Contains(out, "colspan") {
+		t.Error("a colspan row is back — paged.js cannot split one, and the whole table jumps pages")
 	}
 }
 

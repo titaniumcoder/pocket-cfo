@@ -107,14 +107,16 @@ var funcMap = template.FuncMap{
 	"bilingual": bilingual,
 	"rich":      RichText,
 	"rhlogo":    runningLogo,
-	"colCount":  colCount,
+	"paras":     paragraphs,
 }
 
-func colCount(hasVAT bool) int {
-	if hasVAT {
-		return 5
-	}
-	return 4
+// paragraphs splits a text line's description into one block per source line.
+// A text line may run for pages, and paged.js cannot find a break inside a
+// single div glued together with line breaks — the split fails and the whole
+// row (with the rows before it) jumps to the next page, leaving page 1 empty.
+// Separate blocks break cleanly between lines.
+func paragraphs(s string) []string {
+	return strings.Split(s, "\n")
 }
 
 // runningLogo rewrites the ids inside a copy of the logo so the running

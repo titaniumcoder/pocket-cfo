@@ -8,6 +8,32 @@
 <script src="https://cdn.jsdelivr.net/npm/pagedjs@0.4.3/dist/paged.polyfill.js" integrity="sha384-JkjBt3FPbcQ3WBc3qp+maUIw8YLoZxNNj8H+tn73mljkC1ba8aEPWlgwfCRPpAxV" crossorigin="anonymous"></script>
 <script>
 if (window.Paged) {
+  class RepeatColumns extends Paged.Handler {
+    afterParsed(content) {
+      this.headerRow = content.querySelector("table thead");
+    }
+    afterPageLayout(pageElement) {
+      const box = pageElement.querySelector(".pagedjs_margin-top-left .pagedjs_margin-content");
+      if (!box || !this.headerRow || box.querySelector(".rh-cols")) return;
+      let row = null;
+      for (const frag of pageElement.querySelectorAll(".pagedjs_page_content table")) {
+        row = frag.querySelector("tbody tr");
+        if (row) break;
+      }
+      if (!row) return;
+      const cells = [...row.children];
+      const table = document.createElement("table");
+      table.className = "rh-cols";
+      table.appendChild(this.headerRow.cloneNode(true));
+      const ths = table.querySelectorAll("th");
+      cells.forEach((td, i) => {
+        if (ths[i]) ths[i].style.width = Math.round(td.getBoundingClientRect().width) + "px";
+      });
+      box.appendChild(table);
+    }
+  }
+  Paged.registerHandlers(RepeatColumns);
+
   class PageStamps extends Paged.Handler {
     afterParsed(content) {
       this.stamps = [...document.querySelectorAll(".watermark, .paid-stamp")];
@@ -41,7 +67,7 @@ if (window.Paged) {
   html, body { margin: 0; padding: 0; }
   @page {
     size: A4;
-    margin: 100px 44px 32px 44px;
+    margin: 190px 44px 32px 44px;
     @top-left { content: element(running-header); }
   }
   @page :first {
@@ -60,8 +86,18 @@ if (window.Paged) {
     font-size: 12px;
     color: var(--text);
   }
+  .pagedjs_margin-content .rh-cols {
+    width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 12px;
+  }
+  .pagedjs_margin-content .rh-cols th {
+    text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--muted); white-space: normal;
+    border-bottom: 1px solid var(--border); padding: 8px 6px;
+  }
+  .pagedjs_margin-content .rh-cols th.num { text-align: right; }
+
   .running-header .rh-strip {
-    margin-top: 10px;
+    margin-top: 24px;
     display: flex; justify-content: space-between; align-items: center;
     border-bottom: 1px solid var(--border);
     padding-bottom: 6px;
@@ -112,7 +148,8 @@ if (window.Paged) {
 
   table { width: 100%; border-collapse: collapse; }
   td { overflow-wrap: break-word; }
-  tbody tr.textline td { border-bottom: none; padding: 4px 6px; }
+  .textline { padding: 2px 6px; }
+  .textline .desc-bg { color: var(--muted); }
   thead { display: table-header-group; }
   thead th {
     text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .04em;
@@ -128,9 +165,6 @@ if (window.Paged) {
      sliced across a page break — only useful once the header above repeats
      on the next page too, which table/thead does natively when printed. */
   tbody tr { break-inside: avoid; page-break-inside: avoid; }
-  /* A text line is prose and may be long; it splits across pages like text,
-     not like an item row that must stay whole. */
-  tbody tr.textline { break-inside: auto; page-break-inside: auto; }
 
   /* Self-contained bordered cards: if one doesn't fit on the remaining
      space of the current page, move the whole thing to the next page
@@ -241,14 +275,17 @@ if (window.Paged) {
       </tr>
     </thead>
     <tbody>
-      {{$c := colCount .HasVAT}}
       {{range .Totals.Lines}}
       {{$b := bilingual .Description $.Invoice.Language}}
       {{if .Text}}
-      <tr class="textline"><td colspan="{{$c}}">
-        <div>{{rich $b.Primary}}</div>
-        {{with $b.Secondary}}<div class="desc-bg">{{rich .}}</div>{{end}}
-      </td></tr>
+      </tbody>
+      </table>
+      <div class="textline">
+        {{range paras $b.Primary}}<div>{{rich .}}</div>{{end}}
+        {{with $b.Secondary}}{{range paras .}}<div class="desc-bg">{{rich .}}</div>{{end}}{{end}}
+      </div>
+      <table>
+      <tbody>
       {{else}}
       <tr>
         <td>
@@ -264,8 +301,7 @@ if (window.Paged) {
         {{if $.HasVAT}}<td class="num">{{.VATRate}}%</td>{{end}}
         <td class="num">{{money .Amount}}</td>
       </tr>
-      {{end}}
-      {{end}}
+      {{end}}{{end}}
     </tbody>
   </table>
 

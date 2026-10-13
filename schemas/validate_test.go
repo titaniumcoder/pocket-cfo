@@ -169,3 +169,67 @@ func assertRejected(t *testing.T, id ID, raw []byte) {
 		t.Errorf("error = %q, want it to name the schema", err)
 	}
 }
+
+// TestInvoiceRejectsAmountsOnTextLines: a type=text line is prose, not a
+// billed position — quantity, unit, unit_price and vat_rate must not appear
+// on one. The rule lives in if/then conditionals the dev-time generator
+// ignores but the runtime validator enforces.
+func TestInvoiceRejectsAmountsOnTextLines(t *testing.T) {
+	line0 := func(t *testing.T) map[string]any {
+		t.Helper()
+		doc := invoiceDoc(t)
+		line, ok := doc["lines"].([]any)[0].(map[string]any)
+		if !ok {
+			t.Fatal("fixture line is not an object")
+		}
+		return line
+	}
+
+	t.Run("a text line with no amounts is accepted", func(t *testing.T) {
+		line := line0(t)
+		line["type"] = "text"
+		for _, k := range []string{"quantity", "unit", "unit_price", "vat_rate"} {
+			delete(line, k)
+		}
+		if err := Validate(Invoice, mustJSON(t, invoiceDoc2(t, line))); err != nil {
+			t.Errorf("rejected a valid text line: %v", err)
+		}
+	})
+
+	t.Run("a text line carrying a zero price is rejected", func(t *testing.T) {
+		line := line0(t)
+		line["type"] = "text"
+		for _, k := range []string{"quantity", "unit", "vat_rate"} {
+			delete(line, k)
+		}
+		line["unit_price"] = 0
+		assertRejected(t, Invoice, mustJSON(t, invoiceDoc2(t, line)))
+	})
+
+	t.Run("a text line carrying a quantity is rejected", func(t *testing.T) {
+		line := line0(t)
+		line["type"] = "text"
+		for _, k := range []string{"unit", "unit_price", "vat_rate"} {
+			delete(line, k)
+		}
+		line["quantity"] = 2
+		assertRejected(t, Invoice, mustJSON(t, invoiceDoc2(t, line)))
+	})
+
+	t.Run("an item line without amounts is rejected", func(t *testing.T) {
+		line := line0(t)
+		for _, k := range []string{"quantity", "unit", "unit_price", "vat_rate"} {
+			delete(line, k)
+		}
+		assertRejected(t, Invoice, mustJSON(t, invoiceDoc2(t, line)))
+	})
+}
+
+// invoiceDoc2 rebuilds the fixture with one line replaced.
+func invoiceDoc2(t *testing.T, line map[string]any) map[string]any {
+	t.Helper()
+	doc := invoiceDoc(t)
+	lines := doc["lines"].([]any)
+	lines[0] = line
+	return doc
+}

@@ -14,7 +14,6 @@ func TestActualStatus(t *testing.T) {
 	tests := []struct {
 		name       string
 		row        CategoryRow
-		complete   bool
 		viewed     time.Month
 		charged    map[string][]time.Month
 		wantStatus string
@@ -38,7 +37,6 @@ func TestActualStatus(t *testing.T) {
 			// The case that prompted the band: 5% of 1500 is 75.
 			name:       "two euros over a 1500 budget is on plan",
 			row:        CategoryRow{CategoryID: "a", PlannedCents: 150000, ActualCents: 150200, HasActual: true},
-			complete:   true,
 			wantStatus: "",
 		},
 		{
@@ -61,30 +59,21 @@ func TestActualStatus(t *testing.T) {
 		{
 			name:       "under by less than the tolerance is on plan, not good news",
 			row:        CategoryRow{CategoryID: "a", PlannedCents: 150000, ActualCents: 149000, HasActual: true},
-			complete:   true,
 			wantStatus: "",
 		},
 		{
-			name:       "under plan is withheld until the month is fully read",
+			name:       "under plan marks the row under",
 			row:        CategoryRow{CategoryID: "a", PlannedCents: 35000, ActualCents: 20000, HasActual: true},
-			wantStatus: "",
-		},
-		{
-			name:       "under plan once coverage is complete",
-			row:        CategoryRow{CategoryID: "a", PlannedCents: 35000, ActualCents: 20000, HasActual: true},
-			complete:   true,
 			wantStatus: ActualUnder,
 		},
 		{
 			name:       "exactly on plan is not under",
 			row:        CategoryRow{CategoryID: "a", PlannedCents: 35000, ActualCents: 35000, HasActual: true},
-			complete:   true,
 			wantStatus: "",
 		},
 		{
 			name:       "charged against a category planned at zero",
 			row:        CategoryRow{CategoryID: "a", PlannedCents: 0, ActualCents: 4000, HasActual: true},
-			complete:   true,
 			wantStatus: ActualUnbudgeted,
 		},
 		{
@@ -94,7 +83,6 @@ func TestActualStatus(t *testing.T) {
 			// is how it gets budgeted next time.
 			name:       "even a small charge against a zero budget is worth seeing",
 			row:        CategoryRow{CategoryID: "a", PlannedCents: 0, ActualCents: 1500, HasActual: true},
-			complete:   true,
 			wantStatus: ActualUnbudgeted,
 		},
 		{
@@ -156,7 +144,7 @@ func TestActualStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, _ := actualStatus(tt.row, tt.complete, 2026, tt.viewed, tt.charged)
+			got, _ := actualStatus(tt.row, 2026, tt.viewed, tt.charged)
 			if got != tt.wantStatus {
 				t.Errorf("actualStatus = %q, want %q", got, tt.wantStatus)
 			}
@@ -176,7 +164,7 @@ func TestApplyActualsFillsWithoutTouchingThePlan(t *testing.T) {
 		}},
 		TotalPlannedCents: 55000,
 	}
-	av := ActualsView{Present: true, Complete: true, ByCategory: map[string]int{"food.groceries": 36600}, TotalCents: 36600}
+	av := ActualsView{Present: true, ByCategory: map[string]int{"food.groceries": 36600}, TotalCents: 36600}
 
 	ApplyActuals(&bv, av, 2026, time.August, nil)
 
@@ -251,7 +239,7 @@ func augustActuals(from, to string) map[string]string {
 // mistake the deferred rows exist to keep visible.
 func deferredSeptemberActuals(categoryID string) ActualsView {
 	return ActualsView{
-		Present: true, Complete: true,
+		Present:    true,
 		ByCategory: map[string]int{categoryID: eurToCents(180)},
 		TotalCents: eurToCents(180),
 	}
@@ -315,7 +303,7 @@ func TestAnOutOfWindowCategoryStaysHiddenWithoutMovement(t *testing.T) {
 		t.Fatalf("ForMonth September: %v", err)
 	}
 
-	av := ActualsView{Present: true, Complete: true, ByCategory: map[string]int{"other": 5000}}
+	av := ActualsView{Present: true, ByCategory: map[string]int{"other": 5000}}
 	ApplyActuals(&bv, av, 2026, time.September, nil)
 
 	if r := rowByName(bv, "Ended"); r.Name != "" {
@@ -339,7 +327,7 @@ func TestANetZeroRefundStillRestoresTheRow(t *testing.T) {
 		t.Fatalf("ForMonth September: %v", err)
 	}
 
-	av := ActualsView{Present: true, Complete: true, ByCategory: map[string]int{ended: 0}}
+	av := ActualsView{Present: true, ByCategory: map[string]int{ended: 0}}
 	ApplyActuals(&bv, av, 2026, time.September, nil)
 
 	r := rowByName(bv, "Ended")
@@ -375,7 +363,7 @@ func TestARestoredRowKeepsItsPlaceInTheGroup(t *testing.T) {
 		t.Fatalf("ForMonth September: %v", err)
 	}
 
-	av := ActualsView{Present: true, Complete: true, ByCategory: map[string]int{ended: 12345}}
+	av := ActualsView{Present: true, ByCategory: map[string]int{ended: 12345}}
 	ApplyActuals(&bv, av, 2026, time.September, nil)
 
 	if len(bv.Groups) != 1 {
@@ -413,7 +401,7 @@ func TestARestoredCompanyCategoryLandsInCompanyGroups(t *testing.T) {
 		t.Fatalf("ForMonth September: %v", err)
 	}
 
-	av := ActualsView{Present: true, Complete: true, ByCategory: map[string]int{agent: 20000}}
+	av := ActualsView{Present: true, ByCategory: map[string]int{agent: 20000}}
 	ApplyActuals(&bv, av, 2026, time.September, nil)
 
 	if len(bv.CompanyGroups) != 1 || bv.CompanyGroups[0].Name != "Office" {
@@ -760,7 +748,7 @@ func TestGroupFlagSurvivesANettingOut(t *testing.T) {
 		},
 	}}}
 	av := ActualsView{
-		Present: true, Complete: true,
+		Present:    true,
 		ByCategory: map[string]int{"a": 130000, "b": 70000},
 	}
 	ApplyActuals(&bv, av, 2026, time.August, nil)

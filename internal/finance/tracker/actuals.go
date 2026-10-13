@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
-	"sort"
 	"sync"
 	"time"
 
@@ -56,7 +55,6 @@ func (a *Actuals) Configured() bool { return a != nil && a.FS != nil }
 
 type ActualsView struct {
 	Present    bool
-	Complete   bool
 	ByCategory map[string]int
 	TotalCents int
 
@@ -78,9 +76,7 @@ func (a *Actuals) ForMonth(ctx context.Context, year int, month time.Month) (Act
 func (a *Actuals) ForYear(ctx context.Context, year int, start time.Time) (ActualsView, error) {
 	out := ActualsView{ByCategory: map[string]int{}}
 	months := 0
-	complete := 0
 	first, last := yearMonthRange(year, floorOf(start))
-	want := int(last-first) + 1
 	for m := first; m <= last; m++ {
 		res := a.month(ctx, year, m)
 		if res.err != nil {
@@ -91,9 +87,6 @@ func (a *Actuals) ForYear(ctx context.Context, year int, start time.Time) (Actua
 		}
 		months++
 		mv := viewOf(res.file, year, m)
-		if mv.Complete {
-			complete++
-		}
 		for id, cents := range mv.ByCategory {
 			out.ByCategory[id] += cents
 		}
@@ -105,7 +98,6 @@ func (a *Actuals) ForYear(ctx context.Context, year int, start time.Time) (Actua
 		return ActualsView{}, nil
 	}
 	out.Present = true
-	out.Complete = months == want && complete == want
 	return out, nil
 }
 
@@ -238,50 +230,5 @@ func viewOf(af actualsdata.ActualsFile, year int, month time.Month) ActualsView 
 			v.UntrackedCount++
 		}
 	}
-	v.Complete = coverageComplete(af, year, month)
 	return v
-}
-
-func coverageComplete(af actualsdata.ActualsFile, year int, month time.Month) bool {
-	if len(af.Coverage) == 0 {
-		return false
-	}
-	first := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
-	last := first.AddDate(0, 1, -1)
-
-	byAccount := map[string][]actualsdata.Coverage{}
-	for _, c := range af.Coverage {
-		byAccount[c.Account] = append(byAccount[c.Account], c)
-	}
-	for _, ranges := range byAccount {
-		if !spansMonth(ranges, first, last) {
-			return false
-		}
-	}
-	return true
-}
-
-func spansMonth(ranges []actualsdata.Coverage, first, last time.Time) bool {
-	type span struct{ from, to time.Time }
-	var spans []span
-	for _, r := range ranges {
-		from, err1 := time.Parse("2006-01-02", r.From)
-		to, err2 := time.Parse("2006-01-02", r.To)
-		if err1 != nil || err2 != nil {
-			return false
-		}
-		spans = append(spans, span{from, to})
-	}
-	sort.Slice(spans, func(i, j int) bool { return spans[i].from.Before(spans[j].from) })
-
-	reached := first.AddDate(0, 0, -1)
-	for _, s := range spans {
-		if s.from.After(reached.AddDate(0, 0, 1)) {
-			return false
-		}
-		if s.to.After(reached) {
-			reached = s.to
-		}
-	}
-	return !reached.Before(last)
 }

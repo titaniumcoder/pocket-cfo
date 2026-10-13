@@ -9,22 +9,16 @@ import (
 
 func strp(s string) *string { return &s }
 
-func file(coverage []actualsdata.Coverage, txs ...actualsdata.Transaction) actualsdata.ActualsFile {
-	return actualsdata.ActualsFile{Month: "2026-08", Coverage: coverage, Transactions: txs}
-}
-
-func cov(account, from, to string) actualsdata.Coverage {
-	return actualsdata.Coverage{Account: account, From: from, To: to, ImportedAt: to}
+func file(txs ...actualsdata.Transaction) actualsdata.ActualsFile {
+	return actualsdata.ActualsFile{Month: "2026-08", Transactions: txs}
 }
 
 func tx(id, date string, amount float64, category string) actualsdata.Transaction {
 	return actualsdata.Transaction{Id: id, Date: date, Description: "X", Amount: amount, Account: "A", Category: strp(category)}
 }
 
-var wholeAugust = []actualsdata.Coverage{cov("A", "2026-08-01", "2026-08-31")}
-
 func TestDiffCleanCases(t *testing.T) {
-	base := file(wholeAugust, tx("t1", "2026-08-01", 900, "rent"))
+	base := file(tx("t1", "2026-08-01", 900, "rent"))
 
 	tests := []struct {
 		name          string
@@ -37,16 +31,16 @@ func TestDiffCleanCases(t *testing.T) {
 		{
 			name:   "a transaction added",
 			before: base,
-			after:  file(wholeAugust, tx("t1", "2026-08-01", 900, "rent"), tx("t2", "2026-08-04", 40, "gym")),
+			after:  file(tx("t1", "2026-08-01", 900, "rent"), tx("t2", "2026-08-04", 40, "gym")),
 		},
 		{
 			name:   "coverage extended",
-			before: file([]actualsdata.Coverage{cov("A", "2026-08-01", "2026-08-09")}, tx("t1", "2026-08-01", 900, "rent")),
+			before: file(tx("t1", "2026-08-01", 900, "rent")),
 			after:  base,
 		},
 		{
 			name:   "two adjacent ranges merged into one",
-			before: file([]actualsdata.Coverage{cov("A", "2026-08-01", "2026-08-15"), cov("A", "2026-08-16", "2026-08-31")}, tx("t1", "2026-08-01", 900, "rent")),
+			before: file(tx("t1", "2026-08-01", 900, "rent")),
 			after:  base,
 		},
 		{
@@ -57,14 +51,9 @@ func TestDiffCleanCases(t *testing.T) {
 		{
 			name:   "description corrected",
 			before: base,
-			after: file(wholeAugust, actualsdata.Transaction{
+			after: file(actualsdata.Transaction{
 				Id: "t1", Date: "2026-08-01", Description: "MIETE AUGUST (corrected)", Amount: 900, Account: "A", Category: strp("rent"),
 			}),
-		},
-		{
-			name:   "a new account added to coverage",
-			before: base,
-			after:  file([]actualsdata.Coverage{cov("A", "2026-08-01", "2026-08-31"), cov("B", "2026-08-01", "2026-08-31")}, tx("t1", "2026-08-01", 900, "rent")),
 		},
 	}
 
@@ -78,8 +67,8 @@ func TestDiffCleanCases(t *testing.T) {
 }
 
 func TestDiffCatchesRemoval(t *testing.T) {
-	before := file(wholeAugust, tx("t1", "2026-08-01", 900, "rent"), tx("t2", "2026-08-04", 40, "gym"))
-	after := file(wholeAugust, tx("t2", "2026-08-04", 40, "gym"))
+	before := file(tx("t1", "2026-08-01", 900, "rent"), tx("t2", "2026-08-04", 40, "gym"))
+	after := file(tx("t2", "2026-08-04", 40, "gym"))
 
 	got := Diff(before, after)
 	if len(got) != 1 {
@@ -110,7 +99,7 @@ func TestDiffCatchesEachMutatedField(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Diff(file(wholeAugust, base), file(wholeAugust, tt.change(base)))
+			got := Diff(file(base), file(tt.change(base)))
 			if len(got) == 0 {
 				t.Fatalf("a changed %s went unreported", tt.name)
 			}
@@ -127,45 +116,18 @@ func TestDiffCatchesEachMutatedField(t *testing.T) {
 	}
 }
 
-func TestDiffCatchesCoverageRegression(t *testing.T) {
-	before := file(wholeAugust, tx("t1", "2026-08-01", 900, "rent"))
-	after := file([]actualsdata.Coverage{cov("A", "2026-08-15", "2026-08-31")}, tx("t1", "2026-08-01", 900, "rent"))
-
-	got := Diff(before, after)
-	if len(got) != 1 {
-		t.Fatalf("Diff() = %v, want exactly one change", got)
-	}
-	if got[0].Kind != CoverageShrank || got[0].Subject != "A" {
-		t.Errorf("got %+v, want a coverage regression naming account A", got[0])
-	}
-	if !strings.Contains(got[0].Detail, "14 day(s)") {
-		t.Errorf("detail = %q, want it to count the lost days", got[0].Detail)
-	}
-}
-
-// TestDiffCatchesADroppedAccount: a whole account stops being imported.
-func TestDiffCatchesADroppedAccount(t *testing.T) {
-	before := file([]actualsdata.Coverage{cov("A", "2026-08-01", "2026-08-31"), cov("B", "2026-08-01", "2026-08-31")})
-	after := file(wholeAugust)
-
-	got := Diff(before, after)
-	if len(got) != 1 || got[0].Subject != "B" {
-		t.Fatalf("Diff() = %v, want one regression naming account B", got)
-	}
-}
-
 // TestDiffReportsEverything: a submission breaking several rules reports all
 // of them.
 func TestDiffReportsEverything(t *testing.T) {
-	before := file(wholeAugust, tx("t1", "2026-08-01", 900, "rent"), tx("t2", "2026-08-04", 40, "gym"))
-	after := file([]actualsdata.Coverage{cov("A", "2026-08-01", "2026-08-09")}, tx("t2", "2026-08-04", 999, "gym"))
+	before := file(tx("t1", "2026-08-01", 900, "rent"), tx("t2", "2026-08-04", 40, "gym"))
+	after := file(tx("t2", "2026-08-04", 999, "gym"))
 
 	got := Diff(before, after)
 	kinds := map[string]bool{}
 	for _, c := range got {
 		kinds[c.Kind] = true
 	}
-	for _, want := range []string{Removed, Mutated, CoverageShrank} {
+	for _, want := range []string{Removed, Mutated} {
 		if !kinds[want] {
 			t.Errorf("Diff() = %v, want it to include a %s", got, want)
 		}
@@ -181,7 +143,7 @@ func split(id, date string, amount float64, parts ...actualsdata.Split) actualsd
 // already watched — so without this, money moves between categories and the
 // anti-vanish check reports a clean run.
 func TestDiffSeesSplitChanges(t *testing.T) {
-	base := file(wholeAugust, split("w1", "2026-08-14", 100,
+	base := file(split("w1", "2026-08-14", 100,
 		actualsdata.Split{Amount: 60, Category: strp("restaurants")},
 		actualsdata.Split{Amount: 40, Category: strp("clothes")},
 	))
@@ -191,19 +153,19 @@ func TestDiffSeesSplitChanges(t *testing.T) {
 		after actualsdata.ActualsFile
 		want  bool
 	}{
-		{"identical", file(wholeAugust, split("w1", "2026-08-14", 100,
+		{"identical", file(split("w1", "2026-08-14", 100,
 			actualsdata.Split{Amount: 60, Category: strp("restaurants")},
 			actualsdata.Split{Amount: 40, Category: strp("clothes")})), false},
-		{"a part moves to another category", file(wholeAugust, split("w1", "2026-08-14", 100,
+		{"a part moves to another category", file(split("w1", "2026-08-14", 100,
 			actualsdata.Split{Amount: 60, Category: strp("restaurants")},
 			actualsdata.Split{Amount: 40, Category: strp("groceries")})), true},
-		{"the parts are re-weighted", file(wholeAugust, split("w1", "2026-08-14", 100,
+		{"the parts are re-weighted", file(split("w1", "2026-08-14", 100,
 			actualsdata.Split{Amount: 80, Category: strp("restaurants")},
 			actualsdata.Split{Amount: 20, Category: strp("clothes")})), true},
-		{"a part becomes ignored", file(wholeAugust, split("w1", "2026-08-14", 100,
+		{"a part becomes ignored", file(split("w1", "2026-08-14", 100,
 			actualsdata.Split{Amount: 60, Category: strp("restaurants")},
 			actualsdata.Split{Amount: 40, Ignored: strp("cash")})), true},
-		{"the split collapses to one category", file(wholeAugust,
+		{"the split collapses to one category", file(
 			tx("w1", "2026-08-14", 100, "restaurants")), true},
 	}
 	for _, tt := range tests {

@@ -115,6 +115,21 @@ func (s *Service) BudgetForMonth(ctx context.Context, month string) (*MonthBudge
 	return mb, nil
 }
 
+func (s *Service) budgetPath() string {
+	if s.BudgetPath != "" {
+		return s.BudgetPath
+	}
+	return "data/budget.json"
+}
+
+func (s *Service) actualsPath(month string) string {
+	prefix := s.ActualsPrefix
+	if prefix == "" {
+		prefix = "data/actuals"
+	}
+	return prefix + "/" + month + ".json"
+}
+
 func (s *Service) budgetSHA(ctx context.Context) string {
 	if s.Store == nil {
 		return ""
@@ -192,7 +207,6 @@ func newestAsOf(a accountsdata.Account) string {
 
 type ActualsMonth struct {
 	Month        string                    `json:"month"`
-	Coverage     []actualsdata.Coverage    `json:"coverage"`
 	Transactions []actualsdata.Transaction `json:"transactions"`
 
 	SHA string `json:"sha,omitempty"`
@@ -213,7 +227,7 @@ func (s *Service) ActualsFor(ctx context.Context, month string) (*ActualsMonth, 
 	if !present {
 		return nil, errorf(CodeNotFound, "%s has not been reconciled", month)
 	}
-	return &ActualsMonth{Month: af.Month, Coverage: af.Coverage, Transactions: af.Transactions}, nil
+	return &ActualsMonth{Month: af.Month, Transactions: af.Transactions}, nil
 }
 
 func (s *Service) actualsFromStore(ctx context.Context, month string) (*ActualsMonth, error) {
@@ -232,7 +246,7 @@ func (s *Service) actualsFromStore(ctx context.Context, month string) (*ActualsM
 	if err := json.Unmarshal(content, &af); err != nil {
 		return nil, errorf(CodeUpstream, "%s does not parse: %v", path, err)
 	}
-	return &ActualsMonth{Month: af.Month, Coverage: af.Coverage, Transactions: af.Transactions, SHA: sha}, nil
+	return &ActualsMonth{Month: af.Month, Transactions: af.Transactions, SHA: sha}, nil
 }
 
 const (
@@ -449,166 +463,6 @@ func (s *Service) monthsToScan(ctx context.Context, q SearchQuery) ([]string, er
 		out = append(out, k)
 	}
 	return out, nil
-}
-
-type MonthStatus struct {
-	Month            string                 `json:"month"`
-	Present          bool                   `json:"present"`
-	Coverage         []actualsdata.Coverage `json:"coverage,omitempty"`
-	TransactionCount int                    `json:"transaction_count"`
-	IgnoredCount     int                    `json:"ignored_count"`
-	PlannedCents     int                    `json:"planned_cents"`
-	ActualCents      int                    `json:"actual_cents"`
-	Complete         bool                   `json:"complete"`
-	Mistimed         []MistimedCharge       `json:"mistimed,omitempty"`
-
-	UntrackedCount int `json:"untracked_count"`
-	UntrackedCents int `json:"untracked_cents"`
-}
-
-type MistimedCharge struct {
-	CategoryID  string `json:"category_id"`
-	Name        string `json:"name"`
-	PlannedFor  string `json:"planned_for"`
-	ChargedIn   string `json:"charged_in"`
-	AmountCents int    `json:"amount_cents"`
-}
-
-func (s *Service) Reconciliation(ctx context.Context, year int) ([]MonthStatus, error) {
-	if year < minYear || year > maxYear {
-		return nil, errorf(CodeInvalidRequest, "year must look like 2026")
-	}
-	byMonth, err := s.Budget.PlannedByMonth(ctx, year)
-	if err != nil {
-		return nil, errorf(CodeInternal, "reading budget.json: %v", err)
-	}
-	idx, err := s.Budget.CategoryIndex(ctx)
-	if err != nil {
-		return nil, errorf(CodeInternal, "reading budget.json: %v", err)
-	}
-	charged, err := s.Actuals.ChargedMonths(ctx, year, s.Start)
-	if err != nil {
-		return nil, errorf(CodeInternal, "scanning actuals: %v", err)
-	}
-
-	out := make([]MonthStatus, 0, 12)
-	for m := time.January; m <= time.December; m++ {
-		key := monthKey(year, m)
-		st := MonthStatus{Month: key}
-		for _, c := range byMonth[key] {
-			st.PlannedCents += c.PlannedCents
-		}
-
-		af, present, ferr := s.Actuals.TransactionsForMonth(ctx, year, m)
-		if ferr != nil {
-			return nil, errorf(CodeInternal, "reading %s: %v", key, ferr)
-		}
-		if present {
-			st.Present = true
-			st.Coverage = af.Coverage
-			st.TransactionCount = len(af.Transactions)
-			for _, tx := range af.Transactions {
-				parts := actualsdata.PartsOf(tx)
-				spent := 0
-				for _, p := range parts {
-					if p.Category != "" {
-						spent += eurToCents(p.Amount)
-					}
-					if p.Untracked != "" {
-						st.UntrackedCents += eurToCents(p.Amount)
-					}
-				}
-				if anyPart(parts, func(p actualsdata.Part) bool { return p.Untracked != "" }) {
-					st.UntrackedCount++
-				}
-				if !anyPart(parts, func(p actualsdata.Part) bool { return p.Ignored == "" }) {
-					st.IgnoredCount++
-					continue
-				}
-				st.ActualCents += spent
-			}
-			view, verr := s.Actuals.ForMonth(ctx, year, m)
-			if verr != nil {
-				return nil, errorf(CodeInternal, "reading %s: %v", key, verr)
-			}
-			st.Complete = view.Complete
-			st.Mistimed = mistimedIn(af, year, m, byMonth[key], idx, charged)
-		}
-		out = append(out, st)
-	}
-	return out, nil
-}
-
-func mistimedIn(af actualsdata.ActualsFile, year int, viewed time.Month, planned []tracker.PlannedCategory, idx map[string]tracker.PlannedCategory, charged map[string][]time.Month) []MistimedCharge {
-	here := monthKey(year, viewed)
-	var out []MistimedCharge
-	seen := map[string]bool{}
-	chargedHere := map[string]bool{}
-
-	for _, tx := range af.Transactions {
-		for _, part := range actualsdata.PartsOf(tx) {
-			id := part.Category
-			if id == "" {
-				continue
-			}
-			chargedHere[id] = true
-			if seen[id] {
-				continue
-			}
-			cat, ok := idx[id]
-			if !ok || cat.Date == "" {
-				continue
-			}
-			due, err := dueMonth(cat.Date)
-			if err != nil || due == here {
-				continue
-			}
-			seen[id] = true
-			out = append(out, MistimedCharge{
-				CategoryID: id, Name: cat.Name,
-				PlannedFor: due, ChargedIn: here,
-				AmountCents: eurToCents(part.Amount),
-			})
-		}
-	}
-
-	for _, c := range planned {
-		if c.Date == "" || seen[c.ID] || chargedHere[c.ID] {
-			continue
-		}
-		due, err := dueMonth(c.Date)
-		if err != nil || due != here {
-			continue
-		}
-		elsewhere, found := firstOtherMonth(charged[c.ID], viewed)
-		if !found {
-			continue
-		}
-		seen[c.ID] = true
-		out = append(out, MistimedCharge{
-			CategoryID: c.ID, Name: c.Name,
-			PlannedFor: here, ChargedIn: monthKey(year, elsewhere),
-			AmountCents: c.PlannedCents,
-		})
-	}
-	return out
-}
-
-func dueMonth(date string) (string, error) {
-	d, err := time.Parse("2006-01-02", date)
-	if err != nil {
-		return "", err
-	}
-	return monthKey(d.Year(), d.Month()), nil
-}
-
-func firstOtherMonth(months []time.Month, viewed time.Month) (time.Month, bool) {
-	for _, m := range months {
-		if m != viewed {
-			return m, true
-		}
-	}
-	return 0, false
 }
 
 func monthKey(year int, month time.Month) string {

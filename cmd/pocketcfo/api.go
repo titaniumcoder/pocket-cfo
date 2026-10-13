@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/api"
-	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
 
 const apiRequestTimeout = 30 * time.Second
@@ -30,22 +29,8 @@ func (s *server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/accounts", s.apiAccounts)
 	mux.HandleFunc("GET /api/actuals/{month}", s.apiActuals)
 	mux.HandleFunc("GET /api/transactions", s.apiTransactions)
-	mux.HandleFunc("GET /api/reconciliation", s.apiReconciliation)
-	mux.HandleFunc("GET /api/config", s.apiFinanceConfig)
 	mux.HandleFunc("GET /api/invoices", s.apiInvoices)
-	mux.HandleFunc("GET /api/invoices/{number}/document", s.apiInvoiceDocument)
 	mux.HandleFunc("GET /api/invoices/{number}/pdf", s.apiInvoicePDF)
-	mux.HandleFunc("POST /api/invoices/paid", s.apiSetInvoicePaid)
-	mux.HandleFunc("POST /api/invoices/draft", s.apiSaveInvoiceDraft)
-	mux.HandleFunc("POST /api/invoices/issue", s.apiIssueInvoice)
-	mux.HandleFunc("GET /api/files/{name}", s.apiReadFile)
-	mux.HandleFunc("PUT /api/files/{name}", s.apiWriteFile)
-	mux.HandleFunc("POST /api/actuals/ids", s.apiDeriveIDs)
-	mux.HandleFunc("POST /api/actuals/add", s.apiAddActuals)
-	mux.HandleFunc("POST /api/actuals/edit", s.apiEditActuals)
-	mux.HandleFunc("POST /api/accounts/balance", s.apiRecordAccountBalance)
-	mux.HandleFunc("POST /api/budget/move-planned-expense", s.apiMovePlannedExpense)
-	mux.HandleFunc("POST /api/budget/schedule-amount-change", s.apiScheduleAmountChange)
 
 	mcpHandler := s.requireBearer(capBody(maxMCPBody, s.apiService().MCPHandler(mcpServerVersion)))
 	mux.Handle("POST /mcp", mcpHandler)
@@ -85,19 +70,8 @@ func (s *server) apiService() *api.Service {
 	if s.tracker != nil {
 		svc.Budget, svc.Accounts, svc.Actuals = s.tracker.Budget, s.tracker.Accounts, s.tracker.Actuals
 		svc.Start = s.tracker.Start
-		svc.Personal = s.tracker.Personal
 		svc.InvoicesDir = invoicesDir
 		svc.PaidInvoicesPath = paidInvoicesPath
-		svc.CatalogPath = catalogNotesPath()
-		// The same computation the dashboard renders, invoices and all, so a
-		// figure this API reports and a figure on the page cannot drift.
-		svc.Figures = func(ctx context.Context, year int, month time.Month) (tracker.Figures, error) {
-			trk, err := s.trackerForRequest()
-			if err != nil {
-				return tracker.Figures{}, err
-			}
-			return trk.ComputeMonth(ctx, year, month), nil
-		}
 	}
 	if s.cfg.githubDataToken != "" {
 		svc.Store = &api.ContentsClient{
@@ -144,46 +118,6 @@ func decodeAPIBody(w http.ResponseWriter, r *http.Request, into any) bool {
 	return true
 }
 
-func (s *server) apiAddActuals(w http.ResponseWriter, r *http.Request) {
-	if !s.apiAuthorized(w, r) {
-		return
-	}
-	var req api.AddRequest
-	if !decodeAPIBody(w, r, &req) {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
-	defer cancel()
-
-	out, err := s.apiService().AddTransactions(ctx, req)
-	if err != nil {
-		writeAPIError(w, err, apiStatus(err))
-		return
-	}
-	writeAPIJSON(w, http.StatusOK, out)
-}
-
-func (s *server) apiEditActuals(w http.ResponseWriter, r *http.Request) {
-	if !s.apiAuthorized(w, r) {
-		return
-	}
-	var req api.EditRequest
-	if !decodeAPIBody(w, r, &req) {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
-	defer cancel()
-
-	out, err := s.apiService().EditTransactions(ctx, req)
-	if err != nil {
-		writeAPIError(w, err, apiStatus(err))
-		return
-	}
-	writeAPIJSON(w, http.StatusOK, out)
-}
-
 func (s *server) apiBudgetCategories(w http.ResponseWriter, r *http.Request) {
 	s.serveAPI(w, r, func(ctx context.Context, svc *api.Service) (any, error) {
 		return svc.Categories(ctx)
@@ -197,12 +131,6 @@ func (s *server) apiBudgetPeriod(w http.ResponseWriter, r *http.Request) {
 			return svc.BudgetForYear(ctx, period)
 		}
 		return svc.BudgetForMonth(ctx, period)
-	})
-}
-
-func (s *server) apiFinanceConfig(w http.ResponseWriter, r *http.Request) {
-	s.serveAPI(w, r, func(ctx context.Context, svc *api.Service) (any, error) {
-		return svc.FinanceConfig(ctx)
 	})
 }
 
@@ -243,19 +171,6 @@ func (s *server) apiTransactions(w http.ResponseWriter, r *http.Request) {
 	}
 	s.serveAPI(w, r, func(ctx context.Context, svc *api.Service) (any, error) {
 		return svc.Search(ctx, sq)
-	})
-}
-
-func (s *server) apiReconciliation(w http.ResponseWriter, r *http.Request) {
-	raw := r.URL.Query().Get("year")
-	s.serveAPI(w, r, func(ctx context.Context, svc *api.Service) (any, error) {
-		year, err := strconv.Atoi(raw)
-		if raw == "" {
-			year = time.Now().Year()
-		} else if err != nil {
-			return nil, &api.Error{Code: api.CodeInvalidRequest, Message: "year must look like 2026"}
-		}
-		return svc.Reconciliation(ctx, year)
 	})
 }
 
@@ -344,33 +259,6 @@ func (s *server) apiInvoices(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *server) apiSetInvoicePaid(w http.ResponseWriter, r *http.Request) {
-	if !s.apiAuthorized(w, r) {
-		return
-	}
-	var req api.InvoicePaymentRequest
-	if !decodeAPIBody(w, r, &req) {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
-	defer cancel()
-
-	out, err := s.apiService().SetInvoicePaid(ctx, req)
-	if err != nil {
-		writeAPIError(w, err, apiStatus(err))
-		return
-	}
-	writeAPIJSON(w, http.StatusOK, out)
-}
-
-func (s *server) apiInvoiceDocument(w http.ResponseWriter, r *http.Request) {
-	number := r.PathValue("number")
-	s.serveAPI(w, r, func(ctx context.Context, svc *api.Service) (any, error) {
-		return svc.InvoiceDocumentFor(ctx, number)
-	})
-}
-
 func (s *server) apiInvoicePDF(w http.ResponseWriter, r *http.Request) {
 	if !s.apiAuthorized(w, r) {
 		return
@@ -399,146 +287,4 @@ func (s *server) apiInvoicePDF(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/pdf")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", target.Filename))
 	http.ServeContent(w, r, target.Filename, time.Time{}, f)
-}
-
-func (s *server) apiSaveInvoiceDraft(w http.ResponseWriter, r *http.Request) {
-	if !s.apiAuthorized(w, r) {
-		return
-	}
-	var req api.SaveDraftRequest
-	if !decodeAPIBody(w, r, &req) {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
-	defer cancel()
-
-	out, err := s.apiService().SaveDraftInvoice(ctx, req)
-	if err != nil {
-		writeAPIError(w, err, apiStatus(err))
-		return
-	}
-	writeAPIJSON(w, http.StatusOK, out)
-}
-
-func (s *server) apiIssueInvoice(w http.ResponseWriter, r *http.Request) {
-	if !s.apiAuthorized(w, r) {
-		return
-	}
-	var req api.IssueInvoiceRequest
-	if !decodeAPIBody(w, r, &req) {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
-	defer cancel()
-
-	out, err := s.apiService().IssueInvoice(ctx, req)
-	if err != nil {
-		writeAPIError(w, err, apiStatus(err))
-		return
-	}
-	writeAPIJSON(w, http.StatusOK, out)
-}
-
-func (s *server) apiRecordAccountBalance(w http.ResponseWriter, r *http.Request) {
-	if !s.apiAuthorized(w, r) {
-		return
-	}
-	var req api.RecordBalanceRequest
-	if !decodeAPIBody(w, r, &req) {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
-	defer cancel()
-
-	out, err := s.apiService().RecordAccountBalance(ctx, req)
-	if err != nil {
-		writeAPIError(w, err, apiStatus(err))
-		return
-	}
-	writeAPIJSON(w, http.StatusOK, out)
-}
-
-func (s *server) apiMovePlannedExpense(w http.ResponseWriter, r *http.Request) {
-	if !s.apiAuthorized(w, r) {
-		return
-	}
-	var req api.MoveRequest
-	if !decodeAPIBody(w, r, &req) {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
-	defer cancel()
-
-	out, err := s.apiService().MovePlannedExpense(ctx, req)
-	if err != nil {
-		writeAPIError(w, err, apiStatus(err))
-		return
-	}
-	writeAPIJSON(w, http.StatusOK, out)
-}
-
-func (s *server) apiScheduleAmountChange(w http.ResponseWriter, r *http.Request) {
-	if !s.apiAuthorized(w, r) {
-		return
-	}
-	var req api.ScheduleAmountChangeRequest
-	if !decodeAPIBody(w, r, &req) {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
-	defer cancel()
-
-	out, err := s.apiService().ScheduleAmountChange(ctx, req)
-	if err != nil {
-		writeAPIError(w, err, apiStatus(err))
-		return
-	}
-	writeAPIJSON(w, http.StatusOK, out)
-}
-
-func (s *server) apiDeriveIDs(w http.ResponseWriter, r *http.Request) {
-	if !s.apiAuthorized(w, r) {
-		return
-	}
-	var req api.DeriveIDsRequest
-	if !decodeAPIBody(w, r, &req) {
-		return
-	}
-	out, err := s.apiService().DeriveIDs(req)
-	if err != nil {
-		writeAPIError(w, err, apiStatus(err))
-		return
-	}
-	writeAPIJSON(w, http.StatusOK, out)
-}
-
-func (s *server) apiReadFile(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	s.serveAPI(w, r, func(ctx context.Context, svc *api.Service) (any, error) {
-		return svc.ReadDataFile(ctx, name)
-	})
-}
-
-func (s *server) apiWriteFile(w http.ResponseWriter, r *http.Request) {
-	if !s.apiAuthorized(w, r) {
-		return
-	}
-	var req api.FileWriteRequest
-	if !decodeAPIBody(w, r, &req) {
-		return
-	}
-	req.Name = r.PathValue("name")
-	ctx, cancel := context.WithTimeout(r.Context(), apiRequestTimeout)
-	defer cancel()
-	out, err := s.apiService().WriteDataFile(ctx, req)
-	if err != nil {
-		writeAPIError(w, err, apiStatus(err))
-		return
-	}
-	writeAPIJSON(w, http.StatusOK, out)
 }

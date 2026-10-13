@@ -85,7 +85,7 @@ func applyToGroups(groups []CategoryGroupView, av ActualsView, viewedYear int, v
 				g.ActualCents += cents
 				g.HasActual = true
 			}
-			row.ActualStatus, row.ActualNote = actualStatus(*row, av.Complete, viewedYear, viewed, charged)
+			row.ActualStatus, row.ActualNote = actualStatus(*row, viewedYear, viewed, charged)
 			if row.ActualStatus == ActualMistimed {
 				g.HasMistimed = true
 			}
@@ -123,7 +123,7 @@ func worseStatus(a, b string) string {
 	return a
 }
 
-func actualStatus(row CategoryRow, coverageComplete bool, viewedYear int, viewed time.Month, charged map[string][]time.Month) (status, note string) {
+func actualStatus(row CategoryRow, viewedYear int, viewed time.Month, charged map[string][]time.Month) (status, note string) {
 	if dueYear, due, ok := plannedMonth(row.PlannedDate); ok && charged != nil {
 		if row.HasActual && (due != viewed || dueYear != viewedYear) {
 			if dueYear != viewedYear {
@@ -148,7 +148,7 @@ func actualStatus(row CategoryRow, coverageComplete bool, viewedYear int, viewed
 		return ActualUnbudgeted, ""
 	case over > tolerance:
 		return ActualOver, ""
-	case -over > tolerance && coverageComplete:
+	case -over > tolerance:
 		return ActualUnder, ""
 	}
 	return "", ""

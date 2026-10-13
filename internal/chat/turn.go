@@ -43,13 +43,12 @@ type Upload struct {
 }
 
 type Event struct {
-	Event    string         `json:"event"`
-	Message  *Message       `json:"message,omitempty"`
-	Pending  *PendingChange `json:"pending,omitempty"`
-	Question *Question      `json:"question,omitempty"`
-	Index    int            `json:"index,omitempty"`
-	Error    string         `json:"error,omitempty"`
-	Usage    *Usage         `json:"usage,omitempty"`
+	Event    string    `json:"event"`
+	Message  *Message  `json:"message,omitempty"`
+	Question *Question `json:"question,omitempty"`
+	Index    int       `json:"index,omitempty"`
+	Error    string    `json:"error,omitempty"`
+	Usage    *Usage    `json:"usage,omitempty"`
 }
 
 type Runner struct {
@@ -72,9 +71,6 @@ func (r *Runner) Run(ctx context.Context, c *Chat, in Input, emit func(Event) er
 			return err
 		}
 	} else if err := r.Store.Save(c); err != nil {
-		return err
-	}
-	if err := r.replayPending(ctx, c, emit); err != nil {
 		return err
 	}
 	tools, err := Definitions(r.Service.Tools())
@@ -215,23 +211,6 @@ func titleOf(text string, files []Upload) string {
 	return line
 }
 
-func (r *Runner) replayPending(ctx context.Context, c *Chat, emit func(Event) error) error {
-	if len(c.Pending) == 0 {
-		return nil
-	}
-	calls := make([]api.ToolCall, 0, len(c.Pending))
-	for _, p := range c.Pending {
-		calls = append(calls, api.ToolCall{Name: p.Tool, Arguments: p.Arguments})
-	}
-	for i, s := range api.Replay(ctx, r.Service, calls) {
-		c.Pending[i].Summary, c.Pending[i].Diff, c.Pending[i].Error = summarize(s.Result), diffOf(s.Result), errorMessage(s.Err)
-		if err := emit(Event{Event: "pending", Index: i, Pending: &c.Pending[i]}); err != nil {
-			return err
-		}
-	}
-	return r.Store.Save(c)
-}
-
 func (r *Runner) execute(ctx context.Context, c *Chat, byName map[string]api.Tool, tc ToolCall) (Message, *Event) {
 	reply := func(content string) Message {
 		return Message{Role: "tool", ToolCallID: tc.ID, Name: tc.Function.Name, Content: content}
@@ -247,20 +226,11 @@ func (r *Runner) execute(ctx context.Context, c *Chat, byName map[string]api.Too
 	if !json.Valid(args) {
 		return reply(errorJSON(&api.Error{Code: api.CodeInvalidRequest, Message: "arguments are not JSON"})), nil
 	}
-	if tool.ReadOnly {
-		out, err := tool.Call(ctx, args)
-		if err != nil {
-			return reply(errorJSON(err)), nil
-		}
-		return reply(resultJSON(out)), nil
+	out, err := tool.Call(ctx, args)
+	if err != nil {
+		return reply(errorJSON(err)), nil
 	}
-	staged := api.Replay(ctx, r.Service, []api.ToolCall{{Name: tool.Name, Arguments: args}})[0]
-	if staged.Err != nil {
-		return reply(errorJSON(staged.Err)), nil
-	}
-	c.Pending = append(c.Pending, PendingChange{Tool: tool.Name, Arguments: args, Summary: summarize(staged.Result), Diff: diffOf(staged.Result)})
-	index := len(c.Pending) - 1
-	return reply(stagedJSON(staged.Result)), &Event{Event: "pending", Index: index, Pending: &c.Pending[index]}
+	return reply(resultJSON(out)), nil
 }
 
 func (r *Runner) system() []Message {
@@ -286,14 +256,6 @@ func resultJSON(v any) string {
 	return string(b)
 }
 
-func stagedJSON(v any) string {
-	b, err := json.Marshal(map[string]any{"staged": true, "pending_approval": "nothing is committed until the user approves this change", "dry_run": v})
-	if err != nil {
-		return errorJSON(err)
-	}
-	return string(b)
-}
-
 func errorJSON(err error) string {
 	var e *api.Error
 	if !errors.As(err, &e) {
@@ -301,20 +263,6 @@ func errorJSON(err error) string {
 	}
 	b, _ := json.Marshal(map[string]any{"error": map[string]any{"code": e.Code, "message": e.Message, "details": e.Details}})
 	return string(b)
-}
-
-func errorMessage(e *api.Error) string {
-	if e == nil {
-		return ""
-	}
-	return e.Message
-}
-
-func diffOf(v any) string {
-	if fr, ok := v.(*api.FileWriteResult); ok {
-		return fr.Diff
-	}
-	return ""
 }
 
 func summarize(v any) string {

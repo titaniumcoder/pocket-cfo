@@ -87,63 +87,6 @@ func TestActualsForMonth(t *testing.T) {
 	}
 }
 
-func TestActualsCoverage(t *testing.T) {
-	tests := []struct {
-		name     string
-		coverage string
-		complete bool
-	}{
-		{
-			name:     "partial month",
-			coverage: `{ "account": "A", "from": "2026-08-01", "to": "2026-08-09", "imported_at": "2026-08-10" }`,
-		},
-		{
-			name:     "whole month, one range",
-			coverage: `{ "account": "A", "from": "2026-08-01", "to": "2026-08-31", "imported_at": "2026-09-01" }`,
-			complete: true,
-		},
-		{
-			name: "two ranges that meet",
-			coverage: `{ "account": "A", "from": "2026-08-01", "to": "2026-08-15", "imported_at": "2026-08-16" },
-			           { "account": "A", "from": "2026-08-16", "to": "2026-08-31", "imported_at": "2026-09-01" }`,
-			complete: true,
-		},
-		{
-			name: "two ranges with a gap",
-			coverage: `{ "account": "A", "from": "2026-08-01", "to": "2026-08-14", "imported_at": "2026-08-16" },
-			           { "account": "A", "from": "2026-08-16", "to": "2026-08-31", "imported_at": "2026-09-01" }`,
-		},
-		{
-			name: "overlapping ranges still complete",
-			coverage: `{ "account": "A", "from": "2026-08-01", "to": "2026-08-20", "imported_at": "2026-08-21" },
-			           { "account": "A", "from": "2026-08-10", "to": "2026-08-31", "imported_at": "2026-09-01" }`,
-			complete: true,
-		},
-		{
-			name: "one of two accounts stops early",
-			coverage: `{ "account": "A", "from": "2026-08-01", "to": "2026-08-31", "imported_at": "2026-09-01" },
-			           { "account": "B", "from": "2026-08-01", "to": "2026-08-09", "imported_at": "2026-08-10" }`,
-		},
-		{
-			name:     "starts late",
-			coverage: `{ "account": "A", "from": "2026-08-02", "to": "2026-08-31", "imported_at": "2026-09-01" }`,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			body := `{"month":"2026-08","coverage":[` + tt.coverage + `],"transactions":[]}`
-			a := newTestActuals(t, map[string]string{"actuals/2026-08.json": body})
-			got, err := a.ForMonth(context.Background(), 2026, time.August)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got.Complete != tt.complete {
-				t.Errorf("Complete = %v, want %v", got.Complete, tt.complete)
-			}
-		})
-	}
-}
-
 func TestActualsForYear(t *testing.T) {
 	a := newTestActuals(t, map[string]string{
 		"actuals/2026-08.json": testActualsAugust,
@@ -159,9 +102,6 @@ func TestActualsForYear(t *testing.T) {
 	}
 	if want := 180000; got.ByCategory["housing.rent"] != want {
 		t.Errorf("housing.rent = %d, want %d (both months summed)", got.ByCategory["housing.rent"], want)
-	}
-	if got.Complete {
-		t.Error("Complete = true with 2 of 12 months present, want false")
 	}
 }
 

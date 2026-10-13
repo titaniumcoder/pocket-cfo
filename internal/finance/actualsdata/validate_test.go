@@ -11,9 +11,6 @@ func strp(s string) *string { return &s }
 func validFile() ActualsFile {
 	return ActualsFile{
 		Month: "2026-08",
-		Coverage: []Coverage{
-			{Account: "A", From: "2026-08-01", To: "2026-08-31", ImportedAt: "2026-09-01"},
-		},
 		Transactions: []Transaction{
 			{Id: "t1", Date: "2026-08-03", Description: "LIDL", Amount: 42.18, Account: "A", Category: strp("food.groceries")},
 			{Id: "t2", Date: "2026-08-02", Description: "SALARY", Amount: -2400, Account: "A", Ignored: strp("salary")},
@@ -76,27 +73,7 @@ func TestValidateActuals(t *testing.T) {
 			name:    "date is not a real day",
 			mutate:  func(f *ActualsFile) { f.Transactions[0].Date = "2026-02-30" },
 			wantErr: "not a real date",
-		},
-		{
-			name:    "coverage reaches outside the month",
-			mutate:  func(f *ActualsFile) { f.Coverage[0].To = "2026-09-02" },
-			wantErr: "outside",
-		},
-		{
-			name:    "coverage to precedes from",
-			mutate:  func(f *ActualsFile) { f.Coverage[0].To = "2026-08-01"; f.Coverage[0].From = "2026-08-09" },
-			wantErr: "precedes",
-		},
-		{
-			name:   "coverage empty",
-			mutate: func(f *ActualsFile) { f.Coverage = nil },
-			// The schema's minItems catches this on the way in, but the write
-			// path builds a document in Go and marshals it without ever
-			// unmarshalling, so nothing would have stopped it committing
-			// "coverage": null and breaking the file for the next reader.
-			wantErr: "no coverage",
-		},
-		{
+		}, {
 			name:    "month is not a real month",
 			mutate:  func(f *ActualsFile) { f.Month = "2026-13" },
 			wantErr: "not a real month",

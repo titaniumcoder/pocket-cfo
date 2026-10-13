@@ -104,7 +104,6 @@ var apiPaths = []string{
 	"/api/accounts",
 	"/api/actuals/2026-08",
 	"/api/transactions",
-	"/api/reconciliation",
 }
 
 // TestAPIRoutesAbsentWithoutToken: unconfigured, no endpoint answers. env is
@@ -322,26 +321,6 @@ func TestAPIReadEndpoints(t *testing.T) {
 		}
 	})
 
-	t.Run("reconciliation", func(t *testing.T) {
-		w := apiGet(t, s, "/api/reconciliation?year=2026", apiTestToken)
-		if w.Code != http.StatusOK {
-			t.Fatalf("status = %d", w.Code)
-		}
-		var got []map[string]any
-		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
-			t.Fatal(err)
-		}
-		if len(got) != 12 {
-			t.Errorf("got %d months, want 12", len(got))
-		}
-	})
-
-	t.Run("a bad year is 400", func(t *testing.T) {
-		if w := apiGet(t, s, "/api/reconciliation?year=abc", apiTestToken); w.Code != http.StatusBadRequest {
-			t.Errorf("status = %d, want 400", w.Code)
-		}
-	})
-
 	t.Run("an unknown path is a JSON 404, not the login page", func(t *testing.T) {
 		w := apiGet(t, s, "/api/nope", apiTestToken)
 		if w.Code != http.StatusNotFound {
@@ -508,67 +487,6 @@ func postBalance(t *testing.T, s *server, body, token string) *httptest.Response
 	return w
 }
 
-// TestTheBalanceRouteIsGatedLikeEveryOtherWrite: the bearer check is per
-// handler rather than inherited, so a route added later gets no gate for free
-// — and without GITHUB_DATA_TOKEN the honest answer is that the surface exists
-// but cannot commit.
-func TestTheBalanceRouteIsGatedLikeEveryOtherWrite(t *testing.T) {
-	const body = `{"account":"Private Checking","as_of":"2026-06-30","balance":100}`
-
-	if w := postBalance(t, putServer(t), body, ""); w.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d without a bearer, want 401", w.Code)
-	}
-	if w := postBalance(t, putServer(t), body, "nope"); w.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d with the wrong bearer, want 401", w.Code)
-	}
-	w := postBalance(t, apiServer(t, apiTestToken, "prod"), body, apiTestToken) // no githubDataToken
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d with no write token, want 503, body %s", w.Code, w.Body)
-	}
-	if !strings.Contains(w.Body.String(), "write_not_configured") {
-		t.Errorf("body = %s, want write_not_configured", w.Body)
-	}
-}
-
-func TestAPIWritesRequireABearer(t *testing.T) {
-	s := putServer(t)
-	for _, path := range []string{"add", "edit"} {
-		w := apiWrite(t, s, path, `{}`, "")
-		if w.Code != http.StatusUnauthorized {
-			t.Errorf("%s: status = %d, want 401", path, w.Code)
-		}
-	}
-}
-
-func TestAPIWritesWithoutAWriteTokenAre503(t *testing.T) {
-	s := apiServer(t, apiTestToken, "prod") // no githubDataToken
-	w := apiWrite(t, s, "add", addBody, apiTestToken)
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503, body %s", w.Code, w.Body)
-	}
-	var e apiErrorBody
-	json.Unmarshal(w.Body.Bytes(), &e)
-	if e.Error.Code != "write_not_configured" {
-		t.Errorf("code = %q", e.Error.Code)
-	}
-}
-
-func TestAPIWritesRejectAnOversizedBody(t *testing.T) {
-	s := putServer(t)
-	w := apiWrite(t, s, "add", `{"transactions":`+strings.Repeat("a", 2<<20)+`}`, apiTestToken)
-	if w.Code != http.StatusRequestEntityTooLarge && w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want the body cap to reject it", w.Code)
-	}
-}
-
-func TestAPIWritesRejectAnUnknownEnvelopeField(t *testing.T) {
-	s := putServer(t)
-	w := apiWrite(t, s, "add", `{"transactions":[],"typo":1}`, apiTestToken)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400 for an unknown field", w.Code)
-	}
-}
-
 // TestAPIRemovalHasNoRoute: the whole-month PUT is gone, and with it the only
 // way the API could ever have deleted a recorded transaction.
 func TestAPIRemovalHasNoRoute(t *testing.T) {
@@ -589,42 +507,6 @@ func TestAPIRemovalHasNoRoute(t *testing.T) {
 		if w.Code == http.StatusOK {
 			t.Errorf("%s /api/actuals/remove answers: %s", method, w.Body)
 		}
-	}
-}
-
-func TestAPIWritesMapServiceCodesToStatuses(t *testing.T) {
-	tests := []struct {
-		name, path, body string
-		want             int
-	}{
-		{
-			name: "a date that is not a date", path: "add",
-			body: `{"transactions":[{"id":"x","date":"2026-13-01","description":"X","amount":1,"account":"A","category":"` + apiRentCategory + `"}]}`,
-			want: http.StatusBadRequest,
-		},
-		{
-			name: "an unknown category", path: "add",
-			body: `{"transactions":[{"id":"x","date":"2026-08-01","description":"X","amount":1,"account":"A","category":"00000000-0000-4000-8000-0000000000ff"}],` +
-				`"coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}]}`,
-			want: http.StatusBadRequest,
-		},
-		{
-			name: "an edit naming no change", path: "edit",
-			body: `{"edits":[{"id":"x","month":"2026-08"}]}`,
-			want: http.StatusBadRequest,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := putServer(t)
-			w := apiWrite(t, s, tt.path, tt.body, apiTestToken)
-			if w.Code != tt.want {
-				t.Errorf("status = %d, want %d, body %s", w.Code, tt.want, w.Body)
-			}
-			if !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
-				t.Errorf("Content-Type = %q, want JSON", w.Header().Get("Content-Type"))
-			}
-		})
 	}
 }
 

@@ -226,10 +226,10 @@ var templates = `
     <p class="muted">No bank statement has been reconciled for {{.Month}} yet.</p>
     {{else}}
 
-    <h3>Coverage</h3>
+    <h3>Last entry</h3>
     <div class="cov-grid">
-      <span class="cov-head">Account</span><span class="cov-head col-secondary">From</span><span class="cov-head col-secondary">To</span><span class="cov-head col-secondary cov-imported">Imported</span>
-      {{range .Coverage}}<span>{{.Account}}</span><span class="col-secondary">{{.From}}</span><span class="col-secondary">{{.To}}</span><span class="col-secondary cov-imported">{{.ImportedAt}}</span>{{end}}
+      <span class="cov-head">Account</span><span class="cov-head col-secondary">Last entry</span>
+      {{range .LastEntry}}<span>{{.Account}}</span><span class="col-secondary">{{.Date}}</span>{{end}}
     </div>
 
     <!-- One grid for every transaction on the page. Sections and headings span

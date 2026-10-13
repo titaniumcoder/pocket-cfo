@@ -51,7 +51,7 @@ func TestActualsValidate(t *testing.T) {
 
 func TestActualsValidateRejectsAnUnknownCategory(t *testing.T) {
 	dir := actualsDir(t)
-	bad := `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+	bad := `{"month":"2026-08",
 		"transactions":[{"id":"t1","date":"2026-08-01","description":"X","amount":10,"account":"A","category":"gone.away"}]}`
 	if err := os.WriteFile(filepath.Join(dir, "actuals", "2026-08.json"), []byte(bad), 0o644); err != nil {
 		t.Fatal(err)
@@ -109,7 +109,7 @@ func TestActualsValidateBaseRefCatchesARemoval(t *testing.T) {
 	gitRepo(t, dir)
 
 	// The figures still add up, which is why this needs catching.
-	shrunk := `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-02","to":"2026-08-31","imported_at":"2026-09-01"}],
+	shrunk := `{"month":"2026-08",
 		"transactions":[{"id":"t2","date":"2026-08-03","description":"LIDL","amount":210.4,"account":"A","category":"00000000-0000-4000-8000-000000000002"}]}`
 	if err := os.WriteFile(filepath.Join(dir, "actuals", "2026-08.json"), []byte(shrunk), 0o644); err != nil {
 		t.Fatal(err)
@@ -128,7 +128,7 @@ func TestActualsValidateBaseRefAllowsANewMonth(t *testing.T) {
 	dir := actualsDir(t)
 	gitRepo(t, dir)
 
-	september := `{"month":"2026-09","coverage":[{"account":"A","from":"2026-09-01","to":"2026-09-30","imported_at":"2026-10-01"}],
+	september := `{"month":"2026-09",
 		"transactions":[{"id":"s1","date":"2026-09-01","description":"MIETE","amount":900,"account":"A","category":"00000000-0000-4000-8000-000000000001"}]}`
 	if err := os.WriteFile(filepath.Join(dir, "actuals", "2026-09.json"), []byte(september), 0o644); err != nil {
 		t.Fatal(err)
@@ -142,7 +142,7 @@ func TestActualsValidateBaseRefAllowsAdditions(t *testing.T) {
 	dir := actualsDir(t)
 	gitRepo(t, dir)
 
-	grown := `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+	grown := `{"month":"2026-08",
 		"transactions":[
 			{"id":"t1","date":"2026-08-01","description":"MIETE","amount":900,"account":"A","category":"00000000-0000-4000-8000-000000000001"},
 			{"id":"t2","date":"2026-08-03","description":"LIDL","amount":210.4,"account":"A","category":"00000000-0000-4000-8000-000000000002"},
@@ -161,7 +161,7 @@ func TestActualsValidateHonoursTheCommitTrailer(t *testing.T) {
 	dir := actualsDir(t)
 	gitRepo(t, dir)
 
-	shrunk := `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+	shrunk := `{"month":"2026-08",
 		"transactions":[{"id":"t2","date":"2026-08-03","description":"LIDL","amount":210.4,"account":"A","category":"00000000-0000-4000-8000-000000000002"}]}`
 	if err := os.WriteFile(filepath.Join(dir, "actuals", "2026-08.json"), []byte(shrunk), 0o644); err != nil {
 		t.Fatal(err)
@@ -198,7 +198,7 @@ func TestActualsValidateAcceptsFlagsAfterTheDirectory(t *testing.T) {
 	dir := actualsDir(t)
 	gitRepo(t, dir)
 
-	shrunk := `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-02","to":"2026-08-31","imported_at":"2026-09-01"}],
+	shrunk := `{"month":"2026-08",
 		"transactions":[{"id":"t2","date":"2026-08-03","description":"LIDL","amount":210.4,"account":"A","category":"00000000-0000-4000-8000-000000000002"}]}`
 	if err := os.WriteFile(filepath.Join(dir, "actuals", "2026-08.json"), []byte(shrunk), 0o644); err != nil {
 		t.Fatal(err)

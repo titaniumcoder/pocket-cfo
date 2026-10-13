@@ -64,7 +64,6 @@ func TestUntrackedIsADecision(t *testing.T) {
 	base := func(tx Transaction) ActualsFile {
 		return ActualsFile{
 			Month:        "2026-08",
-			Coverage:     []Coverage{{Account: "A", From: "2026-08-01", To: "2026-08-31", ImportedAt: "2026-09-01"}},
 			Transactions: []Transaction{tx},
 		}
 	}
@@ -96,8 +95,7 @@ func TestValidateSplits(t *testing.T) {
 	known := map[string]bool{"a": true, "b": true}
 	base := func(splits []Split) ActualsFile {
 		return ActualsFile{
-			Month:    "2026-08",
-			Coverage: []Coverage{{Account: "A", From: "2026-08-01", To: "2026-08-31", ImportedAt: "2026-09-01"}},
+			Month: "2026-08",
 			Transactions: []Transaction{{
 				Id: "t1", Date: "2026-08-04", Description: "ATM", Amount: 100, Account: "A", Splits: splits,
 			}},
@@ -145,8 +143,7 @@ func TestValidateSplits(t *testing.T) {
 // deciding too would leave two answers and no rule for which wins.
 func TestSplitsCannotAlsoCarryALineCategory(t *testing.T) {
 	af := ActualsFile{
-		Month:    "2026-08",
-		Coverage: []Coverage{{Account: "A", From: "2026-08-01", To: "2026-08-31", ImportedAt: "2026-09-01"}},
+		Month: "2026-08",
 		Transactions: []Transaction{{
 			Id: "t1", Date: "2026-08-04", Description: "ATM", Amount: 100, Account: "A",
 			Category: strp("a"),

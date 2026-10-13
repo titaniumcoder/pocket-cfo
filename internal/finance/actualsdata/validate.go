@@ -25,34 +25,8 @@ func ValidateActuals(af ActualsFile, monthKey string, knownIDs map[string]bool) 
 	}
 	last := first.AddDate(0, 1, -1)
 
-	problems = append(problems, coverageProblems(af, first, last)...)
 	problems = append(problems, transactionProblems(af, first, last, knownIDs)...)
 	return errors.Join(problems...)
-}
-
-func coverageProblems(af ActualsFile, first, last time.Time) []error {
-	var problems []error
-	if len(af.Coverage) == 0 {
-		problems = append(problems, fmt.Errorf("%s has no coverage — a month must say which days were read", af.Month))
-	}
-	for i, c := range af.Coverage {
-		from, ferr := parseDay(c.From)
-		to, terr := parseDay(c.To)
-		switch {
-		case ferr != nil:
-			problems = append(problems, fmt.Errorf("coverage %d (%s): from %q is not a real date", i+1, c.Account, c.From))
-		case terr != nil:
-			problems = append(problems, fmt.Errorf("coverage %d (%s): to %q is not a real date", i+1, c.Account, c.To))
-		case to.Before(from):
-			problems = append(problems, fmt.Errorf("coverage %d (%s): to %s precedes from %s", i+1, c.Account, c.To, c.From))
-		case from.Before(first) || to.After(last):
-			problems = append(problems, fmt.Errorf("coverage %d (%s): %s..%s reaches outside %s — a statement crossing a month boundary splits into two files", i+1, c.Account, c.From, c.To, af.Month))
-		}
-		if _, err := parseDay(c.ImportedAt); err != nil {
-			problems = append(problems, fmt.Errorf("coverage %d (%s): imported_at %q is not a real date", i+1, c.Account, c.ImportedAt))
-		}
-	}
-	return problems
 }
 
 func transactionProblems(af ActualsFile, first, last time.Time, knownIDs map[string]bool) []error {

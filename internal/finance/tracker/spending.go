@@ -22,7 +22,10 @@ type SpendingView struct {
 
 	Present  bool
 	Balances []AccountRow
-	Coverage []CoverageRow
+	// LastEntry holds, per account that has transactions in the month, the
+	// date of that account's newest statement line — the whole of what the
+	// old coverage ranges were good for.
+	LastEntry []LastEntryRow
 
 	Groups    []SpendingGroup
 	Ignored   []SpendingTx
@@ -46,11 +49,9 @@ func appendErr(existing, add string) string {
 	return existing + "; " + add
 }
 
-type CoverageRow struct {
-	Account    string
-	From       string
-	To         string
-	ImportedAt string
+type LastEntryRow struct {
+	Account string
+	Date    string
 }
 
 type SpendingGroup struct {
@@ -115,8 +116,19 @@ func (t *Tracker) ComputeSpending(ctx context.Context, year int, month time.Mont
 	}
 	v.Present = true
 
-	for _, c := range af.Coverage {
-		v.Coverage = append(v.Coverage, CoverageRow{Account: c.Account, From: formatDay(c.From), To: formatDay(c.To), ImportedAt: formatDay(c.ImportedAt)})
+	lastByAccount := map[string]string{}
+	for _, tx := range af.Transactions {
+		if tx.Date > lastByAccount[tx.Account] {
+			lastByAccount[tx.Account] = tx.Date
+		}
+	}
+	accounts := make([]string, 0, len(lastByAccount))
+	for a := range lastByAccount {
+		accounts = append(accounts, a)
+	}
+	sort.Strings(accounts)
+	for _, a := range accounts {
+		v.LastEntry = append(v.LastEntry, LastEntryRow{Account: a, Date: formatDay(lastByAccount[a])})
 	}
 	av, err := t.Actuals.ForMonth(ctx, year, month)
 	if err != nil {

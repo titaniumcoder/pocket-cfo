@@ -252,7 +252,7 @@ func TestActualsFor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Month != "2026-08" || len(got.Transactions) != 4 || len(got.Coverage) != 1 {
+	if got.Month != "2026-08" || len(got.Transactions) != 4 {
 		t.Errorf("got %+v", got)
 	}
 
@@ -400,81 +400,6 @@ func TestSearch(t *testing.T) {
 	})
 }
 
-func TestReconciliation(t *testing.T) {
-	got, err := newService(t).Reconciliation(context.Background(), 2026)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 12 {
-		t.Fatalf("got %d months, want 12", len(got))
-	}
-	byMonth := map[string]MonthStatus{}
-	for _, m := range got {
-		byMonth[m.Month] = m
-	}
-
-	aug := byMonth["2026-08"]
-	if !aug.Present || aug.TransactionCount != 4 || aug.IgnoredCount != 1 {
-		t.Errorf("August = %+v", aug)
-	}
-	if aug.Complete {
-		t.Error("August coverage stops on the 9th; Complete must be false")
-	}
-	// 900 + 210.40 + 1800, ignored salary excluded.
-	if want := 90000 + 21040 + 180000; aug.ActualCents != want {
-		t.Errorf("August ActualCents = %d, want %d", aug.ActualCents, want)
-	}
-	if len(aug.Mistimed) != 1 || aug.Mistimed[0].CategoryID != idLaptop {
-		t.Fatalf("August Mistimed = %+v, want the laptop", aug.Mistimed)
-	}
-	// Month keys, not month names: "October" alone is ambiguous in a JSON API.
-	if m := aug.Mistimed[0]; m.PlannedFor != "2026-10" || m.ChargedIn != "2026-08" {
-		t.Errorf("mistimed = %+v, want planned 2026-10 charged 2026-08", m)
-	}
-
-	// The other direction, and the one that used to be missing: October is the
-	// month the plan expects the laptop in, and the money is already gone.
-	// Nothing in October's own transactions can show this.
-	oct := byMonth["2026-10"]
-	if len(oct.Mistimed) != 1 || oct.Mistimed[0].CategoryID != idLaptop {
-		t.Fatalf("October Mistimed = %+v, want the laptop it is still waiting for", oct.Mistimed)
-	}
-	if m := oct.Mistimed[0]; m.PlannedFor != "2026-10" || m.ChargedIn != "2026-08" || m.AmountCents != 180000 {
-		t.Errorf("October mistimed = %+v, want planned 2026-10 charged 2026-08 at 1800", m)
-	}
-
-	sep := byMonth["2026-09"]
-	if !sep.Present || !sep.Complete {
-		t.Errorf("September = %+v, want present and complete", sep)
-	}
-	if len(sep.Mistimed) != 0 {
-		t.Errorf("September Mistimed = %+v, want none", sep.Mistimed)
-	}
-
-	jul := byMonth["2026-07"]
-	if jul.Present || jul.TransactionCount != 0 {
-		t.Errorf("July = %+v, want absent", jul)
-	}
-	if jul.PlannedCents == 0 {
-		t.Error("an unreconciled month should still report its plan")
-	}
-}
-
-func TestReconciliationOnAnEmptyYear(t *testing.T) {
-	got, err := newService(t).Reconciliation(context.Background(), 2030)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 12 {
-		t.Fatalf("got %d months, want 12", len(got))
-	}
-	for _, m := range got {
-		if m.Present {
-			t.Errorf("%s reported present in a year with no files", m.Month)
-		}
-	}
-}
-
 func TestServicePropagatesABrokenBudget(t *testing.T) {
 	s := &Service{
 		Budget:   &tracker.Budget{FS: fstest.MapFS{}},
@@ -593,50 +518,6 @@ func TestBudgetForMonthMatchesTheDashboard(t *testing.T) {
 	}
 }
 
-// TestMistimedComparesYearAndMonth: a one-off dated next August is not the
-// same plan as this August. Comparing months alone reads the charge as
-// on-time and says nothing, which is the failure mode this whole check
-// exists to prevent.
-func TestMistimedComparesYearAndMonth(t *testing.T) {
-	const idNextYear = "00000000-0000-4000-8000-00000000009f"
-	budget := `{
-  "groups": [
-    { "name": "Equipment", "kind": "company", "categories": [
-      { "id": "` + idNextYear + `", "name": "Server", "amount": 3000, "date": "2027-08-01" }
-    ]}
-  ]
-}`
-	actuals := `{
-  "month": "2026-08",
-  "coverage": [{ "account": "Company Checking", "from": "2026-08-01", "to": "2026-08-31", "imported_at": "2026-09-01" }],
-  "transactions": [
-    { "id": "x1", "date": "2026-08-04", "description": "SERVER SHOP", "amount": 3000, "account": "Company Checking", "category": "` + idNextYear + `" }
-  ]
-}`
-	budgetFS := fstest.MapFS{"budget.json": &fstest.MapFile{Data: []byte(budget)}}
-	s := &Service{
-		Budget:  &tracker.Budget{FS: budgetFS},
-		Actuals: &tracker.Actuals{FS: fstest.MapFS{"actuals/2026-08.json": &fstest.MapFile{Data: []byte(actuals)}}},
-	}
-
-	got, err := s.Reconciliation(context.Background(), 2026)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var aug MonthStatus
-	for _, m := range got {
-		if m.Month == "2026-08" {
-			aug = m
-		}
-	}
-	if len(aug.Mistimed) != 1 {
-		t.Fatalf("Mistimed = %+v, want the server budgeted for next August", aug.Mistimed)
-	}
-	if m := aug.Mistimed[0]; m.PlannedFor != "2027-08" || m.ChargedIn != "2026-08" {
-		t.Errorf("mistimed = %+v, want planned 2027-08 charged 2026-08", m)
-	}
-}
-
 const splitActuals = `{
   "month": "2026-08",
   "coverage": [{ "account": "Private Checking", "from": "2026-08-01", "to": "2026-08-31", "imported_at": "2026-09-01" }],
@@ -658,31 +539,6 @@ func splitService(t *testing.T) *Service {
 		Budget:   &tracker.Budget{FS: fstest.MapFS{"budget.json": &fstest.MapFile{Data: []byte(budgetJSON)}}},
 		Accounts: &tracker.Accounts{FS: fstest.MapFS{}},
 		Actuals:  &tracker.Actuals{FS: fstest.MapFS{"actuals/2026-08.json": &fstest.MapFile{Data: []byte(splitActuals)}}},
-	}
-}
-
-// TestReconciliationCountsSplitParts: a part-ignored split is not an ignored
-// line — its spent part is still in the month's total, and counting the whole
-// line either way is wrong in both directions.
-func TestReconciliationCountsSplitParts(t *testing.T) {
-	got, err := splitService(t).Reconciliation(context.Background(), 2026)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var aug MonthStatus
-	for _, m := range got {
-		if m.Month == "2026-08" {
-			aug = m
-		}
-	}
-	if aug.ActualCents != 7000 {
-		t.Errorf("ActualCents = %d, want 7000 — the spent part, not the whole line and not nothing", aug.ActualCents)
-	}
-	if aug.IgnoredCount != 0 {
-		t.Errorf("IgnoredCount = %d, want 0 — one part being ignored does not make the line ignored", aug.IgnoredCount)
-	}
-	if aug.TransactionCount != 1 {
-		t.Errorf("TransactionCount = %d, want 1 — a split is one statement line", aug.TransactionCount)
 	}
 }
 
@@ -747,35 +603,6 @@ func untrackedService(t *testing.T) *Service {
 		Budget:   &tracker.Budget{FS: fstest.MapFS{"budget.json": &fstest.MapFile{Data: []byte(budgetJSON)}}},
 		Accounts: &tracker.Accounts{FS: fstest.MapFS{}},
 		Actuals:  &tracker.Actuals{FS: fstest.MapFS{"actuals/2026-08.json": &fstest.MapFile{Data: []byte(untrackedActuals)}}},
-	}
-}
-
-// TestReconciliationKeepsUntrackedOutOfTheTotal: untracked money has been
-// spent but attributed to nothing, so counting it against a plan would
-// overstate the spending and understate what is left to decide. It is
-// reported beside the total, never inside it.
-func TestReconciliationKeepsUntrackedOutOfTheTotal(t *testing.T) {
-	got, err := untrackedService(t).Reconciliation(context.Background(), 2026)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var aug MonthStatus
-	for _, m := range got {
-		if m.Month == "2026-08" {
-			aug = m
-		}
-	}
-	if aug.ActualCents != 6000 {
-		t.Errorf("ActualCents = %d, want 6000 — the 40 categorised plus the split's categorised 20, and neither untracked amount", aug.ActualCents)
-	}
-	if aug.UntrackedCents != 13000 {
-		t.Errorf("UntrackedCents = %d, want 13000 — the whole 100 line plus the split's 30 part", aug.UntrackedCents)
-	}
-	if aug.UntrackedCount != 2 {
-		t.Errorf("UntrackedCount = %d, want 2 — counted per line, like IgnoredCount", aug.UntrackedCount)
-	}
-	if aug.IgnoredCount != 0 {
-		t.Errorf("IgnoredCount = %d, want 0 — untracked is not ignored", aug.IgnoredCount)
 	}
 }
 

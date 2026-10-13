@@ -1,21 +1,15 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"go/parser"
 	"go/token"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 // These drive /mcp over raw HTTP with hand-written JSON-RPC rather than
@@ -116,12 +110,7 @@ func TestMCPToolsList(t *testing.T) {
 
 	want := map[string]bool{
 		"list_budget_categories": true, "get_budget": true, "get_actuals": true,
-		"search_transactions": true, "get_reconciliation_status": true,
-		"list_accounts": true, "add_transactions": true, "edit_transactions": true,
-		"move_planned_expense": true, "schedule_amount_change": true,
-		"record_account_balance": true, "get_finance_config": true, "list_invoices": true, "set_invoice_paid": true,
-		"get_invoice_document": true, "save_draft_invoice": true, "issue_invoice": true,
-		"derive_transaction_ids": true, "read_data_file": true, "write_data_file": true,
+		"search_transactions": true, "list_accounts": true, "list_invoices": true,
 	}
 	got := map[string]bool{}
 	for _, raw := range tools {
@@ -142,78 +131,6 @@ func TestMCPToolsList(t *testing.T) {
 	}
 	if len(got) != len(want) {
 		t.Errorf("got %d tools, want %d: %v", len(got), len(want), got)
-	}
-}
-
-// TestMCPWriteToolsDescribeTheirContract: the description is the only thing
-// Hermes reads at call time — HERMES.md may not be in context and the input
-// schema says nothing about intent. Every rule the Go code enforces has to be
-// findable here, so pin the ones that decide whether a write is safe.
-func TestMCPWriteToolsDescribeTheirContract(t *testing.T) {
-	s := apiServer(t, apiTestToken, "prod")
-	w := mcpCall(t, s, apiTestToken, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
-	resp := decodeRPC(t, w.Body.String())
-	tools := resp["result"].(map[string]any)["tools"].([]any)
-
-	want := map[string][]string{
-		// That it never removes, that the month is derived rather than sent,
-		// that a re-send is safe, and what to do with money you cannot place.
-		"add_transactions": {"never touches", "removes", "date decides", "skipped", "untracked"},
-		// That a disposition is replaced wholesale, that the statement facts
-		// and other lines are off limits, and that there is no lock to pass.
-		"edit_transactions": {"replaces", "cannot", "left alone", "no base_sha", "month"},
-		// That the date is a month end and mid-month is refused, that the
-		// figure is the month's own closing balance, that it is appended
-		// rather than written over, and that an account is never invented.
-		"record_account_balance": {
-			"mid-month balances are not allowed", "last day of its month",
-			"closing balance", "closing balance of that month", "appended", "never creates an account",
-		},
-		// That only a future month may be planned — an already closed budget
-		// is fixed in the file — that one-offs are out of reach, that a
-		// correction is a wholesale replacement, and that no negative figure
-		// or an over-tall minimal can sneak in.
-		"schedule_amount_change": {
-			"must be in the future", "already closed budget is fixed in budget.json",
-			"refuses one-offs", "amount_changes", "replaces that month's entry as a whole",
-			"never negative", "cannot exceed the amount it reduces",
-		},
-		// That the upload can never change an invoice's state, that the number
-		// is assigned on creation, that an issued invoice is out of reach
-		// forever, and that a re-send is safe.
-		"save_draft_invoice": {
-			"never changes an invoice's state", "a draft stays a draft",
-			"number is assigned", "refused forever", "write-once", "commits nothing",
-		},
-		// That issuing is the one direction the flag moves, that the diff is
-		// the status line alone, and that the freeze is permanent.
-		"issue_invoice": {
-			"only in that direction", "the status line and nothing else",
-			"freezes the document forever", "idempotent no-op",
-		},
-	}
-	desc := map[string]string{}
-	for _, raw := range tools {
-		tool := raw.(map[string]any)
-		name, _ := tool["name"].(string)
-		desc[name] = strings.ToLower(tool["description"].(string))
-	}
-	for name, phrases := range want {
-		got, ok := desc[name]
-		if !ok {
-			t.Errorf("%s is not listed", name)
-			continue
-		}
-		for _, phrase := range phrases {
-			if !strings.Contains(got, phrase) {
-				t.Errorf("%s description does not mention %q:\n%s", name, phrase, got)
-			}
-		}
-	}
-	// And the retired tool must be gone, not merely undocumented: its whole
-	// contract was that omitting a line deletes it.
-	if _, ok := desc["put_actuals"]; ok {
-		t.Error("put_actuals is still listed")
 	}
 }
 
@@ -384,7 +301,7 @@ func TestMCPAndRESTAgreeOnSearch(t *testing.T) {
 func TestMCPRejectsAnImpossibleYear(t *testing.T) {
 	s := apiServer(t, apiTestToken, "prod")
 	w := mcpCall(t, s, apiTestToken,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_reconciliation_status","arguments":{"year":99}}}`)
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_budget","arguments":{"period":"99"}}}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d", w.Code)
 	}
@@ -405,36 +322,6 @@ func TestMCPBodyIsCapped(t *testing.T) {
 	}
 }
 
-// TestMCPAndRESTAgreeOnCoverageOnlyAdd: reporting that you read further into a
-// month and found nothing new is a real import — it moves the completeness the
-// dashboard withholds judgement on. Both surfaces must accept it and give the
-// same answer, and the MCP one must not refuse it in the SDK's schema layer
-// before the service is ever reached.
-func TestMCPAndRESTAgreeOnCoverageOnlyAdd(t *testing.T) {
-	body := `{"coverage":[{"account":"A","from":"2026-08-01","to":"2026-09-15","imported_at":"2026-09-16"}]}`
-
-	s := putServer(t)
-	r := httptest.NewRequest(http.MethodPost, "/api/actuals/add", strings.NewReader(body))
-	r.Header.Set("Authorization", "Bearer "+apiTestToken)
-	r.Header.Set("Content-Type", "application/json")
-	rest := httptest.NewRecorder()
-	s.routes().ServeHTTP(rest, r)
-
-	w := mcpCall(t, s, apiTestToken,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add_transactions","arguments":`+body+`}}`)
-	mcp := w.Body.String()
-
-	// The range crosses a month boundary, so both must refuse it — and for the
-	// same reason, in our words rather than the schema validator's.
-	const reason = "crosses a month boundary"
-	if !strings.Contains(rest.Body.String(), reason) {
-		t.Errorf("REST said %s, want the boundary refusal", rest.Body)
-	}
-	if !strings.Contains(mcp, reason) {
-		t.Errorf("MCP said %s, want the boundary refusal — a required-property error means the schema refused it first", mcp)
-	}
-}
-
 // TestMCPResultsAreObjects: MCP requires a tool's structured content to be a
 // JSON object. A service method returning a slice puts an array at the top
 // level, which a strict client rejects outright — the whole tool becomes
@@ -444,12 +331,11 @@ func TestMCPResultsAreObjects(t *testing.T) {
 	s := apiServer(t, apiTestToken, "prod")
 
 	calls := map[string]string{
-		"list_budget_categories":    `{}`,
-		"list_accounts":             `{}`,
-		"get_reconciliation_status": `{"year":2026}`,
-		"search_transactions":       `{"years":[2026]}`,
-		"get_budget":                `{"period":"2026-08"}`,
-		"get_actuals":               `{"month":"2026-08"}`,
+		"list_budget_categories": `{}`,
+		"list_accounts":          `{}`,
+		"search_transactions":    `{"years":[2026]}`,
+		"get_budget":             `{"period":"2026-08"}`,
+		"get_actuals":            `{"month":"2026-08"}`,
 	}
 	for name, args := range calls {
 		t.Run(name, func(t *testing.T) {
@@ -476,15 +362,11 @@ func TestMCPResultsAreObjects(t *testing.T) {
 func TestMCPListsNameTheirCollection(t *testing.T) {
 	s := apiServer(t, apiTestToken, "prod")
 	for tool, key := range map[string]string{
-		"list_budget_categories":    "categories",
-		"list_accounts":             "accounts",
-		"get_reconciliation_status": "months",
+		"list_budget_categories": "categories",
+		"list_accounts":          "accounts",
 	} {
 		t.Run(tool, func(t *testing.T) {
 			args := `{}`
-			if tool == "get_reconciliation_status" {
-				args = `{"year":2026}`
-			}
 			w := mcpCall(t, s, apiTestToken,
 				`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"`+tool+`","arguments":`+args+`}}`)
 			resp := decodeRPC(t, w.Body.String())
@@ -559,398 +441,20 @@ func keysOf(m map[string]any) []string {
 	return out
 }
 
-// TestReadToolsStateTheirConsistency: a read that can lag is only safe if the
-// caller is told so. Every read tool over data this API can write has to say
-// what it guarantees, or an agent treats "not found" as "not there" and redoes
-// work it already did.
-func TestReadToolsStateTheirConsistency(t *testing.T) {
+// TestReadsDoNotClaimALag: with the write tools gone the reads answer from
+// the data repo directly, so none of them may still claim eventual
+// consistency with a deploy.
+func TestReadsDoNotClaimALag(t *testing.T) {
 	s := apiServer(t, apiTestToken, "prod")
 	w := mcpCall(t, s, apiTestToken, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	resp := decodeRPC(t, w.Body.String())
 
-	desc := map[string]string{}
 	for _, raw := range resp["result"].(map[string]any)["tools"].([]any) {
 		tool := raw.(map[string]any)
-		desc[tool["name"].(string)], _ = tool["description"].(string)
-	}
-
-	// Reads over data add_transactions, edit_transactions,
-	// move_planned_expense, schedule_amount_change or record_account_balance
-	// can change.
-	for _, name := range []string{"get_actuals", "get_budget", "search_transactions", "get_reconciliation_status", "list_accounts"} {
-		if !strings.Contains(desc[name], "deployed") {
-			t.Errorf("%s never says when a change becomes visible:\n%s", name, desc[name])
+		name, _ := tool["name"].(string)
+		desc, _ := tool["description"].(string)
+		if strings.Contains(strings.ToLower(desc), "deployed") {
+			t.Errorf("%s still claims a deploy lag nothing can produce anymore:\n%s", name, desc)
 		}
-	}
-	// The one that reads data nothing here writes should not claim a caveat it
-	// does not have: no tool creates, renames or removes a category.
-	if strings.Contains(desc["list_budget_categories"], "EVENTUALLY CONSISTENT") {
-		t.Error("list_budget_categories claims to lag, but nothing in this API writes what it reads")
-	}
-}
-
-// TestMCPAndRESTAgreeOnRefusingAMidMonthBalance: the month-end rule is the
-// whole contract of record_account_balance, so it has to be the service that
-// holds it — in our words, on both surfaces. If the SDK's schema layer refused
-// it first, MCP would answer with a validation error nobody can act on, and
-// the rule would be untested on the path Hermes actually takes.
-func TestMCPAndRESTAgreeOnRefusingAMidMonthBalance(t *testing.T) {
-	body := `{"account":"Private Checking","as_of":"2026-08-14","balance":1200}`
-
-	s := putServer(t)
-	r := httptest.NewRequest(http.MethodPost, "/api/accounts/balance", strings.NewReader(body))
-	r.Header.Set("Authorization", "Bearer "+apiTestToken)
-	r.Header.Set("Content-Type", "application/json")
-	rest := httptest.NewRecorder()
-	s.routes().ServeHTTP(rest, r)
-
-	if rest.Code != http.StatusBadRequest {
-		t.Errorf("REST status = %d, want 400", rest.Code)
-	}
-	w := mcpCall(t, s, apiTestToken,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"record_account_balance","arguments":`+body+`}}`)
-
-	const reason = "mid-month"
-	if !strings.Contains(rest.Body.String(), reason) {
-		t.Errorf("REST said %s, want the mid-month refusal", rest.Body)
-	}
-	if !strings.Contains(w.Body.String(), reason) {
-		t.Errorf("MCP said %s, want the mid-month refusal — a schema error means the SDK refused it first", w.Body)
-	}
-}
-
-// fakeContents is a GitHub Contents API just good enough to commit through:
-// the accepted write path is proved in internal/api, and what this pins is
-// that the whole stack in between — SDK decoding, the service, the store —
-// carries a real call from JSON-RPC to a commit.
-type fakeContents struct {
-	files   map[string][]byte
-	blobs   map[string][]byte
-	deletes []string
-	puts    int
-}
-
-func contentSHA(body []byte) string { return "sha-" + fmt.Sprintf("%x", sha256.Sum256(body))[:12] }
-
-func (f *fakeContents) serve(t *testing.T) *httptest.Server {
-	t.Helper()
-	mux := http.NewServeMux()
-	mux.HandleFunc("/repos/{owner}/{repo}/contents/{path...}", func(w http.ResponseWriter, r *http.Request) {
-		path := r.PathValue("path")
-		switch r.Method {
-		case http.MethodGet:
-			if body, ok := f.files[path]; ok {
-				json.NewEncoder(w).Encode(map[string]string{
-					"content": base64.StdEncoding.EncodeToString(body),
-					"sha":     contentSHA(body),
-				})
-				return
-			}
-			var entries []map[string]string
-			for name := range f.files {
-				if rel, ok := strings.CutPrefix(name, path+"/"); ok && !strings.Contains(rel, "/") {
-					entries = append(entries, map[string]string{"name": rel, "type": "file"})
-				}
-			}
-			if entries != nil {
-				json.NewEncoder(w).Encode(entries)
-				return
-			}
-			w.WriteHeader(http.StatusNotFound)
-		case http.MethodPut:
-			var req struct{ Content string }
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("PUT body is not JSON: %v", err)
-			}
-			decoded, err := base64.StdEncoding.DecodeString(req.Content)
-			if err != nil {
-				t.Fatalf("PUT content is not base64: %v", err)
-			}
-			f.files[path] = decoded
-			f.puts++
-			if f.blobs == nil {
-				f.blobs = map[string][]byte{}
-			}
-			f.blobs[contentSHA(decoded)] = decoded
-			json.NewEncoder(w).Encode(map[string]any{"content": map[string]string{"sha": contentSHA(decoded)}})
-		case http.MethodDelete:
-			var req struct{ SHA string }
-			json.NewDecoder(r.Body).Decode(&req)
-			if body, ok := f.files[path]; !ok || contentSHA(body) != req.SHA {
-				w.WriteHeader(http.StatusConflict)
-				return
-			}
-			delete(f.files, path)
-			f.deletes = append(f.deletes, path)
-			io.WriteString(w, "{}")
-		default:
-			t.Fatalf("unexpected method %s", r.Method)
-		}
-	})
-	mux.HandleFunc("GET /repos/{owner}/{repo}/git/blobs/{sha}", func(w http.ResponseWriter, r *http.Request) {
-		body, ok := f.blobs[r.PathValue("sha")]
-		if !ok {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]string{"content": base64.StdEncoding.EncodeToString(body), "encoding": "base64"})
-	})
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	return srv
-}
-
-func writingServer(t *testing.T, files map[string]string) (*server, *fakeContents) {
-	t.Helper()
-	gh := &fakeContents{files: map[string][]byte{}, blobs: map[string][]byte{}}
-	for k, v := range files {
-		gh.files[k] = []byte(v)
-		gh.blobs[contentSHA([]byte(v))] = []byte(v)
-	}
-	srv := gh.serve(t)
-	s := putServer(t)
-	s.cfg.githubAPIURL = srv.URL
-	s.httpClient = srv.Client()
-	return s, gh
-}
-
-// TestMCPRecordsABalanceThroughTheWholeStack drives the accepted path over the
-// wire: the tool is reachable, the arguments survive the SDK's decoding, and
-// what comes back names the month the figure opens rather than the one it
-// closed — the distinction the whole rule exists for.
-func TestMCPRecordsABalanceThroughTheWholeStack(t *testing.T) {
-	s, gh := writingServer(t, map[string]string{
-		"data/accounts.json": `{"accounts":[
-  {"name":"Private Checking","kind":"private","balances":[{"as_of":"2026-07-31","balance":100}]}
-]}`,
-	})
-
-	w := mcpCall(t, s, apiTestToken,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"record_account_balance",`+
-			`"arguments":{"account":"Private Checking","as_of":"2026-07-31","balance":90}}}`)
-	if !strings.Contains(w.Body.String(), "conflict") {
-		t.Errorf("July was already read, so a second reading must conflict: %s", w.Body)
-	}
-
-	w = mcpCall(t, s, apiTestToken,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"record_account_balance",`+
-			`"arguments":{"account":"Private Checking","as_of":"2026-06-30","balance":90.5,"note":"read late"}}}`)
-	resp := decodeRPC(t, w.Body.String())
-	result, ok := resp["result"].(map[string]any)
-	if !ok {
-		t.Fatalf("no result: %s", w.Body)
-	}
-	sc, ok := result["structuredContent"].(map[string]any)
-	if !ok {
-		t.Fatalf("structuredContent is %T, want an object", result["structuredContent"])
-	}
-	if sc["opens"] != "2026-07" || sc["closes"] != "2026-06" {
-		t.Errorf("closes/opens = %v/%v, want 2026-06/2026-07", sc["closes"], sc["opens"])
-	}
-	if sc["kind"] != "private" {
-		t.Errorf("kind = %v, want private", sc["kind"])
-	}
-	written := string(gh.files["data/accounts.json"])
-	if !strings.Contains(written, `{ "as_of": "2026-06-30", "balance": 90.5, "note": "read late" }`) {
-		t.Errorf("the reading was not committed as written:\n%s", written)
-	}
-}
-
-// changeBudgetJSON is the file the GitHub stub serves: a flat rent, so the
-// call has a plain category to step, plus a one-off a mistake could bite on.
-const changeBudgetJSON = `{
-  "$schema": "../internal/finance/data/budget.schema.json",
-  "groups": [
-    { "name": "Housing", "kind": "private", "categories": [
-      { "id": "00000000-0000-4000-8000-000000000001", "name": "Rent", "amount": 900 }
-    ]}
-  ]
-}`
-
-func changeServer(t *testing.T) (*server, *fakeContents) {
-	return writingServer(t, map[string]string{"data/budget.json": changeBudgetJSON})
-}
-
-// TestMCPAndRESTAgreeOnRefusingAStepOnAClosedMonth: the future-only rule is
-// the whole safety case of schedule_amount_change, so both surfaces have to
-// hold it in our words. A month that is already in force is a closed budget;
-// the answer points at budget.json rather than offering to fix it here.
-func TestMCPAndRESTAgreeOnRefusingAStepOnAClosedMonth(t *testing.T) {
-	s, _ := changeServer(t)
-	thisMonth := time.Now().UTC().Format("2006-01")
-	body := `{"category_id":"00000000-0000-4000-8000-000000000001","from_month":` +
-		`"` + thisMonth + `","amount":999,"reason":"late raise","base_sha":"` + contentSHA([]byte(changeBudgetJSON)) + `"}`
-
-	r := httptest.NewRequest(http.MethodPost, "/api/budget/schedule-amount-change", strings.NewReader(body))
-	r.Header.Set("Authorization", "Bearer "+apiTestToken)
-	r.Header.Set("Content-Type", "application/json")
-	rest := httptest.NewRecorder()
-	s.routes().ServeHTTP(rest, r)
-	if rest.Code != http.StatusBadRequest {
-		t.Errorf("REST status = %d, want 400: %s", rest.Code, rest.Body)
-	}
-
-	w := mcpCall(t, s, apiTestToken,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"schedule_amount_change","arguments":`+body+`}}`)
-
-	const reason = "already in force"
-	if !strings.Contains(rest.Body.String(), reason) {
-		t.Errorf("REST said %s, want the closed-month refusal", rest.Body)
-	}
-	if !strings.Contains(w.Body.String(), reason) {
-		t.Errorf("MCP said %s, want the closed-month refusal", w.Body)
-	}
-}
-
-// TestMCPSchedulesAnAmountChangeThroughTheWholeStack: the accepted path over
-// the wire — the tool is reachable, the arguments survive the SDK's
-// decoding, and the committed budget.json carries the new step while every
-// other line of the file stays where it was.
-func TestMCPSchedulesAnAmountChangeThroughTheWholeStack(t *testing.T) {
-	s, gh := changeServer(t)
-	nextJanuary := time.Now().UTC().AddDate(1, 0, 0).Format("2006-01")
-
-	w := mcpCall(t, s, apiTestToken,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"schedule_amount_change","arguments":`+
-			`{"category_id":"00000000-0000-4000-8000-000000000001","from_month":"`+nextJanuary+`"`+
-			`,"amount":950,"minimal_amount":900,"reason":"the landlord put the rent up","base_sha":"`+contentSHA([]byte(changeBudgetJSON))+`"}}}`)
-	resp := decodeRPC(t, w.Body.String())
-	result, ok := resp["result"].(map[string]any)
-	if !ok {
-		t.Fatalf("no result: %s", w.Body)
-	}
-	sc, ok := result["structuredContent"].(map[string]any)
-	if !ok {
-		t.Fatalf("structuredContent is %T, want an object", result["structuredContent"])
-	}
-	if sc["name"] != "Rent" || sc["from"] != nextJanuary || sc["amount"] != 950.0 {
-		t.Errorf("result = %v, want Rent stepping to 950 in %s", sc, nextJanuary)
-	}
-	if sc["sha"] != contentSHA(gh.files["data/budget.json"]) {
-		t.Errorf("sha = %v, want the committed content's sha", sc["sha"])
-	}
-
-	written := string(gh.files["data/budget.json"])
-	entry := `{ "from": "` + nextJanuary + `-01", "amount": 950, "minimal_amount": 900 }`
-	if !strings.Contains(written, `"amount_changes": [ `+entry+` ]`) {
-		t.Errorf("the step was not committed as written:\n%s", written)
-	}
-	if !strings.Contains(written, `{ "id": "00000000-0000-4000-8000-000000000001", "name": "Rent", "amount": 900,`) {
-		t.Errorf("the base amount or the category's other lines moved:\n%s", written)
-	}
-	var doc map[string]any
-	if err := json.Unmarshal(gh.files["data/budget.json"], &doc); err != nil {
-		t.Fatalf("the committed budget.json does not parse: %v", err)
-	}
-}
-
-// draftInvoiceMCP is a valid invoice document for the draft tools: a Swiss
-// business recipient under outside_eu_place_of_supply, like the reference
-// invoices, so it passes the real validators with the real catalog.
-func draftInvoiceForMCP(number, status, title string) string {
-	numberField := ""
-	if number != "" {
-		numberField = `"number": "` + number + `",`
-	}
-	return `{
-  "schema_version": 1,
-  ` + numberField + `
-  "status": "` + status + `",
-  "type": "invoice",
-  "title": "` + title + `",
-  "issue_date": "2026-01-15",
-  "due_date": "2026-02-15",
-  "currency": "EUR",
-  "language": "de",
-  "issuer": {
-    "legal_name": "Example Issuer EOOD",
-    "address": { "line1": "Musterstraße 1", "postal_code": "9000", "city": "Varna", "country_code": "BG" },
-    "tax_id": "000000000",
-    "vat_id": "BG000000000",
-    "bank": { "name": "Example Bank", "iban": "DE89370400440532013000", "bic": "COBADEFFXXX" },
-    "default_currency": "EUR"
-  },
-  "recipient": {
-    "number": 7,
-    "legal_name": "Musterfirma GmbH",
-    "address": { "line1": "Musterweg 1", "postal_code": "8000", "city": "Zürich", "country_code": "CH" },
-    "is_business": true,
-    "language": "de",
-    "payment_terms_days": 30,
-    "email": "buchhaltung@musterfirma.example"
-  },
-  "lines": [
-    { "description": { "de": "Beratung", "bg": "Консултации" }, "unit_price": 15000, "vat_rate": 0 }
-  ],
-  "tax": {
-    "regime": "outside_eu_place_of_supply",
-    "citations": ["ЗДДС чл. 69 ал. 2"],
-    "note": { "de": "Hinweis", "bg": "Бележка" }
-  }
-}`
-}
-
-// TestMCPSavesADraftThroughTheWholeStack: the draft loop over the wire — the
-// document survives the SDK's decoding as a string argument, the number is
-// assigned by the service, and the committed file is the uploaded bytes with
-// the status alone rewritten to draft.
-func TestMCPSavesADraftThroughTheWholeStack(t *testing.T) {
-	withRealCatalog(t)
-	s, gh := writingServer(t, nil)
-
-	w := mcpCall(t, s, apiTestToken,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"save_draft_invoice","arguments":{"document":`+
-			strconv.Quote(draftInvoiceForMCP("", "draft", "January support"))+`,"reason":"January support"}}}`)
-	resp := decodeRPC(t, w.Body.String())
-	sc, ok := resp["result"].(map[string]any)["structuredContent"].(map[string]any)
-	if !ok {
-		t.Fatalf("no structuredContent in %s", w.Body)
-	}
-	if sc["number"] != "INV-0000000001" || sc["created"] != true {
-		t.Fatalf("result = %v, want INV-0000000001 created", sc)
-	}
-	written := string(gh.files["data/invoices/INV-0000000001.json"])
-	if !strings.Contains(written, `"status": "draft"`) {
-		t.Errorf("the committed file is not a draft:\n%s", written)
-	}
-	// And the read tool serves it back with the same bytes the service wrote.
-	w = mcpCall(t, s, apiTestToken,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_invoice_document","arguments":{"number":"INV-0000000001"}}}`)
-	sc = decodeRPC(t, w.Body.String())["result"].(map[string]any)["structuredContent"].(map[string]any)
-	if sc["status"] != "draft" {
-		t.Errorf("read-back status = %v", sc["status"])
-	}
-	doc, _ := json.Marshal(sc["document"])
-	if !strings.Contains(string(doc), "January support") {
-		t.Errorf("the document did not survive the read-back: %.200s", doc)
-	}
-}
-
-// TestMCPIsuesAnInvoiceThroughTheWholeStack: the commit carries the issued
-// status and every other byte of the file is untouched, and a further upload
-// to the number is refused for good.
-func TestMCPIsuesAnInvoiceThroughTheWholeStack(t *testing.T) {
-	withRealCatalog(t)
-	s, gh := writingServer(t, map[string]string{
-		"data/invoices/INV-0000000001.json": draftInvoiceForMCP("INV-0000000001", "draft", "The draft"),
-	})
-
-	w := mcpCall(t, s, apiTestToken,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"issue_invoice","arguments":{"invoice":"INV-0000000001","reason":"sent to the client"}}}`)
-	resp := decodeRPC(t, w.Body.String())
-	if _, ok := resp["result"].(map[string]any)["structuredContent"].(map[string]any); !ok {
-		t.Fatalf("no structuredContent in %s", w.Body)
-	}
-	before := draftInvoiceForMCP("INV-0000000001", "draft", "The draft")
-	after := string(gh.files["data/invoices/INV-0000000001.json"])
-	if after != strings.Replace(before, `"status": "draft"`, `"status": "issued"`, 1) {
-		t.Errorf("issuing rewrote more than the status line:\n%s", after)
-	}
-
-	w = mcpCall(t, s, apiTestToken,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"save_draft_invoice","arguments":{"document":`+
-			strconv.Quote(draftInvoiceForMCP("INV-0000000001", "draft", "One more edit"))+`}}}`)
-	if !strings.Contains(w.Body.String(), "never edited again") {
-		t.Errorf("post-issue upload = %s, want the write-once refusal", w.Body)
 	}
 }

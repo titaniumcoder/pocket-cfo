@@ -33,7 +33,7 @@ func TestChangeRequestCarriesTheExactAmount(t *testing.T) {
 // category footer is one line rather than three.
 func TestSpendingPageIsQuiet(t *testing.T) {
 	trk := actualsTracker(t, map[string]string{
-		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-09","imported_at":"2026-08-10"}],
+		"actuals/2026-08.json": `{"month":"2026-08",
 			"transactions":[{"id":"t1","date":"2026-08-03","description":"LIDL","amount":210.4,"account":"A","category":"00000000-0000-4000-8000-000000000001"}]}`,
 	})
 	v := trk.ComputeSpending(context.Background(), 2026, time.August)
@@ -46,10 +46,10 @@ func TestSpendingPageIsQuiet(t *testing.T) {
 	body := rec.Body.String()
 
 	if strings.Contains(body, "Reconciled through") {
-		t.Error("the coverage banner is back; the Coverage table says it in a constant layout")
+		t.Error("the coverage banner is back; the Last entry table says it in a constant layout")
 	}
-	if !strings.Contains(body, "<h3>Coverage</h3>") {
-		t.Error("the Coverage table is missing")
+	if !strings.Contains(body, "<h3>Last entry</h3>") {
+		t.Error("the Last entry table is missing")
 	}
 	for _, gone := range []string{">Variance<", ">Planned<"} {
 		if strings.Contains(body, gone) {
@@ -124,7 +124,7 @@ const yearRangeForTest = 2
 // plain HTTP, and the link would then do nothing at all with no hint why.
 func TestCopyLinkWorksWithoutASecureContext(t *testing.T) {
 	trk := actualsTracker(t, map[string]string{
-		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-09","imported_at":"2026-08-10"}],
+		"actuals/2026-08.json": `{"month":"2026-08",
 			"transactions":[{"id":"t1","date":"2026-08-03","description":"LIDL","amount":210.4,"account":"A","category":"00000000-0000-4000-8000-000000000001"}]}`,
 	})
 	rec := httptest.NewRecorder()
@@ -169,7 +169,7 @@ func TestCopyLinkWorksWithoutASecureContext(t *testing.T) {
 // screen only.
 func TestDashboardHasNoCoverageBanner(t *testing.T) {
 	trk := actualsTracker(t, map[string]string{
-		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-09","imported_at":"2026-08-10"}],
+		"actuals/2026-08.json": `{"month":"2026-08",
 			"transactions":[{"id":"t1","date":"2026-08-03","description":"LIDL","amount":210.4,"account":"A","category":"00000000-0000-4000-8000-000000000001"}]}`,
 	})
 	f := trk.ComputeMonth(context.Background(), 2026, time.August)
@@ -188,7 +188,7 @@ func TestDashboardHasNoCoverageBanner(t *testing.T) {
 // mean either, so a budget grade is bold plus one icon and nothing else.
 func TestOffPlanIsWeightAndAMarkNotColour(t *testing.T) {
 	trk := actualsTracker(t, map[string]string{
-		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+		"actuals/2026-08.json": `{"month":"2026-08",
 			"transactions":[{"id":"t1","date":"2026-08-03","description":"LIDL","amount":2000,"account":"A","category":"00000000-0000-4000-8000-000000000001"}]}`,
 	})
 	f := trk.ComputeMonth(context.Background(), 2026, time.August)
@@ -214,7 +214,7 @@ func TestOffPlanIsWeightAndAMarkNotColour(t *testing.T) {
 // the flag that matters. Five percent of 1 000 is 50, so 1 002 is on plan.
 func TestOnPlanSaysNothing(t *testing.T) {
 	trk := actualsTracker(t, map[string]string{
-		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+		"actuals/2026-08.json": `{"month":"2026-08",
 			"transactions":[{"id":"t1","date":"2026-08-03","description":"LIDL","amount":1002,"account":"A","category":"00000000-0000-4000-8000-000000000001"}]}`,
 	})
 	f := trk.ComputeMonth(context.Background(), 2026, time.August)
@@ -258,7 +258,7 @@ func TestBudgetGradesAreNotColoured(t *testing.T) {
 // Net income of 4 715 in the same shape.
 func TestExpenseLedgerReadsAsExpenses(t *testing.T) {
 	trk := actualsTracker(t, map[string]string{
-		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+		"actuals/2026-08.json": `{"month":"2026-08",
 			"transactions":[{"id":"t1","date":"2026-08-03","description":"LIDL","amount":1002,"account":"A","category":"00000000-0000-4000-8000-000000000001"}]}`,
 	})
 	f := trk.ComputeMonth(context.Background(), 2026, time.August)
@@ -323,7 +323,7 @@ func TestPhoneLayoutCoversTheTotals(t *testing.T) {
 	}
 }
 
-const splitMonth = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+const splitMonth = `{"month":"2026-08",
 	"transactions":[
 	  {"id":"w1","date":"2026-08-14","description":"ATM WITHDRAWAL","amount":100,"account":"A","splits":[
 	    {"amount":60,"category":"00000000-0000-4000-8000-000000000001"},
@@ -417,7 +417,7 @@ func topLevelCells(row string) int {
 // display:contents inside it.
 func TestSpendingIsOneGrid(t *testing.T) {
 	trk := actualsTracker(t, map[string]string{
-		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"Revolut Private","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+		"actuals/2026-08.json": `{"month":"2026-08",
 			"transactions":[
 			  {"id":"t1","date":"2026-08-03","description":"L","amount":210.4,"account":"A","category":"00000000-0000-4000-8000-000000000001"},
 			  {"id":"t2","date":"2026-08-04","description":"A much longer statement line than the other one","amount":15,"account":"Revolut Private","category":"00000000-0000-4000-8000-000000000002"},
@@ -576,7 +576,7 @@ func TestSpendingGridTrackCounts(t *testing.T) {
 // day-first and the spending page was the odd one out.
 func TestDatesReadDayFirst(t *testing.T) {
 	trk := actualsTracker(t, map[string]string{
-		"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-09","imported_at":"2026-08-10"}],
+		"actuals/2026-08.json": `{"month":"2026-08",
 			"transactions":[{"id":"t1","date":"2026-08-03","description":"LIDL","amount":210.4,"account":"A","category":"00000000-0000-4000-8000-000000000001"}]}`,
 	})
 	v := trk.ComputeSpending(context.Background(), 2026, time.August)
@@ -584,9 +584,9 @@ func TestDatesReadDayFirst(t *testing.T) {
 	RenderSpending(rec, v)
 	body := rec.Body.String()
 
-	for _, want := range []string{">03.08.2026<", ">01.08.2026<", ">09.08.2026<", ">10.08.2026<"} {
+	for _, want := range []string{">03.08.2026<"} {
 		if !strings.Contains(body, want) {
-			t.Errorf("missing %s — a transaction or coverage date is still ISO", want)
+			t.Errorf("missing %s — a transaction date is still ISO", want)
 		}
 	}
 	// The copy text is the one place ISO survives, so finding it in an
@@ -692,7 +692,7 @@ func TestRowRulesEndTogether(t *testing.T) {
 
 // untrackedActualsJSON: a whole line nobody has placed, a split with one part
 // still undecided, and an ordinary categorised line to compare against.
-const untrackedActualsJSON = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+const untrackedActualsJSON = `{"month":"2026-08",
 	"transactions":[
 		{"id":"x1","date":"2026-08-03","description":"LIDL","amount":1000,"account":"A","category":"rent"},
 		{"id":"x2","date":"2026-08-14","description":"ATM WITHDRAWAL","amount":100,"account":"A","untracked":"cash, not spent yet"},
@@ -745,7 +745,7 @@ func TestSpendingPageShowsUntrackedCash(t *testing.T) {
 // row still contributes five cells, which TestSpendingIsOneGrid pins for the
 // whole page.
 func TestUntrackedCashNamesTheAccountItLeft(t *testing.T) {
-	trk := actualsTracker(t, map[string]string{"actuals/2026-08.json": `{"month":"2026-08","coverage":[{"account":"Revolut Private","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+	trk := actualsTracker(t, map[string]string{"actuals/2026-08.json": `{"month":"2026-08",
 		"transactions":[
 			{"id":"u1","date":"2026-08-13","description":"10aug Pvvpanazl","amount":42,"account":"Revolut Private","untracked":"merchant not identified from the statement"}]}`})
 
@@ -826,7 +826,7 @@ func TestUntrackedCashReachesNoFinanceFigure(t *testing.T) {
 
 	// The same file twice, once with the two untracked amounts and once
 	// without, so any figure that moved was reading money it should not.
-	withOnly := `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],
+	withOnly := `{"month":"2026-08",
 		"transactions":[
 			{"id":"x1","date":"2026-08-03","description":"LIDL","amount":1000,"account":"A","category":"rent"},
 			{"id":"x3","date":"2026-08-20","description":"ATM VARNA","amount":20,"account":"A","category":"rent"}]}`

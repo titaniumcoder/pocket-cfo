@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +14,6 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/api"
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
 	"github.com/titaniumcoder/pocket-cfo/internal/chat"
-	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 	"github.com/titaniumcoder/pocket-cfo/internal/webui"
 )
 
@@ -59,9 +57,6 @@ func (s *server) registerChat(mux *http.ServeMux) {
 	mux.HandleFunc("POST /chat/{id}/turn", s.chatTurn)
 	mux.HandleFunc("GET /chat/{id}/events", s.chatEvents)
 	mux.HandleFunc("POST /chat/{id}/close", s.chatClose)
-	mux.HandleFunc("POST /chat/{id}/apply", s.chatApply)
-	mux.HandleFunc("POST /chat/{id}/discard", s.chatDiscard)
-	mux.HandleFunc("POST /chat/{id}/revert", s.chatRevert)
 	mux.HandleFunc("POST /chat/purge", s.chatPurge)
 }
 
@@ -292,8 +287,7 @@ func (s *server) chatTurn(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, "loading chat", err)
 		return
 	}
-	svc, _ := s.stagedService()
-	runner := &chat.Runner{Client: s.chatClient, Store: s.chatStore, Service: svc}
+	runner := &chat.Runner{Client: s.chatClient, Store: s.chatStore, Service: s.apiService()}
 	if _, started := s.chatRuns.Start(c, in, runner, unlock); !started {
 		unlock()
 		writeAPIError(w, &api.Error{Code: api.CodeConflict, Message: "a turn is already running"}, http.StatusConflict)
@@ -377,178 +371,12 @@ func (s *server) lockedChat(w http.ResponseWriter, r *http.Request) (auth.Sessio
 	return sess, c, unlock, true
 }
 
-func (s *server) chatApply(w http.ResponseWriter, r *http.Request) {
-	sess, c, unlock, ok := s.lockedChat(w, r)
-	if !ok {
-		return
-	}
-	defer unlock()
-	if len(c.Pending) == 0 {
-		writeAPIError(w, &api.Error{Code: api.CodeInvalidRequest, Message: "nothing is waiting for approval"}, http.StatusBadRequest)
-		return
-	}
-	svc, st := s.stagedService()
-	if st == nil {
-		writeAPIError(w, &api.Error{Code: api.CodeWriteNotConfigured, Message: "writes are not configured"}, http.StatusServiceUnavailable)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), chatApplyTimeout)
-	defer cancel()
-
-	calls := make([]api.ToolCall, 0, len(c.Pending))
-	for _, p := range c.Pending {
-		calls = append(calls, api.ToolCall{Name: p.Tool, Arguments: p.Arguments})
-	}
-	failed := false
-	for i, staged := range api.Replay(ctx, svc, calls) {
-		c.Pending[i].Summary, c.Pending[i].Error = summaryOf(staged), errorOf(staged)
-		if fr, ok := staged.Result.(*api.FileWriteResult); ok {
-			c.Pending[i].Diff = fr.Diff
-		}
-		failed = failed || staged.Err != nil
-	}
-	if failed {
-		s.saveChat(w, r, c)
-		writeAPIError(w, &api.Error{Code: api.CodeValidationFailed, Message: "a pending change no longer applies — discard it or ask the chat to redo it", Details: c.Pending}, http.StatusConflict)
-		return
-	}
-
-	live := s.apiService()
-	contents := map[string][]byte{}
-	for _, f := range st.Files() {
-		contents[f.Path] = f.Content
-	}
-	receipts, err := st.Flush(ctx, live.Store, sess.Login)
-	for _, rc := range receipts {
-		live.Publish(rc.Path, contents[rc.Path])
-		c.Applied = append(c.Applied, applied(rc))
-	}
-	if err != nil {
-		log.Printf("chat: %s apply by %s: %v", c.ID, sess.Login, err)
-		s.saveChat(w, r, c)
-		writeAPIError(w, err, apiStatus(err))
-		return
-	}
-	c.Pending = nil
-	c.Messages = append(c.Messages, chat.Message{Role: "user", Content: noteOf("approved and committed", receipts)})
-	log.Printf("chat: %s applied %d change(s) by %s", c.ID, len(receipts), sess.Login)
-	if !s.saveChat(w, r, c) {
-		return
-	}
-	writeAPIJSON(w, http.StatusOK, map[string]any{"applied": receipts})
-}
-
-func applied(rc api.Receipt) chat.AppliedChange {
-	return chat.AppliedChange{
-		Path: rc.Path, Message: strings.SplitN(rc.Message, "\n", 2)[0],
-		BeforeSHA: rc.BeforeSHA, AfterSHA: rc.AfterSHA, Created: rc.Created, At: time.Now(),
-	}
-}
-
-func noteOf(what string, receipts []api.Receipt) string {
-	var paths []string
-	for _, rc := range receipts {
-		paths = append(paths, rc.Path)
-	}
-	return "System note: the user " + what + " " + strings.Join(paths, ", ") + ". Nothing is pending now; the data reflects it."
-}
-
-func summaryOf(staged api.Staged) string {
-	if staged.Result == nil {
-		return ""
-	}
-	b, err := json.Marshal(staged.Result)
-	if err != nil {
-		return ""
-	}
-	return string(b)
-}
-
-func errorOf(staged api.Staged) string {
-	if staged.Err == nil {
-		return ""
-	}
-	return staged.Err.Message
-}
-
 func (s *server) saveChat(w http.ResponseWriter, r *http.Request, c *chat.Chat) bool {
 	if err := s.chatStore.Save(c); err != nil {
 		serverError(w, r, "saving chat", err)
 		return false
 	}
 	return true
-}
-
-func (s *server) chatDiscard(w http.ResponseWriter, r *http.Request) {
-	var req indexRequest
-	if !decodeChatJSON(w, r, &req) {
-		return
-	}
-	sess, c, unlock, ok := s.lockedChat(w, r)
-	if !ok {
-		return
-	}
-	defer unlock()
-	if req.Index < 0 || req.Index >= len(c.Pending) {
-		writeAPIError(w, &api.Error{Code: api.CodeNotFound, Message: "no such pending change"}, http.StatusNotFound)
-		return
-	}
-	dropped := c.Pending[req.Index]
-	c.Pending = append(c.Pending[:req.Index:req.Index], c.Pending[req.Index+1:]...)
-	c.Messages = append(c.Messages, chat.Message{Role: "user", Content: "System note: the user discarded the pending " + dropped.Tool + " change; do not stage it again unless asked."})
-	log.Printf("chat: %s discarded a pending %s by %s", c.ID, dropped.Tool, sess.Login)
-	if !s.saveChat(w, r, c) {
-		return
-	}
-	writeAPIJSON(w, http.StatusOK, map[string]any{"pending": len(c.Pending)})
-}
-
-func (s *server) chatRevert(w http.ResponseWriter, r *http.Request) {
-	var req indexRequest
-	if !decodeChatJSON(w, r, &req) {
-		return
-	}
-	sess, c, unlock, ok := s.lockedChat(w, r)
-	if !ok {
-		return
-	}
-	defer unlock()
-	if req.Index < 0 || req.Index >= len(c.Applied) {
-		writeAPIError(w, &api.Error{Code: api.CodeNotFound, Message: "no such applied change"}, http.StatusNotFound)
-		return
-	}
-	a := c.Applied[req.Index]
-	if a.Reverted {
-		writeAPIError(w, &api.Error{Code: api.CodeConflict, Message: "already reverted"}, http.StatusConflict)
-		return
-	}
-	live := s.apiService()
-	rev, ok := live.Store.(api.Reverter)
-	if !ok {
-		writeAPIError(w, &api.Error{Code: api.CodeWriteNotConfigured, Message: "writes are not configured"}, http.StatusServiceUnavailable)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), chatApplyTimeout)
-	defer cancel()
-	receipt := api.Receipt{Path: a.Path, Message: a.Message, BeforeSHA: a.BeforeSHA, AfterSHA: a.AfterSHA, Created: a.Created}
-	body, err := api.Revert(ctx, live.Store, rev, receipt)
-	if err != nil {
-		log.Printf("chat: %s revert of %s by %s: %v", c.ID, a.Path, sess.Login, err)
-		writeAPIError(w, err, apiStatus(err))
-		return
-	}
-	if body == nil {
-		live.Unpublish(a.Path)
-	} else {
-		live.Publish(a.Path, body)
-	}
-	c.Applied[req.Index].Reverted = true
-	c.Messages = append(c.Messages, chat.Message{Role: "user", Content: "System note: the user reverted the commit to " + a.Path + " (" + a.Message + "); the data is back to what it was before it."})
-	log.Printf("chat: %s reverted %s by %s", c.ID, a.Path, sess.Login)
-	if !s.saveChat(w, r, c) {
-		return
-	}
-	writeAPIJSON(w, http.StatusOK, map[string]any{"reverted": a.Path})
 }
 
 func (s *server) chatPurge(w http.ResponseWriter, r *http.Request) {
@@ -563,28 +391,4 @@ func (s *server) chatPurge(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("chat: %d chat(s) deleted by %s", n, sess.Login)
 	http.Redirect(w, r, "/info", http.StatusSeeOther)
-}
-
-func (s *server) stagedService() (*api.Service, *api.Staging) {
-	svc := s.apiService()
-	if s.tracker != nil {
-		trk, err := s.trackerForRequest()
-		if err != nil {
-			log.Printf("chat: invoiced facts unavailable: %v", err)
-		}
-		budget := &tracker.Budget{FS: s.tracker.Budget.FS}
-		accounts := &tracker.Accounts{FS: s.tracker.Accounts.FS}
-		actuals := &tracker.Actuals{FS: s.tracker.Actuals.FS}
-		trk.Budget, trk.Accounts, trk.Actuals = budget, accounts, actuals
-		svc.Budget, svc.Accounts, svc.Actuals = budget, accounts, actuals
-		svc.Figures = func(ctx context.Context, year int, month time.Month) (tracker.Figures, error) {
-			return trk.ComputeMonth(ctx, year, month), nil
-		}
-	}
-	if svc.Store == nil {
-		return svc, nil
-	}
-	st := api.NewStaging(svc.Store)
-	svc.Store = st
-	return svc, st
 }

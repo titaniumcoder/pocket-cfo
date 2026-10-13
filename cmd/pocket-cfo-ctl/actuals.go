@@ -204,7 +204,7 @@ func runActualsStatus(args []string) int {
 		fmt.Println("no months reconciled yet")
 		return 0
 	}
-	fmt.Printf("%-9s %6s %9s %9s %9s  %s\n", "MONTH", "TX", "ACTUAL", "IGNORED", "UNTRACKED", "COVERAGE")
+	fmt.Printf("%-9s %6s %9s %9s %9s\n", "MONTH", "TX", "ACTUAL", "IGNORED", "UNTRACKED")
 	for _, m := range months {
 		af, err := readActuals(m.path)
 		if err != nil {
@@ -233,11 +233,7 @@ func runActualsStatus(args []string) int {
 				ignored++
 			}
 		}
-		var ranges []string
-		for _, c := range af.Coverage {
-			ranges = append(ranges, fmt.Sprintf("%s %s..%s", c.Account, c.From, c.To))
-		}
-		fmt.Printf("%-9s %6d %9.2f %9d %9d  %s\n", m.key, len(af.Transactions), float64(cents)/100, ignored, untracked, strings.Join(ranges, "; "))
+		fmt.Printf("%-9s %6d %9.2f %9d %9d\n", m.key, len(af.Transactions), float64(cents)/100, ignored, untracked)
 	}
 	return 0
 }

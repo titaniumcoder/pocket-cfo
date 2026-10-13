@@ -21,7 +21,7 @@ const idRent = "00000000-0000-4000-8000-000000000001"
 
 const testBudget = `{"groups":[{"name":"Housing","kind":"private","categories":[{"id":"` + idRent + `","name":"Rent","amount":900}]}]}`
 
-const testAugust = `{"month":"2026-08","coverage":[{"account":"A","from":"2026-08-01","to":"2026-08-31","imported_at":"2026-09-01"}],"transactions":[{"id":"t1","date":"2026-08-01","description":"OLD","amount":900,"account":"A","category":"` + idRent + `"}]}`
+const testAugust = `{"month":"2026-08","transactions":[{"id":"t1","date":"2026-08-01","description":"OLD","amount":900,"account":"A","category":"` + idRent + `"}]}`
 
 type memStore struct {
 	mu    sync.Mutex
@@ -106,8 +106,7 @@ func runner(t *testing.T, s *scripted) (*Runner, *memStore) {
 	svc := &api.Service{
 		Now:     func() time.Time { return time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC) },
 		Budget:  &tracker.Budget{FS: fstest.MapFS{"budget.json": &fstest.MapFile{Data: []byte(testBudget)}}},
-		Actuals: &tracker.Actuals{FS: fstest.MapFS{}},
-		Store:   api.NewStaging(mem),
+		Actuals: &tracker.Actuals{FS: fstest.MapFS{"actuals/2026-08.json": &fstest.MapFile{Data: []byte(testAugust)}}},
 	}
 	return &Runner{Client: client, Store: store, Service: svc, MaxRounds: 4, Now: svc.Now}, mem
 }
@@ -117,17 +116,16 @@ func collect() (func(Event) error, *[]Event) {
 	return func(e Event) error { events = append(events, e); return nil }, &events
 }
 
-func TestATurnRunsReadToolsStagesWritesAndSavesEveryRound(t *testing.T) {
+func TestATurnRunsReadToolsAndSavesEveryRound(t *testing.T) {
 	s := &scripted{answers: []string{
 		callAnswer("c1", "get_actuals", `{"month":"2026-08"}`),
-		callAnswer("c2", "add_transactions", `{"transactions":[{"id":"n1","date":"2026-08-03","description":"NEW","amount":12,"account":"A","category":"`+idRent+`"}]}`),
-		textAnswer("Staged one line for August."),
+		textAnswer("August is recorded."),
 	}}
-	r, mem := runner(t, s)
+	r, _ := runner(t, s)
 	c, _ := r.Store.Create("octocat")
 	emit, events := collect()
 
-	err := r.Run(context.Background(), c, Input{Text: "reconcile august", Files: []Upload{{Name: "august.csv", Content: "date;text;amount\n03.08.2026;NEW;-12,00\n"}}}, emit)
+	err := r.Run(context.Background(), c, Input{Text: "how is august?"}, emit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,28 +134,13 @@ func TestATurnRunsReadToolsStagesWritesAndSavesEveryRound(t *testing.T) {
 	for _, m := range c.Messages {
 		roles = append(roles, m.Role)
 	}
-	if strings.Join(roles, " ") != "user assistant tool assistant tool assistant" {
+	if strings.Join(roles, " ") != "user assistant tool assistant" {
 		t.Fatalf("messages = %v", roles)
-	}
-	if !strings.Contains(c.Messages[0].Content, "Attached file `august.csv`") || !strings.Contains(c.Messages[0].Content, "03.08.2026;NEW") {
-		t.Errorf("the file must be inside the user message: %q", c.Messages[0].Content)
-	}
-	if c.Title != "reconcile august" || len(c.Files) != 1 || c.Files[0].Name != "august.csv" {
-		t.Errorf("title %q files %+v", c.Title, c.Files)
 	}
 	if !strings.Contains(c.Messages[2].Content, `"OLD"`) || c.Messages[2].ToolCallID != "c1" {
 		t.Errorf("the read tool's result must reach the model: %+v", c.Messages[2])
 	}
-	if !strings.Contains(c.Messages[4].Content, `"staged":true`) || !strings.Contains(c.Messages[4].Content, `"added":1`) {
-		t.Errorf("the write must answer with the dry run: %s", c.Messages[4].Content)
-	}
-	if len(c.Pending) != 1 || c.Pending[0].Tool != "add_transactions" || !strings.Contains(c.Pending[0].Summary, `"added":1`) {
-		t.Errorf("pending = %+v", c.Pending)
-	}
-	if mem.puts != 0 {
-		t.Errorf("a turn must never commit: %d puts", mem.puts)
-	}
-	if c.Usage.PromptTokens != 25 || c.Usage.CompletionTokens != 5 {
+	if c.Usage.PromptTokens != 15 || c.Usage.CompletionTokens != 3 {
 		t.Errorf("usage = %+v", c.Usage)
 	}
 
@@ -165,13 +148,13 @@ func TestATurnRunsReadToolsStagesWritesAndSavesEveryRound(t *testing.T) {
 	for _, e := range *events {
 		kinds = append(kinds, e.Event)
 	}
-	if strings.Join(kinds, " ") != "assistant tool assistant tool pending assistant done" {
+	if strings.Join(kinds, " ") != "assistant tool assistant done" {
 		t.Errorf("events = %v", kinds)
 	}
 
 	saved, err := r.Store.Load("octocat", c.ID)
-	if err != nil || len(saved.Messages) != 6 || len(saved.Pending) != 1 {
-		t.Errorf("the chat on disk lags: %d messages, %d pending, %v", len(saved.Messages), len(saved.Pending), err)
+	if err != nil || len(saved.Messages) != 4 {
+		t.Errorf("the chat on disk lags: %d messages, %v", len(saved.Messages), err)
 	}
 
 	first := s.requests[0]
@@ -183,37 +166,11 @@ func TestATurnRunsReadToolsStagesWritesAndSavesEveryRound(t *testing.T) {
 		fn := tool.(map[string]any)["function"].(map[string]any)
 		names[fn["name"].(string)] = fn["description"].(string)
 	}
-	if _, ok := names["derive_transaction_ids"]; !ok {
-		t.Error("the id tool must be offered")
-	}
-	if !strings.Contains(names["add_transactions"], "STAGED") || strings.Contains(names["get_actuals"], "STAGED") {
-		t.Error("only write tools carry the staged note")
+	if _, ok := names["search_transactions"]; !ok {
+		t.Error("the search tool must be offered")
 	}
 	if len(s.requests[1]["messages"].([]any)) != 4 {
 		t.Errorf("the second request must carry the tool result: %d messages", len(s.requests[1]["messages"].([]any)))
-	}
-}
-
-func TestPendingChangesAreReplayedBeforeTheModelSpeaks(t *testing.T) {
-	s := &scripted{answers: []string{textAnswer("ok")}}
-	r, _ := runner(t, s)
-	c, _ := r.Store.Create("octocat")
-	c.Pending = []PendingChange{
-		{Tool: "add_transactions", Arguments: json.RawMessage(`{"transactions":[{"id":"n1","date":"2026-08-03","description":"NEW","amount":12,"account":"A","category":"` + idRent + `"}]}`)},
-		{Tool: "add_transactions", Arguments: json.RawMessage(`{"transactions":[{"id":"bad","date":"2026-08-03","description":"X","amount":1,"account":"A","category":"nope"}]}`)},
-	}
-	emit, events := collect()
-	if err := r.Run(context.Background(), c, Input{Text: "and?"}, emit); err != nil {
-		t.Fatal(err)
-	}
-	if (*events)[0].Event != "pending" || (*events)[1].Event != "pending" {
-		t.Fatalf("events = %+v", *events)
-	}
-	if c.Pending[0].Error != "" || !strings.Contains(c.Pending[0].Summary, `"added":1`) {
-		t.Errorf("first pending = %+v", c.Pending[0])
-	}
-	if c.Pending[1].Error == "" {
-		t.Errorf("the bad pending change must carry its error: %+v", c.Pending[1])
 	}
 }
 

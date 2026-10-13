@@ -2,17 +2,14 @@ package actualsdiff
 
 import (
 	"fmt"
-	"sort"
 	"strings"
-	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/actualsdata"
 )
 
 const (
-	Removed        = "removed"
-	Mutated        = "mutated"
-	CoverageShrank = "coverage-shrank"
+	Removed = "removed"
+	Mutated = "mutated"
 )
 
 type Change struct {
@@ -26,10 +23,7 @@ func (c Change) String() string {
 }
 
 func Diff(before, after actualsdata.ActualsFile) []Change {
-	var changes []Change
-	changes = append(changes, transactionChanges(before, after)...)
-	changes = append(changes, coverageChanges(before, after)...)
-	return changes
+	return transactionChanges(before, after)
 }
 
 func transactionChanges(before, after actualsdata.ActualsFile) []Change {
@@ -95,53 +89,4 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
-}
-
-func coverageChanges(before, after actualsdata.ActualsFile) []Change {
-	wasDays := coveredDays(before)
-	isDays := coveredDays(after)
-
-	var accounts []string
-	for account := range wasDays {
-		accounts = append(accounts, account)
-	}
-	sort.Strings(accounts)
-
-	var changes []Change
-	for _, account := range accounts {
-		var lost []string
-		for day := range wasDays[account] {
-			if !isDays[account][day] {
-				lost = append(lost, day)
-			}
-		}
-		if len(lost) == 0 {
-			continue
-		}
-		sort.Strings(lost)
-		detail := fmt.Sprintf("%d day(s) no longer covered, from %s", len(lost), lost[0])
-		if len(lost) > 1 {
-			detail = fmt.Sprintf("%d day(s) no longer covered, %s..%s", len(lost), lost[0], lost[len(lost)-1])
-		}
-		changes = append(changes, Change{Kind: CoverageShrank, Subject: account, Detail: detail})
-	}
-	return changes
-}
-
-func coveredDays(f actualsdata.ActualsFile) map[string]map[string]bool {
-	out := map[string]map[string]bool{}
-	for _, c := range f.Coverage {
-		from, err1 := time.Parse("2006-01-02", c.From)
-		to, err2 := time.Parse("2006-01-02", c.To)
-		if err1 != nil || err2 != nil {
-			continue
-		}
-		if out[c.Account] == nil {
-			out[c.Account] = map[string]bool{}
-		}
-		for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
-			out[c.Account][d.Format("2006-01-02")] = true
-		}
-	}
-	return out
 }

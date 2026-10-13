@@ -24,30 +24,22 @@ func TestToolCatalogIsWellFormed(t *testing.T) {
 		if tool.Call == nil {
 			t.Errorf("tool %q cannot be called", tool.Name)
 		}
-	}
-	if len(seen) != 20 {
-		t.Errorf("catalog lists %d tools, want 20", len(seen))
-	}
-}
-
-func TestToolSchemaCarriesTheFieldDescriptions(t *testing.T) {
-	s := &Service{}
-	for _, tool := range s.Tools() {
-		if tool.Name != "add_transactions" {
-			continue
+		if !tool.ReadOnly {
+			t.Errorf("tool %q is not read-only — the surface is reads only", tool.Name)
 		}
-		raw, err := json.Marshal(tool.InputSchema)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, want := range []string{`"transactions"`, `"coverage"`, "POSITIVE = money out"} {
-			if !strings.Contains(string(raw), want) {
-				t.Errorf("add_transactions schema lacks %s:\n%s", want, raw)
-			}
-		}
-		return
 	}
-	t.Fatal("add_transactions is not in the catalog")
+	want := map[string]bool{
+		"list_budget_categories": true, "get_budget": true, "get_actuals": true,
+		"search_transactions": true, "list_accounts": true, "list_invoices": true,
+	}
+	for name := range want {
+		if !seen[name] {
+			t.Errorf("tool %q is missing", name)
+		}
+	}
+	if len(seen) != len(want) {
+		t.Errorf("catalog lists %d tools, want %d", len(seen), len(want))
+	}
 }
 
 func TestToolRefusesAnUnknownArgument(t *testing.T) {

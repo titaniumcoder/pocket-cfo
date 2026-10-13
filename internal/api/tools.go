@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/titaniumcoder/pocket-cfo/internal/finance/actualsdata"
 )
 
 type Tool struct {
@@ -90,93 +89,8 @@ type invoiceNumberArgs struct {
 	Number string `json:"number" jsonschema:"the invoice number exactly as list_invoices spells it, e.g. INV-0000000002"`
 }
 
-type saveDraftArgs struct {
-	Document string `json:"document" jsonschema:"the complete invoice document as a JSON string, exactly as get_invoice_document returned it in its document field, with your edits"`
-	BaseSHA  string `json:"base_sha,omitempty" jsonschema:"the sha get_invoice_document reported, for uploads to an existing draft. A stale one comes back as a conflict carrying the current sha, so re-read and try again"`
-	Reason   string `json:"reason,omitempty" jsonschema:"why the draft is created or changed; lands in the commit message"`
-}
-
-type issueInvoiceArgs struct {
-	Invoice string `json:"invoice" jsonschema:"the invoice number exactly as list_invoices spells it, e.g. INV-0000000002"`
-	Reason  string `json:"reason" jsonschema:"why the invoice is ready to be issued — required, because issuing freezes the document forever"`
-}
-
-type setInvoicePaidArgs struct {
-	Invoice string `json:"invoice" jsonschema:"the invoice number exactly as list_invoices spells it, e.g. INV-0000000002"`
-	Paid    bool   `json:"paid" jsonschema:"true records the payment, false removes the payment record again (a no-op when there is none)"`
-	Date    string `json:"date,omitempty" jsonschema:"the day the money arrived, YYYY-MM-DD, as the bank shows it. Required when paid is true, and never in the future — a payment is read off the bank, not projected"`
-	Note    string `json:"note,omitempty" jsonschema:"optional free text carried on the payment entry — there is deliberately no account or method field, so put 'received on the company account at Bank X' here if it matters"`
-	Reason  string `json:"reason,omitempty" jsonschema:"why the payment is recorded, corrected or removed; lands in the commit message"`
-}
-
-type splitArg struct {
-	Amount    float64 `json:"amount" jsonschema:"euros for this part, same sign convention as the line. Never 0, and the parts must add up to the line's own amount"`
-	Category  string  `json:"category,omitempty" jsonschema:"the budget category id this part belongs to"`
-	Ignored   string  `json:"ignored,omitempty" jsonschema:"why this part is not a budget expense, e.g. 'moved to savings'"`
-	Untracked string  `json:"untracked,omitempty" jsonschema:"why this part is not decided yet, e.g. 'the rest is still in my wallet'. Exactly one of category, ignored or untracked per part"`
-}
-
-type txArg struct {
-	ID          string     `json:"id" jsonschema:"stable id for this statement line, as derive_transaction_ids returned it for exactly this account, date, amount and description. Never make one up: the same line must always get the same id, which is what makes a repeat import a no-op instead of a duplicate"`
-	Date        string     `json:"date" jsonschema:"YYYY-MM-DD. This decides which month the line is filed under, so it must be the date the bank gave it"`
-	Description string     `json:"description" jsonschema:"the statement line as the bank wrote it, not a tidied-up version"`
-	Amount      float64    `json:"amount" jsonschema:"euros. POSITIVE = money out; a refund is negative against the same category. Never 0"`
-	Account     string     `json:"account" jsonschema:"which account it was charged to, spelled exactly as list_accounts spells it"`
-	Category    string     `json:"category,omitempty" jsonschema:"the budget category id from list_budget_categories. Never invent one"`
-	Ignored     string     `json:"ignored,omitempty" jsonschema:"why this line is not a budget expense, e.g. 'salary', 'transfer to savings'. A reason, never a bare yes. This is a decision that it does not belong in the figures"`
-	Untracked   string     `json:"untracked,omitempty" jsonschema:"why this line is not decided YET, e.g. 'ATM withdrawal, cash not spent yet'. Use this instead of guessing a category or stopping to ask; it shows on the spending page and marks the month until it is resolved. Different from ignored, which means it is deliberately not an expense"`
-	Splits      []splitArg `json:"splits,omitempty" jsonschema:"set instead of category/ignored/untracked when one line paid for more than one thing. Two or more parts, adding up to the line's amount"`
-}
-
-type coverageArg struct {
-	Account    string `json:"account" jsonschema:"the account this range was read from, spelled as the transactions spell it"`
-	From       string `json:"from" jsonschema:"first day read, inclusive, YYYY-MM-DD. Must be in the same month as to"`
-	To         string `json:"to" jsonschema:"last day read, inclusive, YYYY-MM-DD. This is what stops a mid-month import reading as a spectacular underspend, and it can only ever move forward"`
-	ImportedAt string `json:"imported_at" jsonschema:"when you read the statement, YYYY-MM-DD. Informational"`
-}
-
-type editArg struct {
-	ID        string     `json:"id" jsonschema:"the id of the transaction to change, as get_actuals or search_transactions reported it"`
-	Month     string     `json:"month,omitempty" jsonschema:"the month it is filed under, YYYY-MM, exactly as get_actuals or search_transactions returned it beside the id. Optional, but always worth sending: without it the id is looked up by scanning the months around now, which is both slower and bounded to a three-year window"`
-	Category  string     `json:"category,omitempty" jsonschema:"reattribute the line to this budget category id, clearing whatever it had before"`
-	Ignored   string     `json:"ignored,omitempty" jsonschema:"mark the line as not a budget expense, with the reason, clearing whatever it had before"`
-	Untracked string     `json:"untracked,omitempty" jsonschema:"park the line as not decided yet, with a note, clearing whatever it had before"`
-	Splits    []splitArg `json:"splits,omitempty" jsonschema:"replace the line's attribution with these parts, which must add up to its amount. Set exactly one of category, ignored, untracked or splits per edit"`
-}
-
-type idsArgs struct {
-	Lines []idLineArg `json:"lines" jsonschema:"every line of the statement, in statement order"`
-}
-
-type idLineArg struct {
-	Account     string  `json:"account" jsonschema:"which account it was charged to, spelled exactly as list_accounts spells it"`
-	Date        string  `json:"date" jsonschema:"YYYY-MM-DD, the date the bank gave the line"`
-	Amount      float64 `json:"amount" jsonschema:"euros, POSITIVE = money out, exactly the number you will send to add_transactions"`
-	Description string  `json:"description" jsonschema:"the statement line as the bank wrote it, not a tidied-up version"`
-}
-
 type idsResult struct {
 	IDs []string `json:"ids"`
-}
-
-type fileNameArgs struct {
-	Name string `json:"name" jsonschema:"which file: budget.json, accounts.json or config.json"`
-}
-
-type fileWriteArgs struct {
-	Name    string `json:"name" jsonschema:"which file: budget.json, accounts.json or config.json"`
-	Content string `json:"content" jsonschema:"the COMPLETE new content of the file, as JSON text — start from what read_data_file returned and change only what the user asked for, keeping the rest byte for byte so the diff stays small and readable"`
-	Reason  string `json:"reason" jsonschema:"why, in one line, as the user would say it; it becomes the commit message"`
-}
-
-type addArgs struct {
-	Transactions []txArg       `json:"transactions,omitempty" jsonschema:"the statement lines to record. Send only lines not already in the file. May be omitted when you are only reporting coverage"`
-	Coverage     []coverageArg `json:"coverage,omitempty" jsonschema:"which account was read through which dates. One range per month — a range may not cross a month boundary. Required for any month that has never been reconciled"`
-}
-
-type editArgs struct {
-	Edits  []editArg `json:"edits" jsonschema:"every change you want made, as one batch. A line you do not name here is not touched"`
-	Reason string    `json:"reason,omitempty" jsonschema:"why, in one line; lands in the commit message"`
 }
 
 func optional(s string) *string {
@@ -184,81 +98,6 @@ func optional(s string) *string {
 		return nil
 	}
 	return &s
-}
-
-func splitsOf(args []splitArg) []actualsdata.Split {
-	if len(args) == 0 {
-		return nil
-	}
-	out := make([]actualsdata.Split, 0, len(args))
-	for _, s := range args {
-		out = append(out, actualsdata.Split{
-			Amount:    s.Amount,
-			Category:  optional(s.Category),
-			Ignored:   optional(s.Ignored),
-			Untracked: optional(s.Untracked),
-		})
-	}
-	return out
-}
-
-func (a addArgs) request() AddRequest {
-	req := AddRequest{}
-	for _, t := range a.Transactions {
-		req.Transactions = append(req.Transactions, actualsdata.Transaction{
-			Id: t.ID, Date: t.Date, Description: t.Description,
-			Amount: t.Amount, Account: t.Account,
-			Category:  optional(t.Category),
-			Ignored:   optional(t.Ignored),
-			Untracked: optional(t.Untracked),
-			Splits:    splitsOf(t.Splits),
-		})
-	}
-	for _, c := range a.Coverage {
-		req.Coverage = append(req.Coverage, actualsdata.Coverage{
-			Account: c.Account, From: c.From, To: c.To, ImportedAt: c.ImportedAt,
-		})
-	}
-	return req
-}
-
-func (a editArgs) request() EditRequest {
-	req := EditRequest{Reason: a.Reason}
-	for _, e := range a.Edits {
-		req.Edits = append(req.Edits, Edit{
-			ID: e.ID, Month: e.Month,
-			Category:  optional(e.Category),
-			Ignored:   optional(e.Ignored),
-			Untracked: optional(e.Untracked),
-			Splits:    splitsOf(e.Splits),
-		})
-	}
-	return req
-}
-
-type balanceArgs struct {
-	Account string  `json:"account" jsonschema:"which account was read, spelled exactly as list_accounts spells it. An account is never created here, and the director's loan is refused — it is not a bank account and nothing reads it off one"`
-	AsOf    string  `json:"as_of" jsonschema:"the MONTH-END date the balance was read, YYYY-MM-DD. It must be the LAST day of the month — 2026-07-31, 2026-06-30, 2026-02-28 — because this is the closing balance of that month. A mid-month date is refused"`
-	Balance float64 `json:"balance" jsonschema:"euros in the account at the end of that day, as the bank shows it. Decimals allowed, and negative for an overdrawn account"`
-	Note    string  `json:"note,omitempty" jsonschema:"optional free text about this one reading, shown beside the account in the month it anchors. Not used in any computation"`
-}
-
-type moveArgs struct {
-	CategoryID string `json:"category_id" jsonschema:"the budget category to move"`
-	FromMonth  string `json:"from_month" jsonschema:"the month it is currently planned for, YYYY-MM"`
-	ToMonth    string `json:"to_month" jsonschema:"the month it was actually charged in, YYYY-MM"`
-	Reason     string `json:"reason" jsonschema:"why it moved; lands in the commit message"`
-	BaseSHA    string `json:"base_sha" jsonschema:"the sha of budget.json this edit is based on, as get_budget reports it in its sha field. A stale one comes back as a conflict carrying the current sha, so re-read and try again"`
-}
-
-type amountChangeArgs struct {
-	CategoryID    string   `json:"category_id" jsonschema:"the budget category to change, from list_budget_categories"`
-	FromMonth     string   `json:"from_month" jsonschema:"the month the new amount takes effect, YYYY-MM. Must be a future month — a month that is already in force cannot be re-planned here"`
-	Amount        *float64 `json:"amount,omitempty" jsonschema:"euros, decimals allowed. The category's amount from from_month on, until a later scheduled change supersedes it. Required unless remove is set"`
-	MinimalAmount *float64 `json:"minimal_amount,omitempty" jsonschema:"optional reduced amount minimal-budget mode uses for the months this change is in force. Absent, minimal mode falls back to this change's own amount"`
-	Remove        bool     `json:"remove,omitempty" jsonschema:"set instead of amount to undo the scheduled change for from_month. Never set both"`
-	Reason        string   `json:"reason" jsonschema:"why the price changes (or the change was called off); lands in the commit message"`
-	BaseSHA       string   `json:"base_sha" jsonschema:"the sha of budget.json this edit is based on, as get_budget reports it in its sha field. A stale one comes back as a conflict carrying the current sha, so re-read and try again"`
 }
 
 type categoriesResult struct {
@@ -269,33 +108,22 @@ type accountsResult struct {
 	Accounts []Account `json:"accounts"`
 }
 
-type reconciliationResult struct {
-	Months []MonthStatus `json:"months"`
-}
-
 type invoiceListResult struct {
 	Years    []int     `json:"years"`
 	Invoices []Invoice `json:"invoices"`
 }
 
-type invoiceDocumentResult struct {
-	Number   string          `json:"number"`
-	Status   string          `json:"status"`
-	SHA      string          `json:"sha,omitempty"`
-	Document json.RawMessage `json:"document"`
-}
-
 func (s *Service) Tools() []Tool {
 	return []Tool{
 		tool("list_budget_categories",
-			"Every budget category id, with its group, name and kind, under a categories key. A category with a date is a one-off counted only in that month; one with from/until is a recurring cost bounded to that window (both optional); one with amount_changes steps its recurring price at the listed months, and the whole scheduled list is reported so you can see which months are already spoken for before calling schedule_amount_change. These ids are the ONLY legal value for a transaction's category field — never invent one, and never parse budget.json yourself. If the category you need is not listed it does not exist yet: ask for it to be created rather than guessing an id.",
+			"Every budget category id, with its group, name and kind, under a categories key. A category with a date is a one-off counted only in that month; one with from/until is a recurring cost bounded to that window (both optional); one with amount_changes steps its recurring price at the listed months. These ids are the ONLY legal value for a transaction's category field — never invent one, and never parse budget.json yourself. If the category you need is not listed it does not exist yet: it has to be created in the data repo.",
 			true, func(ctx context.Context, _ emptyArgs) (any, error) {
 				out, err := s.Categories(ctx)
 				return reply(categoriesResult{Categories: out}, err)
 			}),
 
 		tool("get_budget",
-			"The plan for a period, with overrides already applied. period is YYYY-MM for one month or YYYY for twelve month buckets. A category with a date is a one-off counted only in that month; one with from/until is a recurring cost counted inside that window (either bound optional), so it contributes nothing before from or after until. A category with amount_changes pays the latest scheduled change at or before the month — so a month bucket already reflects a price that steps in, and each category's whole amount_changes list is reported for you to read.. Read those figures rather than recomputing them from get_finance_config, which is easy to resolve to the wrong month. A move_planned_expense or schedule_amount_change you made is reflected at once; a budget.json edited directly appears only after that commit has deployed. For a month, sha is budget.json's current sha — that is the base_sha move_planned_expense and schedule_amount_change need.",
+			"The plan for a period, with overrides already applied. period is YYYY-MM for one month or YYYY for twelve month buckets. A category with a date is a one-off counted only in that month; one with from/until is a recurring cost counted inside that window (either bound optional), so it contributes nothing before from or after until. A category with amount_changes pays the latest scheduled change at or before the month — so a month bucket already reflects a price that steps in, and each category's whole amount_changes list is reported for you to read.. Read those figures rather than recomputing the taxes yourself. For a month, sha is budget.json's current sha.",
 			true, func(ctx context.Context, a periodArgs) (any, error) {
 				if len(a.Period) == 4 {
 					return reply(s.BudgetForYear(ctx, a.Period))
@@ -304,13 +132,13 @@ func (s *Service) Tools() []Tool {
 			}),
 
 		tool("get_actuals",
-			"The committed document for one month. This file is the source of truth: where it disagrees with your own recollection, it wins — read it before adding lines, so you send only what is missing. Returns not_found when the month has never been reconciled. Writes take no sha, so nothing here has to be passed back; the id and month beside each line are what add_transactions and edit_transactions work from. This reads the data repo directly whenever writes are configured, so a month you wrote through this API AND a change made by hand in the repo both read back immediately — which means this can be ahead of search_transactions and get_reconciliation_status, which lag until the commit has deployed. Where they disagree, this one is current.",
+			"The committed document for one month, read straight from the data repo. This file is the source of truth: where it disagrees with your own recollection, it wins. Returns not_found when the month has never been reconciled. Data changes are not made through this API — the file is edited in the data repo and committed by hand; whatever is committed is what this reports.",
 			true, func(ctx context.Context, a monthArgs) (any, error) {
 				return reply(s.ActualsFor(ctx, a.Month))
 			}),
 
 		tool("search_transactions",
-			"Search committed history by statement description, returning the category each line was assigned to, with the month and id needed to edit it. Use this before asking the user about a line you cannot place: a past match is a strong answer, no match means ask — or record it as untracked and come back to it. only_untracked lists everything still waiting on a decision. EVENTUALLY CONSISTENT: anything you wrote through this API is searchable at once, but a month edited directly in the data repo, or by another running instance, only appears after that commit has deployed — so a search that finds nothing is not proof that nothing is there.",
+			"Search committed history by statement description, returning the category each line was assigned to, with the month and id beside each hit. Use this before asking the user about a line you cannot place: a past match is a strong answer, no match means ask the user. only_untracked lists everything still waiting on a decision.",
 			true, func(ctx context.Context, a searchArgs) (any, error) {
 				return reply(s.Search(ctx, SearchQuery{
 					Query: a.Query, From: a.From, To: a.To, Category: a.Category, Account: a.Account,
@@ -319,178 +147,20 @@ func (s *Service) Tools() []Tool {
 				}))
 			}),
 
-		tool("get_reconciliation_status",
-			"Per month for a year, under a months key: coverage, transaction counts, planned versus actual, how much is still untracked, and any one-off charged in a month other than the one it is budgeted for. Tells you where you left off — a month with untracked money is not finished, and untracked_cents is never part of actual_cents. Safe to call straight after a write to check it landed: a month you wrote through this API is reflected at once. EVENTUALLY CONSISTENT for everything else — a change made directly in the data repo, or by another running instance, appears only after that commit has deployed.",
-			true, func(ctx context.Context, a reconciliationArgs) (any, error) {
-				year := a.Year
-				if year == 0 {
-					year = s.now().Year()
-				}
-				out, err := s.Reconciliation(ctx, year)
-				return reply(reconciliationResult{Months: out}, err)
-			}),
-
 		tool("list_accounts",
 			"The account names the rest of the system uses, under an accounts key, each with the kind of money it holds — company or private — and as_of, the date it was last read off the bank. "+
 				"Spell a transaction's account field exactly as listed here. "+
 				"as_of is the newest of however many readings that account has; it says how current the balance figures are, and it is not the set of accounts a statement line may arrive on. "+
-				"An as_of older than the month that just closed means that account is due a fresh reading — record_account_balance is how you give it one. "+
-				"A balance you recorded through this API is reflected here at once; an account added or edited directly in the data repo appears only after that commit has deployed.",
+				"An as_of older than the month that just closed means that account is due a fresh reading.",
 			true, func(ctx context.Context, _ emptyArgs) (any, error) {
 				out, err := s.AccountsList(ctx)
 				return reply(accountsResult{Accounts: out}, err)
 			}),
 
 		tool("list_invoices",
-			"Every invoice the dashboard shows, under an invoices key — issued and draft alike, each with its number, title, recipient, issue and due date, grand total in cents, a state: draft, issued, overdue (due date passed unpaid), or paid with the date it was paid on, and the pdfs its state can serve — draft, original, paid — which GET /api/invoices/{number}/pdf?variant=… downloads (REST only, never through MCP). years lists the years invoices exist for; pass one as year to see only that year. The same numbers the invoicing page renders, and the ONLY source of invoice numbers — spell set_invoice_paid's and issue_invoice's invoice field exactly as listed here. Drafts cannot be paid; an invoice you do not see does not exist yet. To read or edit the invoice itself, get_invoice_document serves the whole document, save_draft_invoice edits a draft and issue_invoice freezes it. A payment recorded through set_invoice_paid is reflected here at once, since the paid list is read live; the invoice documents themselves lag until a commit has deployed.",
+			"Every invoice the dashboard shows, under an invoices key — issued and draft alike, each with its number, title, recipient, issue and due date, grand total in cents, a state: draft, issued, overdue (due date passed unpaid), or paid with the date it was paid on, and the pdfs its state can serve — draft, original, paid — which GET /api/invoices/{number}/pdf?variant=… downloads (REST only, never through MCP). years lists the years invoices exist for; pass one as year to see only that year. The same numbers the invoicing page renders, and the only source of invoice numbers — spell them exactly as listed here. Drafts cannot be paid; an invoice you do not see does not exist yet.",
 			true, func(ctx context.Context, a invoicesArgs) (any, error) {
 				return reply(s.Invoices(ctx, a.Year))
-			}),
-
-		tool("get_invoice_document",
-			"The complete invoice document, exactly as committed, for any invoice — draft or issued alike — under a document key, beside its number, status and sha. This is how you download an invoice: list_invoices reports only the summary. Read through the data repo whenever writes are configured, so a draft saved through save_draft_invoice reads back immediately; a document changed by hand in the data repo appears only after that commit has deployed. The sha is what a later save_draft_invoice bases its conflict check on — keep it alongside your edits.",
-			true, func(ctx context.Context, a invoiceNumberArgs) (any, error) {
-				out, err := s.InvoiceDocumentFor(ctx, a.Number)
-				if err != nil {
-					return reply[*InvoiceDocument](nil, err)
-				}
-				return reply(invoiceDocumentResult{Number: out.Number, Status: out.Status, SHA: out.SHA, Document: out.Document}, nil)
-			}),
-
-		tool("save_draft_invoice",
-			"Upload an invoice as a draft — the only way this API writes an invoice document, and a draft is the only thing it will ever write. "+
-				"document is the complete invoice JSON as a string, exactly as get_invoice_document returned it, with your edits, and it must carry status \"draft\": AN UPLOAD NEVER CHANGES AN INVOICE'S STATE — a draft stays a draft however often it is re-uploaded, an upload claiming issued is refused, and the only way the flag ever moves is issue_invoice. "+
-				"Leave the number OUT to create: the next number is assigned (max + 1, so the sequence stays gapless), and a base_sha makes no sense for a new invoice and is refused. Give the number of an EXISTING DRAFT to replace it — as many times as you like, it is a working document. "+
-				"An issued invoice is refused forever: once the draft flag is gone the document is write-once, and a correction is a new invoice, not an edit. "+
-				"base_sha is the sha get_invoice_document reported; a stale one comes back as a conflict carrying the current value, so re-read and try again. An upload identical to what is committed changes nothing and commits nothing. "+
-				"The document must satisfy invoice.json's schema and pass the real validators — computable totals, every de string with its bg sibling, the tax regime cross-checked against the parties the document snapshots, the mandatory wording present — before anything is committed. "+
-				"reason is optional and lands in the commit message. Each accepted call is a git commit that redeploys the app; the DRAFT pdf is re-rendered by the build that follows.",
-			false, func(ctx context.Context, a saveDraftArgs) (any, error) {
-				return reply[*DraftSaveResult](s.SaveDraftInvoice(ctx, SaveDraftRequest{
-					Document: json.RawMessage(a.Document), BaseSHA: a.BaseSHA, Reason: a.Reason,
-				}))
-			}),
-
-		tool("issue_invoice",
-			"Flip a draft to issued — the one way the draft flag ever comes off through this API, and it works only in that direction. The commit changes the status line and nothing else, byte for byte, so the diff is one line. "+
-				"reason is required: issuing freezes the document forever, so say why it is ready. "+
-				"An invoice that does not exist is refused — list_invoices is the source of numbers — and one that is already issued is an idempotent no-op that commits nothing. "+
-				"Once issued, save_draft_invoice refuses the number: an issued invoice is never edited again, and payment is recorded beside it with set_invoice_paid. "+
-				"Each accepted call is a git commit that redeploys the app; the build then renders the original PDF once and never overwrites it.",
-			false, func(ctx context.Context, a issueInvoiceArgs) (any, error) {
-				return reply[*IssueInvoiceResult](s.IssueInvoice(ctx, IssueInvoiceRequest{Invoice: a.Invoice, Reason: a.Reason}))
-			}),
-
-		tool("set_invoice_paid",
-			"Record that an invoice was paid, or take the record back — the one mutable thing about an invoice, kept deliberately OUTSIDE the invoice document (which is write-once once issued) in data/paid-invoices.json. "+
-				"\"paid\": true requires date, the day the money arrived, YYYY-MM-DD, as the bank shows it — never a future date, and never 'when the invoice was issued'. "+
-				"Recording it again with a different date corrects the record; paid false removes the entry. Both directions are IDEMPOTENT: re-sending an identical payment, or unmarking an invoice that was never marked, changes nothing and commits nothing. "+
-				"There is no amount and no account field BY DESIGN (see ARCHITECTURE.md §3.6): payment is one date per invoice, and the optional note is where a bank reference or which account it landed on goes, as free text. "+
-				"A draft is refused — a draft is never paid — and so is an invoice that does not exist; list_invoices is the source of numbers. "+
-				"reason is optional and lands in the commit message. Each accepted call is a git commit that redeploys the app, and list_invoices reports the payment immediately.",
-			false, func(ctx context.Context, a setInvoicePaidArgs) (any, error) {
-				return reply(s.SetInvoicePaid(ctx, InvoicePaymentRequest{
-					Invoice: a.Invoice, Paid: a.Paid, Date: a.Date, Note: a.Note, Reason: a.Reason,
-				}))
-			}),
-
-		tool("get_finance_config",
-			"The dated rules every figure on the finance pages is computed from: the legislation in force period by period — minimum wage, both contribution schedules, income tax — plus the salary plan and the target balance. Read this before explaining any figure rather than assuming a rate: a month before the earliest entry has nothing in force and is charged nothing, which is not the same as a rate of zero. READ ONLY, and deliberately so: this is deployment configuration, changed by editing config.json and redeploying. There is no tool that writes it, because a past payslip has to stay reproducible against the rates it was actually computed under.",
-			true, func(ctx context.Context, _ emptyArgs) (any, error) {
-				return reply(s.FinanceConfig(ctx))
-			}),
-
-		tool("read_data_file",
-			"The complete current content of one of the three hand-maintained data files, with its sha: budget.json (the plan — groups, categories with their amounts, dates, from/until windows and amount_changes), accounts.json (the accounts, which pot each belongs to, and their month-end balance readings) or config.json (the dated rules every figure is computed from: legislation, the salary plan, the target balance, the start month, the hourly rate). Read it before write_data_file, so the edit starts from what is committed.",
-			true, func(ctx context.Context, a fileNameArgs) (any, error) {
-				return reply(s.ReadDataFile(ctx, a.Name))
-			}),
-
-		tool("write_data_file",
-			"Replace one of the three data files — budget.json, accounts.json or config.json — with new content, for anything the narrower tools cannot express: a new or renamed budget category, a changed amount, a new account, a corrected balance reading, a changed rule in config.json. "+
-				"Send the COMPLETE file: start from read_data_file's content and change only what was asked, so the diff is a few lines a reviewer can read. The content must parse and pass the file's own validation before anything is committed; a refusal names the problem. "+
-				"HANDLE WITH CARE and always confirm with the user first: a balance reading closes a month for good; a rule in config.json reprices every payslip computed under it, so a past rule is never edited, a new dated entry is added. "+
-				"reason is required and becomes the commit message. Each accepted call is a git commit that redeploys the app; budget.json and accounts.json read back at once, config.json only once the deploy has restarted the app. The result carries the unified diff and the number of changed lines.",
-			false, func(ctx context.Context, a fileWriteArgs) (any, error) {
-				return reply(s.WriteDataFile(ctx, FileWriteRequest{Name: a.Name, Content: a.Content, Reason: a.Reason}))
-			}),
-
-		tool("derive_transaction_ids",
-			"The stable id of each statement line — the id add_transactions requires, and the ONLY place ids come from; never compute or invent one yourself. Send every line of the statement in one call, as account, date (YYYY-MM-DD), amount (euros, exactly the number you will send to add_transactions) and description exactly as the bank wrote it; the ids come back under an ids key, in the same order. "+
-				"The id is a short hash of those four values, so the same line always gets the same id and re-importing a statement is a no-op rather than a duplicate; two identical lines in one call get -2, -3 suffixes in statement order. Pure computation: nothing is read or written.",
-			true, func(_ context.Context, a idsArgs) (any, error) {
-				lines := make([]IDLine, 0, len(a.Lines))
-				for _, l := range a.Lines {
-					lines = append(lines, IDLine{Account: l.Account, Date: l.Date, Amount: l.Amount, Description: l.Description})
-				}
-				out, err := s.DeriveIDs(DeriveIDsRequest{Lines: lines})
-				if err != nil {
-					return nil, err
-				}
-				return idsResult{IDs: out.IDs}, nil
-			}),
-
-		tool("add_transactions",
-			"Record statement lines that are not in the file yet. Send ONLY new lines: this never touches, reorders or removes anything already recorded, so there is no whole-month document and no base_sha. "+
-				"Do NOT send a month — each line's date decides which month it is filed under, so a statement crossing a month boundary is one call that writes two months. "+
-				"A line whose id is already recorded and identical is skipped and reported back, so re-sending the same statement is safe and commits nothing; a line whose id is already recorded but differs is refused — use edit_transactions to change a recorded line. "+
-				"Every line takes exactly one of category, ignored, untracked or splits; a line that paid for more than one thing carries splits instead, whose parts must add up to the line's amount and each take exactly one of the three. "+
-				"Use untracked, with a note, for money you cannot place — that is what it is for, and it is better than guessing a category or leaving the reconciliation unfinished. "+
-				"Send coverage for any month that has never been reconciled; without it that month cannot be created. Each month written is a git commit that redeploys the app.",
-			false, func(ctx context.Context, a addArgs) (any, error) {
-				return reply(s.AddTransactions(ctx, a.request()))
-			}),
-
-		tool("edit_transactions",
-			"Change what already-recorded transactions are attributed to — the common correction, e.g. every Parkmart line in August to Groceries. Send all the changes as one edits array: one call, one commit per month touched. "+
-				"Each edit names a transaction id and exactly one of category, ignored, untracked or splits, which REPLACES whatever that line carried before — this is how an ignored line becomes a category, or a category becomes untracked. "+
-				"It CANNOT change a date, amount, description or account, cannot add a line, and cannot remove one; anything you leave out of the array is left alone. There is no removal in this API at all. "+
-				"Pass month with each edit — get_actuals and search_transactions both return it beside the id. It is optional: the fallback lookup does find a line added minutes ago, but it scans the months around now, which is slower and only covers a three-year window. "+
-				"There is no base_sha: only the ids you name are touched, so someone else's change to another line merges rather than being lost. "+
-				"If any id does not exist, nothing in that month is written and the missing ids come back. reason lands in the commit message.",
-			false, func(ctx context.Context, a editArgs) (any, error) {
-				return reply(s.EditTransactions(ctx, a.request()))
-			}),
-
-		tool("record_account_balance",
-			"Record what an account really held when a month closed — the figure read off the bank. This is how an account's balance is brought up to date, and it re-anchors every month after it: the projection is replaced by the fact, rather than reconciled against it. "+
-				"as_of IS AN END-OF-MONTH, END-OF-DAY DATE AND NOTHING ELSE. It is the CLOSING balance of that month: 2026-07-31 is the money left when July ended, and it is the figure August's page shows beside its Available to spend. Nothing is carried; each month shows the reading dated before it. "+
-				"MID-MONTH BALANCES ARE NOT ALLOWED and are refused — as_of must be the last day of its month (31, 30, or 28/29 in February). Half a month is not a closing balance: the rest of that month's spending has not happened yet, so filing it as the month's figure would open the next month with money that is already gone. If the user gives you a balance read on the 12th, do not round it to a month end — ask them to read it again when the month closes. "+
-				"A month that has not ended yet is refused for the same reason: a balance is read, never projected. "+
-				"The reading is APPENDED to that account's history and nothing is written over. A month that already has a reading is refused rather than replaced, because one month closes on one figure and a past month must keep the number that was true then; a wrong figure is repaired by a human in the data repo. "+
-				"account must be spelled exactly as list_accounts spells it. This never creates an account: which pot it belongs to — company or private — decides which side of the payroll cascade the money sits on, and that is a decision, not a guess. "+
-				"balance is euros at the end of that day, decimals allowed, negative for an overdrawn account. There is no base_sha: the reading is appended, so someone else's change merges rather than being lost. "+
-				"Each accepted call is a git commit that redeploys the app, and the new figure is in force at once.",
-			false, func(ctx context.Context, a balanceArgs) (any, error) {
-				return reply(s.RecordAccountBalance(ctx, RecordBalanceRequest{
-					Account: a.Account, AsOf: a.AsOf, Balance: a.Balance, Note: a.Note,
-				}))
-			}),
-
-		tool("move_planned_expense",
-			"Move one one-off cost to the month it was actually charged in, when get_reconciliation_status reports it as mistimed. Changes that category's date and nothing else — it cannot alter an amount, cannot touch anything that recurs monthly, and cannot move a category that is bounded to a from/until window. reason is required and lands in the commit message.",
-			false, func(ctx context.Context, a moveArgs) (any, error) {
-				return reply(s.MovePlannedExpense(ctx, MoveRequest{
-					CategoryID: a.CategoryID, FromMonth: a.FromMonth, ToMonth: a.ToMonth,
-					Reason: a.Reason, BaseSHA: a.BaseSHA,
-				}))
-			}),
-
-		tool("schedule_amount_change",
-			"Change the recurring price a budget category pays, from a future month on — the tool for a rent or subscription that rises next January. "+
-				"from_month is YYYY-MM and must be in the future: a month that is already in force cannot be re-planned here, an already closed budget is fixed in budget.json. "+
-				"Send amount (euros, decimals allowed) plus optionally minimal_amount to set the category's amount from that month on until a later change supersedes it; sending the same from_month again corrects the scheduled price. A correction replaces that month's entry as a whole, so a minimal_amount you do not resend is dropped. "+
-				"Amounts are never negative, and minimal_amount cannot exceed the amount it reduces — both come back as a refusal. "+
-				"Send remove instead of amount to undo a scheduled change for that month. "+
-				"It refuses one-offs (a single price, full stop) and a change outside the category's own from/until window, which could never take effect. "+
-				"Read the category's amount_changes from list_budget_categories or get_budget first — it is the whole scheduled list, so you know which months are already spoken for and which sha to base the edit on. "+
-				"reason is required and lands in the commit message; each accepted call is a git commit that redeploys the app, and the new price is in force from the moment the change's month arrives.",
-			false, func(ctx context.Context, a amountChangeArgs) (any, error) {
-				return reply(s.ScheduleAmountChange(ctx, ScheduleAmountChangeRequest{
-					CategoryID: a.CategoryID, FromMonth: a.FromMonth,
-					Amount: a.Amount, MinimalAmount: a.MinimalAmount, Remove: a.Remove,
-					Reason: a.Reason, BaseSHA: a.BaseSHA,
-				}))
 			}),
 	}
 }

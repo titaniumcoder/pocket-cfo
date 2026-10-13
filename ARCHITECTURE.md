@@ -852,15 +852,13 @@ Fly's auto-stop is not a problem to solve here: the idle delay is not configurab
 machine kept awake makes more requests rather than fewer, and the snapshot makes a wake
 cost nothing.
 
-**The two-month funding shift** is the domain rule that most of the module bends around:
-money earned in month M is invoiced at the end of M, paid during M+1, and is spendable in
-M+2. So the expenses shown for a month are funded by the income of two months earlier,
-and every range that touches income is shifted against the range that touches expenses.
-`funding.go` holds both, and they are derived from one function so they cannot drift.
-The shift is a fact about a month, not about a year: a month page says which month its
-income funds ("Income (for July 2026)"), but a year's income is January through December
-of that year and carries no shifted annotation. Only the funding side of the year page —
-which income pays for the year's expenses — is shifted.
+**A month's income is the invoices that fell due the month before.** Money earned in
+month M is invoiced at the end of M and paid in M+1, so the income shown for a month is
+exactly the invoices whose due date fell in the previous month — `ComputeInvoiced` maps
+each due date to the month after it, and `fundingIncome` reads that map. There is no
+estimate and no shift: Toggl tracks the hours and prices the work record panel, but the
+budget is priced by what was actually billed. A month nobody invoiced for shows zero
+income and says so in its figures.
 
 **The salary cascade** turns company income into net personal income: company income less
 company expenses, less the employer's contributions, gives gross salary; the employee's
@@ -881,58 +879,37 @@ a ceiling field could express neither.
 A month also declares **what salary is drawn** — full, the statutory minimum, a fixed gross
 figure, or none — because choosing the minimum to leave money in the company, naming an
 amount, and drawing nothing are ordinary decisions that the affordability arithmetic cannot
-represent. `fixed` is the one mode that ignores affordability: it is paid whether or not
-the money is there, and overdraws the company rather than shrinking. It is not, however,
-allowed below the minimum wage in force — outranking what the company can afford is a
-choice, and outranking the law is not.
+represent. `fixed` is the one mode that ignores affordability: it is paid whether or not the money
+is there. It is not, however, allowed below the minimum wage in force — outranking what
+the company can afford is a choice, and outranking the law is not.
 
-**The company is a balance, not just a flow.** It used to be modelled as a pot that empties
-every month, and `accounts.json` said so on purpose. That was only true because a full
-salary hands the whole remainder to gross, which drains the company by construction. Once a
-month can pay the minimum or a fixed figure, the rest stays behind, so a company balance is
-carried like a private one: it enters the ledger straight after Company income and *before*
-the cascade, raising what a full salary can afford (and lowering it when overdrawn), and
-what the cascade leaves behind opens the next month:
-
-```
-company closing = opening + company income − company expenses − employer social − gross
-```
-
-A month closes on the plan or, when its statement is fully imported, on what the bank
-says the company actually spent — whole, never a mixture, for the same reason a
-half-imported month falls back to the plan for its expenses.
-
-Two things follow from that formula rather than from code written to produce them. A full
-salary still closes the company at zero. And the closing figure is derived from the
-**rounded cent fields**, not the floats behind them, for two reasons that both matter: it
-seeds the next month, so a half-cent compounds down the year; and the rows shown on the
-page have to add up to it, because that is the first thing a reader checks.
-
-The balance being an *input* to the cascade is why the roll-forward runs before it rather
-than after, and why both pots are walked in one pass — the company balance feeds payroll,
-and the private balance is fed by what payroll pays out.
+**A month is a closed system.** The payroll pot is the month's company income minus its
+company expenses — both plannable: income from the invoices that fell due the month
+before, expenses from budget.json's company categories. What a full salary can afford is
+that pot; a full salary takes it all and the month closes at zero. Nothing carries in and
+nothing carries out: there is no roll-forward, no opening balance, and no company balance
+to feed the cascade. A reserve, when one is wanted, is an ordinary company expense
+category in budget.json, planned like any other spend — the plan is the place for a
+decision like that, not a special mechanism.
 
 **An account keeps every reading, not just the last.** `accounts.json` used to hold one
 `balance` and one `as_of` per account, so re-reading the bank wrote over the previous
 figure — lossy in the one direction that matters, since the reason to read again is that
 the carried figure has drifted. Readings live in a `balances` array now, and the one in
-force for a month is the newest dated before it. A month before every reading still has no
-balance; a month after a later reading opens on **that** reading rather than on a chain
-extrapolated past it. So a yearly sync corrects everything from that point on without
-rewriting the months before it, and paging back shows what was true then rather than a
+force for a month is the newest dated before it, and that is the figure the month shows
+beside its Available to spend. A month before every reading has no reading to show;
+nothing is carried, so a month nobody has read simply says what the plan says and nothing
+about the bank. A later reading replaces the figure for every month after it without
+rewriting what was true before, so paging back shows what was true then rather than a
 number read a year later.
-
-Both pots are still anchored at one date, because they are walked together, so an account
-nobody re-read is carried as if its older figure were the anchor's. That drag is unchanged
-from the single-reading file, and it is visible in the read dates on the spending page.
 
 Two rules the schema cannot state are refused rather than guessed: two accounts sharing a
 name — now two histories for one account, with nothing to merge them by, where the old file
-silently summed them — and two readings in one month, which would be two candidate openings
-for the next. A rejected file also says so on the page; switching the balance layer off in
+silently summed them — and two readings in one month, which would be two candidate figures
+for the month. A rejected file also says so on the page; switching the readings off in
 silence is indistinguishable from having no `accounts.json` at all.
 
-**Where a balance is explained, and where it is not.** The dashboard shows an account as a
+**Where a reading is explained, and where it is not.** The dashboard shows an account as a
 name and a figure, nothing else. It is a page of arithmetic, and every clause that
 accumulated around those rows — the read date, the free-text note, why the company is
 overdrawn, how long since the bank was checked — was prose competing with the numbers it
@@ -942,58 +919,30 @@ page where learning the bank was last read six weeks ago actually changes what y
 The `note` on a reading is documentation for whoever edits `accounts.json` and renders
 nowhere.
 
-**`targetBalance`** is a figure the company saves towards: while it is under, the month pays
-the statutory minimum; at or above, full salary resumes. It is a **floor, not a high-water
-mark**, and that distinction is the whole design. The target is subtracted from what payroll
-may spend, so a full salary drains the company down to the target and stops. Switching only
-the mode would oscillate — reach the target, pay it all out, fall under, back to the
-minimum, forever — which is a reserve that is never actually reserved.
+**`targetBalance` used to exist and does not any more.** It held a month at the statutory
+minimum until the company's carried balance reached a figure the config named — a floor
+that fed on the roll-forward this model no longer has. It is removed entirely; a config
+still carrying the block is refused. A reserve, when wanted, is an ordinary company
+expense category: planned, visible, and editable with the rest of the budget.
 
-A target can only ever hold a month back, never make it pay more, so an explicit `minimum`,
-`none` or `fixed` month wins over it. Writing a target over one is allowed rather than
-refused, because the salary block is the more explicit statement; but it does nothing there,
-so `/info` names every idle month and the page says so in the month itself. `/info` shows
+`/info` shows
 the dated blocks as a timeline — one card per month anything changes, resolving what is in
 force from then — because an entry's own line rarely is: a legislation entry carries each
 field it omits forward independently from the last entry that stated it, and a closed
-salary or target span falls back to a full salary and no target without saying so. The same goes
-for a target with no company account to measure against.
-
-An **unknown** company balance is not a balance of zero. Treating the two alike would hold
-every month at the minimum on no evidence, so the distinction is carried explicitly and the
-target simply does not apply where nothing is known. The year view is the case that makes
-this load-bearing: it reads no balances at all, and it stays that way on purpose —
-`fundingIncome` spreads company expenses evenly across its range, which smooths a flow
-harmlessly but would reorder a balance, so a twelve-month range would close the company
-somewhere the twelve month views never do.
+salary span falls back to a full salary without saying so.
 
 **Planned versus actual.** `budget.json` is what was planned; `actuals/YYYY-MM.json` is
-what the bank statement said. Actuals move the **roll-forward and nothing else**. A month
-is closed on its statements rather than its plan, so a balance carried from an old read
-spends what was actually spent; but no planned figure of the month on screen changes, and
-a test still asserts that, because it is easy to break by accident and invisible when
-broken.
+what the bank statement said. Actuals move the **Actual column and nothing else**: every
+planned figure of the month on screen is bit-identical with and without them, and a test
+asserts that, because it is easy to break by accident and invisible when broken. The
+pair is only meaningful side by side — the plan says what the month was meant to spend,
+the statements say what actually left, and the gap is the spending the plan booked that
+the bank has not seen yet.
 
-This used to be stricter — actuals were display-only and fed no figure at all. That made
-every carried balance a statement of intent: the further from the read, the more the
-number described the budget rather than the account. The drift was systematic and
-compounded, and the evidence to correct it was already imported and being ignored.
+A reserve that the plan makes no room for is exactly the case actuals are there to catch:
+the statements show money leaving that the budget never planned, in the Actual column,
+where it cannot be mistaken for part of the plan.
 
-A month is closed on its statements only when `coverage` spans the whole month. A
-half-imported month closed on its transactions reads as a frugal one, and the surplus it
-invents is carried forward for good with nothing on the page saying so; falling back to the
-plan is the conservative answer, and `coverageComplete` already computed the test. Income
-is untouched either way and stays predicted from Toggl and invoices, because statement
-credits are `ignored` lines and actuals have nothing to say about it. Untracked money
-counts as unspent, so an actuals close is optimistic by exactly the figure the untracked
-marker already reports.
-
-A figure can therefore be read off the bank, carried on statements, or carried on the plan,
-and the dashboard does not distinguish them. It briefly did, as a tooltip on the opening
-figure. The distinction is real but it is diagnostic: wanted when a figure is being argued
-with, noise on every other visit, and not worth the machinery of threading a provenance
-record through the roll to render it. What the reader has instead is the read date on the
-spending page, which answers the question that actually prompts the doubt.
 
 **A budget category is recurring, a one-off, bounded, or stepped.** `budget.json` has
 four shapes for a category's amount. Plain `amount` recurs every month, unbounded in both
@@ -1040,19 +989,13 @@ at once is a contradiction, not a schedule. The web view points at the change: a
 with a step inside the horizon shows a small arrow beside its name, and following it
 opens the month the price moves.
 
-**An imported month has two balances.** The plan charges the whole month on the first, so
-the plan and the statements answer different questions — where the month was meant to end
-up, and what the account actually holds. Both are shown, in the Planned-against-Actual
-columns the ledger already uses. Neither replaces the other: the bank figure is optimistic
-by whatever has not been imported or assigned yet, and only the planned one beside it makes
-that legible. Mid-month that gap is most of the month; in a closed month it is the
-overspend or the underspend, and the bank figure is then not an estimate at all — it is
-what the month ended on, and what the next month opens with. A month nobody has imported
-has only the plan to show, and a year view has no opening balance to build the second
-figure from. The company row gets the same pair, with the expense figure substituted but
-the cascade left alone — re-deriving affordability from a half-imported month would invent
-a bigger salary purely because the statements had not caught up, and would break the rule
-that the closing figure equals the rows above it.
+**An imported month has two columns.** The plan charges the whole month on the first, so
+the plan and the statements answer different questions — what the month was meant to
+spend, and what it actually spent. Both are shown, in the Planned-against-Actual columns
+the ledger already uses. Mid-month that gap is most of the month; in a closed month it is
+the overspend or the underspend. Available to spend stays the plan either way; the bank's
+own reading for the month stands beside it, read off accounts.json rather than derived
+from a mixture of the two.
 
 Every statement line carries exactly one disposition: a budget category, an `ignored`
 reason, an `untracked` note for money not yet decided, or `splits` when one line paid for
@@ -1060,16 +1003,16 @@ more than one thing. Absence is never a decision — the file accounts for every
 statement, so a skipped line is recorded as skipped rather than inferred from silence.
 
 **What used to live here and does not any more.** Dividends (with company profit tax
-and dividend tax), the director's loan, the `movement` markers on statement lines and the
-company-worth figure were all machinery for exceptional payments between the company and
-its owner. They are removed: the tracker models only the two pots, the payroll cascade
-between them, and the plan-versus-statement ledger. A transfer between the company and its
-owner is an ordinary `ignored` line with a reason; what the company holds in the bank is
-the only company figure. A deployment upgrading from a version that had any of this must
-first drop the `dividends` array from `budget.json`, any `movement` fields from its
-actuals, the `director_loan` block from `accounts.json`, and the `companyProfitTax` and
-`dividendTax` entries from config.json's legislation — the validators refuse all five
-rather than silently ignoring them.
+and dividend tax), the director's loan, the `movement` markers on statement lines, the
+company-worth figure, the `targetBalance` blocks, and the carried balances (roll-forward,
+opening figures, the company balance as a cascade input) are all removed. The tracker
+models the simple thing: plannable company income (invoices due the month before) and
+company expenses define the earner's income, the private budget spends it, and the bank's
+per-month readings stand beside the figures. A deployment upgrading from a version that
+had any of this must first drop the `dividends` array from `budget.json`, any `movement`
+fields from its actuals, the `director_loan` block from `accounts.json`, the
+`companyProfitTax` and `dividendTax` entries and any `targetBalance` block from
+config.json — the validators refuse them all rather than silently ignoring them.
 
 ## 11. Agent-facing write API
 
@@ -1123,12 +1066,11 @@ variants are guarded by state, not by file presence: an issued invoice's `-DRAFT
 may still be on disk from before it was issued, and it must not be served.
 
 **A balance closes a month, so `as_of` is a month end and anything else is refused.**
-The reading is that month's closing figure and therefore the next month's opening one, and
-only the month is ever read off it. A date in the middle of a month would be filed as that
-month's figure while the rest of the month's spending had not happened yet, opening the
-next month with money already gone — so it is refused outright rather than silently
-rounded, as is a month that has not ended, since a balance is read off the bank and never
-projected. The rule belongs to the data rather than to the API: `ValidateAccounts` enforces
+The reading is that month's closing figure — the figure the month shows beside its
+Available to spend — and only the month is ever read off it. A date in the middle of a
+month would be filed as that month's figure while the rest of the month's spending had not
+happened yet, so it is refused outright rather than silently rounded, as is a month that
+has not ended, since a balance is read off the bank and never projected. The rule belongs to the data rather than to the API: `ValidateAccounts` enforces
 it too, so a hand-edited `accounts.json` carrying a mid-month reading fails to load and
 says why, instead of anchoring every month after it on half a month's spending. Readings are appended and a month that already has one is a conflict: the
 history is what lets a past month keep the figure that was true then. Accounts themselves

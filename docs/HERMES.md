@@ -147,8 +147,7 @@ REST a write is still committed on the spot, as described below.
     is not negotiable.
 
 13. **`get_finance_config`** is the dated rules every figure is computed from — both
-    contribution schedules, income tax, the salary plan
-    and the target balance. Read it before explaining a figure rather than assuming a rate.
+    contribution schedules, income tax and the salary plan. Read it before explaining a figure rather than assuming a rate.
     A month before the earliest entry has nothing in force and is charged nothing, which is
     not the same as a rate of zero.
 
@@ -256,17 +255,17 @@ under the rates it was computed with, so a change is a new dated entry. Say so, 
 ## Balances close a month, and never sit in the middle of one
 
 `as_of` **is the last day of a month, and nothing else.** It is that month's *closing*
-balance, read at the end of that day, so it is what the **next** month opens with:
-`2026-07-31` is the money left when July ended, it is August's starting figure and usable
-in August immediately, and it changes nothing about July.
+balance, read at the end of that day — `2026-07-31` is the money left when July ended, and
+it is the figure July's page shows beside its Available to spend. Nothing is carried:
+each month shows the newest reading dated before it, and that is all the bank says.
 
 **A mid-month balance is refused.** Not filed under the month anyway, not rounded to the
 nearest month end — refused, with the date it should have carried. The same rule holds for
 a hand edit: `accounts.json` fails to load if any reading in it does not close its month,
 so this is not a restriction on the API but the shape of the data. Half a month is not a
 closing figure: the rest of that month's spending has not happened yet, so recording the
-balance on the 15th as the month's figure would open the next month with money that is
-already gone. If the user gives you a figure they read mid-month, ask them to read it
+balance on the 15th as the month's figure would file half a month's spending as the
+month's own. If the user gives you a figure they read mid-month, ask them to read it
 again when the month closes rather than sending it. A month that has not ended yet is
 refused for the same reason: a balance is read off the bank, never projected.
 

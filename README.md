@@ -213,19 +213,16 @@ reproducible. Each entry states only what changed; anything it omits carries for
 |---|---|
 | `legislation` | every government-set figure: both parties' contribution schedules as marginal bands, the income tax bands, the minimum wage — in the same band shape |
 | `salary` | what a month pays: a full salary, only the statutory minimum, a `fixed` gross `amount`, or none at all |
-| `targetBalance` | a figure the company saves towards: under it a month pays the minimum, at or above it full salary resumes |
 | `startMonth` | the first month budgeting covers; earlier months are not offered at all |
 
 `mode: "fixed"` takes an `amount` — a gross monthly figure — and is the one setting paid
-whether or not the company can afford it, so it will overdraw the company rather than
-shrink. It is still refused below the minimum wage in force.
+whether or not the month can afford it. It is still refused below the minimum wage in
+force.
 
-`targetBalance` is a **floor**: once reached, a full salary is drawn out of what sits *above*
-the target, so the reserve is not spent back down the following month. It only ever holds a
-month back, never makes one pay more, so it does nothing in a month whose `salary` entry
-already says `minimum`, `fixed` or `none` — that is allowed rather than refused, and the
-rules timeline on `/info` names every month where it is idle. It also needs an account with `"kind": "company"` in
-`accounts.json`, since otherwise there is no balance to compare it against.
+A month's company income is the invoices that fell due the month before; what a full
+salary can afford is that income minus the month's company expenses, and a full salary
+takes it all. Nothing carries between months — a reserve, when wanted, is an ordinary
+company expense category in `budget.json`.
 
 Bands are marginal, so a contribution ceiling is an ordinary band with a rate of `0` rather
 than a concept of its own. There are no built-in defaults: a figure no entry states is

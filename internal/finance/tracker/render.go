@@ -227,7 +227,7 @@ var templates = `
     {{else}}
 
     <h3>Last entry</h3>
-    <div class="cov-grid">
+    <div class="cov-grid entry-grid">
       <span class="cov-head">Account</span><span class="cov-head col-secondary">Last entry</span>
       {{range .LastEntry}}<span>{{.Account}}</span><span class="col-secondary">{{.Date}}</span>{{end}}
     </div>

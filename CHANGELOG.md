@@ -8,6 +8,9 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Fixed
+- **The Last entry table on the spending page starts each account at the beginning of the line again.** The section borrowed the coverage grid's four-column tracks with only two cells per row, so CSS auto-placement put the first account into the header row's third column and the rest drifted from there. It now declares its own two-column layout, and on a phone the date — the one thing the table exists to show — stays visible beside its account instead of the accounts scattering across both columns.
+
 ## [4.4.1] - 2026-10-13
 
 ### Fixed

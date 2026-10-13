@@ -547,6 +547,10 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
 /* Balances has three columns to Coverage's four, and the last one is money. */
 .bal-grid { grid-template-columns: minmax(0, 1fr) 7rem 7rem; }
 .bal-amt { text-align: right; font-variant-numeric: tabular-nums; }
+/* Last entry has two: the account, and the date it was last seen. Without its
+   own declaration the base four-column grid catches the header's two cells and
+   flows the first account into the header row's third track. */
+.entry-grid { grid-template-columns: minmax(0, 1fr) 7rem; }
 
 /* The phone rules live here, immediately after the declarations they narrow,
    and not in the media block further up: media queries add no specificity, so
@@ -576,6 +580,10 @@ details.card .table-wrap { margin: .5rem 0 .25rem; }
   /* Coverage answers one question on a phone — when this was last imported. */
   .cov-grid { grid-template-columns: minmax(0, 1fr) 5.5rem; column-gap: .4rem; }
   .cov-grid > .cov-imported { display: block; }
+  /* The blanket .col-secondary rule hides the date, which is the one thing the
+     Last entry table exists to show; show it, so account and date stay paired
+     in the two tracks instead of the accounts scattering across both columns. */
+  .entry-grid > .col-secondary { display: block; }
 }
 
 .mistimed-inline { font-weight: 700; font-size: .9rem; }

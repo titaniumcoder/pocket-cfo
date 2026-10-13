@@ -11,6 +11,7 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 ### Changed
 - **Breaking: a month's company income is what its invoices brought in.** Company income for a month is the invoices that fell due the month before — no Toggl estimate, no two-month funding shift, and the "(from …)" and "Income (for …)" period links leave the dashboard. Toggl still tracks the hours themselves; it no longer prices the budget.
 - **Breaking: the payroll cascade is month-local.** What a full salary can afford is simply the month's company income minus its company expenses; nothing carried in, and the month closes at zero. A reserve, when wanted, is an ordinary company expense category in budget.json — on need, like any other spend.
+- **Breaking: nothing carries forward.** The roll-forward, the private opening balance and the Balance rows are gone. "Available to spend" is the month's net income less its planned private expenses, with the bank's own month-end reading beside it when one is in force; the company balance block leaves the page, and accounts.json readings are shown for their own month only.
 
 ### Removed
 - **Breaking: targetBalance is gone.** The config block, the held-at-minimum-until-reached salary logic, and the target rows on /info are removed; a config.json still carrying a `targetBalance` block is refused with a pointer to the change.

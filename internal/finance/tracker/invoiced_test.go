@@ -16,7 +16,7 @@ func TestComputeInvoicedUsableIsMonthAfterDueDate(t *testing.T) {
 	got := ComputeInvoiced(facts)
 	want := yearMonth{2026, time.September}
 	usable := got.Usable[want]
-	if len(usable) != 1 || usable[0] != (UsableInvoice{Number: "0001", Cents: 500000}) {
+	if len(usable) != 1 || usable[0].Number != "0001" || usable[0].Cents != 500000 {
 		t.Errorf("Usable[%+v] = %+v, want [{0001 500000}]", want, usable)
 	}
 }

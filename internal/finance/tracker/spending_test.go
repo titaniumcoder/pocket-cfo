@@ -846,7 +846,7 @@ func TestUntrackedCashReachesNoFinanceFigure(t *testing.T) {
 		{"CompanyActualCents", with.CompanyActualCents, without.CompanyActualCents},
 		{"PrivateUnmatchedCents", with.PrivateUnmatchedCents, without.PrivateUnmatchedCents},
 		{"CompanyUnmatchedCents", with.CompanyUnmatchedCents, without.CompanyUnmatchedCents},
-		{"BalanceCents", with.BalanceCents, without.BalanceCents},
+		{"AvailableCents", with.AvailableCents, without.AvailableCents},
 		{"AvailableCents", with.AvailableCents, without.AvailableCents},
 		{"PrivateTotalPlannedCents", with.PrivateTotalPlannedCents, without.PrivateTotalPlannedCents},
 	} {

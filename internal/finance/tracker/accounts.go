@@ -191,11 +191,6 @@ func snapshotFor(af accountsdata.AccountsFile, viewed yearMonth) (AccountSnapsho
 	snap.Found = found
 	return snap, found
 }
-
-type openings struct {
-	PrivateCents int
-}
-
 func (a *Accounts) Snapshot(ctx context.Context, viewed yearMonth) (AccountSnapshot, bool, error) {
 	af, err := a.File(ctx)
 	if err != nil {

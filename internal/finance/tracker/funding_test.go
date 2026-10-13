@@ -84,8 +84,8 @@ func TestBalanceUsesFundingPersonalNetIncome(t *testing.T) {
 		t.Fatalf("company income = %d, want the invoice's 5 000", f.FundingPersonal.CompanyIncomeCents)
 	}
 	want := f.FundingPersonal.NetIncomeCents - f.PrivateTotalPlannedCents
-	if f.BalanceCents != want {
-		t.Errorf("BalanceCents = %d, want %d (FundingPersonal.NetIncomeCents - PrivateTotalPlannedCents)", f.BalanceCents, want)
+	if f.AvailableCents != want {
+		t.Errorf("AvailableCents = %d, want %d (FundingPersonal.NetIncomeCents - PrivateTotalPlannedCents)", f.AvailableCents, want)
 	}
 }
 

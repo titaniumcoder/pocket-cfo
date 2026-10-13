@@ -403,7 +403,7 @@ var templates = `
       {{if .Err}}<div class="row"><span class="error">{{.Err}}</span></div>
       {{else}}
       <div class="row net{{if not $.Invoiced}} gap-below{{end}}"><span class="label">Company income</span><span class="mid"></span><span class="amt goodamt">{{eur .CompanyIncomeCents}}</span></div>
-      {{range $.Invoiced}}<div class="row acct"><span class="label">{{if .URL}}<a href="{{.URL}}">{{.Number}}</a>{{else}}{{.Number}}{{end}} <span class="note">invoiced, usable this month</span></span><span class="mid"></span><span class="amt">{{eur .AmountCents}}</span></div>{{end}}
+      {{range $.Invoiced}}<div class="row acct"><span class="label">{{if .URL}}<a href="{{.URL}}">{{.Number}}</a>{{else}}{{.Number}}{{end}} <span class="note">due {{.Day}}, income this month</span></span><span class="mid"></span><span class="amt">{{eur .AmountCents}}</span></div>{{end}}
       {{if $.Invoiced}}<div class="row gap-below"></div>{{end}}
       {{if $.ShowActuals}}<div class="row colhead"><span class="label"></span><span class="mid">Planned</span><span class="amt">Actual</span></div>{{end}}
       {{template "categoryGroups" $.CompanyLedger}}
@@ -420,10 +420,9 @@ var templates = `
       {{end}}
       {{end}}
       {{if .AccountsErr}}<div class="row"><span class="error">{{.AccountsErr}}</span></div>{{end}}
-      {{if .ShowOpeningBalance}}
-      <div class="row net{{if lt .OpeningBalanceCents 0}} neg{{end}}"><span class="label">Private opening balance</span><span class="mid"></span><span class="amt netamt">{{eur .OpeningBalanceCents}}</span></div>
+      {{if $.ShowAvailable}}
+      <div class="row net gap-above{{if lt .AvailableCents 0}} neg{{end}}"><span class="label">Available to spend</span>{{if $.ShowBankReading}}<span class="mid"></span><span class="amt{{if lt $.BankReadingCents 0}} neg{{else}} netamt{{end}}">{{eur $.BankReadingCents}}<span class="stack-m">planned {{eur .AvailableCents}}</span></span>{{else}}<span class="mid"></span><span class="amt netamt">{{eur .AvailableCents}}</span>{{end}}</div>
       {{range .PrivateAccounts}}<div class="row acct"><span class="label">{{.Name}}</span><span class="mid"></span><span class="amt">{{eur .Cents}}</span></div>{{end}}
-      <div class="row net gap-above{{if lt .HeadlineAvailableCents 0}} neg{{end}}"><span class="label">Available to spend</span>{{if .ShowActualBalance}}<span class="mid">{{eur .AvailableCents}}</span><span class="amt netamt">{{eur .ActualAvailableCents}}<span class="stack-m">planned {{eur .AvailableCents}}</span></span>{{else}}<span class="mid"></span><span class="amt netamt">{{eur .AvailableCents}}</span>{{end}}</div>
       {{end}}
     </div>
 
@@ -445,10 +444,9 @@ var templates = `
       {{end}}
     </div>
 
-    {{if .ShowBalance}}
+    {{if .ShowAvailable}}
     <div class="ledger">
       <div class="row net neg"><span class="label">Total private expenses</span>{{if .ShowActuals}}<span class="mid{{outClass .PrivateTotalPlannedCents}}">{{out .PrivateTotalPlannedCents}}</span><span class="amt{{outClass .PrivateActualCents}}">{{out .PrivateActualCents}}<span class="stack-m">of {{out .PrivateTotalPlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .PrivateTotalPlannedCents}}</span>{{end}}</div>
-      <div class="row net balance{{if lt .HeadlineBalanceCents 0}} neg{{end}}"><span class="label">Balance</span>{{if .ShowActualBalance}}<span class="mid">{{eur .BalanceCents}}</span><span class="amt netamt">{{eur .ActualBalanceCents}}<span class="stack-m">planned {{eur .BalanceCents}}</span></span>{{else}}<span class="mid"></span><span class="amt netamt">{{eur .BalanceCents}}</span>{{end}}</div>
     </div>
     {{end}}
 

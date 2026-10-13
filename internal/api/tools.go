@@ -454,7 +454,7 @@ func (s *Service) Tools() []Tool {
 
 		tool("record_account_balance",
 			"Record what an account really held when a month closed — the figure read off the bank. This is how an account's balance is brought up to date, and it re-anchors every month after it: the projection is replaced by the fact, rather than reconciled against it. "+
-				"as_of IS AN END-OF-MONTH, END-OF-DAY DATE AND NOTHING ELSE. It is the CLOSING balance of that month: 2026-07-31 is the money left when July ended, so it is what AUGUST OPENS WITH and is usable in August immediately. It changes nothing about July itself. "+
+				"as_of IS AN END-OF-MONTH, END-OF-DAY DATE AND NOTHING ELSE. It is the CLOSING balance of that month: 2026-07-31 is the money left when July ended, and it is the figure August's page shows beside its Available to spend. Nothing is carried; each month shows the reading dated before it. "+
 				"MID-MONTH BALANCES ARE NOT ALLOWED and are refused — as_of must be the last day of its month (31, 30, or 28/29 in February). Half a month is not a closing balance: the rest of that month's spending has not happened yet, so filing it as the month's figure would open the next month with money that is already gone. If the user gives you a balance read on the 12th, do not round it to a month end — ask them to read it again when the month closes. "+
 				"A month that has not ended yet is refused for the same reason: a balance is read, never projected. "+
 				"The reading is APPENDED to that account's history and nothing is written over. A month that already has a reading is refused rather than replaced, because one month closes on one figure and a past month must keep the number that was true then; a wrong figure is repaired by a human in the data repo. "+

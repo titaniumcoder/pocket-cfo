@@ -509,15 +509,14 @@ func TestComputeMonthWithBudget(t *testing.T) {
 	if f.FundingPersonal.NetIncomeCents != 0 {
 		t.Errorf("FundingPersonal.NetIncomeCents = %d, want 0 (no invoices due February)", f.FundingPersonal.NetIncomeCents)
 	}
-	if want := -f.PrivateTotalPlannedCents; !f.ShowBalance || f.BalanceCents != want {
-		t.Errorf("ShowBalance/BalanceCents = %v/%d, want true/%d", f.ShowBalance, f.BalanceCents, want)
+	if want := -f.PrivateTotalPlannedCents; !f.ShowAvailable || f.AvailableCents != want {
+		t.Errorf("ShowAvailable/AvailableCents = %v/%d, want true/%d", f.ShowAvailable, f.AvailableCents, want)
 	}
-	// Removed loans check since Loans field was removed from Figures struct
 }
 
 // TestComputeMonthDeductsCompanyExpensesFromCompanyIncome confirms company
 // expenses reduce NetIncomeCents (via the salary cascade) rather than being
-// subtracted a second time from PrivateTotalPlannedCents/BalanceCents.
+// subtracted a second time from AvailableCents.
 func TestComputeMonthDeductsCompanyExpensesFromCompanyIncome(t *testing.T) {
 	trk := fullTracker()
 	trk.Budget = newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithCompany})
@@ -553,8 +552,8 @@ func TestComputeYearWithBudget(t *testing.T) {
 		t.Fatalf("FundingPersonal.Err = %q", f.FundingPersonal.Err)
 	}
 	want := f.FundingPersonal.NetIncomeCents - f.PrivateTotalPlannedCents
-	if !f.ShowBalance || f.BalanceCents != want {
-		t.Errorf("ShowBalance/BalanceCents = %v/%d, want true/%d", f.ShowBalance, f.BalanceCents, want)
+	if !f.ShowAvailable || f.AvailableCents != want {
+		t.Errorf("ShowAvailable/AvailableCents = %v/%d, want true/%d", f.ShowAvailable, f.AvailableCents, want)
 	}
 }
 

@@ -162,12 +162,12 @@ func TestMCPWriteToolsDescribeTheirContract(t *testing.T) {
 		// That a disposition is replaced wholesale, that the statement facts
 		// and other lines are off limits, and that there is no lock to pass.
 		"edit_transactions": {"replaces", "cannot", "left alone", "no base_sha", "month"},
-		// That the date is a month end and mid-month is refused, which month
-		// the figure opens, that it is appended rather than written over, and
-		// that an account is never invented.
+		// That the date is a month end and mid-month is refused, that the
+		// figure is the month's own closing balance, that it is appended
+		// rather than written over, and that an account is never invented.
 		"record_account_balance": {
 			"mid-month balances are not allowed", "last day of its month",
-			"closing balance", "opens", "appended", "never creates an account",
+			"closing balance", "closing balance of that month", "appended", "never creates an account",
 		},
 		// That only a future month may be planned — an already closed budget
 		// is fixed in the file — that one-offs are out of reach, that a

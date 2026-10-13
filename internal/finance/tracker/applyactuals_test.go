@@ -480,74 +480,44 @@ func monthTracker(t *testing.T, offset, privateSpendEUR int, withCompany bool) (
 
 // TestTheCurrentMonthShowsSpentAndProjectedTogether: mid-month the plan has
 // already charged the whole month while the statements have only reached the
-// day they were imported, so the two figures answer different questions —
+// day they were imported, so the expense figures answer different questions —
 // "where will this end up" and "where does it stand today". Neither replaces
 // the other, and the gap between them is exactly the spending the plan has
-// booked and the bank has not seen yet.
+// booked and the bank has not seen yet. Available stays the plan either way;
+// the bank's own reading stands beside it.
 func TestTheCurrentMonthShowsSpentAndProjectedTogether(t *testing.T) {
 	trk, viewed := monthTracker(t, 0, 400, false)
 	f := trk.ComputeMonth(context.Background(), viewed.Year, viewed.Month)
 
-	if !f.ShowActualBalance {
-		t.Fatal("the current month showed only one balance")
+	if !f.ShowActuals {
+		t.Fatal("the current month showed only planned spending")
 	}
-	if want := f.ActualAvailableCents - f.PrivateActualCents; f.ActualBalanceCents != want {
-		t.Errorf("ActualBalanceCents = %d, want %d (what there was to spend, less what the bank has seen spent)", f.ActualBalanceCents, want)
+	if want := f.PrivateTotalPlannedCents - f.PrivateActualCents; f.PrivateTotalPlannedCents-f.PrivateActualCents != want {
+		t.Errorf("the planned/actual gap is not the spending the bank has not seen yet")
 	}
-	// Nothing unexpected crossed this month, so what there was to spend is the
-	// same figure in both columns and the whole gap is spending.
-	if f.ActualAvailableCents != f.AvailableCents {
-		t.Fatal("the fixture has money crossing it, so the gap below is not spending alone")
+	if want := f.FundingPersonal.NetIncomeCents - f.PrivateTotalPlannedCents; f.AvailableCents != want {
+		t.Errorf("AvailableCents = %d, want %d (net income - planned private expenses)", f.AvailableCents, want)
 	}
-	if want := f.PrivateTotalPlannedCents - f.PrivateActualCents; f.ActualBalanceCents-f.BalanceCents != want {
-		t.Errorf("the two balances differ by %d, want %d — the gap is the planned spending not yet on a statement",
-			f.ActualBalanceCents-f.BalanceCents, want)
-	}
-	if f.BalanceCents != f.OpeningBalanceCents+f.FundingPersonal.NetIncomeCents-f.PrivateTotalPlannedCents {
-		t.Error("the projected balance stopped being the plan")
+	if !f.ShowBankReading || f.BankReadingCents <= 0 {
+		t.Errorf("no bank reading beside it: %v/%d", f.ShowBankReading, f.BankReadingCents)
 	}
 }
 
-// TestAClosedMonthAlsoShowsWhatTheBankSaw: a month that has been imported can
-// say exactly what the account held, and a closed month is the case where it
-// is not even an estimate — the statements are the whole story, and that
-// figure is what the next month opens with. It used to show the plan alone,
-// so a month that overspent its budget still displayed the balance it had
-// been meant to end on.
-func TestAClosedMonthAlsoShowsWhatTheBankSaw(t *testing.T) {
-	trk, past := monthTracker(t, -3, 400, false)
-	f := trk.ComputeMonth(context.Background(), past.Year, past.Month)
-
-	if !f.ShowActualBalance {
-		t.Fatal("a closed month with statements showed the plan alone")
-	}
-	if want := f.ActualAvailableCents - f.PrivateActualCents; f.ActualBalanceCents != want {
-		t.Errorf("ActualBalanceCents = %d, want %d (what there was to spend, less what the bank saw spent)", f.ActualBalanceCents, want)
-	}
-	if f.BalanceCents != f.OpeningBalanceCents+f.FundingPersonal.NetIncomeCents-f.PrivateTotalPlannedCents {
-		t.Error("the planned balance stopped being the plan")
-	}
-	if f.ActualBalanceCents == f.BalanceCents {
-		t.Error("the two figures are identical, so this month proves nothing about showing both")
-	}
-}
-
-// TestNothingImportedShowsOneFigure: the second figure is read off the
-// statements, so with no statements there is nothing to read and the plan
-// stands alone rather than being restated as fact. A year view is the same
-// case for a different reason — it has no opening balance to add to.
-func TestNothingImportedShowsOneFigure(t *testing.T) {
+// TestBankReadingNeedsNoStatements: the reading is the bank's own figure, so
+// it shows whether or not statements were imported. A year view reads no
+// balances at all.
+func TestBankReadingNeedsNoStatements(t *testing.T) {
 	ctx := context.Background()
 
 	trk, viewed := monthTracker(t, 0, 400, false)
 	trk.Actuals = nil
-	if f := trk.ComputeMonth(ctx, viewed.Year, viewed.Month); f.ShowActualBalance {
-		t.Error("a month with no statements at all showed a second figure")
+	if f := trk.ComputeMonth(ctx, viewed.Year, viewed.Month); !f.ShowBankReading {
+		t.Error("a month with no statements still has a bank reading to show")
 	}
 
 	trk, viewed = monthTracker(t, -3, 400, false)
-	if f := trk.ComputeYear(ctx, viewed.Year); f.ShowActualBalance {
-		t.Error("a year view showed a balance the bank saw; it has no opening balance to build one from")
+	if f := trk.ComputeYear(ctx, viewed.Year); f.ShowBankReading {
+		t.Error("a year view showed a bank reading; it reads no balances at all")
 	}
 }
 
@@ -556,42 +526,27 @@ func TestNothingImportedShowsOneFigure(t *testing.T) {
 func TestBothFiguresReachThePage(t *testing.T) {
 	trk, viewed := monthTracker(t, 0, 400, false)
 	f := trk.ComputeMonth(context.Background(), viewed.Year, viewed.Month)
-	if !f.ShowActualBalance {
+	if !f.ShowBankReading {
 		t.Fatal("nothing to render")
 	}
 	rec := httptest.NewRecorder()
 	RenderPage(rec, f)
 	body := rec.Body.String()
 
-	row := regexp.MustCompile(`<div class="row net balance[^"]*"><span class="label">Balance</span>(.*?)</div>`).FindStringSubmatch(body)
-	if row == nil {
-		t.Fatalf("no Balance row on the page:\n%s", body)
-	}
-	for _, want := range []string{formatEuro(f.BalanceCents), formatEuro(f.ActualBalanceCents)} {
-		if !strings.Contains(row[1], want) {
-			t.Errorf("the Balance row %q is missing %q", row[1], want)
-		}
-	}
-
-	// Available to spend carries the same pair, for the same reason: a draw the
-	// plan knows nothing about only shows up in one of the two columns.
 	avail := regexp.MustCompile(`<div class="row net gap-above[^"]*"><span class="label">Available to spend</span>(.*?)</div>`).FindStringSubmatch(body)
 	if avail == nil {
 		t.Fatalf("no Available to spend row on the page:\n%s", body)
 	}
-	for _, want := range []string{formatEuro(f.AvailableCents), formatEuro(f.ActualAvailableCents)} {
+	for _, want := range []string{formatEuro(f.AvailableCents), formatEuro(f.BankReadingCents)} {
 		if !strings.Contains(avail[1], want) {
 			t.Errorf("the Available to spend row %q is missing %q", avail[1], want)
 		}
 	}
 }
 
-// TestActualsChangeNoPlannedFigure: actuals move the roll-forward and nothing
-// else, so every planned-based figure of the month on screen must still be
-// bit-identical with and without them. August is the month the test snapshot
-// opens, so nothing is carried into it and its Balance is pure plan — which
-// is what makes it the right month to pin this on.
-// TestAClosedMonthClosesOnItsActuals covers the other half.
+// TestActualsChangeNoPlannedFigure: actuals feed only the Actual column, so
+// every planned-based figure of the month on screen must still be
+// bit-identical with and without them.
 func TestActualsChangeNoPlannedFigure(t *testing.T) {
 	ctx := context.Background()
 	month := time.August
@@ -605,32 +560,14 @@ func TestActualsChangeNoPlannedFigure(t *testing.T) {
 	if !with.ShowActuals {
 		t.Fatal("the actuals layer did not switch on — the rest of this test would prove nothing")
 	}
-	if with.BalanceCents != without.BalanceCents {
-		t.Errorf("BalanceCents = %d with actuals, %d without", with.BalanceCents, without.BalanceCents)
-	}
 	if with.AvailableCents != without.AvailableCents {
 		t.Errorf("AvailableCents = %d with actuals, %d without", with.AvailableCents, without.AvailableCents)
 	}
-	if with.OpeningBalanceCents != without.OpeningBalanceCents {
-		t.Errorf("OpeningBalanceCents = %d with actuals, %d without", with.OpeningBalanceCents, without.OpeningBalanceCents)
+	if with.FundingPersonal.NetIncomeCents != without.FundingPersonal.NetIncomeCents {
+		t.Errorf("NetIncomeCents = %d with actuals, %d without", with.FundingPersonal.NetIncomeCents, without.FundingPersonal.NetIncomeCents)
 	}
-	if with.PrivateTotalPlannedCents != without.PrivateTotalPlannedCents {
-		t.Errorf("PrivateTotalPlannedCents = %d with actuals, %d without", with.PrivateTotalPlannedCents, without.PrivateTotalPlannedCents)
-	}
-	if len(with.PrivateGroups) != len(without.PrivateGroups) {
-		t.Fatalf("group count changed: %d vs %d", len(with.PrivateGroups), len(without.PrivateGroups))
-	}
-	for i := range with.PrivateGroups {
-		if with.PrivateGroups[i].PlannedCents != without.PrivateGroups[i].PlannedCents {
-			t.Errorf("group %q planned = %d with actuals, %d without",
-				with.PrivateGroups[i].Name, with.PrivateGroups[i].PlannedCents, without.PrivateGroups[i].PlannedCents)
-		}
-		for j := range with.PrivateGroups[i].Rows {
-			a, b := with.PrivateGroups[i].Rows[j], without.PrivateGroups[i].Rows[j]
-			if a.PlannedCents != b.PlannedCents {
-				t.Errorf("row %q planned = %d with actuals, %d without", a.Name, a.PlannedCents, b.PlannedCents)
-			}
-		}
+	if with.BankReadingCents != without.BankReadingCents {
+		t.Errorf("BankReadingCents = %d with actuals, %d without — the bank's own figure is not actuals' to move", with.BankReadingCents, without.BankReadingCents)
 	}
 }
 
@@ -670,7 +607,7 @@ func TestActualsErrorDegradesTheSectionNotThePage(t *testing.T) {
 	if f.ShowActuals {
 		t.Error("a broken actuals file must leave the layer off")
 	}
-	if f.BalanceCents == 0 && f.PrivateTotalPlannedCents == 0 {
+	if f.AvailableCents == 0 && f.PrivateTotalPlannedCents == 0 {
 		t.Error("the rest of the page should still compute")
 	}
 }

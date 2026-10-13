@@ -54,6 +54,7 @@ type TrackedRow struct {
 
 type InvoicedRow struct {
 	Number      string
+	Day         string
 	AmountCents int
 	URL         string
 }
@@ -159,21 +160,15 @@ type Figures struct {
 
 	FundingPersonal PersonalView
 
-	ShowBalance  bool
-	BalanceCents int
+	ShowAvailable  bool
+	AvailableCents int
 
-	ShowActualBalance  bool
-	ActualBalanceCents int
-
-	ShowOpeningBalance  bool
-	OpeningBalanceCents int
-	AvailableCents      int
-	PrivateAccounts     []AccountRow
-	CompanyAccounts     []AccountRow
-
-	ActualAvailableCents int
-
-	TargetNeedsBalanceNote string
+	// BankReadingCents is the month's own private reading — the balance the
+	// bank says the account holds at this month's end — shown beside the
+	// planned Available to spend. Nothing carries; each month reads its own.
+	ShowBankReading  bool
+	BankReadingCents int
+	PrivateAccounts  []AccountRow
 
 	AccountsErr string
 }
@@ -268,9 +263,9 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	result.computeActuals(t, ctx, year, start, now, months, &bv)
 
 	viewed := yearMonth{year, start.Month()}
-	carried, snap, opened, accountsErr := t.carriedBalances(ctx, viewed, months)
+	snap, opened, accountsErr := t.carriedBalances(ctx, viewed, months)
 	result.AccountsErr = accountsErr
-	result.computeFundingBalance(t, ctx, year, start, now, months, bv, carried, snap, opened)
+	result.computeFundingBalance(t, ctx, year, start, now, months, bv, snap, opened)
 
 	if at, stale := t.hours().Status(start, end); !at.IsZero() {
 		result.LastUpdated = at.In(t.Loc).Format("02 Jan 15:04")
@@ -343,7 +338,7 @@ func (f *Figures) computeTrackedRows(t *Tracker, projects map[int]Project, aggs 
 func (f *Figures) computeInvoicedRows(t *Tracker, year int, start, end time.Time) {
 	for m := start.Month(); m <= end.Month(); m++ {
 		for _, inv := range t.invoicedInvoicesForMonth(yearMonth{year, m}) {
-			f.Invoiced = append(f.Invoiced, InvoicedRow{Number: inv.Number, AmountCents: inv.Cents})
+			f.Invoiced = append(f.Invoiced, InvoicedRow{Number: inv.Number, Day: inv.Day, AmountCents: inv.Cents})
 			f.InvoicedCents += inv.Cents
 		}
 	}
@@ -445,7 +440,7 @@ func (f *Figures) computeBudget(t *Tracker, ctx context.Context, year int, start
 	return bv
 }
 
-func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year int, start, now time.Time, months int, bv BudgetView, carried openings, snap AccountSnapshot, opened bool) {
+func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year int, start, now time.Time, months int, bv BudgetView, snap AccountSnapshot, opened bool) {
 	var span []yearMonth
 	if months > 1 {
 		first, _ := yearMonthRange(year, t.startMonth())
@@ -464,81 +459,49 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 	}
 
 	if opened {
-		f.publishAccountBalances(snap, carried, yearMonth{year, start.Month()})
+		f.publishAccountBalances(snap, yearMonth{year, start.Month()})
 	}
 
 	if f.BudgetErr == "" && f.FundingPersonal.Err == "" {
-		f.ShowBalance = true
-		f.BalanceCents = f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents - f.PrivateTotalPlannedCents
-		f.publishBalanceTheBankSaw(months)
+		f.ShowAvailable = true
+		f.AvailableCents = f.FundingPersonal.NetIncomeCents - f.PrivateTotalPlannedCents
 	}
-}
-
-// publishBalanceTheBankSaw answers "what does the account actually hold",
-// which the planned figure cannot: the plan charges the whole month on the
-// first, while the statements say what was really spent. Every month that has
-// been imported can answer it — mid-month it is where today stands, and in a
-// closed month it is what the month really ended on, which is the figure the
-// next month opens with. Both are shown rather than one replacing the other,
-// because the actual one is optimistic by whatever has not been imported or
-// assigned yet, and only the pair says so.
-func (f *Figures) publishBalanceTheBankSaw(months int) {
-	if months != 1 || !f.ShowActuals {
-		return
-	}
-	f.ShowActualBalance = true
-	f.ActualAvailableCents = f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents
-	f.ActualBalanceCents = f.ActualAvailableCents - f.PrivateActualCents
-}
-
-func (f Figures) HeadlineBalanceCents() int {
-	if f.ShowActualBalance {
-		return f.ActualBalanceCents
-	}
-	return f.BalanceCents
-}
-
-func (f Figures) HeadlineAvailableCents() int {
-	if f.ShowActualBalance {
-		return f.ActualAvailableCents
-	}
-	return f.AvailableCents
 }
 
 // carriedBalances reads the accounts file for the month being looked at: the
 // readings in force and the account rows. Nothing is carried; each month
 // stands on its own figures.
-func (t *Tracker) carriedBalances(ctx context.Context, viewed yearMonth, months int) (openings, AccountSnapshot, bool, string) {
+func (t *Tracker) carriedBalances(ctx context.Context, viewed yearMonth, months int) (AccountSnapshot, bool, string) {
 	if t.Accounts == nil || months != 1 {
-		return openings{}, AccountSnapshot{}, false, ""
+		return AccountSnapshot{}, false, ""
 	}
 	af, err := t.Accounts.File(ctx)
 	if err != nil {
-		return openings{}, AccountSnapshot{}, false, err.Error()
+		return AccountSnapshot{}, false, err.Error()
 	}
 	snap, ok := snapshotFor(af, viewed)
 	if ok {
 		if elapsed := viewed.ordinal() - snap.OpensMonth.ordinal(); elapsed > maxStaleReadMonths {
-			return openings{}, AccountSnapshot{}, false, fmt.Sprintf(
+			return AccountSnapshot{}, false, fmt.Sprintf(
 				"accounts: a reading is %d months before this month (%s) — check the dates in accounts.json, that looks like a typo",
 				elapsed, snap.OpensMonth)
 		}
 	}
-	return openings{PrivateCents: snap.PrivateCents}, snap, ok, ""
+	return snap, ok, ""
 }
 
 const maxStaleReadMonths = 120
 
-func (f *Figures) publishAccountBalances(snap AccountSnapshot, carried openings, viewed yearMonth) {
+func (f *Figures) publishAccountBalances(snap AccountSnapshot, viewed yearMonth) {
 	if f.BudgetErr != "" || f.FundingPersonal.Err != "" {
 		return
 	}
-	f.ShowOpeningBalance = true
-	f.OpeningBalanceCents = carried.PrivateCents
-	f.AvailableCents = carried.PrivateCents + f.FundingPersonal.NetIncomeCents
-	if viewed == snap.OpensMonth {
-		f.PrivateAccounts = snap.rowsOfKind(accountsdata.AccountKindPrivate)
-		f.CompanyAccounts = snap.rowsOfKind(accountsdata.AccountKindCompany)
+	if snap.Found {
+		f.ShowBankReading = true
+		f.BankReadingCents = snap.PrivateCents
+		if viewed == snap.OpensMonth {
+			f.PrivateAccounts = snap.rowsOfKind(accountsdata.AccountKindPrivate)
+		}
 	}
 }
 

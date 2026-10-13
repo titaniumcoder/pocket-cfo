@@ -14,6 +14,7 @@ type InvoicedFact struct {
 
 type UsableInvoice struct {
 	Number string
+	Day    string
 	Cents  int
 }
 
@@ -25,7 +26,7 @@ func ComputeInvoiced(facts []InvoicedFact) InvoicedClient {
 	usable := map[yearMonth][]UsableInvoice{}
 	for _, f := range facts {
 		um := yearMonth{f.DueDate.Year(), f.DueDate.Month()}.addMonths(1)
-		usable[um] = append(usable[um], UsableInvoice{Number: f.Number, Cents: f.TotalCents})
+		usable[um] = append(usable[um], UsableInvoice{Number: f.Number, Day: f.DueDate.Format("02.01."), Cents: f.TotalCents})
 	}
 	return InvoicedClient{Usable: usable}
 }

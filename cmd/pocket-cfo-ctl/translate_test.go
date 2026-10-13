@@ -50,7 +50,7 @@ func draftInvoiceFixture(t *testing.T, number string, description, discountLabel
 			PaymentTermsDays: 14, Email: "r@example.com",
 			Address: invoice.Address{Line1: "S2", PostalCode: "2000", City: "Vienna", CountryCode: "AT"},
 		},
-		Lines: []invoice.Line{{Description: invoice.LocalizedString{De: description}, UnitPrice: 100, VatRate: 0}},
+		Lines: []invoice.Line{{Description: invoice.LocalizedString{De: description}, UnitPrice: intp(100), VatRate: intp(0)}},
 		Tax: invoice.Tax{
 			Regime: invoice.TaxRegimeOutsideEuPlaceOfSupply, Citations: []string{"c"},
 			Note: invoice.LocalizedString{De: strp("Hinweis")}, // bg deliberately missing too
@@ -191,3 +191,5 @@ func TestWithTranslations_KeepsUnknownKeys(t *testing.T) {
 		t.Error("the original de text did not survive")
 	}
 }
+
+func intp(v int) *int { return &v }

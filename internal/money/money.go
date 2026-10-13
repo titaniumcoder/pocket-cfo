@@ -10,6 +10,7 @@ import (
 
 type Line struct {
 	Description invoice.LocalizedString
+	Text        bool
 	Quantity    *int
 	Unit        *string
 	UnitPrice   int64
@@ -44,17 +45,21 @@ func Compute(inv *invoice.InvoiceJson) (Totals, error) {
 	lines := make([]Line, 0, len(inv.Lines))
 	var subtotal int64
 	for _, l := range inv.Lines {
+		if l.Type == invoice.LineTypeText {
+			lines = append(lines, Line{Description: l.Description, Text: true})
+			continue
+		}
 		qty := decimal.NewFromInt(1)
 		if l.Quantity != nil {
 			qty = decimal.NewFromInt(int64(*l.Quantity)).Div(decimal.NewFromInt(100))
 		}
-		amount := roundHalfAwayFromZero(qty.Mul(decimal.NewFromInt(int64(l.UnitPrice))))
+		amount := roundHalfAwayFromZero(qty.Mul(decimal.NewFromInt(int64(*l.UnitPrice))))
 		lines = append(lines, Line{
 			Description: l.Description,
 			Quantity:    l.Quantity,
 			Unit:        l.Unit,
-			UnitPrice:   int64(l.UnitPrice),
-			VATRate:     l.VatRate,
+			UnitPrice:   int64(*l.UnitPrice),
+			VATRate:     *l.VatRate,
 			Amount:      amount,
 		})
 		subtotal += amount

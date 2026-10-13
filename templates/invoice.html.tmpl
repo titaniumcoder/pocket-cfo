@@ -41,7 +41,7 @@ if (window.Paged) {
   html, body { margin: 0; padding: 0; }
   @page {
     size: A4;
-    margin: 88px 44px 32px 44px;
+    margin: 100px 44px 32px 44px;
     @top-left { content: element(running-header); }
   }
   @page :first {
@@ -61,6 +61,7 @@ if (window.Paged) {
     color: var(--text);
   }
   .running-header .rh-strip {
+    margin-top: 10px;
     display: flex; justify-content: space-between; align-items: center;
     border-bottom: 1px solid var(--border);
     padding-bottom: 6px;
@@ -68,13 +69,6 @@ if (window.Paged) {
   .running-header .rh-strip .rh-issuer { display: flex; gap: 10px; align-items: center; font-weight: 700; }
   .running-header .rh-strip svg { display: block; width: 18px; height: 18px; }
   .running-header .rh-strip .rh-no { color: var(--muted); }
-  .running-header .rh-cols { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 10px; }
-  .running-header .rh-cols th {
-    text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .04em;
-    text-transform: uppercase; color: var(--muted); white-space: normal;
-    border-bottom: 1px solid var(--border); padding: 8px 6px;
-  }
-  .running-header .rh-cols th.num { text-align: right; }
 
   header { display: flex; justify-content: space-between; align-items: flex-start; }
   header .issuer { display: flex; gap: 14px; align-items: flex-start; }
@@ -116,19 +110,9 @@ if (window.Paged) {
     font-weight: 700; font-size: 14px;
   }
 
-  /* Fixed layout + cell widths: the running header's column row and every
-     table fragment must measure their columns identically, and col elements
-     do not survive pagination. */
-  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  table { width: 100%; border-collapse: collapse; }
   td { overflow-wrap: break-word; }
-  tbody td:nth-child(2), thead th:nth-child(2), .rh-cols th:nth-child(2) { width: 12%; }
-  tbody td:nth-child(3), thead th:nth-child(3), .rh-cols th:nth-child(3) { width: 13%; }
-  {{if .HasVAT}}
-  tbody td:nth-child(4), thead th:nth-child(4), .rh-cols th:nth-child(4) { width: 10%; }
-  tbody td:nth-child(5), thead th:nth-child(5), .rh-cols th:nth-child(5) { width: 15%; }
-  {{else}}
-  tbody td:nth-child(4), thead th:nth-child(4), .rh-cols th:nth-child(4) { width: 15%; }
-  {{end}}
+  tbody tr.textline td { border-bottom: none; padding: 4px 6px; }
   thead { display: table-header-group; }
   thead th {
     text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .04em;
@@ -136,7 +120,6 @@ if (window.Paged) {
     border-bottom: 1px solid var(--border); padding: 8px 6px;
   }
   tbody td { padding: 10px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  tbody tr.afteritems td { padding: 0; border-bottom: none; }
   th.num, td.num { text-align: right; }
   td.num { white-space: nowrap; }
   .desc-bg { color: var(--muted); font-size: 11px; margin-top: 2px; }
@@ -145,6 +128,9 @@ if (window.Paged) {
      sliced across a page break — only useful once the header above repeats
      on the next page too, which table/thead does natively when printed. */
   tbody tr { break-inside: avoid; page-break-inside: avoid; }
+  /* A text line is prose and may be long; it splits across pages like text,
+     not like an item row that must stay whole. */
+  tbody tr.textline { break-inside: auto; page-break-inside: auto; }
 
   /* Self-contained bordered cards: if one doesn't fit on the remaining
      space of the current page, move the whole thing to the next page
@@ -206,18 +192,6 @@ if (window.Paged) {
       <span class="rh-issuer">{{if .LogoSVG}}{{rhlogo .LogoSVG}}{{end}}{{.Invoice.Issuer.LegalName}}</span>
       <span class="rh-no">{{.Labels.DocTitle}} {{.Invoice.Number}}</span>
     </div>
-    {{$c := colCount .HasVAT}}
-    <table class="rh-cols">
-      <thead>
-      <tr>
-        <th>{{.Labels.DescriptionCol}}</th>
-        <th class="num">{{.Labels.QtyCol}}</th>
-        <th class="num">{{.Labels.UnitPriceCol}}</th>
-        {{if .HasVAT}}<th class="num">{{.Labels.VatCol}}</th>{{end}}
-        <th class="num">{{.Labels.AmountCol}}</th>
-      </tr>
-      </thead>
-    </table>
   </div>
   <header>
     <div class="issuer">
@@ -267,8 +241,15 @@ if (window.Paged) {
       </tr>
     </thead>
     <tbody>
+      {{$c := colCount .HasVAT}}
       {{range .Totals.Lines}}
       {{$b := bilingual .Description $.Invoice.Language}}
+      {{if .Text}}
+      <tr class="textline"><td colspan="{{$c}}">
+        <div>{{rich $b.Primary}}</div>
+        {{with $b.Secondary}}<div class="desc-bg">{{rich .}}</div>{{end}}
+      </td></tr>
+      {{else}}
       <tr>
         <td>
           {{if $b.Inline}}
@@ -284,13 +265,14 @@ if (window.Paged) {
         <td class="num">{{money .Amount}}</td>
       </tr>
       {{end}}
+      {{end}}
     </tbody>
   </table>
 
-  <tr class="afteritems"><td colspan="{{$c}}">{{template "summaryCard" $}}</td></tr>
+  {{template "summaryCard" $}}
   {{$n := bilingual .Invoice.Tax.Note .Invoice.Language}}
-  {{if $n.Primary}}<tr class="afteritems"><td colspan="{{$c}}">{{template "notesCard" $}}</td></tr>{{end}}
-  <tr class="afteritems"><td colspan="{{$c}}">{{template "paymentCard" $}}</td></tr>
+  {{if $n.Primary}}{{template "notesCard" $}}{{end}}
+  {{template "paymentCard" $}}
   {{define "summaryCard"}}
   <div class="summary">
     <div class="row"><span>{{.Labels.Subtotal}}</span><span>{{money .Totals.Subtotal}}</span></div>

@@ -13,8 +13,8 @@ func line(desc string, qty *int, unitPrice, vatRate int) invoice.Line {
 	return invoice.Line{
 		Description: invoice.LocalizedString{De: strp(desc), Bg: strp(desc)},
 		Quantity:    qty,
-		UnitPrice:   unitPrice,
-		VatRate:     vatRate,
+		UnitPrice:   intp(unitPrice),
+		VatRate:     intp(vatRate),
 	}
 }
 
@@ -274,5 +274,37 @@ func TestLabelOf_Fallback(t *testing.T) {
 				t.Errorf("labelOf(%+v) = %q, want %q", tt.ls, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestCompute_TextLinesCarryNoAmounts: a type=text line is prose that spans
+// the table; it keeps its place in the line order but contributes nothing to
+// subtotal, VAT or totals.
+func TestCompute_TextLinesCarryNoAmounts(t *testing.T) {
+	inv := &invoice.InvoiceJson{
+		Lines: []invoice.Line{
+			line("first item", intp(100), 10000, 20),
+			{Type: invoice.LineTypeText, Description: invoice.LocalizedString{De: strp("Hinweis"), Bg: strp("Бележка")}},
+			line("second item", intp(100), 5000, 20),
+		},
+	}
+	totals, err := Compute(inv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(totals.Lines) != 3 {
+		t.Fatalf("lines = %d, want all three in order", len(totals.Lines))
+	}
+	if !totals.Lines[1].Text {
+		t.Error("the middle line did not come out as a text line")
+	}
+	if totals.Lines[1].Amount != 0 || totals.Lines[1].UnitPrice != 0 {
+		t.Errorf("text line carries amounts: %+v", totals.Lines[1])
+	}
+	if totals.Subtotal != 15000 {
+		t.Errorf("subtotal = %d, want 15000 — the text line must not bill", totals.Subtotal)
+	}
+	if totals.GrandTotal != 18000 {
+		t.Errorf("grand total = %d, want 18000", totals.GrandTotal)
 	}
 }

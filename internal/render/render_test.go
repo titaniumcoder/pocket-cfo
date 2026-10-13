@@ -260,7 +260,6 @@ func TestHTML_CarriesTheRunningHeaderForContinuationPages(t *testing.T) {
 		"content: element(running-header)",
 		"@page :first",
 		`class="running-header"`,
-		`class="rh-cols"`,
 		"PageStamps",
 		inv.Issuer.LegalName,
 	} {
@@ -270,11 +269,12 @@ func TestHTML_CarriesTheRunningHeaderForContinuationPages(t *testing.T) {
 	}
 }
 
-// TestHTML_SummaryNotesAndPaymentRideInTheTable: the cards after the line
-// items are table rows, so a page that holds only them still carries the
-// repeated column header above instead of orphaned boxes.
-func TestHTML_SummaryNotesAndPaymentRideInTheTable(t *testing.T) {
+// TestHTML_TextLineSpansTheWholeTable: a type=text line renders as one
+// full-width prose row — no quantity, unit price, VAT or amount cells — and
+// keeps its place in the line order.
+func TestHTML_TextLineSpansTheWholeTable(t *testing.T) {
 	inv := loadFixture(t, "INV-0000000001")
+	inv.Lines[0].Type = invoice.LineTypeText
 	totals, err := money.Compute(inv)
 	if err != nil {
 		t.Fatalf("compute: %v", err)
@@ -291,11 +291,17 @@ func TestHTML_SummaryNotesAndPaymentRideInTheTable(t *testing.T) {
 	}
 	out := string(html)
 
-	if got := strings.Count(out, `<tr class="afteritems">`); got != 3 {
-		t.Errorf("want summary, notes and payment as three table rows, got %d", got)
+	if !strings.Contains(out, `<tr class="textline"><td colspan="`) {
+		t.Error("a text line did not render as a full-width row")
 	}
-	if strings.Contains(out, `<div class="summary">`) && !strings.Contains(out, `<tr class="afteritems"><td`) {
-		t.Error("the summary card escaped the line-items table")
+	if strings.Contains(out, `<td class="num">{{`) {
+		t.Error("template leak: raw action text reached the page")
+	}
+	if strings.Count(out, `<tr class="textline"`) != 1 {
+		t.Errorf("want exactly one text line row")
+	}
+	if strings.Contains(out, "Beispielprojekt") && strings.Count(out, "textline") != 1 {
+		t.Error("the invoice's only line was not rendered as the text line")
 	}
 }
 

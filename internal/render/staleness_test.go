@@ -38,7 +38,7 @@ func stalenessFixture(number string, status invoice.InvoiceJsonStatus) *invoice.
 			Address: invoice.Address{Line1: "S2", PostalCode: "2000", City: "Vienna", CountryCode: "AT"},
 		},
 		Lines: []invoice.Line{
-			{Description: invoice.LocalizedString{De: strp("Arbeit"), Bg: strp("Работа")}, UnitPrice: 10000, VatRate: 0},
+			{Description: invoice.LocalizedString{De: strp("Arbeit"), Bg: strp("Работа")}, UnitPrice: intp(10000), VatRate: intp(0)},
 		},
 		Tax: invoice.Tax{
 			Regime: invoice.TaxRegimeOutsideEuPlaceOfSupply, Citations: []string{"c"},

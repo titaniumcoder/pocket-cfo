@@ -101,7 +101,7 @@ func invoiceFixture(number string, recipientNumber int, status invoice.InvoiceJs
 			Address: invoice.Address{Line1: "Street 2", PostalCode: "2000", City: "Vienna", CountryCode: "AT"},
 		},
 		Lines: []invoice.Line{
-			{Description: invoice.LocalizedString{De: strp("Arbeit"), Bg: strp("Работа")}, UnitPrice: 10000, VatRate: 0},
+			{Description: invoice.LocalizedString{De: strp("Arbeit"), Bg: strp("Работа")}, UnitPrice: intp(10000), VatRate: intp(0)},
 		},
 		Tax: invoice.Tax{
 			Regime:    invoice.TaxRegimeOutsideEuPlaceOfSupply,
@@ -274,3 +274,5 @@ func TestHandleClientInvoicePDF(t *testing.T) {
 		}
 	})
 }
+
+func intp(v int) *int { return &v }

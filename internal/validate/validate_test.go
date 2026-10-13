@@ -38,8 +38,8 @@ func atInvoice(t *testing.T) Doc {
 		},
 		Lines: []invoice.Line{{
 			Description: invoice.LocalizedString{De: strp("Arbeit"), Bg: strp("Работа")},
-			UnitPrice:   100000,
-			VatRate:     0,
+			UnitPrice:   intp(100000),
+			VatRate:     intp(0),
 		}},
 		Tax: invoice.Tax{
 			Regime: invoice.TaxRegimeEuB2BReverseCharge,
@@ -134,7 +134,7 @@ func TestTheStoredRegimeMustMatchTheParties(t *testing.T) {
 
 	t.Run("a zero-rated regime with a rated line", func(t *testing.T) {
 		d := atInvoice(t)
-		d.Inv.Lines[0].VatRate = 20
+		d.Inv.Lines[0].VatRate = intp(20)
 		err := Invoice(d, catalog())
 		if err == nil || !strings.Contains(err.Error(), "charges no VAT") {
 			t.Errorf("error = %v, want the contradiction reported", err)
@@ -300,3 +300,5 @@ func TestRecipientReferences(t *testing.T) {
 		}
 	}
 }
+
+func intp(v int) *int { return &v }

@@ -201,6 +201,14 @@ in the block layout; a one-line description keeps the compact inline one. The le
 note stays plain text by the same token: it is drafted in the note catalog, not typed
 per invoice.
 
+A line may also be **pure text** (`"type": "text"`): prose that spans the whole table
+width instead of wrapping inside the description column — an explanation, a headline for
+the positions below it. It carries no amounts at all: quantity, unit, unit_price and
+vat_rate must not be set on one, which the schema enforces with if/then conditionals the
+dev-time generator ignores but the runtime validator does not. It keeps its place in the
+line order, contributes nothing to subtotal, VAT or totals, and splits across pages like
+text rather than like a row that must stay whole.
+
 `pocket-cfo-ctl new --recipient 7` stubs the file: recipient snapshot, next number, due date
 from `payment_terms_days`, resolved tax regime and note. You type only the lines, then
 flip `status` to `issued` when you're happy.
@@ -603,10 +611,16 @@ it collides with flow content on every continuation page. Offsetting it upward d
 paint into the margin either: Chrome clamps an overflowing fixed element onto the *next*
 page instead. paged.js polyfills what's missing, pinned by version and SRI hash:
 
-- The running header (logo, issuer, invoice number, and the column-header row) lives in a
-  `@top-left` margin box via `content: element(running-header)`, suppressed on page 1 with
-  `@page :first`. Page margins moved from body padding to `@page`, which is what gives
-  every continuation page a real top margin.
+- The running header (logo, issuer, invoice number) lives in a `@top-left` margin box via
+  `content: element(running-header)`, suppressed on page 1 with `@page :first`. Page
+  margins moved from body padding to `@page`, which is what gives every continuation page
+  a real top margin. The margin box carries the strip only — no column-header row, which
+  first lived there and ate the whole margin: with it, the content started flush against
+  the header and the page read as having no margin at all. Without the column row the
+  table keeps its natural auto layout, the columns no longer need to be fixed, and a page
+  whose table is long finished (payment card only) is not headed by column labels for a
+  table that isn't there — the trade is that a table continuing across pages repeats no
+  column headers, which ordinary invoices tolerate.
 - paged.js drops `position: fixed` outright, so the draft watermark and paid stamp are
   lifted out of the flow by the `PageStamps` handler and re-anchored into each laid-out
   page. Without paged.js they keep their native fixed behaviour; the handler never runs.

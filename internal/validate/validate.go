@@ -71,8 +71,8 @@ func checkRegime(d Doc) error {
 
 	if resolved.VATRate == 0 {
 		for i, l := range d.Inv.Lines {
-			if l.VatRate != 0 {
-				return fmt.Errorf("regime %s charges no VAT, but line %d carries %d%%", resolved.Key, i+1, l.VatRate)
+			if l.Type != invoice.LineTypeText && l.VatRate != nil && *l.VatRate != 0 {
+				return fmt.Errorf("regime %s charges no VAT, but line %d carries %d%%", resolved.Key, i+1, *l.VatRate)
 			}
 		}
 	}

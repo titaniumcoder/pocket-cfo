@@ -8,6 +8,12 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Added
+- **Lines can be pure text.** `"type": "text"` on a line renders its description as prose spanning the whole table width — an explanation or a headline between the billed positions — and it carries no amounts at all: quantity, unit, unit_price and vat_rate must not be set on one (`pocket-cfo-ctl validate` refuses it). It keeps its place in the line order and contributes nothing to the totals.
+
+### Changed
+- **Continuation pages breathe.** The running header on page 2+ is the strip only — the column-header row that shared it is gone, so the strip sits ~1cm from the paper edge with a clear margin below it, and a final page that holds only the payment card is no longer topped by column labels for a table that has ended. The line-items table is back to its natural column widths.
+
 ## [4.2.0] - 2026-10-13
 
 ### Added

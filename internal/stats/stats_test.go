@@ -81,8 +81,8 @@ func strp(v string) *string { return &v }
 func line(unitPrice int) invoice.Line {
 	return invoice.Line{
 		Description: invoice.LocalizedString{De: strp("d"), Bg: strp("d")},
-		UnitPrice:   unitPrice,
-		VatRate:     0,
+		UnitPrice:   &unitPrice,
+		VatRate:     new(int),
 	}
 }
 

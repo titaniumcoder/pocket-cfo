@@ -2,7 +2,6 @@ package tracker
 
 import (
 	"sort"
-	"strings"
 	"time"
 )
 
@@ -25,7 +24,6 @@ type RuleRow struct {
 const (
 	changeLegislation = "legislation"
 	changeSalary      = "salary"
-	changeTarget      = "target balance"
 	changeStartMonth  = "start month"
 )
 
@@ -48,12 +46,6 @@ func RulesTimeline(p PersonalParams, startMonth, today time.Time) []RuleChange {
 			note(period.To.addMonths(1), changeSalary)
 		}
 	}
-	for _, period := range p.Target {
-		note(period.From, changeTarget)
-		if period.ToSet {
-			note(period.To.addMonths(1), changeTarget)
-		}
-	}
 	if !startMonth.IsZero() {
 		note(yearMonth{startMonth.Year(), startMonth.Month()}, changeStartMonth)
 	}
@@ -64,21 +56,15 @@ func RulesTimeline(p PersonalParams, startMonth, today time.Time) []RuleChange {
 	}
 	sort.Slice(months, func(i, j int) bool { return months[i].ordinal() < months[j].ordinal() })
 
-	idle := idleNotesByMonth(p)
 	out := make([]RuleChange, 0, len(months))
-	for i, ym := range months {
+	for _, ym := range months {
 		sort.Strings(changes[ym])
-		next := yearMonth{}
-		if i+1 < len(months) {
-			next = months[i+1]
-		}
-		rows := append(ruleRows(p.Legislation, ym), salaryRow(p.Salary, ym), targetRow(p.Target, ym))
+		rows := append(ruleRows(p.Legislation, ym), salaryRow(p.Salary, ym))
 		out = append(out, RuleChange{
 			Anchor:  "rules-" + ym.configForm(),
 			Label:   ym.String(),
 			Changes: orderedChanges(changes[ym]),
 			Rules:   rows,
-			Notes:   notesBetween(idle, ym, next),
 		})
 	}
 	markCurrent(out, months, yearMonth{today.Year(), today.Month()})
@@ -86,7 +72,7 @@ func RulesTimeline(p PersonalParams, startMonth, today time.Time) []RuleChange {
 }
 
 func orderedChanges(kinds []string) []string {
-	order := []string{changeStartMonth, changeLegislation, changeSalary, changeTarget}
+	order := []string{changeStartMonth, changeLegislation, changeSalary}
 	out := make([]string, 0, len(kinds))
 	for _, want := range order {
 		for _, k := range kinds {
@@ -196,26 +182,6 @@ func salaryRow(plan SalaryPlan, ym yearMonth) RuleRow {
 	return markSince(row, since, stated, ym)
 }
 
-func targetRow(plan TargetPlan, ym yearMonth) RuleRow {
-	row := RuleRow{Name: "Target balance", Value: "none"}
-	var since yearMonth
-	stated := false
-	for i, p := range plan {
-		if ym.ordinal() < p.From.ordinal() {
-			break
-		}
-		if p.covers(ym) || p.runsOnThrough(ym, plan.next(i)) {
-			row.Value = groupThousands(round(p.AmountEUR)) + " — " + periodLabel(p.From, p.To, p.ToSet)
-			since, stated = p.From, true
-			break
-		}
-		if p.ToSet {
-			since, stated = p.To.addMonths(1), true
-		}
-	}
-	return markSince(row, since, stated, ym)
-}
-
 func markSince(row RuleRow, since yearMonth, stated bool, ym yearMonth) RuleRow {
 	switch {
 	case stated && since == ym:
@@ -231,32 +197,4 @@ func periodLabel(from, to yearMonth, toSet bool) string {
 		return from.String() + " to " + to.String()
 	}
 	return "from " + from.String()
-}
-
-func idleNotesByMonth(p PersonalParams) map[yearMonth]string {
-	out := map[yearMonth]string{}
-	for _, idle := range ValidateTargetAgainstSalary(p.Target, p.Salary) {
-		if ym, err := parseMonthOrDay(strings.SplitN(idle, " ", 2)[0]); err == nil {
-			out[ym] = idle
-		}
-	}
-	return out
-}
-
-func notesBetween(idle map[yearMonth]string, from, next yearMonth) []string {
-	var out []string
-	for ym := from; ; ym = ym.addMonths(1) {
-		if next != (yearMonth{}) && ym.ordinal() >= next.ordinal() {
-			break
-		}
-		note, ok := idle[ym]
-		if !ok {
-			if next == (yearMonth{}) {
-				break
-			}
-			continue
-		}
-		out = append(out, "The target does nothing in "+note+".")
-	}
-	return out
 }

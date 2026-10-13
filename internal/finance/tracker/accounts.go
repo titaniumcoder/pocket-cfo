@@ -192,6 +192,10 @@ func snapshotFor(af accountsdata.AccountsFile, viewed yearMonth) (AccountSnapsho
 	return snap, found
 }
 
+type openings struct {
+	PrivateCents int
+}
+
 func (a *Accounts) Snapshot(ctx context.Context, viewed yearMonth) (AccountSnapshot, bool, error) {
 	af, err := a.File(ctx)
 	if err != nil {
@@ -199,122 +203,6 @@ func (a *Accounts) Snapshot(ctx context.Context, viewed yearMonth) (AccountSnaps
 	}
 	snap, ok := snapshotFor(af, viewed)
 	return snap, ok, nil
-}
-
-const maxRollForwardMonths = 120
-
-type openings struct {
-	PrivateCents int
-	Company      companyStock
-}
-
-// rollForward walks the months between the read date and the one being looked
-// at, carrying both pots at once. They cannot be walked separately: the
-// company balance is an input to the payroll cascade, and the private balance
-// is fed by what that cascade pays out.
-func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, viewed yearMonth, now time.Time) (openings, error) {
-	from := walkStart(snap, viewed)
-	if elapsed := viewed.ordinal() - from.ordinal(); elapsed > maxRollForwardMonths {
-		return openings{}, fmt.Errorf("accounts: a reading is %d months before this month (%s) — check the dates in accounts.json, that looks like a typo",
-			elapsed, from)
-	}
-
-	open := openings{
-		PrivateCents: snap.PrivateCents,
-		Company:      companyStock{Known: snap.HasCompany, OpeningCents: snap.CompanyCents},
-	}
-	companyAt := func(m yearMonth) (companyStock, bool) {
-		if !snap.Found {
-			return companyStock{}, false
-		}
-		switch {
-		case m.ordinal() < snap.OpensMonth.ordinal():
-			return companyStock{}, true
-		case m.ordinal() == snap.OpensMonth.ordinal():
-			return companyStock{Known: snap.HasCompany, OpeningCents: snap.CompanyCents}, true
-		}
-		return companyStock{}, false
-	}
-	if c, ok := companyAt(from); ok {
-		open.Company = c
-	}
-
-	for m := from; m.ordinal() < viewed.ordinal(); m = m.addMonths(1) {
-		if c, ok := companyAt(m); ok {
-			open.Company = c
-		}
-
-		closed, err := t.monthClose(ctx, m, now, open.Company)
-		if err != nil {
-			return openings{}, err
-		}
-		// The months before the anchor contribute nothing: the walk starts
-		// there, but the guard keeps the intent legible beside the arithmetic.
-		if snap.Found && m.ordinal() >= snap.OpensMonth.ordinal() {
-			open.PrivateCents += closed.PrivateDeltaCents
-			open.Company.OpeningCents = closed.CompanyClosingCents
-		}
-	}
-
-	if c, ok := companyAt(viewed); ok {
-		open.Company = c
-	}
-	return open, nil
-}
-
-func walkStart(snap AccountSnapshot, viewed yearMonth) yearMonth {
-	if snap.Found {
-		return snap.OpensMonth
-	}
-	return viewed
-}
-
-type monthClosing struct {
-	PrivateDeltaCents   int
-	CompanyClosingCents int
-}
-
-func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, company companyStock) (monthClosing, error) {
-	bv, err := t.Budget.ForMonth(ctx, m.Year, m.Month, now, t.Minimal)
-	if err != nil {
-		return monthClosing{}, fmt.Errorf("accounts: budget for %s: %w", m, err)
-	}
-	privateCents, companyCents, av := t.closingExpenses(ctx, m, bv)
-	pv := t.fundingIncome([]yearMonth{m}, float64(companyCents)/100, bv.CompanyGroups, company)
-	if pv.Err != "" {
-		return monthClosing{}, fmt.Errorf("accounts: income for %s: %s", m, pv.Err)
-	}
-	imported := av.Present && av.Complete
-	return monthClosing{
-		PrivateDeltaCents:   pv.NetIncomeCents - privateCents,
-		CompanyClosingCents: companyClosedOn(pv, imported, companyCents),
-	}, nil
-}
-
-// companyClosedOn seeds the next month, so it follows the same all-or-nothing
-// rule the expenses follow: a fully imported month closes on what the bank
-// says left — the actual expenses — and any other month
-// closes on the plan. Mixing them would charge a planned expense and an
-// imported part of it into a figure that is then carried for good.
-func companyClosedOn(pv PersonalView, imported bool, actualCompanyCents int) int {
-	if !imported || !pv.ShowCompanyBalance {
-		return pv.CompanyClosingCents
-	}
-	month := pv.plannedCompanyMonth(pv.CompanyOpeningCents)
-	month.ExpensesCents = actualCompanyCents
-	return month.closesAt()
-}
-
-// closingExpenses hands back the view it read as well as the two figures, so
-// the walk still costs one read of a month's actuals. The expenses fall back
-// to the plan when nothing is imported, and so does the company's cash.
-func (t *Tracker) closingExpenses(ctx context.Context, m yearMonth, bv BudgetView) (private, company int, av ActualsView) {
-	av, err := t.Actuals.ForMonth(ctx, m.Year, m.Month)
-	if err != nil || !av.Present || !av.Complete {
-		return bv.TotalPlannedCents, bv.CompanyTotalPlannedCents, av
-	}
-	private, company = ActualTotals(av, t.companyCategoryIDs(ctx))
-	return private, company, av
 }
 
 func derefStr(p *string) string {

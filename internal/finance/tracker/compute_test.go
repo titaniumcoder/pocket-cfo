@@ -193,7 +193,7 @@ func TestComputeYearIncomeUsesMonthlyBreakdowns(t *testing.T) {
 	})
 
 	f := trk.ComputeYear(context.Background(), 2025)
-	want := p.breakdownMonths([]float64{0, 0, 0, 0, 0, 1000, 3000, 10000, 0, 0, 0, 0}, nil, yearMonth{2025, time.January}, companyStock{})
+	want := p.breakdownMonths([]float64{0, 0, 0, 0, 0, 1000, 3000, 10000, 0, 0, 0, 0}, nil, yearMonth{2025, time.January})
 	if f.FundingPersonal.Err != "" {
 		t.Fatalf("FundingPersonal.Err = %q", f.FundingPersonal.Err)
 	}
@@ -206,7 +206,7 @@ func TestComputeYearIncomeUsesMonthlyBreakdowns(t *testing.T) {
 	if f.FundingPersonal.NetIncomeCents != want.NetIncomeCents {
 		t.Errorf("net = %d, want %d", f.FundingPersonal.NetIncomeCents, want.NetIncomeCents)
 	}
-	smoothed := p.breakdown(14000, 0, 12, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
+	smoothed := p.breakdown(14000, 0, 12, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
 	if f.FundingPersonal.NetIncomeCents == smoothed.NetIncomeCents {
 		t.Error("year personal income still looks like annual smoothing")
 	}

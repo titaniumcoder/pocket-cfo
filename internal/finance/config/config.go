@@ -32,10 +32,7 @@ type FileConfig struct {
 
 	salary tracker.SalaryPlan
 
-	TargetBalance []tracker.TargetEntry `json:"targetBalance"`
-
-	targetBalance tracker.TargetPlan
-	targetIdle    []string
+	TargetBalance []json.RawMessage `json:"targetBalance"`
 
 	StartMonth *string `json:"startMonth"`
 
@@ -72,13 +69,9 @@ func ParseFileConfig(data []byte) (FileConfig, error) {
 	if err := tracker.ValidateSalaryAgainstLegislation(fc.salary, fc.legislation); err != nil {
 		return FileConfig{}, err
 	}
-	if fc.targetBalance, err = tracker.ParseTargetPlan(fc.TargetBalance); err != nil {
-		return FileConfig{}, err
+	if len(fc.TargetBalance) > 0 {
+		return FileConfig{}, fmt.Errorf("config.json still has a targetBalance block. The target balance is gone — a reserve, when wanted, is an ordinary company expense category in budget.json; delete the block")
 	}
-	if err := tracker.RequireMinimumWageForTargets(fc.targetBalance, fc.legislation); err != nil {
-		return FileConfig{}, err
-	}
-	fc.targetIdle = tracker.ValidateTargetAgainstSalary(fc.targetBalance, fc.salary)
 	if fc.startMonth, err = tracker.ParseStartMonth(strOr(fc.StartMonth, "")); err != nil {
 		return FileConfig{}, err
 	}
@@ -107,8 +100,6 @@ type Config struct {
 	AnnualVacationDays int
 	Legislation        tracker.Legislation
 	Salary             tracker.SalaryPlan
-	TargetBalance      tracker.TargetPlan
-	TargetIdleMonths   []string
 
 	StartMonth time.Time
 }
@@ -136,8 +127,6 @@ func Load(fc FileConfig) Config {
 		AnnualVacationDays: intOr(fc.AnnualVacationDays, 25),
 		Legislation:        fc.legislation,
 		Salary:             fc.salary,
-		TargetBalance:      fc.targetBalance,
-		TargetIdleMonths:   fc.targetIdle,
 		StartMonth:         fc.startMonth,
 	}
 }

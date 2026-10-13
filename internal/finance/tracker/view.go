@@ -162,9 +162,8 @@ type Figures struct {
 	ShowBalance  bool
 	BalanceCents int
 
-	ShowActualBalance         bool
-	ActualBalanceCents        int
-	ActualCompanyClosingCents int
+	ShowActualBalance  bool
+	ActualBalanceCents int
 
 	ShowOpeningBalance  bool
 	OpeningBalanceCents int
@@ -269,10 +268,8 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	result.computeActuals(t, ctx, year, start, now, months, &bv)
 
 	viewed := yearMonth{year, start.Month()}
-	carried, snap, opened, accountsErr := t.carriedBalances(ctx, viewed, now, months)
+	carried, snap, opened, accountsErr := t.carriedBalances(ctx, viewed, months)
 	result.AccountsErr = accountsErr
-	result.TargetNeedsBalanceNote = t.targetNeedsBalanceNote(viewed, months, carried)
-
 	result.computeFundingBalance(t, ctx, year, start, now, months, bv, carried, snap, opened)
 
 	if at, stale := t.hours().Status(start, end); !at.IsZero() {
@@ -456,7 +453,7 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 	} else {
 		span = []yearMonth{{year, start.Month()}}
 	}
-	f.FundingPersonal = t.fundingIncome(span, float64(bv.CompanyTotalPlannedCents)/100, bv.CompanyGroups, carried.Company)
+	f.FundingPersonal = t.fundingIncome(span, float64(bv.CompanyTotalPlannedCents)/100, bv.CompanyGroups)
 
 	if t.Budget == nil {
 		return
@@ -492,12 +489,6 @@ func (f *Figures) publishBalanceTheBankSaw(months int) {
 	f.ShowActualBalance = true
 	f.ActualAvailableCents = f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents
 	f.ActualBalanceCents = f.ActualAvailableCents - f.PrivateActualCents
-	pv := f.FundingPersonal
-	// The Actual column takes what the statements say left the bank, where the
-	// planned one takes what the plan says will.
-	month := pv.plannedCompanyMonth(pv.CompanyOpeningCents)
-	month.ExpensesCents = f.CompanyActualCents
-	f.ActualCompanyClosingCents = month.closesAt()
 }
 
 func (f Figures) HeadlineBalanceCents() int {
@@ -514,34 +505,10 @@ func (f Figures) HeadlineAvailableCents() int {
 	return f.AvailableCents
 }
 
-func (f Figures) HeadlineCompanyClosingCents() int {
-	if f.ShowActualBalance {
-		return f.ActualCompanyClosingCents
-	}
-	return f.FundingPersonal.CompanyClosingCents
-}
-
-// targetNeedsBalanceNote covers the one way a target can be set and still do
-// nothing without anybody being told: there is no company balance to measure
-// it against. The month then pays whatever the salary block says, and the
-// target reads as broken rather than as unfed.
-func (t *Tracker) targetNeedsBalanceNote(viewed yearMonth, months int, carried openings) string {
-	if months != 1 || carried.Company.Known {
-		return ""
-	}
-	amount, inForce := t.Personal.Target.at(viewed)
-	if !inForce {
-		return ""
-	}
-	return "A target balance of " + formatEuro(round(amount*100)) + " is set for this month, but no company account is declared in accounts.json — " +
-		"there is no balance to compare it against, so the target does nothing. Add the account with \"kind\": \"company\"."
-}
-
-// carriedBalances rolls both pots up to the month being looked at. It runs
-// before the cascade rather than after it, because the company balance is one
-// of the cascade's inputs now — what a full salary can afford includes what the
-// company is already holding.
-func (t *Tracker) carriedBalances(ctx context.Context, viewed yearMonth, now time.Time, months int) (openings, AccountSnapshot, bool, string) {
+// carriedBalances reads the accounts file for the month being looked at: the
+// readings in force and the account rows. Nothing is carried; each month
+// stands on its own figures.
+func (t *Tracker) carriedBalances(ctx context.Context, viewed yearMonth, months int) (openings, AccountSnapshot, bool, string) {
 	if t.Accounts == nil || months != 1 {
 		return openings{}, AccountSnapshot{}, false, ""
 	}
@@ -550,15 +517,17 @@ func (t *Tracker) carriedBalances(ctx context.Context, viewed yearMonth, now tim
 		return openings{}, AccountSnapshot{}, false, err.Error()
 	}
 	snap, ok := snapshotFor(af, viewed)
-	if !ok {
-		return openings{}, AccountSnapshot{}, false, ""
+	if ok {
+		if elapsed := viewed.ordinal() - snap.OpensMonth.ordinal(); elapsed > maxStaleReadMonths {
+			return openings{}, AccountSnapshot{}, false, fmt.Sprintf(
+				"accounts: a reading is %d months before this month (%s) — check the dates in accounts.json, that looks like a typo",
+				elapsed, snap.OpensMonth)
+		}
 	}
-	carried, err := t.rollForward(ctx, snap, viewed, now)
-	if err != nil {
-		return openings{}, AccountSnapshot{}, false, err.Error()
-	}
-	return carried, snap, ok, ""
+	return openings{PrivateCents: snap.PrivateCents}, snap, ok, ""
 }
+
+const maxStaleReadMonths = 120
 
 func (f *Figures) publishAccountBalances(snap AccountSnapshot, carried openings, viewed yearMonth) {
 	if f.BudgetErr != "" || f.FundingPersonal.Err != "" {

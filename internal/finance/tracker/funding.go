@@ -45,7 +45,7 @@ func yearMonths(start, end yearMonth) []yearMonth {
 // the company is actually paid: an invoice is income in the month after it
 // was due, and nothing else is. The company's planned expenses for the same
 // months are what the salary has to leave behind.
-func (t *Tracker) fundingIncome(months []yearMonth, companyExpensesEUR float64, companyGroups []CategoryGroupView, opening companyStock) PersonalView {
+func (t *Tracker) fundingIncome(months []yearMonth, companyExpensesEUR float64, companyGroups []CategoryGroupView) PersonalView {
 	if len(months) == 0 {
 		return PersonalView{}
 	}
@@ -59,7 +59,7 @@ func (t *Tracker) fundingIncome(months []yearMonth, companyExpensesEUR float64, 
 		expensesEUR[i] = perMonthExpenseEUR
 	}
 
-	pv := t.Personal.breakdownMonths(incomeEUR, expensesEUR, months[0], opening)
+	pv := t.Personal.breakdownMonths(incomeEUR, expensesEUR, months[0])
 	pv.CompanyGroups = companyGroups
 	return pv
 }

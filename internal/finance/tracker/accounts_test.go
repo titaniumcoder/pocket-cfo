@@ -148,48 +148,10 @@ func TestAMonthBeforeEveryReadingHasNoSnapshot(t *testing.T) {
 	}
 }
 
-// TestALaterReadingReanchorsInsteadOfContinuingTheChain is the point of the
-// whole feature. Two reads, 3 000 at the end of April and 2 000 at the end of
-// July, against 1 000/month of expenses and no income:
-//
-//	May–July  carry the April read down, 3 000 → 2 000 → 1 000
-//	August    ignores all of that and opens on the July read, 2 000
-//
-// Without re-anchoring August would open at 0. The second read is not extra
-// evidence to reconcile against the projection; it replaces it.
-func TestALaterReadingReanchorsInsteadOfContinuingTheChain(t *testing.T) {
-	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Private","kind":"private","balances":[
-			{"as_of":"2026-04-30","balance":3000},
-			{"as_of":"2026-07-31","balance":2000}
-		]}
-	]}`)
-	tests := []struct {
-		month       time.Month
-		wantOpening int
-	}{
-		{time.May, 300000},
-		{time.June, 200000},
-		{time.July, 100000},
-		{time.August, 200000},
-		{time.September, 100000},
-	}
-	for _, tt := range tests {
-		t.Run(tt.month.String(), func(t *testing.T) {
-			f := trk.ComputeMonth(context.Background(), 2026, tt.month)
-			if f.AccountsErr != "" {
-				t.Fatalf("AccountsErr = %q", f.AccountsErr)
-			}
-			if !f.ShowOpeningBalance {
-				t.Fatal("expected an opening balance")
-			}
-			if f.OpeningBalanceCents != tt.wantOpening {
-				t.Errorf("opening = %d, want %d", f.OpeningBalanceCents, tt.wantOpening)
-			}
-		})
-	}
-}
-
+// TestAMonthReadsItsOwnNewestReading: with nothing carried, the balance a
+// month shows is the newest reading dated before it — a later reading simply
+// replaces the figure for every month after it, and months before it keep the
+// older one.
 // TestAPotIsUnknownUntilItsFirstReading: an account read for the first time in
 // July says nothing about May. Unknown is not zero — a company nobody has read
 // yet must leave the whole company layer off, exactly as a file that declares
@@ -469,212 +431,13 @@ func accountsTracker(t *testing.T, accountsJSON string) *Tracker {
 // August's opening figure, so July itself must not see it. And the
 // compounding: each month opens where the previous closed, so the balance
 // genuinely depletes instead of resetting to the snapshot every month.
-func TestPrivateBalanceRollsForwardAndCompounds(t *testing.T) {
-	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Private","kind":"private","balances":[{"as_of":"2026-07-31","balance":2000}]}
-	]}`)
-
-	for _, m := range []time.Month{time.June, time.July} {
-		f := trk.ComputeMonth(context.Background(), 2026, m)
-		if f.ShowOpeningBalance {
-			t.Errorf("%s is before the balance opens — it must show no opening balance", m)
-		}
-		if f.BalanceCents != -100000 {
-			t.Errorf("%s Balance = %d, want -100000 (expenses only, balance ignored)", m, f.BalanceCents)
-		}
-	}
-
-	tests := []struct {
-		month       time.Month
-		wantOpening int
-		wantBalance int
-	}{
-		{time.August, 200000, 100000},
-		{time.September, 100000, 0},
-		{time.October, 0, -100000},
-	}
-	for _, tt := range tests {
-		t.Run(tt.month.String(), func(t *testing.T) {
-			f := trk.ComputeMonth(context.Background(), 2026, tt.month)
-			if f.AccountsErr != "" {
-				t.Fatalf("AccountsErr = %q", f.AccountsErr)
-			}
-			if !f.ShowOpeningBalance {
-				t.Fatal("expected an opening balance from the month the snapshot opens onward")
-			}
-			if f.OpeningBalanceCents != tt.wantOpening {
-				t.Errorf("opening = %d, want %d", f.OpeningBalanceCents, tt.wantOpening)
-			}
-			if f.BalanceCents != tt.wantBalance {
-				t.Errorf("Balance = %d, want %d (opening + net income - private expenses)", f.BalanceCents, tt.wantBalance)
-			}
-		})
-	}
-}
-
-// TestTheCompanyBalanceFundsPayroll: the balance is not a note beside the
-// cascade, it is one of its inputs — a company holding money can afford a
-// larger salary than its income alone would buy.
-func TestTheCompanyBalanceFundsPayroll(t *testing.T) {
-	p := bulgariaBands()
-	r := p.rulesFor(yearMonth{2026, time.July})
-	full := SalaryDecision{Mode: SalaryFull}
-
-	broke := p.breakdown(1000, 0, 1, r, full, companyStock{Known: true})
-	holding := p.breakdown(1000, 0, 1, r, full, companyStock{Known: true, OpeningCents: 300000})
-
-	if holding.GrossSalaryCents <= broke.GrossSalaryCents {
-		t.Errorf("gross = %d holding 3,000, %d holding nothing — the balance bought no salary",
-			holding.GrossSalaryCents, broke.GrossSalaryCents)
-	}
-	// A full salary spends the balance down to nothing: that is what "full"
-	// has always meant, and it is why the company had no stock to model until
-	// the other modes came back.
-	if holding.CompanyClosingCents != 0 {
-		t.Errorf("closing = %d, want 0 — a full salary leaves nothing behind", holding.CompanyClosingCents)
-	}
-	// And an overdrawn company shrinks payroll instead of being ignored.
-	overdrawn := p.breakdown(1000, 0, 1, r, full, companyStock{Known: true, OpeningCents: -50000})
-	if overdrawn.GrossSalaryCents >= broke.GrossSalaryCents {
-		t.Errorf("gross = %d while 500 overdrawn, %d level — the debt cost nothing",
-			overdrawn.GrossSalaryCents, broke.GrossSalaryCents)
-	}
-}
-
-// TestTheClosingBalanceIsTheRowsAboveIt: the page shows the opening, the
-// income, the expenses, the employer contribution and the gross, then the
-// closing figure. A reader adds those up, so the closing figure has to be
-// exactly their sum rather than a separately-rounded near-miss.
-func TestTheClosingBalanceIsTheRowsAboveIt(t *testing.T) {
-	p := bulgariaBands()
-	r := p.rulesFor(yearMonth{2026, time.July})
-
-	for _, d := range []SalaryDecision{
-		{Mode: SalaryMinimum},
-		{Mode: SalaryNone},
-		{Mode: SalaryFixed, FixedEUR: 1234.56},
-		{Mode: SalaryFull},
-	} {
-		v := p.breakdown(3333.33, 111.11, 1, r, d, companyStock{Known: true, OpeningCents: 777777})
-		want := v.CompanyOpeningCents + v.CompanyIncomeCents - v.CompanyExpensesCents -
-			v.EmployerContribCents - v.GrossSalaryCents
-		if v.CompanyClosingCents != want {
-			t.Errorf("%s: closing = %d, want %d — the rows on the page do not add up to it",
-				d.Mode, v.CompanyClosingCents, want)
-		}
-	}
-}
-
-// TestAnUnknownCompanyBalanceChangesNothing is the compatibility fence: a
-// config with no company account must produce the figures it produced before
-// the pot existed, so "unknown" cannot be modelled as "holds zero".
-func TestAnUnknownCompanyBalanceChangesNothing(t *testing.T) {
-	p := bulgariaBands()
-	r := p.rulesFor(yearMonth{2026, time.July})
-	d := SalaryDecision{Mode: SalaryFull}
-
-	unknown := p.breakdown(4000, 250, 1, r, d, companyStock{})
-	zero := p.breakdown(4000, 250, 1, r, d, companyStock{Known: true})
-
-	if unknown.GrossSalaryCents != zero.GrossSalaryCents {
-		t.Errorf("gross = %d unknown, %d known-zero — they must agree on the money",
-			unknown.GrossSalaryCents, zero.GrossSalaryCents)
-	}
-	// They differ only in whether the page has a balance to show.
-	if unknown.ShowCompanyBalance {
-		t.Error("an unknown balance produced a company balance row")
-	}
-	if !zero.ShowCompanyBalance {
-		t.Error("a known balance of zero produced no company balance row — zero is a figure")
-	}
-}
 
 // TestTheCompanyBalanceRollsForwardAndCompounds is the company sibling of the
 // private roll-forward: a month at the statutory minimum leaves the rest
 // behind, and the next month opens on it rather than on the read figure.
-func TestTheCompanyBalanceRollsForwardAndCompounds(t *testing.T) {
-	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Private","kind":"private","balances":[{"as_of":"2026-07-31","balance":2000}]},
-		{"name":"Company","kind":"company","balances":[{"as_of":"2026-07-31","balance":5000}]}
-	]}`)
-	trk.Personal = bulgariaBands()
-	plan, err := ParseSalaryPlan([]SalaryEntry{{From: "2026-01", Mode: "minimum"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	trk.Personal.Salary = plan
-
-	// The minimum wage and its contribution are the only company outflow, so
-	// each month closes a fixed amount below where it opened.
-	aug := trk.ComputeMonth(context.Background(), 2026, time.August)
-	if aug.AccountsErr != "" {
-		t.Fatalf("AccountsErr = %q", aug.AccountsErr)
-	}
-	if !aug.FundingPersonal.ShowCompanyBalance {
-		t.Fatal("no company balance in the month the snapshot opens")
-	}
-	if aug.FundingPersonal.CompanyOpeningCents != 500000 {
-		t.Errorf("August opening = %d, want the 5,000 read at the end of July", aug.FundingPersonal.CompanyOpeningCents)
-	}
-	augClose := aug.FundingPersonal.CompanyClosingCents
-	if augClose >= 500000 {
-		t.Fatalf("August closed at %d without paying a salary out of 5,000", augClose)
-	}
-
-	sep := trk.ComputeMonth(context.Background(), 2026, time.September)
-	if sep.FundingPersonal.CompanyOpeningCents != augClose {
-		t.Errorf("September opened at %d, want August's close of %d — the balance reset instead of carrying",
-			sep.FundingPersonal.CompanyOpeningCents, augClose)
-	}
-
-	// And months before the read date do not see it at all.
-	jul := trk.ComputeMonth(context.Background(), 2026, time.July)
-	if jul.FundingPersonal.ShowCompanyBalance {
-		t.Error("July saw a balance that was only read at the end of July")
-	}
-}
-
 // TestTheCompanyBalanceIsVisibleOnBothSidesOfTheCascade: the balance goes in
 // before payroll and what survives comes out after it, so the page has to show
 // both ends — one figure without the other is unreadable.
-func TestTheCompanyBalanceIsVisibleOnBothSidesOfTheCascade(t *testing.T) {
-	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Private Checking","kind":"private","balances":[{"as_of":"2026-07-31","balance":2000}]},
-		{"name":"Company Checking","kind":"company","balances":[{"as_of":"2026-07-31","balance":5000}]}
-	]}`)
-	trk.Personal = bulgariaBands()
-	plan, err := ParseSalaryPlan([]SalaryEntry{{From: "2026-01", Mode: "minimum"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	trk.Personal.Salary = plan
-
-	f := trk.ComputeMonth(context.Background(), 2026, time.August)
-	rec := httptest.NewRecorder()
-	RenderPage(rec, f)
-	body := rec.Body.String()
-
-	for _, want := range []string{
-		`class="label">In the company`,
-		`class="label">Left in the company`,
-		"Company Checking",
-		// The private figure has to say which pot it is now that there are two.
-		`class="label">Private opening balance`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("the page never says %q", want)
-		}
-	}
-	// The company opening is read before payroll, so it belongs above the
-	// gross salary it paid for, and the closing below it.
-	opening := strings.Index(body, `class="label">In the company`)
-	gross := strings.Index(body, `class="label">Gross salary`)
-	closing := strings.Index(body, `class="label">Left in the company`)
-	if !(opening < gross && gross < closing) {
-		t.Errorf("rows are out of order: opening at %d, gross at %d, closing at %d", opening, gross, closing)
-	}
-}
-
 // TestAvailableIsOpeningPlusNetIncome pins the middle line of the budget
 // ledger and its relationship to the two around it: Available is what there
 // is before private expenses come off, and Balance is what's left after.
@@ -699,8 +462,6 @@ func TestAvailableIsOpeningPlusNetIncome(t *testing.T) {
 // go negative and used to be painted green regardless — an overdraft
 // carried in from last month reading as good news is exactly backwards.
 func TestNegativeBalancesRenderRed(t *testing.T) {
-	// Opening at 2 000 against 1 000/month of expenses and no income runs
-	// out during the third month, so October opens negative.
 	trk := accountsTracker(t, `{"accounts":[
 		{"name":"Private","kind":"private","balances":[{"as_of":"2026-07-31","balance":2000}]}
 	]}`)
@@ -715,9 +476,12 @@ func TestNegativeBalancesRenderRed(t *testing.T) {
 		t.Error("a positive opening balance must not render as negative")
 	}
 
-	negative := trk.ComputeMonth(context.Background(), 2026, time.November)
+	overdrawn := accountsTracker(t, `{"accounts":[
+		{"name":"Private","kind":"private","balances":[{"as_of":"2026-07-31","balance":-500}]}
+	]}`)
+	negative := overdrawn.ComputeMonth(context.Background(), 2026, time.August)
 	if negative.OpeningBalanceCents >= 0 {
-		t.Fatalf("November opening = %d, want negative for this test to mean anything", negative.OpeningBalanceCents)
+		t.Fatalf("August opening = %d, want negative for this test to mean anything", negative.OpeningBalanceCents)
 	}
 	rec := httptest.NewRecorder()
 	RenderPage(rec, negative)
@@ -792,11 +556,6 @@ func TestTheDashboardAccountRowsAreNameAndFigureOnly(t *testing.T) {
 	RenderPage(rec, f)
 	body := rec.Body.String()
 
-	// The fixed salary overdraws the company, which is what used to earn a
-	// paragraph of explanation underneath it.
-	if f.FundingPersonal.CompanyClosingCents >= 0 {
-		t.Fatal("the company is not overdrawn, so the note this guards would not have fired anyway")
-	}
 	for _, unwanted := range []string{
 		"as of ",
 		"as read end of",
@@ -812,7 +571,7 @@ func TestTheDashboardAccountRowsAreNameAndFigureOnly(t *testing.T) {
 		}
 	}
 	// The figures themselves stay, with their names.
-	for _, want := range []string{"Revolut Private", "Revolut Business", "Private opening balance", "In the company"} {
+	for _, want := range []string{"Revolut Private", "Private opening balance"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the dashboard lost %q", want)
 		}
@@ -849,27 +608,20 @@ func TestNoAccountsLayerLeavesBalanceUnchanged(t *testing.T) {
 	}
 }
 
-// TestAPrivateOnlyPageShowsNoCompanyRows is the page-level half of the
-// compatibility guard: someone who never declares a company account must not
-// find new rows on their ledger, however much machinery sits behind them.
+// TestAPrivateOnlyPageShowsNoCompanyRows: someone who never declares a
+// company account must not find company rows on their ledger. The company
+// block is gone from the page entirely now, so the guard is about the
+// render not growing one back.
 func TestAPrivateOnlyPageShowsNoCompanyRows(t *testing.T) {
 	trk := accountsTracker(t, testAccountsJSON)
 	f := trk.ComputeMonth(context.Background(), 2026, time.August)
-	if f.FundingPersonal.ShowCompanyBalance {
-		t.Error("a private-only file switched the company balance on")
-	}
 	rec := httptest.NewRecorder()
 	RenderPage(rec, f)
 	body := rec.Body.String()
 	for _, unwanted := range []string{"In the company", "Left in the company", "target "} {
 		if strings.Contains(body, unwanted) {
-			t.Errorf("the page says %q without a company account", unwanted)
+			t.Errorf("the dashboard still says %q", unwanted)
 		}
-	}
-	// The private figure keeps its name either way, so the label is not a
-	// surprise the first time a company account appears.
-	if !strings.Contains(body, "Private opening balance") {
-		t.Error("the private opening balance lost its label")
 	}
 }
 

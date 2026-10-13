@@ -21,11 +21,7 @@ func timelineParams(t *testing.T) PersonalParams {
 	if err != nil {
 		t.Fatal(err)
 	}
-	target, err := ParseTargetPlan([]TargetEntry{{From: "2026-11", Amount: f64(15000)}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return PersonalParams{Legislation: legislation, Salary: salary, Target: target}
+	return PersonalParams{Legislation: legislation, Salary: salary}
 }
 
 func TestRulesTimelineHasAnEntryPerChangeMonth(t *testing.T) {
@@ -41,7 +37,7 @@ func TestRulesTimelineHasAnEntryPerChangeMonth(t *testing.T) {
 		"April 2026: start month",
 		"July 2026: legislation",
 		"September 2026: salary",
-		"November 2026: salary, target balance",
+		"November 2026: salary",
 	}
 	if strings.Join(labels, " | ") != strings.Join(want, " | ") {
 		t.Errorf("entries = %v\nwant      %v", labels, want)
@@ -95,7 +91,7 @@ func TestRulesTimelineMarksWhatChangedAndWhatCarriedForward(t *testing.T) {
 	}
 }
 
-func TestRulesTimelineSaysWhatSalaryAndTargetApply(t *testing.T) {
+func TestRulesTimelineSaysWhatSalaryApplies(t *testing.T) {
 	entries := RulesTimeline(timelineParams(t), time.Time{}, time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC))
 	row := func(label, name string) RuleRow {
 		for _, e := range entries {
@@ -120,57 +116,28 @@ func TestRulesTimelineSaysWhatSalaryAndTargetApply(t *testing.T) {
 	if r := row("November 2026", "Salary"); r.Value != "full (nothing configured)" || !r.Changed {
 		t.Errorf("November salary = %+v, want the fallback after the closed span, changed", r)
 	}
-	if r := row("September 2026", "Target balance"); r.Value != "none" || r.Changed || r.Since != "" {
-		t.Errorf("September target = %+v, want none, unmarked", r)
-	}
-	if r := row("November 2026", "Target balance"); r.Value != "15,000 — from November 2026" || !r.Changed {
-		t.Errorf("November target = %+v, want the new target, changed", r)
-	}
 	if r := row("July 2026", "Income tax"); r.Changed || r.Since != "January 2026" {
 		t.Errorf("July income tax = %+v, want carried forward", r)
 	}
 }
 
-func TestRulesTimelineCarriesSalaryAndTargetForwardToo(t *testing.T) {
+func TestRulesTimelineCarriesSalaryForwardToo(t *testing.T) {
 	p := timelineParams(t)
 	salary, err := ParseSalaryPlan([]SalaryEntry{{From: "2026-03", Mode: "minimum"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	target, err := ParseTargetPlan([]TargetEntry{{From: "2026-03", Amount: f64(9000)}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	p.Salary, p.Target = salary, target
+	p.Salary = salary
 	entries := RulesTimeline(p, time.Time{}, time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC))
 	for _, e := range entries {
 		if e.Label != "July 2026" {
 			continue
 		}
 		for _, r := range e.Rules {
-			if (r.Name == "Salary" || r.Name == "Target balance") && (r.Changed || r.Since != "March 2026") {
-				t.Errorf("July %s = %+v, want carried forward since March 2026", r.Name, r)
+			if r.Name == "Salary" && (r.Changed || r.Since != "March 2026") {
+				t.Errorf("July salary = %+v, want carried forward since March 2026", r)
 			}
 		}
-	}
-}
-
-func TestRulesTimelineCarriesTheIdleTargetNotes(t *testing.T) {
-	p := timelineParams(t)
-	target, err := ParseTargetPlan([]TargetEntry{{From: "2026-09", Amount: f64(15000)}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	p.Target = target
-	entries := RulesTimeline(p, time.Time{}, time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC))
-	var sep RuleChange
-	for _, e := range entries {
-		if e.Label == "September 2026" {
-			sep = e
-		}
-	}
-	if len(sep.Notes) != 2 || !strings.Contains(sep.Notes[0], "2026-09 (salary is fixed then)") || !strings.Contains(sep.Notes[1], "2026-10") {
-		t.Errorf("September notes = %v, want the two idle months", sep.Notes)
 	}
 }
 

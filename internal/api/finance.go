@@ -10,10 +10,9 @@ type LegislationPeriod struct {
 }
 
 type FinanceConfig struct {
-	Legislation   []LegislationPeriod `json:"legislation"`
-	Salary        []string            `json:"salary"`
-	TargetBalance []string            `json:"target_balance"`
-	ReadOnly      string              `json:"read_only"`
+	Legislation []LegislationPeriod `json:"legislation"`
+	Salary      []string            `json:"salary"`
+	ReadOnly    string              `json:"read_only"`
 }
 
 const configIsDeployment = "Deployment configuration. It is changed by editing config.json and redeploying, never through this API — there is no tool that writes it, and that is deliberate: these are the rates a past payslip has to stay reproducible against."
@@ -28,9 +27,6 @@ func (s *Service) FinanceConfig(context.Context) (*FinanceConfig, error) {
 	}
 	for _, p := range s.Personal.Salary {
 		out.Salary = append(out.Salary, p.String())
-	}
-	for _, p := range s.Personal.Target {
-		out.TargetBalance = append(out.TargetBalance, p.String())
 	}
 	return out, nil
 }

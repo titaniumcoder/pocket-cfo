@@ -45,11 +45,11 @@ func TestFundingIncomeIsTheMonthAfterDue(t *testing.T) {
 		{Number: "0001", IssueDate: date(2026, 7, 5), DueDate: date(2026, 7, 19), TotalCents: 500000},
 	})
 
-	august := trk.fundingIncome([]yearMonth{{2026, time.August}}, 0, nil, companyStock{})
+	august := trk.fundingIncome([]yearMonth{{2026, time.August}}, 0, nil)
 	if august.CompanyIncomeCents != 500000 {
 		t.Errorf("August company income = %d, want the 5 000 invoiced in July", august.CompanyIncomeCents)
 	}
-	july := trk.fundingIncome([]yearMonth{{2026, time.July}}, 0, nil, companyStock{})
+	july := trk.fundingIncome([]yearMonth{{2026, time.July}}, 0, nil)
 	if july.CompanyIncomeCents != 0 {
 		t.Errorf("July company income = %d, want 0 — the invoice is not due until July", july.CompanyIncomeCents)
 	}
@@ -61,7 +61,7 @@ func TestFundingIncomeIsTheMonthAfterDue(t *testing.T) {
 func TestFundingIncomeSplitsCompanyExpensesAcrossTheMonths(t *testing.T) {
 	trk := &Tracker{Personal: testParams()}
 	months := []yearMonth{{2026, time.January}, {2026, time.February}, {2026, time.March}}
-	pv := trk.fundingIncome(months, 3000, nil, companyStock{})
+	pv := trk.fundingIncome(months, 3000, nil)
 	if pv.CompanyExpensesCents != 300000 {
 		t.Errorf("CompanyExpensesCents = %d, want 3 × 1 000", pv.CompanyExpensesCents)
 	}

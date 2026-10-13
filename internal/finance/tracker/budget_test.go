@@ -538,7 +538,7 @@ func TestComputeMonthDeductsCompanyExpensesFromCompanyIncome(t *testing.T) {
 	if len(f.FundingPersonal.CompanyGroups) != 1 || f.FundingPersonal.CompanyGroups[0].Name != "Office" {
 		t.Errorf("CompanyGroups = %+v, want just Office", f.FundingPersonal.CompanyGroups)
 	}
-	direct := trk.Personal.breakdown(5000, 200, 1, trk.Personal.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
+	direct := trk.Personal.breakdown(5000, 200, 1, trk.Personal.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull})
 	if f.FundingPersonal.NetIncomeCents != direct.NetIncomeCents {
 		t.Errorf("NetIncomeCents = %d, want %d (5 000 company income minus 200 company expenses, same cascade as breakdown(_, 200, 1))", f.FundingPersonal.NetIncomeCents, direct.NetIncomeCents)
 	}

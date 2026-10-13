@@ -8,6 +8,8 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [4.4.1] - 2026-10-13
+
 ### Fixed
 - **Issued invoices stay current across template changes.** The staleness badge re-derived each issued invoice's HTML from the *current* template and compared it to a hash recorded when the PDF was rendered — so every template release flagged every issued invoice stale forever, with no way back that didn't violate write-once. Issued PDFs are now pinned in the manifest to their own bytes (an immutability check: the badge turns stale only if the stored PDF file itself changes); drafts keep the HTML comparison, since they re-render on every run. Manifest entries written by earlier versions load as before and are migrated to PDF pins by the next `pocket-cfo-ctl render`, without touching any PDF.
 
@@ -586,7 +588,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.4.0...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.4.1...HEAD
+[4.4.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.4.0...v4.4.1
 [4.4.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.3.0...v4.4.0
 [4.3.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.1.0...v4.2.0

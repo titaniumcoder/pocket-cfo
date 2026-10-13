@@ -896,14 +896,11 @@ what the cascade leaves behind opens the next month:
 
 ```
 company closing = opening + company income − company expenses − employer social − gross
-                  − what else actually left the bank
 ```
 
-That last term is the owner's own withdrawals and the taxes a distribution triggers, and it
-is the one the plan cannot state: a draw is in nobody's budget. So the planned column charges
-what the plan says will leave — the declared taxes — and the Actual column charges what the
-statements say did. A month closes on one or the other, whole, never a mixture, for the same
-reason a half-imported month falls back to the plan for its expenses.
+A month closes on the plan or, when its statement is fully imported, on what the bank
+says the company actually spent — whole, never a mixture, for the same reason a
+half-imported month falls back to the plan for its expenses.
 
 Two things follow from that formula rather than from code written to produce them. A full
 salary still closes the company at zero. And the closing figure is derived from the
@@ -1062,145 +1059,17 @@ reason, an `untracked` note for money not yet decided, or `splits` when one line
 more than one thing. Absence is never a decision — the file accounts for every row on the
 statement, so a skipped line is recorded as skipped rather than inferred from silence.
 
-**A dividend is the other way the company hands its owner money**, and it is taxed on both
-sides: company profit tax on the way out, dividend tax on the way in. Only the gross is
-written down, in `budget.json`, dated; both rates are dated `legislation` in `config.json`
-like every other government-set figure, so a distribution made under last year's rates stays
-reproducible when this year's move. The day on it is informational and the two-month funding
-shift does **not** apply — that rule is about when invoiced work becomes spendable, and a
-dividend is a payment made on a date.
-
-The ordering follows the side the money falls on, and it is a reading decision as much as an
-arithmetic one. Company profit tax is a company cost, so it sits with the company's own costs
-above the payroll cascade where it cannot read as reducing net income. The dividend behaves
-like a gross and its tax like income tax, so the pair brackets the personal rows.
-
-**Declaring a dividend moves no money.** It hands the owner a claim, and the director's loan
-is what carries it; only the two taxes leave the bank. This is not a nicety — it is the
-difference between a distribution being possible and not. Clearing a loan of 17,000 needs a
-gross of 17,894.74, and a company with 204 in the bank can declare it, because the 17,000
-never moves: it settles against what the owner already drew. Only 2,684.21 of tax is money
-that has to be found. Charging the gross to the bank reported that company as 25,816
-overdrawn when it was 7,921, and made the one instrument that fixes its position look
-unaffordable.
-
-So the company's cash and what the company is **worth** are two figures:
-
-```
-company worth = company cash − the director's loan
-```
-
-with the loan owner-centric, positive meaning the company owes him. The distribution costs
-the worth its gross plus the profit tax; it costs the cash only the two taxes. Both are true
-at once and the page shows both, the worth beside the accounts and the cash in the cascade.
-
-The two taxes are charged **before the salary is sized**, not only at the close. A full salary
-takes the whole remainder, so subtracting them afterwards would drain the company straight
-through the target balance that is documented above as a floor. Charged first, both stated
-invariants survive: a full salary still closes the company at its target, and the rendered
-rows still add up to the closing figure. The rule underneath, which no type can express: **the
-set of figures charged before the salary is sized must be the set charged at the close.** A
-`fixed` or `minimum` month is unaffected except at the close, which is already how those modes
-overdraw. A dividend in a month with **no rate in force is refused** rather than charged at
-zero — unlike a salary, which happens in every month the navigation offers, a dividend exists
-only where somebody deliberately wrote one, so the refusal is contained to that month and 0%
-presented as a computed figure is not.
-
-**Why a gross salary still leaves the company and a gross dividend does not.** Not because
-one is more real than the other. A salary is settled every month by a transfer and its
-remittances, so charging the gross is a one-month-lag approximation of a flow that does get
-settled, with no liability accumulating behind it. A distribution is settled irregularly, or
-never in cash at all — which is precisely why a director's loan exists for it and not for
-salary. Making them symmetric would cost the "a full salary closes the company at its target"
-property that the whole `targetBalance` design rests on, and buy nothing.
-
-**The director's loan** is the running balance between the owner and the company: what the
-company owes, or what the owner owes it. Positive means the company owes the owner. It
-accrues by net income each month — which now includes a dividend net of its dividend tax,
-and that is what makes "net income is what the company owes me" true rather than roughly
-true — and is settled by money that actually crossed.
-
-A marked line moves three figures, and which three is not the same question. Whether it
-**settles the loan** is whether the money reached the owner; whether it **left the bank** is
-whether the company is poorer for it; whether it **reached the owner outside payroll** is
-whether the plan had not already assumed it would. A salary transfer does the first and
-neither of the others — the cascade has already charged the gross, and counting the transfer
-again would pay the salary twice on the company side and credit it twice on the private one.
-The two taxes do the second alone: they leave the company for the state and never reach the
-owner. A draw, a distribution paid out and money paid back in do all three. Transposing those
-sets is the easiest mistake in this module, which is why all three answers are pinned value by
-value over the schema's own enum.
-
-The third set is the second question the private side had to answer, and the salary is the one
-value that separates them. The paragraph above is the whole reason: a salary is settled every
-month by a transfer, so the private figures are right to expect it and must not count the
-transfer as well; a distribution is settled irregularly or never in cash, so the private side
-may only count one that actually arrived. Excluding it there instead would make the private
-figure optimistic by the net dividend in exactly the months a distribution is declared —
-which is the case a loan exists for.
-
-Two limits worth knowing rather than rediscovering. A month nobody has fully imported carries
-the company's cash **high** by whatever the owner drew in it, and carries the private side
-**low** by the same draw, because a half-read month closes on its plan whole rather than on
-part of a statement. And a distribution declared in an unimported month charges its taxes to
-the plan, while the month the tax is actually paid charges them again if that month *is*
-imported; the carried balance is then light by that tax until the next bank reading re-anchors
-it. Both are the ordinary cost of the plan-or-statement switch, and both are bounded by the
-next reading.
-
-A crossing is a statement line carrying a `movement` marker **beside** its `ignored` reason,
-never instead of one: such a line genuinely is not a budget expense, so the exactly-one-of
-rule above is untouched and a marked line still says why it is out of the figures. Two of the
-six values leave the company for the state and cross nothing; they are marked only so the
-spending page can list them rather than burying them among the ignored lines.
-
-Both statements are imported, so the same transfer arrives twice, and counting it twice is
-the one way this figure goes quietly wrong. **The sign is what enforces recording it once**:
-everything except a contribution must be money leaving the company, so the mirror line on the
-private statement — whose sign is the other way round — cannot be marked at all. That costs
-nothing and, crucially, needs no resolving of a transaction's `account` against
-`accounts.json`, which is deliberately not done. The residual case the sign cannot catch, two
-company-side lines marked for one real transfer, is a note beside the figure rather than a
-refusal: two genuine draws of one amount on one day are a real thing, and failing the month
-would take it off the dashboard entirely.
-
-Its opening figure lives in `accounts.json` as a series of dated readings — same shape as an
-account balance, so a year-end restatement from the accountant is an ordinary append that
-corrects everything after it without rewriting what was true before, and a month before every
-reading has **no known figure rather than a figure of zero**. It sits beside the accounts
-rather than becoming a third `kind` of one, and not only because a relationship between two
-pots is not a pot: the balance snapshot treats anything that is not `company` as private, so a
-reading would have been swept into the private opening balance, and it takes its opening month
-as the latest across all accounts, so a loan restated in December would have dragged the
-anchor both real balances are walked from. Living outside that array is what makes "it reaches
-no other figure" structural rather than a rule somebody has to remember.
-
-Because the two anchors are unrelated and either can be the earlier, the roll-forward starts
-at whichever comes first and gates each figure on its own — otherwise the months in between
-would silently never accrue. An unimported month settles nothing rather than falling back to
-the plan, because the plan holds no transfers; the loan then reads higher than it is, and says
-so. The year view has none, for the same reason it reads no balances at all.
-
-The loan figure itself reaches the company's worth and nothing else — no cash figure, and no
-input to the cascade, so a salary is never sized against money the owner has not given back.
-The crossings it is built from are not private to it, though, and that is the correction §10
-was missing longest: a draw is one transaction with two sides, and booking only the liability
-left **Available to spend** reading low by every draw the owner had taken. It now books both.
-The asset side lands in the **Actual column only** — a draw is in no plan, so the planned
-column may not know it happened — which is the same planned/actual pair `Balance` and `Left in
-the company` already show, and is why no budget figure moves when a statement is imported.
-
-What each column assumes is the whole of it. The planned column assumes net income arrived,
-because that is all a plan can say. The Actual column assumes only the **net salary** arrived
-and counts everything else from the statements, for the reason two paragraphs up. So the two
-columns agree exactly when the company transferred the net salary the plan sized and nothing
-else crossed, and the residual between them is net salary accrued but never transferred —
-which is the loan's own movement row. Neither figure has to guess, and a test pins the identity
-because nothing in the type system ties the exclusion set to the internals of net income.
-
-Settling the loan — by paying a salary large enough, or a dividend — is a decision taken with
-the accountant, so neither the distribution nor the loan's opening figure is writable through
-the agent API, only readable.
+**What used to live here and does not any more.** Dividends (with company profit tax
+and dividend tax), the director's loan, the `movement` markers on statement lines and the
+company-worth figure were all machinery for exceptional payments between the company and
+its owner. They are removed: the tracker models only the two pots, the payroll cascade
+between them, and the plan-versus-statement ledger. A transfer between the company and its
+owner is an ordinary `ignored` line with a reason; what the company holds in the bank is
+the only company figure. A deployment upgrading from a version that had any of this must
+first drop the `dividends` array from `budget.json`, any `movement` fields from its
+actuals, the `director_loan` block from `accounts.json`, and the `companyProfitTax` and
+`dividendTax` entries from config.json's legislation — the validators refuse all five
+rather than silently ignoring them.
 
 ## 11. Agent-facing write API
 
@@ -1402,7 +1271,7 @@ asked.
 
 **The three hand-maintained files are editable, whole, with the approval as the guard.**
 `read_data_file` and `write_data_file` serve `budget.json`, `accounts.json` and
-`config.json` for what the narrower tools cannot express — a dividend moved, a category
+`config.json` for what the narrower tools cannot express — a category
 created, a rule added. A write must parse as the file's own type and pass its validator
 before anything is committed, and the result carries a unified diff, which is what the
 Changes rail shows and what the approval is a decision about. The narrower tools stay

@@ -6,6 +6,12 @@
 
 **Totals:** 1 critical · 7 high · 17 medium · 41 low.
 
+> **Historical note.** This review describes the codebase as it was in August 2026. The
+> dividends machinery (and both of its taxes), the `movement` markers on statement lines,
+> and the director's loan / company-worth figures have since been removed entirely; the
+> findings below that name those mechanisms (H-6, M-13, M-14, L-19, L-23 and the
+> loan-related notes) describe machinery that no longer exists.
+
 > **Status: acted on.** Every finding was re-verified against the code before being fixed;
 > the corrections are recorded in "Verification notes" at the end of this file. Two findings
 > were wrong, four materially overstated, and one prescribed a fix that would have broken

@@ -327,51 +327,29 @@ func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, ra
 	}
 	imported := av.Present && av.Complete
 	return monthClosing{
-		PrivateDeltaCents:   privateClosedOn(pv, av, imported) - privateCents,
-		CompanyClosingCents: companyClosedOn(pv, av, imported),
+		PrivateDeltaCents:   pv.NetIncomeCents - privateCents,
+		CompanyClosingCents: companyClosedOn(pv, imported, companyCents),
 		NetIncomeCents:      pv.NetIncomeCents,
-		CrossedCents:        av.CrossedCents,
 	}, nil
-}
-
-// privateClosedOn is what funded the private account over a walked month, and
-// it obeys the same all-or-nothing rule as the expenses it is about to be netted
-// against: a fully imported month is funded by the net income the plan assumes
-// plus what the statements say actually reached the owner besides it, and any
-// other month is funded by net income alone, the way it always was.
-//
-// Ungated it would fold half a month's draws into a figure otherwise built
-// entirely from the plan — and one that is then carried forward until the next
-// bank reading, changing silently as the rest of the month is imported. That is
-// the mixture the company side refuses for the same reason. The viewed month is
-// a different case and is ungated: it is shown beside its planned twin, not
-// carried into anything.
-func privateClosedOn(pv PersonalView, av ActualsView, imported bool) int {
-	if !imported {
-		return pv.NetIncomeCents
-	}
-	return pv.NetIncomeCents + av.ArrivedPrivatelyCents
 }
 
 // companyClosedOn seeds the next month, so it follows the same all-or-nothing
 // rule the expenses follow: a fully imported month closes on what the bank
-// says left — the draws and the taxes actually paid — and any other month
-// closes on the plan. Mixing them would charge a declared tax and an
-// imported part of that same tax into a figure that is then carried for good.
-func companyClosedOn(pv PersonalView, av ActualsView, imported bool) int {
+// says left — the actual expenses — and any other month
+// closes on the plan. Mixing them would charge a planned expense and an
+// imported part of it into a figure that is then carried for good.
+func companyClosedOn(pv PersonalView, imported bool, actualCompanyCents int) int {
 	if !imported || !pv.ShowCompanyBalance {
 		return pv.CompanyClosingCents
 	}
 	month := pv.plannedCompanyMonth(pv.CompanyOpeningCents)
-	month.CashOutCents = av.CompanyCashOutCents
+	month.ExpensesCents = actualCompanyCents
 	return month.closesAt()
 }
 
 // closingExpenses hands back the view it read as well as the two figures, so
 // the walk still costs one read of a month's actuals. The expenses fall back
-// to the plan when nothing is imported, and so does the company's cash; the
-// loan's crossings never do, because the plan holds no transfers at all and an
-// unimported month has settled nothing.
+// to the plan when nothing is imported, and so does the company's cash.
 func (t *Tracker) closingExpenses(ctx context.Context, m yearMonth, bv BudgetView) (private, company int, av ActualsView) {
 	av, err := t.Actuals.ForMonth(ctx, m.Year, m.Month)
 	if err != nil || !av.Present || !av.Complete {

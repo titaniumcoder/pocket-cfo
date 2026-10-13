@@ -246,7 +246,6 @@ func (s *server) apiTransactions(w http.ResponseWriter, r *http.Request) {
 		Account:        q.Get("account"),
 		IncludeIgnored: q.Get("include_ignored") == "true",
 		OnlyUntracked:  q.Get("only_untracked") == "true",
-		OnlyMovements:  q.Get("only_movements") == "true",
 		Limit:          limit,
 		Years:          years,
 	}

@@ -47,26 +47,6 @@ REST a write is still committed on the spot, as described below.
    record it with an `ignored` reason rather than dropping it, so the file still
    reconciles line-for-line against the statement. Never guess, never drop a line.
 
-   **`movement` rides *beside* `ignored`, never instead of it.** It says a line moved money
-   between the company and its owner, which is what the director's loan is settled from:
-   `salary_transfer`, `owner_draw`, `dividend_payout`, `owner_contribution` cross between
-   the two; `corporate_tax` and `dividend_tax` leave the company for the state and cross
-   nothing, and are marked only so the spending page can list them. Such a line is still
-   not a budget expense, so it still carries a reason.
-
-   A marked line now moves the company's bank figure as well as the loan, so marking
-   the wrong side moves two figures rather than one. The two sets are not the same:
-   a `salary_transfer` settles the loan but does **not** leave the bank again (the
-   cascade already charged the gross salary), and `corporate_tax` / `dividend_tax`
-   leave the bank without settling anything.
-
-   **Record it once, on the company statement.** Both statements are imported, so the same
-   transfer reaches you twice, and marking both counts it twice. The sign enforces this:
-   everything except `owner_contribution` must be money *out* of the company, so the mirror
-   line on the private statement is refused with a message saying where the marker belongs.
-   Leave that mirror as a plain `ignored` line. `search_transactions` with `only_movements`
-   shows what is already marked, which is how you avoid marking the other side by mistake.
-
    **`untracked` is for money you cannot place *yet*** — cash out of a machine being the
    usual case. It takes a note, not a bare yes: `"ATM withdrawal, cash not spent yet"`. It
    is not the same as `ignored`, which is the decision that something is not a budget

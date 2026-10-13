@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"time"
 )
 
 type LegislationPeriod struct {
@@ -42,17 +41,10 @@ type DirectorLoan struct {
 	Unknown           string   `json:"unknown,omitempty"`
 	OpeningCents      int      `json:"opening_cents"`
 	NetIncomeCents    int      `json:"net_income_cents"`
-	MovementCents     int      `json:"movement_cents"`
 	ClosingCents      int      `json:"closing_cents"`
-	SettledBy         []Settle `json:"settled_by,omitempty"`
 	Notes             []string `json:"notes,omitempty"`
 	PositiveMeans     string   `json:"positive_means"`
 	ReachesNoOtherSum string   `json:"reaches_no_other_figure"`
-}
-
-type Settle struct {
-	Movement string `json:"movement"`
-	Cents    int    `json:"cents"`
 }
 
 // DirectorLoanFor answers the same question the dashboard's own block does,
@@ -76,29 +68,10 @@ func (s *Service) DirectorLoanFor(ctx context.Context, month string) (*DirectorL
 		Unknown:           f.DirectorLoanUnknown,
 		OpeningCents:      f.LoanOpeningCents,
 		NetIncomeCents:    f.LoanNetIncomeCents,
-		MovementCents:     f.LoanMovementCents,
 		ClosingCents:      f.LoanClosingCents,
 		Notes:             f.DirectorLoanNotes,
 		PositiveMeans:     "the company owes the owner; negative means the owner owes the company",
 		ReachesNoOtherSum: "read-only: this figure feeds only the company's worth, though the crossings it is built from also raise the Actual column of Available to spend — the planned column still assumes net income lands in the account, and the residual here is what it accrued and never transferred",
 	}
-	for _, mv := range s.movementsIn(ctx, year, m) {
-		out.SettledBy = append(out.SettledBy, mv)
-	}
 	return out, nil
-}
-
-func (s *Service) movementsIn(ctx context.Context, year int, month time.Month) []Settle {
-	if s.Actuals == nil {
-		return nil
-	}
-	av, err := s.Actuals.ForMonth(ctx, year, month)
-	if err != nil || !av.Present {
-		return nil
-	}
-	out := make([]Settle, 0, len(av.ByMovementRow))
-	for _, row := range av.ByMovementRow {
-		out = append(out, Settle{Movement: string(row.Movement), Cents: row.Cents})
-	}
-	return out
 }

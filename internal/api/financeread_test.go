@@ -58,7 +58,7 @@ func TestGetDirectorLoanAgreesWithTheDashboardFigure(t *testing.T) {
 	want := tracker.Figures{
 		ShowDirectorLoan: true,
 		LoanOpeningCents: 1240000, LoanNetIncomeCents: 493100,
-		LoanMovementCents: -500000, LoanClosingCents: 1233100,
+		LoanClosingCents: 1733100,
 	}
 	s := &Service{Figures: func(context.Context, int, time.Month) (tracker.Figures, error) { return want, nil }}
 
@@ -70,10 +70,10 @@ func TestGetDirectorLoanAgreesWithTheDashboardFigure(t *testing.T) {
 		t.Fatal("a known loan is reported as unknown")
 	}
 	if got.OpeningCents != want.LoanOpeningCents || got.ClosingCents != want.LoanClosingCents ||
-		got.NetIncomeCents != want.LoanNetIncomeCents || got.MovementCents != want.LoanMovementCents {
+		got.NetIncomeCents != want.LoanNetIncomeCents {
 		t.Errorf("reported %+v, want the dashboard's own figures", got)
 	}
-	if got.OpeningCents+got.NetIncomeCents+got.MovementCents != got.ClosingCents {
+	if got.OpeningCents+got.NetIncomeCents != got.ClosingCents {
 		t.Error("the reported figures do not add up to the closing one")
 	}
 	if !strings.Contains(got.PositiveMeans, "company owes the owner") {

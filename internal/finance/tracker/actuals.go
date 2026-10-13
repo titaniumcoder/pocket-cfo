@@ -62,40 +62,6 @@ type ActualsView struct {
 
 	UntrackedCents int
 	UntrackedCount int
-
-	// CrossedCents is the month's marked movements summed with their own
-	// signs, so money out of the company and money back into it need no
-	// branch: a draw of +5000 settles 5000 of what is owed, a contribution of
-	// -500 adds 500 to it.
-	CrossedCents int
-
-	// CompanyCashOutCents is what those same lines did to the company's bank,
-	// which is a different question and a different set: a salary transfer
-	// settles the loan but is already counted as gross salary, and the two
-	// taxes leave the bank without ever reaching the owner.
-	CompanyCashOutCents int
-
-	// ArrivedPrivatelyCents is the third question over the same six values:
-	// what the owner got hold of that the plan had not already assumed. It is
-	// CrossedCents without the salary transfer, because the private side is
-	// already sized on net salary arriving, and adding the transfer would
-	// credit it twice. Same signs: a draw of +5000 is 5000 more to spend, a
-	// contribution of -500 is 500 less.
-	ArrivedPrivatelyCents int
-
-	ByMovementRow []MovementTotal
-
-	// DoubleMarked is the one double count the sign rule cannot catch: two
-	// company-side lines marked for what is really one transfer. It is a note
-	// rather than a refusal, because two genuine draws of the same amount on
-	// one day are a real thing and failing the month would take it off the
-	// dashboard entirely.
-	DoubleMarked bool
-}
-
-type MovementTotal struct {
-	Movement actualsdata.Movement
-	Cents    int
 }
 
 func (a *Actuals) ForMonth(ctx context.Context, year int, month time.Month) (ActualsView, error) {
@@ -254,25 +220,9 @@ func (a *Actuals) fetch(year int, month time.Month) actualsResult {
 
 func viewOf(af actualsdata.ActualsFile, year int, month time.Month) ActualsView {
 	v := ActualsView{Present: true, ByCategory: map[string]int{}}
-	byMovement := map[actualsdata.Movement]int{}
-	markedOnce := map[string]bool{}
 	for _, tx := range af.Transactions {
 		untracked := false
-		markedHere := map[actualsdata.Movement]int{}
 		for _, part := range actualsdata.PartsOf(tx) {
-			if part.Movement != "" {
-				byMovement[part.Movement] += eurToCents(part.Amount)
-				if part.Crossed() {
-					v.CrossedCents += eurToCents(part.Amount)
-				}
-				if part.MovedCompanyCash() {
-					v.CompanyCashOutCents += eurToCents(part.Amount)
-				}
-				if part.CrossedOutsidePayroll() {
-					v.ArrivedPrivatelyCents += eurToCents(part.Amount)
-				}
-				markedHere[part.Movement] += eurToCents(part.Amount)
-			}
 			if part.Untracked != "" {
 				v.UntrackedCents += eurToCents(part.Amount)
 				untracked = true
@@ -287,39 +237,9 @@ func viewOf(af actualsdata.ActualsFile, year int, month time.Month) ActualsView 
 		if untracked {
 			v.UntrackedCount++
 		}
-		for movement, cents := range markedHere {
-			key := fmt.Sprintf("%s|%s|%d", tx.Date, movement, cents)
-			if markedOnce[key] {
-				v.DoubleMarked = true
-			}
-			markedOnce[key] = true
-		}
 	}
-	v.ByMovementRow = movementTotals(byMovement)
 	v.Complete = coverageComplete(af, year, month)
 	return v
-}
-
-// movementTotals keeps the schema's own order rather than a map's, so the
-// page does not reshuffle itself between two reads of the same file.
-func movementTotals(byMovement map[actualsdata.Movement]int) []MovementTotal {
-	if len(byMovement) == 0 {
-		return nil
-	}
-	out := make([]MovementTotal, 0, len(byMovement))
-	for _, m := range []actualsdata.Movement{
-		actualsdata.MovementSalaryTransfer,
-		actualsdata.MovementOwnerDraw,
-		actualsdata.MovementDividendPayout,
-		actualsdata.MovementOwnerContribution,
-		actualsdata.MovementCorporateTax,
-		actualsdata.MovementDividendTax,
-	} {
-		if cents, ok := byMovement[m]; ok {
-			out = append(out, MovementTotal{Movement: m, Cents: cents})
-		}
-	}
-	return out
 }
 
 func coverageComplete(af actualsdata.ActualsFile, year int, month time.Month) bool {

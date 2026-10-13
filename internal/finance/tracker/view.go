@@ -168,7 +168,6 @@ type Figures struct {
 	ShowActualBalance         bool
 	ActualBalanceCents        int
 	ActualCompanyClosingCents int
-	CompanyCashOutCents       int
 
 	ShowOpeningBalance  bool
 	OpeningBalanceCents int
@@ -191,7 +190,6 @@ type Figures struct {
 	ShowDirectorLoan    bool
 	LoanOpeningCents    int
 	LoanNetIncomeCents  int
-	LoanMovementCents   int
 	LoanClosingCents    int
 	DirectorLoanUnknown string
 	DirectorLoanNotes   []string
@@ -560,14 +558,6 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 // next month opens with. Both are shown rather than one replacing the other,
 // because the actual one is optimistic by whatever has not been imported or
 // assigned yet, and only the pair says so.
-//
-// It is also where a draw is finally worth something. The plan can only assume
-// the net income arrived and knows of no other funding, so the planned column
-// stays on that assumption; the Actual column starts from the same net income
-// and then adds what the statements say actually reached the owner besides it.
-// The residual — net income the company never transferred — is the director's
-// loan's own movement row, so the two figures disagree by exactly the thing the
-// loan is there to report, and neither has to guess.
 func (f *Figures) publishBalanceTheBankSaw(months int) {
 	if months != 1 || !f.ShowActuals {
 		return
@@ -577,12 +567,9 @@ func (f *Figures) publishBalanceTheBankSaw(months int) {
 	f.ActualBalanceCents = f.ActualAvailableCents - f.PrivateActualCents
 	pv := f.FundingPersonal
 	// The Actual column takes what the statements say left the bank, where the
-	// planned one takes what the plan says will: the taxes are declared with
-	// the distribution but only leave when they are actually paid, and an owner
-	// draw is in no plan at all.
+	// planned one takes what the plan says will.
 	month := pv.plannedCompanyMonth(pv.CompanyOpeningCents)
 	month.ExpensesCents = f.CompanyActualCents
-	month.CashOutCents = f.CompanyCashOutCents
 	f.ActualCompanyClosingCents = month.closesAt()
 }
 
@@ -624,8 +611,7 @@ func (t *Tracker) targetNeedsBalanceNote(viewed yearMonth, months int, carried o
 }
 
 // computeDirectorLoan carries the running balance between the owner and the
-// company into the month, adds what the company took on and takes off what
-// actually crossed. It reaches no other figure on the page: the private
+// company into the month. It reaches no other figure on the page: the private
 // balance still rolls forward assuming net income lands in the account, and
 // this is precisely the number saying by how much that assumption is out.
 func (f *Figures) computeDirectorLoan(t *Tracker, ctx context.Context, viewed yearMonth, months int, carried openings) {
@@ -646,9 +632,7 @@ func (f *Figures) computeDirectorLoan(t *Tracker, ctx context.Context, viewed ye
 	f.ShowDirectorLoan = true
 	f.LoanOpeningCents = carried.Loan.OpeningCents
 	f.LoanNetIncomeCents = f.FundingPersonal.NetIncomeCents
-	f.LoanMovementCents = -t.crossedInMonth(ctx, viewed)
-	f.LoanClosingCents = f.LoanOpeningCents + f.LoanNetIncomeCents + f.LoanMovementCents
-	f.DirectorLoanNotes = t.directorLoanNotes(ctx, viewed)
+	f.LoanClosingCents = f.LoanOpeningCents + f.LoanNetIncomeCents
 	f.publishCompanyWorth()
 }
 
@@ -690,32 +674,6 @@ func (f Figures) ArrivedPrivatelyLabel() string {
 		return "Paid into the company"
 	}
 	return "Drawn from the company"
-}
-
-// directorLoanNotes says the one thing about the figure nobody can work out by
-// reading it: two lines marked for a single transfer count that transfer twice.
-// It is a warning about the data, not a description of the arithmetic.
-func (t *Tracker) directorLoanNotes(ctx context.Context, viewed yearMonth) []string {
-	var notes []string
-	if t.Actuals != nil {
-		if av, err := t.Actuals.ForMonth(ctx, viewed.Year, viewed.Month); err == nil && av.DoubleMarked {
-			notes = append(notes, "Two lines this month are marked as the same movement, for the same amount, on the same day. If they are one transfer recorded from both statements, unmark the private side — it is counted twice here.")
-		}
-	}
-	return notes
-}
-
-// crossedInMonth is the viewed month's own settlements. The month's actuals
-// are already cached by everything else on the page, so this costs no read.
-func (t *Tracker) crossedInMonth(ctx context.Context, viewed yearMonth) int {
-	if t.Actuals == nil {
-		return 0
-	}
-	av, err := t.Actuals.ForMonth(ctx, viewed.Year, viewed.Month)
-	if err != nil {
-		return 0
-	}
-	return av.CrossedCents
 }
 
 // hasDirectorLoanBlock decides whether "not known" is worth saying at all: a
@@ -1060,8 +1018,6 @@ func (f *Figures) computeActuals(t *Tracker, ctx context.Context, year int, star
 	companyIDs := t.companyCategoryIDs(ctx)
 	f.PrivateUnmatchedCents, f.CompanyUnmatchedCents = UnmatchedCents(*bv, av, companyIDs)
 	f.PrivateActualCents, f.CompanyActualCents = ActualTotals(av, companyIDs)
-	f.CompanyCashOutCents = av.CompanyCashOutCents
-	f.ArrivedPrivatelyCents = av.ArrivedPrivatelyCents
 }
 
 func (t *Tracker) companyCategoryIDs(ctx context.Context) map[string]bool {

@@ -20,10 +20,8 @@ var tmpl = template.Must(template.Must(template.New("").Funcs(template.FuncMap{
 
 // owedClass is the director's loan's only signal, and it carries the
 // direction on its own: green where the figure is in the owner's favour, red
-// where it is against. On the two balance rows that reads as which way round
-// the debt is; on the movement row it is reality that decides, and that row is
-// the one which genuinely goes either way. No mark and no flag — those mean
-// something is wrong, and a direction is not.
+// where it is against. No mark and no flag — those mean something is wrong,
+// and a direction is not.
 func owedClass(cents int) string {
 	switch {
 	case cents > 0:
@@ -277,12 +275,6 @@ var templates = `
       {{range .Unmatched}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}</span><span class="col-secondary">{{.Category}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
       {{end}}
 
-      {{range .Movements}}
-      <h3 class="sg-span">{{.Name}} &mdash; {{eur .Cents}}</h3>
-      <div class="sg-row"><span class="sg-head col-secondary">Date</span><span class="sg-head sg-desc">Description</span><span class="sg-head col-secondary">Account</span><span class="sg-head num">Amount</span><span class="sg-head copy-col no-print"></span></div>
-      {{range .Transactions}}<div class="sg-row"><span class="col-secondary">{{.Date}}</span><span class="sg-desc">{{.Description}}{{if .Reason}} <span class="untracked-note">{{.Reason}}</span>{{end}}</span><span class="col-secondary">{{.Account}}</span><span class="num">{{eur .Cents}}{{if .PartOf}} <span class="part-of">of {{.PartOf}}</span>{{end}}</span><span class="copy-col no-print"><a href="#" class="copy-tx" data-copy="{{.ChangeRequest}}" title="Copy a change request for Hermes" aria-label="Copy a change request for Hermes">` + copyIcon + copiedIcon + `</a></span></div>{{end}}
-      {{end}}
-
       <h3 class="sg-span">Not budget expenses</h3>
       {{if .Ignored}}
       <div class="sg-row"><span class="sg-head col-secondary">Date</span><span class="sg-head sg-desc">Description</span><span class="sg-head col-secondary">Reason</span><span class="sg-head num">Amount</span><span class="sg-head copy-col no-print"></span></div>
@@ -492,7 +484,6 @@ var templates = `
       {{else}}
       <div class="row net{{owed .LoanOpeningCents}}"><span class="label">At the start</span><span class="mid"></span><span class="amt netamt">{{eur .LoanOpeningCents}}</span></div>
       <div class="row{{owed .LoanNetIncomeCents}}"><span class="label">Net income</span><span class="mid"></span><span class="amt">{{signed .LoanNetIncomeCents}}</span></div>
-      <div class="row{{owed .LoanMovementCents}}"><span class="label">Money movement</span><span class="mid"></span><span class="amt">{{signed .LoanMovementCents}}</span></div>
       <div class="row net{{owed .LoanClosingCents}}"><span class="label">At the end</span><span class="mid"></span><span class="amt netamt">{{eur .LoanClosingCents}}</span></div>
       {{range .DirectorLoanNotes}}<div class="row"><span class="stale-note">{{.}}</span></div>{{end}}
       {{end}}

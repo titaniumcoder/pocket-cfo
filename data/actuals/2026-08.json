@@ -115,8 +115,7 @@
       "description": "SALARY TO OWNER",
       "amount": 2400,
       "account": "Company Checking",
-      "ignored": "salary paid across to the private account",
-      "movement": "salary_transfer"
+      "ignored": "salary paid across to the private account"
     },
     {
       "id": "c7f1a930",
@@ -124,8 +123,7 @@
       "description": "TO OWNER",
       "amount": 1500,
       "account": "Company Checking",
-      "ignored": "owner draw, outside payroll",
-      "movement": "owner_draw"
+      "ignored": "owner draw, outside payroll"
     }
   ]
 }

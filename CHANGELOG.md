@@ -10,6 +10,7 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ### Removed
 - **Dividends are gone, with both of their taxes.** The `dividends` array in `budget.json`, the `companyProfitTax` and `dividendTax` schedules in config.json's legislation, and every dividend row on the dashboard and the agent API are removed — the machinery existed to serve exceptional owner payouts, and the app refocuses on budgeting. A config.json entry still naming either tax is refused with a pointer to the removal; a budget.json carrying `dividends` fails validation.
+- **Movement markers on statement lines are gone.** `salary_transfer`, `owner_draw`, `dividend_payout`, `owner_contribution`, `corporate_tax` and `dividend_tax` no longer exist: an actuals line carrying a `movement` fails validation, the spending page lists such a line among the ordinary not-budget expenses, `search_transactions` loses `only_movements`, and the "Money movement" row leaves the dashboard. A transfer between the company and its owner is now just an `ignored` line with a reason.
 
 ## [2.0.0] - 2026-09-05
 

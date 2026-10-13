@@ -8,6 +8,8 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-10-13
+
 ### Added
 - **Lines can be pure text.** `"type": "text"` on a line renders its description as prose spanning the whole table width — an explanation or a headline between the billed positions — and it carries no amounts at all: quantity, unit, unit_price and vat_rate must not be set on one (`pocket-cfo-ctl validate` refuses it). It keeps its place in the line order and contributes nothing to the totals.
 
@@ -573,7 +575,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.2.0...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.3.0...HEAD
+[4.3.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v3.0.0...v4.0.0

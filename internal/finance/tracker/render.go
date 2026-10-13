@@ -362,7 +362,7 @@ var templates = `
       {{if or .TrackedErr .Tracked}}
       <h2>Tracked</h2>
       {{if .TrackedErr}}<div class="row"><span class="error">{{.TrackedErr}}</span></div>
-      {{else}}{{range .Tracked}}<div class="row"><span class="label">{{.Project}}</span><span class="mid">{{.Hours}} h &times; {{.Rate}}</span><span class="amt">{{eur .AmountCents}}<span class="stack-m">({{.Hours}}h)</span></span></div>{{end}}{{end}}
+      {{else}}{{range .Tracked}}<div class="row"><span class="label">{{.Project}}{{if .Unlinked}} <span class="note" title="No recipient in the data repo links this Toggl client to an invoice — link it or add the client to togglIgnoredClientIds">no recipient linked</span>{{else if .Ignored}} <span class="note">not invoiced</span>{{end}}</span><span class="mid">{{.Hours}} h &times; {{.Rate}}</span><span class="amt">{{eur .AmountCents}}<span class="stack-m">({{.Hours}}h)</span></span></div>{{end}}{{end}}
       {{end}}
 
       {{if or .ShowExpected .ExpectedErr}}
@@ -403,7 +403,7 @@ var templates = `
       {{if .Err}}<div class="row"><span class="error">{{.Err}}</span></div>
       {{else}}
       <div class="row net{{if not $.Invoiced}} gap-below{{end}}"><span class="label">Company income</span><span class="mid"></span><span class="amt goodamt">{{eur .CompanyIncomeCents}}</span></div>
-      {{range $.Invoiced}}<div class="row acct"><span class="label">{{if .URL}}<a href="{{.URL}}">{{.Number}}</a>{{else}}{{.Number}}{{end}} <span class="note">due {{.Day}}, income this month</span></span><span class="mid"></span><span class="amt">{{eur .AmountCents}}</span></div>{{end}}
+      {{range $.Invoiced}}{{if .Estimated}}<div class="row acct estimate"><span class="label">estimate for {{.WorkedMonth}} <span class="note">income this month, until the invoice arrives</span></span><span class="mid"></span><span class="amt estimate">{{eur .AmountCents}}</span></div>{{else}}<div class="row acct"><span class="label">{{if .URL}}<a href="{{.URL}}">{{.Number}}</a>{{else}}{{.Number}}{{end}} <span class="note">due {{.Day}}, income this month</span></span><span class="mid"></span><span class="amt">{{eur .AmountCents}}</span></div>{{end}}{{end}}
       {{if $.Invoiced}}<div class="row gap-below"></div>{{end}}
       {{if $.ShowActuals}}<div class="row colhead"><span class="label"></span><span class="mid">Planned</span><span class="amt">Actual</span></div>{{end}}
       {{template "categoryGroups" $.CompanyLedger}}

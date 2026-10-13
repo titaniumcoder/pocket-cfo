@@ -54,14 +54,54 @@ func TestRenderPageExpectedRowsIncludeHourUnit(t *testing.T) {
 
 func TestComputeTotalFormatsHoursCompactly(t *testing.T) {
 	var f Figures
-	f.computeTotal(0, 0, 176, true, 7500)
+	f.computeTotal(0, 0, 176, true, 7500, 0, 0)
 	if f.TotalHours != "176" {
 		t.Errorf("TotalHours for whole hours = %q, want %q", f.TotalHours, "176")
 	}
 
 	f = Figures{}
-	f.computeTotal(8.5, 63750, 160, true, 7500)
+	f.computeTotal(8.5, 63750, 160, true, 7500, 0, 0)
 	if f.TotalHours != "168:30" {
 		t.Errorf("TotalHours for fractional hours = %q, want %q", f.TotalHours, "168:30")
+	}
+}
+
+// TestAnEstimateRendersAsAnEstimateNotAnInvoice: an estimated invoice shows
+// as the grey estimate for its worked month with no PDF link, while a real
+// invoice keeps its number and its link.
+func TestAnEstimateRendersAsAnEstimateNotAnInvoice(t *testing.T) {
+	f := Figures{
+		Mode:     "month",
+		Currency: "€",
+		Tracked: []TrackedRow{
+			{Project: "Sowemo", Hours: "2 h", Rate: "75", AmountCents: 150000, Unlinked: true},
+			{Project: "Internal", Hours: "1 h", Rate: "75", AmountCents: 75000, Ignored: true},
+		},
+		Invoiced: []InvoicedRow{
+			{Number: "INV-0000000001", Day: "30.10.", AmountCents: 500000, URL: "/invoicing/invoices/INV-0000000001.pdf"},
+			{Estimated: true, WorkedMonth: "October 2026", AmountCents: 990000},
+		},
+		TotalHours: "176",
+		TotalRate:  "75",
+		TotalCents: 1140000,
+	}
+
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	body := rec.Body.String()
+
+	if !strings.Contains(body, "estimate for October 2026") {
+		t.Errorf("the estimate row is missing its label; body:\n%s", body)
+	}
+	if !strings.Contains(body, "no recipient linked") || !strings.Contains(body, "not invoiced") {
+		t.Error("the tracked rows are missing the unlinked/ignored markers")
+	}
+	estimate := body[strings.Index(body, "estimate for October 2026"):]
+	estimate = estimate[:strings.Index(estimate, "</div>")]
+	if strings.Contains(estimate, `href=`) {
+		t.Errorf("the estimate row carries a link: %s", estimate)
+	}
+	if !strings.Contains(body, `href="/invoicing/invoices/INV-0000000001.pdf"`) {
+		t.Error("the real invoice row lost its PDF link")
 	}
 }

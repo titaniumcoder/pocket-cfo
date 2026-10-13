@@ -76,7 +76,7 @@ func TestBuildInvoicedFacts_LinkedRecipientProducesClientScopedFact(t *testing.T
 	})
 	writeJSON(t, invoicesDir+"/INV-0000000001.json", invoiceFixture("INV-0000000001", 1, invoice.InvoiceJsonStatusIssued))
 
-	facts, err := buildInvoicedFacts()
+	facts, _, err := buildInvoicedFacts()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestBuildInvoicedFacts_UnlinkedRecipientStillProducesUnscopedFact(t *testin
 
 	writeJSON(t, invoicesDir+"/INV-0000000001.json", invoiceFixture("INV-0000000001", 1, invoice.InvoiceJsonStatusIssued))
 
-	facts, err := buildInvoicedFacts()
+	facts, _, err := buildInvoicedFacts()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestBuildInvoicedFacts_CarriesTrackingUntil(t *testing.T) {
 	inv.TrackingUntil = &until
 	writeJSON(t, invoicesDir+"/INV-0000000001.json", inv)
 
-	facts, err := buildInvoicedFacts()
+	facts, _, err := buildInvoicedFacts()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestBuildInvoicedFacts_DraftInvoicesSkipped(t *testing.T) {
 
 	writeJSON(t, invoicesDir+"/INV-0000000002.json", invoiceFixture("INV-0000000002", 1, invoice.InvoiceJsonStatusDraft))
 
-	facts, err := buildInvoicedFacts()
+	facts, _, err := buildInvoicedFacts()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,6 +169,22 @@ func TestFillInvoiceLinks_GatedOnInvoicingRights(t *testing.T) {
 	fillInvoiceLinks(withRights, true)
 	if want := "/invoicing/invoices/INV-0000000001.pdf"; withRights[0].URL != want {
 		t.Errorf("URL = %q, want %q", withRights[0].URL, want)
+	}
+}
+
+// TestFillInvoiceLinks_LeavesTheEstimateUnlinked: an estimated invoice has
+// no PDF to link, however broad the viewer's invoicing rights.
+func TestFillInvoiceLinks_LeavesTheEstimateUnlinked(t *testing.T) {
+	rows := []tracker.InvoicedRow{
+		{Number: "INV-0000000001", AmountCents: 500000},
+		{Estimated: true, WorkedMonth: "October 2026", AmountCents: 990000},
+	}
+	fillInvoiceLinks(rows, true)
+	if rows[1].URL != "" {
+		t.Errorf("estimate URL = %q, want empty", rows[1].URL)
+	}
+	if rows[0].URL == "" {
+		t.Error("the real invoice must keep its link")
 	}
 }
 
@@ -927,7 +943,7 @@ func TestBuildInvoicedFacts_CarriesTheUsableOverride(t *testing.T) {
 		"overrides": []map[string]string{{"invoice": "INV-0000000001", "month": "2026-01"}},
 	})
 
-	facts, err := buildInvoicedFacts()
+	facts, _, err := buildInvoicedFacts()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -347,3 +347,136 @@ func TestATogglFailureKeepsInvoicedIncomeAndDropsEstimates(t *testing.T) {
 		t.Errorf("estimates = %+v, want none", estimates)
 	}
 }
+
+// estimateTrackerRows is estimateTracker with the full detailed-report body,
+// so a test can lay down several projects' worth of tracked hours.
+func estimateTrackerRows(rowsJSON, projectsJSON string) *Tracker {
+	b := &fakeBackend{
+		detailed: func(int) (string, string, string) { return rowsJSON, "", "" },
+		projects: projectsJSON,
+		holidays: `[]`,
+	}
+	client := b.transport()
+	return &Tracker{
+		Toggl:       &Toggl{WorkspaceID: "ws", HTTP: client},
+		Holidays:    &Holidays{HTTP: client},
+		HoursPerDay: 8,
+		Loc:         time.UTC,
+		RateCents:   7500,
+		Personal:    testParams(),
+	}
+}
+
+// TestCoveredHoursDropOutOfTheEstimatedIncomeTotal: work an issued invoice
+// already covers is no longer estimated income — the panel's Income total
+// prices only what no invoice exists for yet.
+func TestCoveredHoursDropOutOfTheEstimatedIncomeTotal(t *testing.T) {
+	ctx := context.Background()
+
+	newTracker := func(invoiced []InvoicedFact) *Tracker {
+		trk := estimateTracker("2026-10-05", `[{"id":1,"name":"Alpha","client_id":7}]`)
+		trk.Invoiced = ComputeInvoiced(invoiced)
+		return trk
+	}
+
+	figure := func(trk *Tracker) *Figures {
+		f := &Figures{}
+		yd, err := trk.hours().Year(ctx, 2026)
+		if err != nil {
+			t.Fatal(err)
+		}
+		projects, err := trk.hours().Projects(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		aggs := aggregatesInRange(yd, date(2026, 10, 1), date(2026, 10, 31))
+		hours, cents := f.computeTrackedRows(trk, projects, aggs, yd, nil, nil)
+		unbilledCents, unbilledHours := f.computeUnbilled(trk, projects, yd, 2026, date(2026, 10, 1), date(2026, 10, 31))
+		f.computeTotal(hours, cents, 0, true, trk.RateCents, unbilledCents, unbilledHours)
+		return f
+	}
+
+	covered := figure(newTracker([]InvoicedFact{
+		{Number: "0001", ClientID: 7, IssueDate: date(2026, 10, 30), DueDate: date(2026, 11, 30), TotalCents: 500000},
+	}))
+	if covered.TotalCents != 0 {
+		t.Errorf("Income total = %d, want 0 — October's 1 500 is already invoiced", covered.TotalCents)
+	}
+
+	uncovered := figure(newTracker(nil))
+	if uncovered.TotalCents != 150000 {
+		t.Errorf("Income total = %d, want 1 500 — nothing covers October's work", uncovered.TotalCents)
+	}
+}
+
+// TestARealInvoiceReplacesTheEstimateRowInItsIncomeMonth: while October's
+// work has no invoice, December's rows carry the estimate for it; once the
+// invoice is issued, the estimate is gone and the real invoice stands.
+func TestARealInvoiceReplacesTheEstimateRowInItsIncomeMonth(t *testing.T) {
+	ctx := context.Background()
+
+	rows := func(trk *Tracker) []InvoicedRow {
+		f := &Figures{}
+		f.FundingPersonal, f.Estimated = trk.fundingIncome(ctx, []yearMonth{{2026, time.December}}, date(2026, 10, 13), 0, nil)
+		f.computeInvoicedRows(trk, 2026, date(2026, 12, 1), date(2026, 12, 31))
+		return f.Invoiced
+	}
+
+	uninvoiced := rows(estimateTracker("2026-10-05", `[{"id":1,"name":"Alpha"}]`))
+	if len(uninvoiced) != 1 || !uninvoiced[0].Estimated || uninvoiced[0].WorkedMonth != "October 2026" {
+		t.Fatalf("rows = %+v, want one estimate for October 2026", uninvoiced)
+	}
+
+	invoicedTrk := estimateTracker("2026-10-05", `[{"id":1,"name":"Alpha","client_id":7}]`)
+	invoicedTrk.Invoiced = ComputeInvoiced([]InvoicedFact{
+		{Number: "0001", ClientID: 7, IssueDate: date(2026, 10, 30), DueDate: date(2026, 11, 30), TotalCents: 500000},
+	})
+	invoiced := rows(invoicedTrk)
+	if len(invoiced) != 1 {
+		t.Fatalf("rows = %+v, want exactly the real invoice", invoiced)
+	}
+	if invoiced[0].Estimated || invoiced[0].Number != "0001" {
+		t.Errorf("row = %+v, want the real invoice 0001 with no estimate beside it", invoiced[0])
+	}
+}
+
+// TestUnlinkedProjectsAreMarkedAndIgnoredOnesAreNot: a Toggl client no
+// recipient links is flagged as a likely mistake, an ignored client shows
+// neutrally, and a linked one carries no marker at all.
+func TestUnlinkedProjectsAreMarkedAndIgnoredOnesAreNot(t *testing.T) {
+	rows := "[" + strings.Join([]string{
+		`{"project_id":1,"hourly_rate_in_cents":7500,"billable_amount_in_cents":150000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"2026-10-05T09:00:00+00:00"}]}`,
+		`{"project_id":2,"hourly_rate_in_cents":7500,"billable_amount_in_cents":140000,"currency":"EUR","time_entries":[{"seconds":3600,"start":"2026-10-06T09:00:00+00:00"}]}`,
+		`{"project_id":3,"hourly_rate_in_cents":7500,"billable_amount_in_cents":130000,"currency":"EUR","time_entries":[{"seconds":1800,"start":"2026-10-07T09:00:00+00:00"}]}`,
+	}, ",") + "]"
+	trk := estimateTrackerRows(rows, `[{"id":1,"name":"Linked","client_id":7},{"id":2,"name":"Ignored","client_id":5},{"id":3,"name":"Unlinked"}]`)
+	trk.LinkedClientIDs = map[int]bool{7: true}
+	trk.IgnoredClientIDs = map[int]bool{5: true}
+
+	f := &Figures{}
+	yd, err := trk.hours().Year(context.Background(), 2026)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projects, err := trk.hours().Projects(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.computeTrackedRows(trk, projects, aggregatesInRange(yd, date(2026, 10, 1), date(2026, 10, 31)), yd, nil, nil)
+	if len(f.Tracked) != 3 {
+		t.Fatalf("rows = %+v, want 3", f.Tracked)
+	}
+	byName := map[string]TrackedRow{}
+	for _, r := range f.Tracked {
+		byName[r.Project] = r
+	}
+	if byName["Linked"].Unlinked || byName["Linked"].Ignored {
+		t.Errorf("Linked = %+v, want no marker", byName["Linked"])
+	}
+	if !byName["Ignored"].Ignored || byName["Ignored"].Unlinked {
+		t.Errorf("Ignored = %+v, want the neutral not-invoiced marker", byName["Ignored"])
+	}
+	if !byName["Unlinked"].Unlinked || byName["Unlinked"].Ignored {
+		t.Errorf("Unlinked = %+v, want the no-recipient warning", byName["Unlinked"])
+	}
+}

@@ -78,6 +78,12 @@ func (c InvoicedClient) covers(clientID int, day time.Time) bool {
 	return !day.After(c.frontierFor(clientID))
 }
 
+// coversMonth says whether the client's invoices cover a month whole.
+func (c InvoicedClient) coversMonth(clientID int, monthEnd time.Time) bool {
+	f := c.frontierFor(clientID)
+	return !f.IsZero() && !f.Before(monthEnd)
+}
+
 // usableIn is the month an invoice counts as income. The default rule: the
 // month after it fell due. The owner can overwrite it per invoice in
 // data/usable-invoices.json — an early-paying client, a December invoice

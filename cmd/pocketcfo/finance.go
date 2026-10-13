@@ -16,18 +16,18 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/webui"
 )
 
-func buildInvoicedFacts() ([]tracker.InvoicedFact, error) {
+func buildInvoicedFacts() ([]tracker.InvoicedFact, map[int]bool, error) {
 	recipients, err := stats.LoadRecipients(recipientsDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	invoices, err := stats.LoadInvoices(invoicesDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	usable, err := stats.LoadUsable(usableInvoicesPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	clientIDByRecipient := map[int]int{}
@@ -61,16 +61,21 @@ func buildInvoicedFacts() ([]tracker.InvoicedFact, error) {
 		}
 		facts = append(facts, fact)
 	}
-	return facts, nil
+	linked := map[int]bool{}
+	for _, cid := range clientIDByRecipient {
+		linked[cid] = true
+	}
+	return facts, linked, nil
 }
 
 func (s *server) trackerForRequest() (tracker.Tracker, error) {
 	trk := *s.tracker
-	facts, err := buildInvoicedFacts()
+	facts, linked, err := buildInvoicedFacts()
 	if err != nil {
 		return trk, err
 	}
 	trk.Invoiced = tracker.ComputeInvoiced(facts)
+	trk.LinkedClientIDs = linked
 	return trk, nil
 }
 
@@ -107,6 +112,9 @@ func fillInvoiceLinks(invoiced []tracker.InvoicedRow, showInvoicingLink bool) {
 		return
 	}
 	for i, row := range invoiced {
+		if row.Estimated {
+			continue
+		}
 		invoiced[i].URL = "/invoicing/invoices/" + row.Number + ".pdf"
 	}
 }

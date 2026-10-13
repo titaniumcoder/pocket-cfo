@@ -29,6 +29,7 @@ type Tracker struct {
 	Minimal      bool
 
 	IgnoredClientIDs map[int]bool
+	LinkedClientIDs  map[int]bool
 
 	Start time.Time
 }
@@ -52,6 +53,8 @@ type TrackedRow struct {
 	Hours       string
 	Rate        string
 	AmountCents int
+	Unlinked    bool
+	Ignored     bool
 }
 
 type InvoicedRow struct {
@@ -59,6 +62,8 @@ type InvoicedRow struct {
 	Day         string
 	AmountCents int
 	URL         string
+	Estimated   bool
+	WorkedMonth string
 }
 
 type HolidayView struct {
@@ -238,8 +243,6 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 
 	trackedHours, trackedCents := result.computeTrackedRows(t, projects, aggs, yd, terr, perr)
 
-	result.computeInvoicedRows(t, year, start, end)
-
 	rateCents, currency := t.RateCents, t.RateCurrency
 	if currency != "" {
 		result.Currency = CurrencySymbol(currency)
@@ -248,7 +251,8 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	expectedNetHours, _, expectedOK := result.computeExpected(t, year, start, end, today, todayTracked, herr, todayErr, holidaySet, rateCents)
 	result.ShowExpected = !today.After(end)
 
-	result.computeTotal(trackedHours, trackedCents, expectedNetHours, expectedOK, rateCents)
+	unbilledCents, unbilledHours := result.computeUnbilled(t, projects, yd, year, start, end)
+	result.computeTotal(trackedHours, trackedCents, expectedNetHours, expectedOK, rateCents, unbilledCents, unbilledHours)
 
 	if herr != nil {
 		result.HolidaysErr = herr.Error()
@@ -270,6 +274,8 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	snap, opened, accountsErr := t.carriedBalances(ctx, viewed, months)
 	result.AccountsErr = accountsErr
 	result.computeFundingBalance(t, ctx, year, start, now, months, bv, snap, opened)
+
+	result.computeInvoicedRows(t, year, start, end)
 
 	if at, stale := t.hours().Status(start, end); !at.IsZero() {
 		result.LastUpdated = at.In(t.Loc).Format("02 Jan 15:04")
@@ -322,31 +328,64 @@ func (f *Figures) computeTrackedRows(t *Tracker, projects map[int]Project, aggs 
 	}
 	sort.Slice(aggs, func(i, j int) bool { return aggs[i].Seconds > aggs[j].Seconds })
 	for _, a := range aggs {
+		clientID := projects[a.ProjectID].ClientID
 		name := projects[a.ProjectID].Name
 		if name == "" {
 			name = "(no project)"
 		}
 		hours := aggHours(a)
-		f.Tracked = append(f.Tracked, TrackedRow{
+		row := TrackedRow{
 			Project:     name,
 			Hours:       formatHM(hours),
 			Rate:        formatNum(float64(a.RateCents) / 100),
 			AmountCents: a.AmountCents,
-		})
+		}
+		if t.ignoresClient(clientID) {
+			row.Ignored = true
+		} else if !t.LinkedClientIDs[clientID] {
+			row.Unlinked = true
+		}
+		f.Tracked = append(f.Tracked, row)
 		trackedHours += hours
 		trackedCents += a.AmountCents
 	}
 	return trackedHours, trackedCents
 }
 
+// computeUnbilled sums the tracked work that is not estimated income: the
+// hours an issued invoice already covers, and the hours of ignored clients.
+// The panel's Income total keeps only what no invoice exists for yet.
+func (f *Figures) computeUnbilled(t *Tracker, projects map[int]Project, yd *YearData, year int, start, end time.Time) (int, float64) {
+	if yd == nil {
+		return 0, 0
+	}
+	var cents int
+	var seconds int
+	for m := start.Month(); m <= end.Month(); m++ {
+		monthEnd := time.Date(year, m, 1, 0, 0, 0, 0, t.Loc).AddDate(0, 1, -1)
+		for _, a := range yd.Months[m] {
+			clientID := projects[a.ProjectID].ClientID
+			if !t.ignoresClient(clientID) && !t.Invoiced.coversMonth(clientID, monthEnd) {
+				continue
+			}
+			cents += a.AmountCents
+			seconds += a.Seconds
+		}
+	}
+	return cents, aggHours(Aggregate{Seconds: seconds})
+}
+
 func (f *Figures) computeInvoicedRows(t *Tracker, year int, start, end time.Time) {
 	for m := start.Month(); m <= end.Month(); m++ {
-		for _, inv := range t.invoicedInvoicesForMonth(yearMonth{year, m}) {
+		ym := yearMonth{year, m}
+		for _, inv := range t.invoicedInvoicesForMonth(ym) {
 			f.Invoiced = append(f.Invoiced, InvoicedRow{Number: inv.Number, Day: inv.Day, AmountCents: inv.Cents})
 			f.InvoicedCents += inv.Cents
 		}
+		for _, est := range f.Estimated[ym] {
+			f.Invoiced = append(f.Invoiced, InvoicedRow{AmountCents: est.Cents, Estimated: true, WorkedMonth: est.WorkedMonth.String()})
+		}
 	}
-	sort.Slice(f.Invoiced, func(i, j int) bool { return f.Invoiced[i].Number < f.Invoiced[j].Number })
 }
 
 func (f *Figures) computeExpected(t *Tracker, year int, start, end, today time.Time, todayTracked bool, herr, todayErr error, holidaySet map[string]bool, rateCents int) (expectedNetHours float64, expectedNetCentsByMonth map[time.Month]int, ok bool) {
@@ -416,11 +455,11 @@ func (f *Figures) computeExpected(t *Tracker, year int, start, end, today time.T
 	return expectedNetHours, expectedNetCentsByMonth, true
 }
 
-func (f *Figures) computeTotal(trackedHours float64, trackedCents int, expectedNetHours float64, expectedOK bool, rateCents int) {
+func (f *Figures) computeTotal(trackedHours float64, trackedCents int, expectedNetHours float64, expectedOK bool, rateCents, unbilledCents int, unbilledHours float64) {
 	if f.TrackedErr == "" && expectedOK {
-		f.TotalHours = formatCompactHours(trackedHours + expectedNetHours)
+		f.TotalHours = formatCompactHours(trackedHours - unbilledHours + expectedNetHours)
 		f.TotalRate = formatNum(float64(rateCents) / 100)
-		f.TotalCents = trackedCents + f.ExpectedNetCents
+		f.TotalCents = trackedCents - unbilledCents + f.ExpectedNetCents
 	} else {
 		f.TotalErr = "unavailable"
 	}

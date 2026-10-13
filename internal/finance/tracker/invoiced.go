@@ -5,11 +5,18 @@ import (
 	"time"
 )
 
+const UnscopedClientID = 0
+
 type InvoicedFact struct {
 	Number     string
+	ClientID   int
 	IssueDate  time.Time
 	DueDate    time.Time
 	TotalCents int
+
+	// TrackingUntil ends the invoice's coverage of Toggl trackings, up to
+	// and including the day. Zero means coverage through the issue month.
+	TrackingUntil time.Time
 
 	// IncomeMonth overrides the default rule when set: the month this
 	// invoice counts as income, YYYY-MM, written down by the owner in
@@ -25,16 +32,46 @@ type UsableInvoice struct {
 }
 
 type InvoicedClient struct {
-	Usable map[yearMonth][]UsableInvoice
+	Usable    map[yearMonth][]UsableInvoice
+	Frontiers map[int]time.Time
 }
 
 func ComputeInvoiced(facts []InvoicedFact) InvoicedClient {
 	usable := map[yearMonth][]UsableInvoice{}
+	frontiers := map[int]time.Time{}
 	for _, f := range facts {
 		um := f.usableIn()
 		usable[um] = append(usable[um], UsableInvoice{Number: f.Number, Day: f.DueDate.Format("02.01."), Cents: f.TotalCents})
+		if f.ClientID == UnscopedClientID {
+			continue
+		}
+		if ext := f.coverageExtent(); ext.After(frontiers[f.ClientID]) {
+			frontiers[f.ClientID] = ext
+		}
 	}
-	return InvoicedClient{Usable: usable}
+	return InvoicedClient{Usable: usable, Frontiers: frontiers}
+}
+
+// coverageExtent is the last day the invoice covers. A written-down
+// tracking_until names it exactly; an invoice without one covers through the
+// end of the month it was issued in.
+func (f InvoicedFact) coverageExtent() time.Time {
+	if !f.TrackingUntil.IsZero() {
+		return f.TrackingUntil
+	}
+	return time.Date(f.IssueDate.Year(), f.IssueDate.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, -1)
+}
+
+// covers says whether the client's invoices already reach a tracking day. A
+// client with no linked recipient is never covered: its hours cannot be
+// matched to an invoice, so they stay estimated and the work panel flags
+// them instead.
+func (c InvoicedClient) covers(clientID int, day time.Time) bool {
+	if clientID == UnscopedClientID {
+		return false
+	}
+	frontier, ok := c.Frontiers[clientID]
+	return ok && !day.After(frontier)
 }
 
 // usableIn is the month an invoice counts as income. The default rule: the

@@ -125,3 +125,40 @@ func TestTheDefaultRuleStillAppliesWithoutAnOverride(t *testing.T) {
 		t.Errorf("August income = %d, want the invoice the month after it fell due", got)
 	}
 }
+
+func TestAnInvoiceWithoutTrackingUntilCoversThroughItsIssueMonth(t *testing.T) {
+	got := ComputeInvoiced([]InvoicedFact{
+		{Number: "0001", ClientID: 7, IssueDate: date(2026, 9, 30), DueDate: date(2026, 10, 31), TotalCents: 500000},
+	})
+	if !got.covers(7, date(2026, 9, 30)) {
+		t.Error("September 30 must be covered by an invoice issued in September")
+	}
+	if got.covers(7, date(2026, 10, 1)) {
+		t.Error("October 1 must stay uncovered — the estimate for October stands")
+	}
+}
+
+func TestTheFrontierIsTheLatestExtentAcrossBothShapes(t *testing.T) {
+	got := ComputeInvoiced([]InvoicedFact{
+		{Number: "0001", ClientID: 7, IssueDate: date(2026, 9, 30), DueDate: date(2026, 10, 31), TotalCents: 500000},
+		{Number: "0002", ClientID: 7, IssueDate: date(2026, 10, 16), DueDate: date(2026, 11, 16), TotalCents: 100000, TrackingUntil: date(2026, 10, 15)},
+	})
+	if !got.covers(7, date(2026, 10, 15)) {
+		t.Error("the written-down tracking_until day itself must be covered")
+	}
+	if got.covers(7, date(2026, 10, 16)) {
+		t.Error("the day after the latest extent must stay uncovered")
+	}
+}
+
+func TestUnlinkedClientsAreNeverCovered(t *testing.T) {
+	got := ComputeInvoiced([]InvoicedFact{
+		{Number: "0001", IssueDate: date(2026, 9, 30), DueDate: date(2026, 10, 31), TotalCents: 500000},
+	})
+	if got.covers(UnscopedClientID, date(2026, 9, 1)) {
+		t.Error("an unlinked invoice must not suppress any Toggl hours")
+	}
+	if got.covers(999, date(2026, 9, 1)) {
+		t.Error("an unknown client must not be covered either")
+	}
+}

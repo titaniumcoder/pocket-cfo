@@ -86,6 +86,9 @@ func TestBuildInvoicedFacts_LinkedRecipientProducesClientScopedFact(t *testing.T
 	if facts[0].Number != "INV-0000000001" {
 		t.Errorf("Number = %q, want INV-0000000001", facts[0].Number)
 	}
+	if facts[0].ClientID != clientID {
+		t.Errorf("ClientID = %d, want %d", facts[0].ClientID, clientID)
+	}
 }
 
 // TestBuildInvoicedFacts_UnlinkedRecipientStillProducesAFact: an invoice for
@@ -106,6 +109,30 @@ func TestBuildInvoicedFacts_UnlinkedRecipientStillProducesUnscopedFact(t *testin
 	}
 	if len(facts) != 1 {
 		t.Fatalf("facts = %+v, want exactly 1", facts)
+	}
+}
+
+// TestBuildInvoicedFacts_CarriesTrackingUntil: a written-down
+// tracking_until travels with the fact, so the day-precise coverage of a
+// biweekly invoice reaches the frontier.
+func TestBuildInvoicedFacts_CarriesTrackingUntil(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustMkdirAll(t, recipientsDir)
+	mustMkdirAll(t, invoicesDir)
+	inv := invoiceFixture("INV-0000000001", 1, invoice.InvoiceJsonStatusIssued)
+	until := mustDate("2026-08-10")
+	inv.TrackingUntil = &until
+	writeJSON(t, invoicesDir+"/INV-0000000001.json", inv)
+
+	facts, err := buildInvoicedFacts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("facts = %+v, want exactly 1", facts)
+	}
+	if !facts[0].TrackingUntil.Equal(mustDate("2026-08-10").Time) {
+		t.Errorf("TrackingUntil = %v, want 2026-08-10", facts[0].TrackingUntil)
 	}
 }
 
@@ -892,6 +919,7 @@ func infoTemplate(t *testing.T) *template.Template {
 // when an invoice counts as income reaches the budget.
 func TestBuildInvoicedFacts_CarriesTheUsableOverride(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustMkdirAll(t, recipientsDir)
 	mustMkdirAll(t, invoicesDir)
 	writeJSON(t, invoicesDir+"/INV-0000000001.json", invoiceFixture("INV-0000000001", 1, invoice.InvoiceJsonStatusIssued))
 	writeJSON(t, usableInvoicesPath, map[string]any{

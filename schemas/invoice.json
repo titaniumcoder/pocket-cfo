@@ -50,6 +50,11 @@
       "type": "string",
       "format": "date"
     },
+    "tracking_until": {
+      "type": "string",
+      "format": "date",
+      "description": "Optional. The day this invoice's coverage of Toggl trackings ends, up to and including it — for clients charged more often than monthly. Absent means the invoice covers everything up to the end of its issue month."
+    },
     "currency": {
       "type": "string",
       "pattern": "^[A-Z]{3}$"

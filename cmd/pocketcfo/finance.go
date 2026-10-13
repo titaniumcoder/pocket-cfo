@@ -17,6 +17,10 @@ import (
 )
 
 func buildInvoicedFacts() ([]tracker.InvoicedFact, error) {
+	recipients, err := stats.LoadRecipients(recipientsDir)
+	if err != nil {
+		return nil, err
+	}
 	invoices, err := stats.LoadInvoices(invoicesDir)
 	if err != nil {
 		return nil, err
@@ -24,6 +28,13 @@ func buildInvoicedFacts() ([]tracker.InvoicedFact, error) {
 	usable, err := stats.LoadUsable(usableInvoicesPath)
 	if err != nil {
 		return nil, err
+	}
+
+	clientIDByRecipient := map[int]int{}
+	for _, r := range recipients {
+		if r.TrackingClientId != nil {
+			clientIDByRecipient[r.Number] = *r.TrackingClientId
+		}
 	}
 
 	var facts []tracker.InvoicedFact
@@ -35,13 +46,20 @@ func buildInvoicedFacts() ([]tracker.InvoicedFact, error) {
 		if err != nil {
 			continue
 		}
-		facts = append(facts, tracker.InvoicedFact{
+		fact := tracker.InvoicedFact{
 			Number:      inv.Number,
 			IssueDate:   inv.IssueDate.Time,
 			DueDate:     inv.DueDate.Time,
 			TotalCents:  int(totals.GrandTotal),
 			IncomeMonth: usable[inv.Number],
-		})
+		}
+		if cid, ok := clientIDByRecipient[inv.Recipient.Number]; ok {
+			fact.ClientID = cid
+		}
+		if inv.TrackingUntil != nil {
+			fact.TrackingUntil = inv.TrackingUntil.Time
+		}
+		facts = append(facts, fact)
 	}
 	return facts, nil
 }

@@ -8,6 +8,8 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Added
+- **An invoice can carry a `tracking_until` date.** The optional field names the day the invoice's coverage of Toggl trackings ends, up to and including it — the clean separation for clients charged more often than monthly. Absent means the invoice covers everything up to the end of its issue month. `pocket-cfo-ctl validate` accepts it as a date.
 ## [4.5.0] - 2026-10-13
 
 ### Removed

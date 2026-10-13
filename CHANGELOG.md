@@ -8,10 +8,14 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-13
+
 ### Removed
-- **Dividends are gone, with both of their taxes.** The `dividends` array in `budget.json`, the `companyProfitTax` and `dividendTax` schedules in config.json's legislation, and every dividend row on the dashboard and the agent API are removed — the machinery existed to serve exceptional owner payouts, and the app refocuses on budgeting. A config.json entry still naming either tax is refused with a pointer to the removal; a budget.json carrying `dividends` fails validation.
-- **Movement markers on statement lines are gone.** `salary_transfer`, `owner_draw`, `dividend_payout`, `owner_contribution`, `corporate_tax` and `dividend_tax` no longer exist: an actuals line carrying a `movement` fails validation, the spending page lists such a line among the ordinary not-budget expenses, `search_transactions` loses `only_movements`, and the "Money movement" row leaves the dashboard. A transfer between the company and its owner is now just an `ignored` line with a reason.
-- **The director's loan and the company-worth figure are gone.** The `director_loan` block in `accounts.json` (any leftover entry fails validation), the `get_director_loan` tool, the `GET /api/director-loan/{month}` route, the `kind: director_loan` row in `list_accounts` and the whole loan ledger on the dashboard — including "The company is worth" — are removed. What the company holds in the bank is the only company figure again.
+- **Breaking: Dividends are gone, with both of their taxes.** The `dividends` array in `budget.json`, the `companyProfitTax` and `dividendTax` schedules in config.json's legislation, and every dividend row on the dashboard and the agent API are removed — the machinery existed to serve exceptional owner payouts, and the app refocuses on budgeting. A config.json entry still naming either tax is refused with a pointer to the removal; a budget.json carrying `dividends` fails validation.
+- **Breaking: Movement markers on statement lines are gone.** `salary_transfer`, `owner_draw`, `dividend_payout`, `owner_contribution`, `corporate_tax` and `dividend_tax` no longer exist: an actuals line carrying a `movement` fails validation, the spending page lists such a line among the ordinary not-budget expenses, `search_transactions` loses `only_movements`, and the "Money movement" row leaves the dashboard. A transfer between the company and its owner is now just an `ignored` line with a reason.
+- **Breaking: The director's loan and the company-worth figure are gone.** The `director_loan` block in `accounts.json` (any leftover entry fails validation), the `get_director_loan` tool, the `GET /api/director-loan/{month}` route, the `kind: director_loan` row in `list_accounts` and the whole loan ledger on the dashboard — including "The company is worth" — are removed. What the company holds in the bank is the only company figure again.
+
+  **Upgrade order matters:** clean the data repo first — drop the `dividends` array from budget.json, any `movement` fields from the actuals, the `director_loan` block from accounts.json, and the `companyProfitTax` / `dividendTax` entries from config.json's legislation — then deploy; every validator refuses these rather than ignoring them.
 
 ## [2.0.0] - 2026-09-05
 
@@ -536,7 +540,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v1.0.1...v2.0.0
 [1.0.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v0.35.3...v1.0.0

@@ -657,27 +657,20 @@ func TestTheLiveCompanyClosingIsTheRowsAboveIt(t *testing.T) {
 
 // TestTheLiveCompanyClosingLosesTheSameFiguresAsThePlannedOne: the live closing
 // is re-derived by hand rather than sharing closeCompanyOver, so the two
-// expressions can drift apart silently — and did, for the whole life of the
-// dividend, because no fixture with a distribution ever reached this one. The
-// distribution itself must not be in either: it hands the owner a claim, not
-// money, and only the two taxes leave the bank.
+// expressions can drift apart silently.
 func TestTheLiveCompanyClosingLosesTheSameFiguresAsThePlannedOne(t *testing.T) {
 	f := Figures{
 		ShowActuals:        true,
 		CompanyActualCents: 40000,
 		FundingPersonal: PersonalView{
-			ShowCompanyBalance:    true,
-			CompanyExpensesCents:  30000,
-			CompanyOpeningCents:   5000000,
-			CompanyIncomeCents:    400000,
-			EmployerContribCents:  20000,
-			GrossSalaryCents:      107700,
-			DividendCents:         1000000,
-			DividendTaxCents:      50000,
-			CompanyProfitTaxCents: 100000,
+			ShowCompanyBalance:   true,
+			CompanyExpensesCents: 30000,
+			CompanyOpeningCents:  5000000,
+			CompanyIncomeCents:   400000,
+			EmployerContribCents: 20000,
+			GrossSalaryCents:     107700,
 		},
 	}
-	// Nothing has actually been paid yet: the taxes are declared, not remitted.
 	f.publishBalanceTheBankSaw(1)
 
 	pv := f.FundingPersonal
@@ -686,16 +679,12 @@ func TestTheLiveCompanyClosingLosesTheSameFiguresAsThePlannedOne(t *testing.T) {
 	if f.ActualCompanyClosingCents != want {
 		t.Errorf("live closing = %d, want %d — the Actual column charges what the statements say left, not what the plan declared", f.ActualCompanyClosingCents, want)
 	}
-	if f.ActualCompanyClosingCents == want-pv.DividendCents {
-		t.Error("the gross distribution is being taken out of the bank again")
-	}
 
-	// Once the statements say the taxes were paid, the two columns agree —
-	// which is the drift signature to watch: a term added to one expression and
-	// not the other makes them disagree on a month where reality matched the
-	// plan.
+	// Once the statements say the month went exactly to plan, the two columns
+	// agree — which is the drift signature to watch: a term added to one
+	// expression and not the other makes them disagree on a month where reality
+	// matched the plan.
 	f.CompanyActualCents = pv.CompanyExpensesCents
-	f.CompanyCashOutCents = pv.DividendTaxCents + pv.CompanyProfitTaxCents
 	f.publishBalanceTheBankSaw(1)
 	planned := pv.plannedCompanyMonth(pv.CompanyOpeningCents).closesAt()
 	if f.ActualCompanyClosingCents != planned {

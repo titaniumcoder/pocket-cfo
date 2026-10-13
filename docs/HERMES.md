@@ -174,7 +174,7 @@ REST a write is still committed on the spot, as described below.
     said*, not *nothing is owed*.
 
 13. **`get_finance_config`** is the dated rules every figure is computed from — both
-    contribution schedules, income tax, company profit tax, dividend tax, the salary plan
+    contribution schedules, income tax, the salary plan
     and the target balance. Read it before explaining a figure rather than assuming a rate.
     A month before the earliest entry has nothing in force and is charged nothing, which is
     not the same as a rate of zero.
@@ -264,7 +264,7 @@ over the invoice documents.
 Three things used to be readable here and editable only in the data repo. They are still
 what they were — decisions, not bookkeeping — but `read_data_file` and `write_data_file`
 now serve them (`GET`/`PUT /api/files/{name}`), for what the narrower tools cannot express:
-a new or renamed category, a dividend moved to another month, a new account, a corrected
+a new or renamed category, a new account, a corrected
 reading, a new dated rule. Send the complete file, changed only where asked, so the commit
 is a few readable lines; the file must pass its own validation before it is committed, and
 the result carries the diff. In the in-app chat such a write is staged and shown as that
@@ -272,24 +272,15 @@ diff for approval. Confirm with the user before touching any of them:
 
 - **The rates** (`config.json`). Deployment configuration, changed by redeploying. A past
   payslip has to stay reproducible against the rates it was actually computed under.
-- **A dividend** (`budget.json`). A distribution is a decision taken with the accountant,
-  and it moves both the company's balance and the owner's income. `get_budget` reports any
-  planned for a month with both taxes already worked out, so you never recompute them. The
-  one exception is a recurring category's *future* step: `schedule_amount_change` (step 10)
+  The one exception is a recurring category's *future* step: `schedule_amount_change` (step 10)
   can schedule, correct, or call off a month's amount — but only in a month that has not
-  arrived yet, and never on a one-off, a dividend, or a month that is already in force.
+  arrived yet, and never on a one-off or a month that is already in force.
 - **The director's loan's opening figure** (`accounts.json`). Unlike a bank balance there
   is nothing to read it off; it is a year-end restatement from the accountant. Appending a
   reading corrects everything after it without rewriting what was true before.
   `list_accounts` reports the loan with `kind: director_loan` so you know it exists — it is
   not a statement account, has no coverage, and `record_account_balance` refuses it. Read it
   with `get_director_loan` and otherwise leave it alone.
-
-One thing worth knowing before you advise on a distribution: **declaring a dividend moves no
-money.** It hands the owner a claim, which the director's loan carries; only the two taxes
-leave the bank. So a company with almost nothing in the account can still declare the
-distribution that clears what its owner already drew — `get_director_loan` sizes it, and
-`cash_needed_cents` is the figure that has to be affordable, not the gross.
 
 A rule in `config.json` is never edited in place: a past payslip must stay reproducible
 under the rates it was computed with, so a change is a new dated entry. Say so, and then

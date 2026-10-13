@@ -8,6 +8,9 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Removed
+- **Dividends are gone, with both of their taxes.** The `dividends` array in `budget.json`, the `companyProfitTax` and `dividendTax` schedules in config.json's legislation, and every dividend row on the dashboard and the agent API are removed — the machinery existed to serve exceptional owner payouts, and the app refocuses on budgeting. A config.json entry still naming either tax is refused with a pointer to the removal; a budget.json carrying `dividends` fails validation.
+
 ## [2.0.0] - 2026-09-05
 
 Previewed as 2.0.0-rc.1 to 2.0.0-rc.4. The feature that defines 2.0 is the in-app chat: reconciling bank statements in a conversation inside Pocket CFO, with every write staged for approval, instead of driving an external agent against the API.

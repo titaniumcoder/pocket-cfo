@@ -72,8 +72,8 @@ func TestARateChangeReachesTheArithmetic(t *testing.T) {
 	p := bulgaria()
 	income := 5000.0
 
-	before := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2026, time.December}), SalaryDecision{Mode: SalaryFull}, companyStock{}, noDividend)
-	after := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2027, time.January}), SalaryDecision{Mode: SalaryFull}, companyStock{}, noDividend)
+	before := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2026, time.December}), SalaryDecision{Mode: SalaryFull}, companyStock{})
+	after := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2027, time.January}), SalaryDecision{Mode: SalaryFull}, companyStock{})
 
 	if before.GrossSalaryCents <= after.GrossSalaryCents {
 		t.Errorf("gross was %d before the rate rise and %d after — a higher employer rate must buy less salary",
@@ -91,8 +91,8 @@ func TestInsurableCapIsDatedToo(t *testing.T) {
 	p := bulgaria()
 	income := 20000.0 // comfortably past either cap
 
-	before := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2026, time.December}), SalaryDecision{Mode: SalaryFull}, companyStock{}, noDividend)
-	after := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2027, time.January}), SalaryDecision{Mode: SalaryFull}, companyStock{}, noDividend)
+	before := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2026, time.December}), SalaryDecision{Mode: SalaryFull}, companyStock{})
+	after := p.breakdown(income, 0, 1, p.rulesFor(yearMonth{2027, time.January}), SalaryDecision{Mode: SalaryFull}, companyStock{})
 
 	if after.EmployeeContribCents <= before.EmployeeContribCents {
 		t.Errorf("employee contribution %d before the cap rise, %d after — a higher ceiling means a bigger base",
@@ -123,7 +123,7 @@ func TestOneAlwaysInForcePeriodAppliesToEveryMonth(t *testing.T) {
 // appears whether or not the month produced it.
 func TestMinimumWageIsEnforcedWhateverTheCompanyEarned(t *testing.T) {
 	p := bulgaria()
-	lean := p.breakdown(0, 0, 1, p.rulesFor(yearMonth{2026, time.July}), SalaryDecision{Mode: SalaryFull}, companyStock{}, noDividend)
+	lean := p.breakdown(0, 0, 1, p.rulesFor(yearMonth{2026, time.July}), SalaryDecision{Mode: SalaryFull}, companyStock{})
 
 	if lean.GrossSalaryCents != 107700 {
 		t.Errorf("gross = %d, want the 1077 minimum even on no income", lean.GrossSalaryCents)
@@ -138,8 +138,8 @@ func TestMinimumWageIsEnforcedWhateverTheCompanyEarned(t *testing.T) {
 
 func TestMinimumWageDoesNotCapAGoodMonth(t *testing.T) {
 	p := bulgaria()
-	rich := p.breakdown(10000, 0, 1, p.rulesFor(yearMonth{2026, time.July}), SalaryDecision{Mode: SalaryFull}, companyStock{}, noDividend)
-	unfloored := params().breakdown(10000, 0, 1, params().rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{}, noDividend)
+	rich := p.breakdown(10000, 0, 1, p.rulesFor(yearMonth{2026, time.July}), SalaryDecision{Mode: SalaryFull}, companyStock{})
+	unfloored := params().breakdown(10000, 0, 1, params().rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
 
 	if rich.GrossSalaryCents != unfloored.GrossSalaryCents {
 		t.Errorf("gross = %d with a floor, %d without — a floor must not change an affordable salary",
@@ -152,8 +152,8 @@ func TestMinimumWageDoesNotCapAGoodMonth(t *testing.T) {
 
 func TestMinimumWageBeforeEmploymentChangesNothing(t *testing.T) {
 	before := yearMonth{2026, time.May}
-	with := bulgaria().breakdown(500, 0, 1, bulgaria().rulesFor(before), SalaryDecision{Mode: SalaryFull}, companyStock{}, noDividend)
-	without := params().breakdown(500, 0, 1, params().rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{}, noDividend)
+	with := bulgaria().breakdown(500, 0, 1, bulgaria().rulesFor(before), SalaryDecision{Mode: SalaryFull}, companyStock{})
+	without := params().breakdown(500, 0, 1, params().rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
 
 	if !reflect.DeepEqual(with, without) {
 		t.Errorf("May 2026 differs with legislation configured:\n with = %+v\n want = %+v", with, without)
@@ -206,7 +206,7 @@ func TestFloorFollowsThePayrollMonthNotTheIncomeMonth(t *testing.T) {
 // the contributions and tax below it.
 func TestAMonthThatCannotPayPaysNothing(t *testing.T) {
 	p := params()
-	underwater := p.breakdown(500, 2000, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{}, noDividend)
+	underwater := p.breakdown(500, 2000, 1, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
 	if underwater.GrossSalaryCents != 0 {
 		t.Fatalf("gross = %d, want 0 on a month that cannot pay", underwater.GrossSalaryCents)
 	}
@@ -218,7 +218,7 @@ func TestAMonthThatCannotPayPaysNothing(t *testing.T) {
 	// month funded it or not, so it is paid and charged for.
 	floored := p.rulesFor(testMonth)
 	floored.MinimumEUR = 1077
-	got := p.breakdown(500, 2000, 1, floored, SalaryDecision{Mode: SalaryFull}, companyStock{}, noDividend)
+	got := p.breakdown(500, 2000, 1, floored, SalaryDecision{Mode: SalaryFull}, companyStock{})
 	if !got.MinimumEnforced || got.GrossSalaryCents != 107700 {
 		t.Errorf("with a floor the month cannot fund, gross = %d, enforced = %v; want the minimum paid anyway",
 			got.GrossSalaryCents, got.MinimumEnforced)
@@ -251,96 +251,20 @@ func TestParseLegislation(t *testing.T) {
 	}
 }
 
-// TestParseDividendRates: the two rates a distribution is charged at are
-// dated legislation like every other government-set figure, so last year's
-// dividend stays reproducible when this year's rate moves.
-func TestParseDividendRates(t *testing.T) {
-	ok, err := ParseLegislation([]LegislationEntry{
+// TestTheTwoDividendTaxesAreRetired: dividends and both taxes are gone from
+// the tracker, so config entries still carrying them are named and refused
+// rather than silently ignored.
+func TestTheTwoDividendTaxesAreRetired(t *testing.T) {
+	_, err := ParseLegislation([]LegislationEntry{
 		{From: "2026-01",
 			CompanyProfitTax: &TaxEntry{Bands: []BandEntry{{From: 0, Rate: f64(0.10)}}},
 			DividendTax:      &TaxEntry{Bands: []BandEntry{{From: 0, Rate: f64(0.05)}}}},
 	})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("an entry naming the retired dividend taxes was accepted")
 	}
-	if !reflect.DeepEqual(ok[0].CompanyProfitTax, Bands{{From: 0, Rate: 0.10}}) {
-		t.Errorf("companyProfitTax = %v, want a flat 10%%", ok[0].CompanyProfitTax)
-	}
-	if !reflect.DeepEqual(ok[0].DividendTax, Bands{{From: 0, Rate: 0.05}}) {
-		t.Errorf("dividendTax = %v, want a flat 5%%", ok[0].DividendTax)
-	}
-
-	bad := map[string][]LegislationEntry{
-		"a profit tax naming no bands": {{From: "2026-01", CompanyProfitTax: &TaxEntry{}}},
-		"a dividend tax naming no bands": {{From: "2026-01",
-			DividendTax: &TaxEntry{}}},
-		"a band with no rate": {{From: "2026-01",
-			DividendTax: &TaxEntry{Bands: []BandEntry{{From: 0}}}}},
-		"a band opening above zero": {{From: "2026-01",
-			CompanyProfitTax: &TaxEntry{Bands: []BandEntry{{From: 100, Rate: f64(0.1)}}}}},
-	}
-	for name, entries := range bad {
-		if _, err := ParseLegislation(entries); err == nil {
-			t.Errorf("%s was accepted", name)
-		}
-	}
-}
-
-// TestALegislationEntryOfOnlyDividendRatesIsNotEmpty: an entry that states
-// nothing is refused, and the two new schedules are things it can state.
-func TestALegislationEntryOfOnlyDividendRatesIsNotEmpty(t *testing.T) {
-	if _, err := ParseLegislation([]LegislationEntry{
-		{From: "2026-01", DividendTax: &TaxEntry{Bands: []BandEntry{{From: 0, Rate: f64(0.05)}}}},
-	}); err != nil {
-		t.Errorf("an entry naming only a dividend rate was refused as stating nothing: %v", err)
-	}
-}
-
-// TestDividendRatesCarryForwardLikeEveryOtherRate: an entry states what
-// changed. A later package that moves the minimum wage must not silently
-// un-state the dividend rates it never mentioned.
-func TestDividendRatesCarryForwardLikeEveryOtherRate(t *testing.T) {
-	l := Legislation{
-		{From: yearMonth{2026, time.January},
-			CompanyProfitTax: Bands{{From: 0, Rate: 0.10}},
-			DividendTax:      Bands{{From: 0, Rate: 0.05}}},
-		{From: yearMonth{2027, time.January}, MinimumWage: f64(1150)},
-		{From: yearMonth{2028, time.January}, DividendTax: Bands{{From: 0, Rate: 0.07}}},
-	}
-
-	if before := l.rulesAt(yearMonth{2025, time.December}); before.DividendTax != nil {
-		t.Errorf("December 2025 has a dividend rate of %v — nothing was in force yet", before.DividendTax)
-	}
-	after := l.rulesAt(yearMonth{2027, time.June})
-	if !reflect.DeepEqual(after.DividendTax, Bands{{From: 0, Rate: 0.05}}) {
-		t.Errorf("June 2027 dividend tax = %v, want the 2026 rate carried forward", after.DividendTax)
-	}
-	if !reflect.DeepEqual(after.CompanyProfitTax, Bands{{From: 0, Rate: 0.10}}) {
-		t.Errorf("June 2027 company profit tax = %v, want the 2026 rate carried forward", after.CompanyProfitTax)
-	}
-	later := l.rulesAt(yearMonth{2028, time.June})
-	if !reflect.DeepEqual(later.DividendTax, Bands{{From: 0, Rate: 0.07}}) {
-		t.Errorf("June 2028 dividend tax = %v, want 2028's rate", later.DividendTax)
-	}
-	if !reflect.DeepEqual(later.CompanyProfitTax, Bands{{From: 0, Rate: 0.10}}) {
-		t.Errorf("2028 reset the profit tax it never mentioned: %v", later.CompanyProfitTax)
-	}
-}
-
-// TestNoLegislationStillMeansNoSalaryLegislation: the "nothing is contributed
-// or taxed" banner is a statement about the payroll side. A period that names
-// only dividend rates must not suppress it, or the banner disappears in
-// exactly the month where gross salary, both contributions and income tax are
-// all silently zero.
-func TestNoLegislationStillMeansNoSalaryLegislation(t *testing.T) {
-	r := Legislation{
-		{From: yearMonth{2026, time.January},
-			CompanyProfitTax: Bands{{From: 0, Rate: 0.10}},
-			DividendTax:      Bands{{From: 0, Rate: 0.05}}},
-	}.rulesAt(yearMonth{2026, time.August})
-
-	if !r.nothingInForce() {
-		t.Error("a period of dividend rates alone reads as salary legislation being in force, so the banner would vanish")
+	if !strings.Contains(err.Error(), "removed") {
+		t.Errorf("error = %q, want it to say the taxes are removed", err)
 	}
 }
 
@@ -362,7 +286,7 @@ func TestEnforcedMinimumIsVisible(t *testing.T) {
 		}
 	}
 	// The salary being the legal minimum is worth saying; what it cost beyond
-	// the period's own income is not, since dividends cover it.
+	// the period's own income is not.
 	if strings.Contains(body, "more than this period earned") {
 		t.Error("the shortfall note is back")
 	}
@@ -419,7 +343,7 @@ func TestNothingAppliesBeforeTheEarliestEntry(t *testing.T) {
 
 	// A salary computed there is charged nothing, and says so rather than
 	// looking like an ordinary payslip that happens to owe zero.
-	v := p.breakdown(5000, 0, 1, past, SalaryDecision{Mode: SalaryFull}, companyStock{}, noDividend)
+	v := p.breakdown(5000, 0, 1, past, SalaryDecision{Mode: SalaryFull}, companyStock{})
 	if v.EmployerContribCents != 0 || v.EmployeeContribCents != 0 || v.IncomeTaxCents != 0 {
 		t.Errorf("a month before the earliest entry was charged something: %+v", v)
 	}

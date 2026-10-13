@@ -13,15 +13,6 @@ type PersonalParams struct {
 	Salary SalaryPlan
 
 	Target TargetPlan
-
-	Dividends Dividends
-}
-
-// withDividends returns a copy, so the plan a request read off budget.json
-// never lands on the tracker's shared params.
-func (p PersonalParams) withDividends(d Dividends) PersonalParams {
-	p.Dividends = d
-	return p
 }
 
 // decide is the whole salary policy for one month. The salary block states it;
@@ -87,13 +78,6 @@ type PersonalView struct {
 	EmployeeContribCents int
 	IncomeTaxCents       int
 	NetIncomeCents       int
-
-	DividendCents         int
-	DividendTaxCents      int
-	CompanyProfitTaxCents int
-	DividendRows          []DividendRow
-	DividendTaxRate       []RateLine
-	CompanyProfitTaxRate  []RateLine
 
 	ShowCompanyBalance  bool
 	CompanyOpeningCents int
@@ -235,7 +219,7 @@ func oneRate(base, minBase float64, b Bands) []RateLine {
 	return []RateLine{{Rate: rate}}
 }
 
-func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, months int, r Rules, d SalaryDecision, stock companyStock, due dividendDue) PersonalView {
+func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, months int, r Rules, d SalaryDecision, stock companyStock) PersonalView {
 	if months <= 0 {
 		months = 1
 	}
@@ -243,12 +227,7 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 	monthlyRawIncome := totalIncomeEUR / float64(months)
 	monthlyCompanyExpenses := companyExpensesEUR / float64(months)
 
-	dividendEUR := toCent(due.AmountEUR)
-	profitTaxEUR := toCent(r.CompanyProfitTax.on(dividendEUR))
-	dividendTaxEUR := toCent(r.DividendTax.on(dividendEUR))
-
-	availableForPayroll := toCent(monthlyRawIncome - monthlyCompanyExpenses + stock.spendableEUR() -
-		dividendTaxEUR - profitTaxEUR)
+	availableForPayroll := toCent(monthlyRawIncome - monthlyCompanyExpenses + stock.spendableEUR())
 
 	gross, minimumEnforced := grossSalaryFor(d, r, availableForPayroll)
 	employerContrib := toCent(r.Employer.on(gross))
@@ -262,9 +241,6 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 
 	m := float64(months)
 	cents := func(x float64) int { return round(x * 100 * m) }
-	// A distribution is an absolute one-off, not a flow quoted per month, so it
-	// is not averaged across the range the way income and expenses are.
-	absolute := func(x float64) int { return round(x * 100) }
 	v := PersonalView{
 		NoLegislation:        r.nothingInForce(),
 		Mode:                 mode,
@@ -282,36 +258,10 @@ func (p PersonalParams) breakdown(totalIncomeEUR, companyExpensesEUR float64, mo
 		GrossSalaryCents:     cents(gross),
 		EmployeeContribCents: cents(employeeContrib),
 		IncomeTaxCents:       cents(incomeTax),
-
-		DividendCents:         absolute(dividendEUR),
-		DividendTaxCents:      absolute(dividendTaxEUR),
-		CompanyProfitTaxCents: absolute(profitTaxEUR),
-		DividendRows:          due.dividendRows(),
-		DividendTaxRate:       oneRate(dividendEUR, 0, r.DividendTax),
-		CompanyProfitTaxRate:  oneRate(dividendEUR, 0, r.CompanyProfitTax),
 	}
-	v.NetIncomeCents = cents(net) + v.DividendCents - v.DividendTaxCents
+	v.NetIncomeCents = cents(net)
 	v.closeCompanyOver(stock)
 	return v
-}
-
-// NetSalaryCents is net income with the distribution taken back out, which is
-// the part of it the private side may assume arrived without being told: a
-// salary is transferred every month, a dividend is settled irregularly or never
-// in cash. All three terms sum across a range, so this holds for a year too.
-func (v PersonalView) NetSalaryCents() int {
-	return v.NetIncomeCents - v.DividendCents + v.DividendTaxCents
-}
-
-// OneDividendDay dates the Dividend row itself when the period holds a single
-// distribution, which is the ordinary case. More than one and the row carries
-// the total instead, with a sub-row per entry, so the figure can be read back
-// against budget.json rather than being a sum nobody can check.
-func (v PersonalView) OneDividendDay() string {
-	if len(v.DividendRows) != 1 {
-		return ""
-	}
-	return v.DividendRows[0].Day
 }
 
 // carryCompanyStock is where a balance parts company with every other figure
@@ -349,9 +299,7 @@ func (m companyMonth) closesAt() int {
 		m.EmployerContribCents - m.GrossSalaryCents - m.CashOutCents
 }
 
-// plannedCompanyMonth is what the plan says will leave: the declared taxes,
-// charged with the distribution. A declared dividend is not among them — it
-// hands the owner a claim, and the director's loan is what carries it.
+// plannedCompanyMonth is what the plan says will leave.
 func (v PersonalView) plannedCompanyMonth(openingCents int) companyMonth {
 	return companyMonth{
 		OpeningCents:         openingCents,
@@ -359,7 +307,7 @@ func (v PersonalView) plannedCompanyMonth(openingCents int) companyMonth {
 		ExpensesCents:        v.CompanyExpensesCents,
 		EmployerContribCents: v.EmployerContribCents,
 		GrossSalaryCents:     v.GrossSalaryCents,
-		CashOutCents:         v.DividendTaxCents + v.CompanyProfitTaxCents,
+		CashOutCents:         0,
 	}
 }
 
@@ -368,11 +316,6 @@ func (v PersonalView) plannedCompanyMonth(openingCents int) companyMonth {
 // next month, so a half-cent here compounds down the year — and the rows on
 // the page have to add up to it, because that is the first thing a reader
 // checks.
-//
-// This is the company's CASH, not what it is worth. A declared dividend is
-// deliberately absent: it hands the owner an obligation, not money, and the
-// obligation is carried by the director's loan. Only the two taxes leave the
-// bank.
 func (v *PersonalView) closeCompanyOver(stock companyStock) {
 	if !stock.Known {
 		return
@@ -431,11 +374,7 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 		d := p.decide(ym, stock)
 		mode := d.Mode
 		rules := p.rulesFor(ym)
-		due := p.Dividends.dueIn(ym)
-		if problem := due.unrated(ym, rules); problem != "" {
-			return PersonalView{Err: problem}
-		}
-		m := p.breakdown(income, companyExpenses, 1, rules, d, stock, due)
+		m := p.breakdown(income, companyExpenses, 1, rules, d, stock)
 		one = m
 		switch mode {
 		case SalaryMinimum:
@@ -476,17 +415,12 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 		result.EmployeeContribCents += m.EmployeeContribCents
 		result.IncomeTaxCents += m.IncomeTaxCents
 		result.NetIncomeCents += m.NetIncomeCents
-		result.DividendCents += m.DividendCents
-		result.DividendTaxCents += m.DividendTaxCents
-		result.CompanyProfitTaxCents += m.CompanyProfitTaxCents
-		result.DividendRows = append(result.DividendRows, m.DividendRows...)
 		result.carryCompanyStock(m, i == 0)
 		stock.OpeningCents = m.CompanyClosingCents
 	}
 	months := len(monthlyIncomeEUR)
 	if months == 1 {
 		result.EmployerRate, result.EmployeeRate, result.IncomeTaxRate = one.EmployerRate, one.EmployeeRate, one.IncomeTaxRate
-		result.DividendTaxRate, result.CompanyProfitTaxRate = one.DividendTaxRate, one.CompanyProfitTaxRate
 		return result
 	}
 	result.EmployerRate = p.rateLines(start, months, func(r Rules) (Bands, float64) {
@@ -498,14 +432,6 @@ func (p PersonalParams) breakdownMonths(monthlyIncomeEUR, monthlyCompanyExpenses
 	result.IncomeTaxRate = p.rateLines(start, months, func(r Rules) (Bands, float64) {
 		return r.IncomeTax, 0
 	})
-	if result.DividendCents != 0 {
-		result.DividendTaxRate = p.rateLines(start, months, func(r Rules) (Bands, float64) {
-			return r.DividendTax, 0
-		})
-		result.CompanyProfitTaxRate = p.rateLines(start, months, func(r Rules) (Bands, float64) {
-			return r.CompanyProfitTax, 0
-		})
-	}
 	return result
 }
 

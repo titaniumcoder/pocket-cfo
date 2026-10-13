@@ -114,16 +114,12 @@ func ruleRows(l Legislation, ym yearMonth) []RuleRow {
 		{Name: "Employer contributions", Value: partyRules(r.Employer)},
 		{Name: "Employee contributions", Value: partyRules(r.Employee)},
 		{Name: "Income tax", Value: bandsOrNone(r.IncomeTax)},
-		{Name: "Company profit tax", Value: bandsOrNone(r.CompanyProfitTax)},
-		{Name: "Dividend tax", Value: bandsOrNone(r.DividendTax)},
 	}
 	stated := []func(LegislationPeriod) bool{
 		func(p LegislationPeriod) bool { return p.MinimumWage != nil },
 		func(p LegislationPeriod) bool { return p.Employer != nil },
 		func(p LegislationPeriod) bool { return p.Employee != nil },
 		func(p LegislationPeriod) bool { return p.IncomeTax != nil },
-		func(p LegislationPeriod) bool { return p.CompanyProfitTax != nil },
-		func(p LegislationPeriod) bool { return p.DividendTax != nil },
 	}
 	for i := range rows {
 		since, ok := l.lastStated(ym, stated[i])

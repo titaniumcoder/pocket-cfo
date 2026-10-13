@@ -10,12 +10,11 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 )
 
-func dividendService(t *testing.T) *Service {
+func testService(t *testing.T) *Service {
 	t.Helper()
 	legislation, err := tracker.ParseLegislation([]tracker.LegislationEntry{{
-		From:             "2026-01",
-		CompanyProfitTax: &tracker.TaxEntry{Bands: []tracker.BandEntry{{From: 0, Rate: rate(0.10)}}},
-		DividendTax:      &tracker.TaxEntry{Bands: []tracker.BandEntry{{From: 0, Rate: rate(0.05)}}},
+		From:      "2026-01",
+		IncomeTax: &tracker.TaxEntry{Bands: []tracker.BandEntry{{From: 0, Rate: rate(0.10)}}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -23,7 +22,7 @@ func dividendService(t *testing.T) *Service {
 	return &Service{
 		Budget: &tracker.Budget{FS: fstest.MapFS{"budget.json": &fstest.MapFile{Data: []byte(`{"groups":[
 			{"name":"Housing","kind":"private","categories":[{"id":"` + idRent + `","name":"Rent","amount":900}]}
-		],"dividends":[{"date":"2026-09-30","amount":10000,"note":"2025 profit distributed"}]}`)}}},
+		]}`)}}},
 		Personal: tracker.PersonalParams{Legislation: legislation},
 		Now:      func() time.Time { return time.Date(2026, time.September, 15, 0, 0, 0, 0, time.UTC) },
 	}
@@ -31,45 +30,11 @@ func dividendService(t *testing.T) *Service {
 
 func rate(v float64) *float64 { return &v }
 
-// TestGetBudgetReportsTheDividendWithItsTaxesWorkedOut: an agent that has to
-// recompute the taxes will resolve the rates to the wrong month sooner or
-// later, so the arithmetic travels with the plan.
-func TestGetBudgetReportsTheDividendWithItsTaxesWorkedOut(t *testing.T) {
-	s := dividendService(t)
-
-	mb, err := s.BudgetForMonth(context.Background(), "2026-09")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(mb.Dividends) != 1 {
-		t.Fatalf("got %d dividends, want the one planned for September: %+v", len(mb.Dividends), mb.Dividends)
-	}
-	d := mb.Dividends[0]
-	if d.GrossCents != 1000000 || d.CompanyProfitTaxCents != 100000 || d.DividendTaxCents != 50000 {
-		t.Errorf("dividend = %+v, want 10000 gross with 10%% and 5%% worked out", d)
-	}
-	if d.NetToOwnerCents != 950000 {
-		t.Errorf("net to owner = %d, want the gross less its dividend tax", d.NetToOwnerCents)
-	}
-	if d.CostToCompanyCents != 1100000 {
-		t.Errorf("cost to company = %d, want the gross plus its profit tax", d.CostToCompanyCents)
-	}
-
-	// A month without one says nothing rather than reporting a zero.
-	quiet, err := s.BudgetForMonth(context.Background(), "2026-08")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(quiet.Dividends) != 0 {
-		t.Errorf("August reports %+v, want no distribution at all", quiet.Dividends)
-	}
-}
-
-// TestGetFinanceConfigNamesTheDividendRates, and says it cannot be written
+// TestGetFinanceConfigNamesTheRates, and says it cannot be written
 // here — otherwise the first thing an agent does with a rate it disagrees with
 // is look for the tool to change it.
-func TestGetFinanceConfigNamesTheDividendRates(t *testing.T) {
-	cfg, err := dividendService(t).FinanceConfig(context.Background())
+func TestGetFinanceConfigNamesTheRates(t *testing.T) {
+	cfg, err := testService(t).FinanceConfig(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,10 +44,8 @@ func TestGetFinanceConfigNamesTheDividendRates(t *testing.T) {
 	if cfg.Legislation[0].From != "2026-01" {
 		t.Errorf("from = %q, want it spelled as config.json spells it", cfg.Legislation[0].From)
 	}
-	for _, want := range []string{"company profit tax 10%", "dividend tax 5%"} {
-		if !strings.Contains(cfg.Legislation[0].InForce, want) {
-			t.Errorf("the period %q never says %q", cfg.Legislation[0].InForce, want)
-		}
+	if !strings.Contains(cfg.Legislation[0].InForce, "tax 10%") {
+		t.Errorf("the period %q never names its rate", cfg.Legislation[0].InForce)
 	}
 	if !strings.Contains(cfg.ReadOnly, "never through this API") {
 		t.Errorf("read_only = %q, want it to say plainly that this cannot be written here", cfg.ReadOnly)
@@ -138,72 +101,6 @@ func TestGetDirectorLoanSaysUnknownRatherThanZero(t *testing.T) {
 	}
 	if got.ClosingCents != 0 || got.OpeningCents != 0 {
 		t.Errorf("an unknown loan carries figures: %+v", got)
-	}
-}
-
-// TestADividendReportsTheCashItNeedsAndNotOnlyWhatItCosts: an agent reading
-// only cost_to_company_cents will take it for money the company must have, and
-// repeat exactly the mistake this correction fixed.
-func TestADividendReportsTheCashItNeedsAndNotOnlyWhatItCosts(t *testing.T) {
-	mb, err := dividendService(t).BudgetForMonth(context.Background(), "2026-09")
-	if err != nil {
-		t.Fatal(err)
-	}
-	d := mb.Dividends[0]
-	if d.CostToCompanyCents != 1100000 {
-		t.Errorf("cost to company = %d, want the gross plus its profit tax", d.CostToCompanyCents)
-	}
-	if d.CashNeededCents != 150000 {
-		t.Errorf("cash needed = %d, want only the two taxes", d.CashNeededCents)
-	}
-	if d.CashNeededCents >= d.CostToCompanyCents {
-		t.Error("the cash needed is not smaller than the cost, so the two say the same thing")
-	}
-}
-
-// TestTheLoanReportsTheDistributionThatWouldClearIt is the question that
-// started the correction, answered where it is asked.
-func TestTheLoanReportsTheDistributionThatWouldClearIt(t *testing.T) {
-	s := dividendService(t)
-	s.Figures = func(context.Context, int, time.Month) (tracker.Figures, error) {
-		// The owner is overdrawn by 17,000.
-		return tracker.Figures{ShowDirectorLoan: true, LoanClosingCents: -1700000}, nil
-	}
-
-	got, err := s.DirectorLoanFor(context.Background(), "2026-09")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Clearing == nil {
-		t.Fatal("an overdrawn loan reports no distribution that would clear it")
-	}
-	if got.Clearing.GrossCents != 1789474 {
-		t.Errorf("gross = %d, want 17,894.74 — the net has to land on 17,000", got.Clearing.GrossCents)
-	}
-	if got.Clearing.CashNeededCents != 268421 {
-		t.Errorf("cash needed = %d, want the 2,684.21 of tax", got.Clearing.CashNeededCents)
-	}
-	// The net of the gross must be the debt, to the cent — that is the whole
-	// point of solving for it rather than guessing.
-	if net := got.Clearing.GrossCents - got.Clearing.DividendTaxCents; net != 1700000 {
-		t.Errorf("the distribution nets %d, want it to settle the 17,000 exactly", net)
-	}
-}
-
-// TestALoanTheCompanyOwesReportsNoClearingDividend: a dividend is not the
-// instrument for that direction, and inventing one would be advice nobody
-// asked for.
-func TestALoanTheCompanyOwesReportsNoClearingDividend(t *testing.T) {
-	s := dividendService(t)
-	s.Figures = func(context.Context, int, time.Month) (tracker.Figures, error) {
-		return tracker.Figures{ShowDirectorLoan: true, LoanClosingCents: 320000}, nil
-	}
-	got, err := s.DirectorLoanFor(context.Background(), "2026-09")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Clearing != nil {
-		t.Errorf("a loan the company owes reports a clearing dividend: %+v", got.Clearing)
 	}
 }
 

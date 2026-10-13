@@ -521,8 +521,8 @@ func TestTheCompanyBalanceFundsPayroll(t *testing.T) {
 	r := p.rulesFor(yearMonth{2026, time.July})
 	full := SalaryDecision{Mode: SalaryFull}
 
-	broke := p.breakdown(1000, 0, 1, r, full, companyStock{Known: true}, noDividend)
-	holding := p.breakdown(1000, 0, 1, r, full, companyStock{Known: true, OpeningCents: 300000}, noDividend)
+	broke := p.breakdown(1000, 0, 1, r, full, companyStock{Known: true})
+	holding := p.breakdown(1000, 0, 1, r, full, companyStock{Known: true, OpeningCents: 300000})
 
 	if holding.GrossSalaryCents <= broke.GrossSalaryCents {
 		t.Errorf("gross = %d holding 3,000, %d holding nothing — the balance bought no salary",
@@ -535,7 +535,7 @@ func TestTheCompanyBalanceFundsPayroll(t *testing.T) {
 		t.Errorf("closing = %d, want 0 — a full salary leaves nothing behind", holding.CompanyClosingCents)
 	}
 	// And an overdrawn company shrinks payroll instead of being ignored.
-	overdrawn := p.breakdown(1000, 0, 1, r, full, companyStock{Known: true, OpeningCents: -50000}, noDividend)
+	overdrawn := p.breakdown(1000, 0, 1, r, full, companyStock{Known: true, OpeningCents: -50000})
 	if overdrawn.GrossSalaryCents >= broke.GrossSalaryCents {
 		t.Errorf("gross = %d while 500 overdrawn, %d level — the debt cost nothing",
 			overdrawn.GrossSalaryCents, broke.GrossSalaryCents)
@@ -556,7 +556,7 @@ func TestTheClosingBalanceIsTheRowsAboveIt(t *testing.T) {
 		{Mode: SalaryFixed, FixedEUR: 1234.56},
 		{Mode: SalaryFull},
 	} {
-		v := p.breakdown(3333.33, 111.11, 1, r, d, companyStock{Known: true, OpeningCents: 777777}, noDividend)
+		v := p.breakdown(3333.33, 111.11, 1, r, d, companyStock{Known: true, OpeningCents: 777777})
 		want := v.CompanyOpeningCents + v.CompanyIncomeCents - v.CompanyExpensesCents -
 			v.EmployerContribCents - v.GrossSalaryCents
 		if v.CompanyClosingCents != want {
@@ -574,8 +574,8 @@ func TestAnUnknownCompanyBalanceChangesNothing(t *testing.T) {
 	r := p.rulesFor(yearMonth{2026, time.July})
 	d := SalaryDecision{Mode: SalaryFull}
 
-	unknown := p.breakdown(4000, 250, 1, r, d, companyStock{}, noDividend)
-	zero := p.breakdown(4000, 250, 1, r, d, companyStock{Known: true}, noDividend)
+	unknown := p.breakdown(4000, 250, 1, r, d, companyStock{})
+	zero := p.breakdown(4000, 250, 1, r, d, companyStock{Known: true})
 
 	if unknown.GrossSalaryCents != zero.GrossSalaryCents {
 		t.Errorf("gross = %d unknown, %d known-zero — they must agree on the money",

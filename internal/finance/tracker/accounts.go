@@ -321,7 +321,7 @@ func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, ra
 	}
 	privateCents, companyCents, av := t.closingExpenses(ctx, m, bv)
 	fundingStart, fundingEnd := fundingRangeForMonth(m.Year, m.Month)
-	pv := t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(companyCents)/100, bv.CompanyGroups, company, bv.Dividends)
+	pv := t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(companyCents)/100, bv.CompanyGroups, company)
 	if pv.Err != "" {
 		return monthClosing{}, fmt.Errorf("accounts: income for %s: %s", m, pv.Err)
 	}
@@ -336,7 +336,7 @@ func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, ra
 
 // privateClosedOn is what funded the private account over a walked month, and
 // it obeys the same all-or-nothing rule as the expenses it is about to be netted
-// against: a fully imported month is funded by the net salary the plan assumes
+// against: a fully imported month is funded by the net income the plan assumes
 // plus what the statements say actually reached the owner besides it, and any
 // other month is funded by net income alone, the way it always was.
 //
@@ -350,14 +350,13 @@ func privateClosedOn(pv PersonalView, av ActualsView, imported bool) int {
 	if !imported {
 		return pv.NetIncomeCents
 	}
-	return pv.NetSalaryCents() + av.ArrivedPrivatelyCents
+	return pv.NetIncomeCents + av.ArrivedPrivatelyCents
 }
 
 // companyClosedOn seeds the next month, so it follows the same all-or-nothing
 // rule the expenses follow: a fully imported month closes on what the bank
 // says left — the draws and the taxes actually paid — and any other month
-// closes on the plan, which charges the taxes a distribution declared and
-// knows nothing of draws. Mixing them would charge a declared tax and an
+// closes on the plan. Mixing them would charge a declared tax and an
 // imported part of that same tax into a figure that is then carried for good.
 func companyClosedOn(pv PersonalView, av ActualsView, imported bool) int {
 	if !imported || !pv.ShowCompanyBalance {

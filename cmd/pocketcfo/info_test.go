@@ -159,7 +159,7 @@ func TestHandleInfo_ShowsTheToggl2Panel(t *testing.T) {
 func TestHandleInfo_RendersTheRulesTimeline(t *testing.T) {
 	s := newInfoTestServer(t)
 	legislation, err := tracker.ParseLegislation([]tracker.LegislationEntry{
-		{From: "2026-01", DividendTax: &tracker.TaxEntry{Bands: []tracker.BandEntry{{From: 0, Rate: ratePtr(0.05)}}}},
+		{From: "2026-01", IncomeTax: &tracker.TaxEntry{Bands: []tracker.BandEntry{{From: 0, Rate: ratePtr(0.05)}}}},
 		{From: "2026-07", MinimumWage: ratePtr(1077)},
 	})
 	if err != nil {

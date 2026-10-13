@@ -10,10 +10,8 @@ func timelineParams(t *testing.T) PersonalParams {
 	t.Helper()
 	legislation, err := ParseLegislation([]LegislationEntry{
 		{From: "2026-01",
-			Contributions:    &ContributionsEntry{Employer: &PartyEntry{Bands: []BandEntry{{From: 0, Rate: f64(0.1892)}, {From: 2112, Rate: f64(0)}}}},
-			IncomeTax:        &TaxEntry{Bands: []BandEntry{{From: 0, Rate: f64(0.10)}}},
-			CompanyProfitTax: &TaxEntry{Bands: []BandEntry{{From: 0, Rate: f64(0.10)}}},
-			DividendTax:      &TaxEntry{Bands: []BandEntry{{From: 0, Rate: f64(0.05)}}}},
+			Contributions: &ContributionsEntry{Employer: &PartyEntry{Bands: []BandEntry{{From: 0, Rate: f64(0.1892)}, {From: 2112, Rate: f64(0)}}}},
+			IncomeTax:     &TaxEntry{Bands: []BandEntry{{From: 0, Rate: f64(0.10)}}}},
 		{From: "2026-07", MinimumWage: f64(1077)},
 	})
 	if err != nil {
@@ -75,11 +73,8 @@ func TestRulesTimelineMarksWhatChangedAndWhatCarriedForward(t *testing.T) {
 	}
 
 	jan := rows("January 2026")
-	if r := jan["Dividend tax"]; r.Value != "5%" || !r.Changed || r.Since != "" {
-		t.Errorf("January dividend tax = %+v", r)
-	}
-	if r := jan["Company profit tax"]; r.Value != "10%" || !r.Changed {
-		t.Errorf("January company profit tax = %+v", r)
+	if r := jan["Income tax"]; r.Value != "10%" || !r.Changed || r.Since != "" {
+		t.Errorf("January income tax = %+v", r)
 	}
 	if r := jan["Minimum wage"]; r.Value != "none" || r.Changed || r.Since != "" {
 		t.Errorf("January minimum wage = %+v, want none and unstated", r)
@@ -95,8 +90,8 @@ func TestRulesTimelineMarksWhatChangedAndWhatCarriedForward(t *testing.T) {
 	if r := jul["Minimum wage"]; r.Value != "1,077" || !r.Changed {
 		t.Errorf("July minimum wage = %+v", r)
 	}
-	if r := jul["Dividend tax"]; r.Value != "5%" || r.Changed || r.Since != "January 2026" {
-		t.Errorf("July dividend tax = %+v, want carried forward since January 2026", r)
+	if r := jul["Income tax"]; r.Value != "10%" || r.Changed || r.Since != "January 2026" {
+		t.Errorf("July income tax = %+v, want carried forward since January 2026", r)
 	}
 }
 
@@ -131,8 +126,8 @@ func TestRulesTimelineSaysWhatSalaryAndTargetApply(t *testing.T) {
 	if r := row("November 2026", "Target balance"); r.Value != "15,000 — from November 2026" || !r.Changed {
 		t.Errorf("November target = %+v, want the new target, changed", r)
 	}
-	if r := row("July 2026", "Dividend tax"); r.Changed || r.Since != "January 2026" {
-		t.Errorf("July dividend tax = %+v, want carried forward", r)
+	if r := row("July 2026", "Income tax"); r.Changed || r.Since != "January 2026" {
+		t.Errorf("July income tax = %+v, want carried forward", r)
 	}
 }
 

@@ -182,8 +182,7 @@ type Figures struct {
 	ArrivedPrivatelyCents int
 	ActualAvailableCents  int
 
-	TargetNeedsBalanceNote   string
-	DividendNeedsBalanceNote string
+	TargetNeedsBalanceNote string
 
 	ShowCompanyWorth  bool
 	OwedToOwnerCents  int
@@ -296,7 +295,6 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	carried, snap, opened, accountsErr := t.carriedBalances(ctx, viewed, now, months, rateCents)
 	result.AccountsErr = accountsErr
 	result.TargetNeedsBalanceNote = t.targetNeedsBalanceNote(viewed, months, carried)
-	result.DividendNeedsBalanceNote = t.dividendNeedsBalanceNote(viewed, months, carried, bv)
 
 	result.computePersonal(t, ctx, year, months, viewed, monthlyCompanyCents, bv, carried.Company)
 
@@ -502,7 +500,7 @@ func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months 
 		first, _ := yearMonthRange(year, t.startMonth())
 		start := time.Date(year, first, 1, 0, 0, 0, 0, t.Loc)
 		end := time.Date(year, time.December, 31, 0, 0, 0, 0, t.Loc)
-		f.Personal = t.Personal.withDividends(bv.Dividends).breakdownMonths(
+		f.Personal = t.Personal.breakdownMonths(
 			monthlyIncomeEUR(start, end, monthlyCompanyCents),
 			monthlyIncomeEUR(start, end, monthlyCompanyExpenseCents),
 			yearMonth{year, first},
@@ -511,13 +509,8 @@ func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months 
 	} else {
 		stock := t.Personal.targetStock(viewed, company)
 		rules := t.Personal.rulesFor(viewed)
-		due := bv.Dividends.dueIn(viewed)
-		if problem := due.unrated(viewed, rules); problem != "" {
-			f.Personal = PersonalView{Err: problem}
-			return
-		}
 		f.Personal = t.Personal.breakdown(float64(f.TotalCents)/100, float64(bv.CompanyTotalPlannedCents)/100, 1,
-			rules, t.Personal.decide(viewed, stock), stock, due)
+			rules, t.Personal.decide(viewed, stock), stock)
 	}
 	f.Personal.CompanyGroups = bv.CompanyGroups
 }
@@ -538,7 +531,7 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 	} else {
 		fundingStart, fundingEnd = fundingRangeForMonth(year, start.Month())
 	}
-	f.FundingPersonal = t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(bv.CompanyTotalPlannedCents)/100, bv.CompanyGroups, carried.Company, bv.Dividends)
+	f.FundingPersonal = t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(bv.CompanyTotalPlannedCents)/100, bv.CompanyGroups, carried.Company)
 
 	if t.Budget == nil {
 		return
@@ -569,10 +562,10 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 // assigned yet, and only the pair says so.
 //
 // It is also where a draw is finally worth something. The plan can only assume
-// the net salary arrived and knows of no other funding, so the planned column
-// stays on that assumption; the Actual column starts from the same net salary
+// the net income arrived and knows of no other funding, so the planned column
+// stays on that assumption; the Actual column starts from the same net income
 // and then adds what the statements say actually reached the owner besides it.
-// The residual — net salary the company never transferred — is the director's
+// The residual — net income the company never transferred — is the director's
 // loan's own movement row, so the two figures disagree by exactly the thing the
 // loan is there to report, and neither has to guess.
 func (f *Figures) publishBalanceTheBankSaw(months int) {
@@ -580,7 +573,7 @@ func (f *Figures) publishBalanceTheBankSaw(months int) {
 		return
 	}
 	f.ShowActualBalance = true
-	f.ActualAvailableCents = f.OpeningBalanceCents + f.FundingPersonal.NetSalaryCents() + f.ArrivedPrivatelyCents
+	f.ActualAvailableCents = f.OpeningBalanceCents + f.FundingPersonal.NetIncomeCents + f.ArrivedPrivatelyCents
 	f.ActualBalanceCents = f.ActualAvailableCents - f.PrivateActualCents
 	pv := f.FundingPersonal
 	// The Actual column takes what the statements say left the bank, where the
@@ -628,23 +621,6 @@ func (t *Tracker) targetNeedsBalanceNote(viewed yearMonth, months int, carried o
 	}
 	return "A target balance of " + formatEuro(round(amount*100)) + " is set for this month, but no company account is declared in accounts.json — " +
 		"there is no balance to compare it against, so the target does nothing. Add the account with \"kind\": \"company\"."
-}
-
-// dividendNeedsBalanceNote covers the case where a distribution is charged
-// against a pot nobody declared: with no company balance the whole "Left in
-// the company" block disappears, so the money leaving it leaves no trace on
-// the page beyond a salary that shrank for no visible reason.
-func (t *Tracker) dividendNeedsBalanceNote(viewed yearMonth, months int, carried openings, bv BudgetView) string {
-	if months != 1 || carried.Company.Known {
-		return ""
-	}
-	due := bv.Dividends.dueIn(viewed)
-	if due.none() {
-		return ""
-	}
-	return "A dividend of " + formatEuro(round(due.AmountEUR*100)) + " is paid this month, but no company account is declared in accounts.json — " +
-		"there is no balance to take it out of, so the company's closing figure is not shown. Its two taxes still reduce what a full salary can afford. " +
-		"Add the account with \"kind\": \"company\"."
 }
 
 // computeDirectorLoan carries the running balance between the owner and the

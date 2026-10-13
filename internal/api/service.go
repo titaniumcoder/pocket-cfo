@@ -98,7 +98,6 @@ type MonthBudget struct {
 	Categories        []PlannedCategory `json:"categories"`
 	TotalPrivateCents int               `json:"total_private_cents"`
 	TotalCompanyCents int               `json:"total_company_cents"`
-	Dividends         []DividendPlanned `json:"dividends,omitempty"`
 	SHA               string            `json:"sha,omitempty"`
 }
 
@@ -112,7 +111,6 @@ func (s *Service) BudgetForMonth(ctx context.Context, month string) (*MonthBudge
 		return nil, errorf(CodeInternal, "reading budget.json: %v", err)
 	}
 	mb := monthBudgetOf(month, planned)
-	mb.Dividends = s.dividendsIn(ctx, year, m)
 	mb.SHA = s.budgetSHA(ctx)
 	return mb, nil
 }
@@ -128,20 +126,6 @@ func (s *Service) budgetSHA(ctx context.Context) string {
 	return sha
 }
 
-// dividendsIn reports the month's distributions with both taxes worked out,
-// so the agent reads the arithmetic rather than recomputing it from rates it
-// might resolve to the wrong month.
-func (s *Service) dividendsIn(ctx context.Context, year int, month time.Month) []DividendPlanned {
-	if s.Budget == nil {
-		return nil
-	}
-	bv, err := s.Budget.ForMonth(ctx, year, month, s.now(), false)
-	if err != nil {
-		return nil
-	}
-	return s.Personal.DividendsIn(bv.Dividends, year, month)
-}
-
 func (s *Service) BudgetForYear(ctx context.Context, year string) ([]*MonthBudget, error) {
 	y, err := strconv.Atoi(year)
 	if err != nil || y < 1970 || y > 9999 {
@@ -154,9 +138,7 @@ func (s *Service) BudgetForYear(ctx context.Context, year string) ([]*MonthBudge
 	out := make([]*MonthBudget, 0, 12)
 	for m := time.January; m <= time.December; m++ {
 		key := monthKey(y, m)
-		mb := monthBudgetOf(key, byMonth[key])
-		mb.Dividends = s.dividendsIn(ctx, y, m)
-		out = append(out, mb)
+		out = append(out, monthBudgetOf(key, byMonth[key]))
 	}
 	return out, nil
 }

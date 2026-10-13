@@ -88,13 +88,11 @@ type PartySchedule struct {
 }
 
 type LegislationPeriod struct {
-	From             yearMonth
-	MinimumWage      *float64
-	Employer         *PartySchedule
-	Employee         *PartySchedule
-	IncomeTax        Bands
-	CompanyProfitTax Bands
-	DividendTax      Bands
+	From        yearMonth
+	MinimumWage *float64
+	Employer    *PartySchedule
+	Employee    *PartySchedule
+	IncomeTax   Bands
 }
 
 type Legislation []LegislationPeriod
@@ -105,12 +103,10 @@ type PartyRules struct {
 }
 
 type Rules struct {
-	MinimumEUR       float64
-	Employer         PartyRules
-	Employee         PartyRules
-	IncomeTax        Bands
-	CompanyProfitTax Bands
-	DividendTax      Bands
+	MinimumEUR float64
+	Employer   PartyRules
+	Employee   PartyRules
+	IncomeTax  Bands
 }
 
 func (r Rules) nothingInForce() bool {
@@ -180,12 +176,6 @@ func ParseLegislation(entries []LegislationEntry) (Legislation, error) {
 		if p.IncomeTax, err = parseTax(i, ym, "incomeTax", e.IncomeTax); err != nil {
 			return nil, err
 		}
-		if p.CompanyProfitTax, err = parseTax(i, ym, "companyProfitTax", e.CompanyProfitTax); err != nil {
-			return nil, err
-		}
-		if p.DividendTax, err = parseTax(i, ym, "dividendTax", e.DividendTax); err != nil {
-			return nil, err
-		}
 		if p.empty() {
 			return nil, fmt.Errorf("legislation[%d] (%s) changes nothing — an entry that states no figure is a date nobody can act on", i, ym)
 		}
@@ -225,6 +215,9 @@ func rejectRetiredKeys(i int, e LegislationEntry) error {
 	if e.IncomeTaxRate != nil {
 		return fmt.Errorf("%s still uses incomeTaxRate, which is no longer read: write \"incomeTax\": {\"bands\": [{\"from\": 0, \"rate\": %s}]}",
 			where, formatRate(*e.IncomeTaxRate))
+	}
+	if e.CompanyProfitTax != nil || e.DividendTax != nil {
+		return fmt.Errorf("%s still states companyProfitTax or dividendTax. Dividends and both taxes have been removed from the tracker; delete the two entries", where)
 	}
 	return nil
 }
@@ -289,7 +282,7 @@ func parseBands(i int, ym yearMonth, where string, entries []BandEntry) (Bands, 
 
 func (p LegislationPeriod) empty() bool {
 	return p.MinimumWage == nil && p.Employer == nil && p.Employee == nil &&
-		p.IncomeTax == nil && p.CompanyProfitTax == nil && p.DividendTax == nil
+		p.IncomeTax == nil
 }
 
 func (p LegislationPeriod) String() string {
@@ -314,7 +307,7 @@ func (p LegislationPeriod) String() string {
 	for _, f := range []struct {
 		name  string
 		bands Bands
-	}{{"tax", p.IncomeTax}, {"company profit tax", p.CompanyProfitTax}, {"dividend tax", p.DividendTax}} {
+	}{{"tax", p.IncomeTax}} {
 		if f.bands != nil {
 			parts = append(parts, f.name+" "+f.bands.String())
 		}
@@ -344,12 +337,6 @@ func (l Legislation) rulesAt(ym yearMonth) Rules {
 		applyParty(&r.Employee, period.Employee)
 		if period.IncomeTax != nil {
 			r.IncomeTax = period.IncomeTax
-		}
-		if period.CompanyProfitTax != nil {
-			r.CompanyProfitTax = period.CompanyProfitTax
-		}
-		if period.DividendTax != nil {
-			r.DividendTax = period.DividendTax
 		}
 	}
 	return r

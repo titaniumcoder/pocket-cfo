@@ -2,30 +2,64 @@
   "hoursPerDay": 8,
   "togglProjectIds": [],
   "holidaySubdivision": "",
-
   "hourlyRateCents": 7500,
   "currency": "EUR",
   "annualVacationDays": 25,
-
   "legislation": [
     {
       "from": "2026-01",
       "contributions": {
-        "employer": { "bands": [ { "from": 0, "rate": 0.1892 }, { "from": 2112, "rate": 0 } ] },
-        "employee": { "bands": [ { "from": 0, "rate": 0.1378 }, { "from": 2112, "rate": 0 } ] }
+        "employer": {
+          "bands": [
+            {
+              "from": 0,
+              "rate": 0.1892
+            },
+            {
+              "from": 2112,
+              "rate": 0
+            }
+          ]
+        },
+        "employee": {
+          "bands": [
+            {
+              "from": 0,
+              "rate": 0.1378
+            },
+            {
+              "from": 2112,
+              "rate": 0
+            }
+          ]
+        }
       },
-      "incomeTax": { "bands": [ { "from": 0, "rate": 0.10 } ] },
-      "companyProfitTax": { "bands": [ { "from": 0, "rate": 0.10 } ] },
-      "dividendTax": { "bands": [ { "from": 0, "rate": 0.05 } ] }
+      "incomeTax": {
+        "bands": [
+          {
+            "from": 0,
+            "rate": 0.1
+          }
+        ]
+      }
     },
-    { "from": "2026-07", "minimumWage": 1077 }
+    {
+      "from": "2026-07",
+      "minimumWage": 1077
+    }
   ],
-
   "salary": [
-    { "from": "2026-09", "to": "2026-10", "mode": "fixed", "amount": 2500 }
+    {
+      "from": "2026-09",
+      "to": "2026-10",
+      "mode": "fixed",
+      "amount": 2500
+    }
   ],
-
   "targetBalance": [
-    { "from": "2026-11", "amount": 15000 }
+    {
+      "from": "2026-11",
+      "amount": 15000
+    }
   ]
 }

@@ -185,7 +185,7 @@ func TestADrawIsBothAnAssetAndALiabilityAndTheTwoAgree(t *testing.T) {
 func TestTheTwoColumnsAgreeExactlyWhenTheMonthWentToPlan(t *testing.T) {
 	// What the plan says will arrive, read off the page rather than restated.
 	planned := loanTracker(t, "2026-07-31", 12400, nil).ComputeMonth(context.Background(), 2026, time.August)
-	netSalary := planned.FundingPersonal.NetSalaryCents()
+	netSalary := planned.FundingPersonal.NetIncomeCents
 	if netSalary == 0 {
 		t.Fatal("the fixture pays no salary, so this test would hold for the wrong reason")
 	}

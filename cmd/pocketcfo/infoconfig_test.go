@@ -157,15 +157,14 @@ func TestConfigGroupsNameEverySettingTheProcessReads(t *testing.T) {
 	}
 }
 
-// TestTheInfoPageNamesTheDividendRates: a rate that charges a real
-// distribution has to be inspectable on the running deployment, the same way
+// TestTheInfoPageNamesTheIncomeTax: a rate that charges a real
+// payslip has to be inspectable on the running deployment, the same way
 // every other dated figure in config.json already is — /info is the only place
 // that says which package is actually loaded.
-func TestTheInfoPageNamesTheDividendRates(t *testing.T) {
+func TestTheInfoPageNamesTheIncomeTax(t *testing.T) {
 	periods, err := tracker.ParseLegislation([]tracker.LegislationEntry{
 		{From: "2026-01",
-			CompanyProfitTax: &tracker.TaxEntry{Bands: []tracker.BandEntry{{From: 0, Rate: ratePtr(0.10)}}},
-			DividendTax:      &tracker.TaxEntry{Bands: []tracker.BandEntry{{From: 0, Rate: ratePtr(0.05)}}}},
+			IncomeTax: &tracker.TaxEntry{Bands: []tracker.BandEntry{{From: 0, Rate: ratePtr(0.10)}}}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -179,10 +178,8 @@ func TestTheInfoPageNamesTheDividendRates(t *testing.T) {
 	for _, r := range entries[0].Rules {
 		got[r.Name] = r.Value
 	}
-	for name, want := range map[string]string{"Company profit tax": "10%", "Dividend tax": "5%"} {
-		if got[name] != want {
-			t.Errorf("the /info rules timeline says %s = %q, want %q", name, got[name], want)
-		}
+	if got["Income tax"] != "10%" {
+		t.Errorf("the /info rules timeline says income tax = %q, want 10%%", got["Income tax"])
 	}
 }
 

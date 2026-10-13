@@ -8,6 +8,8 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [4.6.0] - 2026-10-13
+
 ### Added
 - **An invoice can carry a `tracking_until` date.** The optional field names the day the invoice's coverage of Toggl trackings ends, up to and including it — the clean separation for clients charged more often than monthly. Absent means the invoice covers everything up to the end of its issue month. `pocket-cfo-ctl validate` accepts it as a date.
 - **`togglIgnoredClientIds` in config.json.** A Toggl client id on the list — the own company's, or any client that will never be invoiced — has its hours excluded from income and estimates.
@@ -15,6 +17,7 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ### Changed
 - **Company income estimates the months no invoice covers yet.** A worked month whose invoice does not exist yet contributes an estimated invoice to the salary cascade — the tracked hours plus the expected workdays the client's invoices do not already cover, landing as income two months after the work, where the real invoice will land once the hours are in. With Toggl unreachable the estimates drop and the real invoices alone remain, with the usual error note.
+
 ## [4.5.0] - 2026-10-13
 
 ### Removed
@@ -618,7 +621,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.5.0...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.6.0...HEAD
+[4.6.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.5.0...v4.6.0
 [4.5.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.4.1...v4.5.0
 [4.4.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.4.0...v4.4.1
 [4.4.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.3.0...v4.4.0

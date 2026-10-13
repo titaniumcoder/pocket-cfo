@@ -179,48 +179,36 @@ func TestComputeYearHidesVacationWhenNoneRemaining(t *testing.T) {
 	}
 }
 
-func TestComputeYearPersonalIncomeUsesMonthlyBreakdowns(t *testing.T) {
-	row := `[
-		{"project_id":1,"hourly_rate_in_cents":10000,"billable_amount_in_cents":100000,"currency":"EUR","time_entries":[{"seconds":36000,"start":"2025-06-02T09:00:00+00:00"}]},
-		{"project_id":1,"hourly_rate_in_cents":10000,"billable_amount_in_cents":300000,"currency":"EUR","time_entries":[{"seconds":108000,"start":"2025-07-02T09:00:00+00:00"}]},
-		{"project_id":1,"hourly_rate_in_cents":10000,"billable_amount_in_cents":1000000,"currency":"EUR","time_entries":[{"seconds":360000,"start":"2025-08-02T09:00:00+00:00"}]}
-	]`
-	b := &fakeBackend{
-		detailed: func(page int) (string, string, string) { return row, "", "" },
-		projects: `[{"id":1,"name":"Alpha"}]`,
-	}
-	client := b.transport()
+// TestComputeYearIncomeUsesMonthlyBreakdowns: the year's cascade is twelve
+// month-local breakdowns, not one annual smoothing — income is what each
+// month's own invoices brought in.
+func TestComputeYearIncomeUsesMonthlyBreakdowns(t *testing.T) {
 	p := params()
-	trk := &Tracker{
-		Toggl:        &Toggl{WorkspaceID: "ws", HTTP: client},
-		Holidays:     &Holidays{HTTP: client},
-		HoursPerDay:  8,
-		Loc:          time.UTC,
-		VacationDays: 0,
-		Personal:     p,
-	}
+	trk := fullTracker()
+	trk.Personal = p
+	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
+		{Number: "0001", IssueDate: date(2025, 5, 2), DueDate: date(2025, 6, 2), TotalCents: 100000},
+		{Number: "0002", IssueDate: date(2025, 6, 2), DueDate: date(2025, 7, 2), TotalCents: 300000},
+		{Number: "0003", IssueDate: date(2025, 7, 2), DueDate: date(2025, 8, 2), TotalCents: 1000000},
+	})
 
 	f := trk.ComputeYear(context.Background(), 2025)
-	want := p.breakdownMonthsNoFloor([]float64{0, 0, 0, 0, 0, 1000, 3000, 10000, 0, 0, 0, 0}, nil)
+	want := p.breakdownMonths([]float64{0, 0, 0, 0, 0, 1000, 3000, 10000, 0, 0, 0, 0}, nil, yearMonth{2025, time.January}, companyStock{})
+	if f.FundingPersonal.Err != "" {
+		t.Fatalf("FundingPersonal.Err = %q", f.FundingPersonal.Err)
+	}
+	if f.FundingPersonal.CompanyIncomeCents != want.CompanyIncomeCents {
+		t.Errorf("company = %d, want %d", f.FundingPersonal.CompanyIncomeCents, want.CompanyIncomeCents)
+	}
+	if f.FundingPersonal.GrossSalaryCents != want.GrossSalaryCents {
+		t.Errorf("gross = %d, want %d", f.FundingPersonal.GrossSalaryCents, want.GrossSalaryCents)
+	}
+	if f.FundingPersonal.NetIncomeCents != want.NetIncomeCents {
+		t.Errorf("net = %d, want %d", f.FundingPersonal.NetIncomeCents, want.NetIncomeCents)
+	}
 	smoothed := p.breakdown(14000, 0, 12, p.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
-
-	if f.Personal.Err != "" {
-		t.Fatalf("Personal.Err = %q", f.Personal.Err)
-	}
-	if f.TotalCents != 1400000 {
-		t.Fatalf("TotalCents = %d, want 1400000", f.TotalCents)
-	}
-	if f.Personal.CompanyIncomeCents != want.CompanyIncomeCents {
-		t.Errorf("company = %d, want %d", f.Personal.CompanyIncomeCents, want.CompanyIncomeCents)
-	}
-	if f.Personal.GrossSalaryCents != want.GrossSalaryCents {
-		t.Errorf("gross = %d, want %d", f.Personal.GrossSalaryCents, want.GrossSalaryCents)
-	}
-	if f.Personal.NetIncomeCents != want.NetIncomeCents {
-		t.Errorf("net = %d, want %d", f.Personal.NetIncomeCents, want.NetIncomeCents)
-	}
-	if f.Personal.NetIncomeCents == smoothed.NetIncomeCents {
-		t.Errorf("year personal income still looks like annual smoothing")
+	if f.FundingPersonal.NetIncomeCents == smoothed.NetIncomeCents {
+		t.Error("year personal income still looks like annual smoothing")
 	}
 }
 
@@ -240,9 +228,6 @@ func TestComputeTrackedErrorDegrades(t *testing.T) {
 	}
 	if f.TotalErr == "" {
 		t.Error("expected TotalErr to degrade to unavailable")
-	}
-	if f.Personal.Err == "" {
-		t.Error("expected Personal.Err when total unavailable")
 	}
 }
 
@@ -451,8 +436,8 @@ func TestRenderLogin(t *testing.T) {
 // labour between the two panels. The Income panel is a record of work: an
 // invoice doesn't un-work those hours, so July's tracked row stays exactly
 // as it was and no invoice ever appears there. The Rolling budget panel is
-// where the money question lives — that's where the invoice shows up, in
-// the month it becomes usable (due date's following month).
+// where the money question lives — that's where the invoice is the income,
+// in the month after it was due.
 func TestInvoiceLeavesIncomePanelAloneAndLandsInTheBudget(t *testing.T) {
 	rows := `[{"project_id":1,"hourly_rate_in_cents":7500,"billable_amount_in_cents":150000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"2026-07-10T09:00:00+00:00"}]}]`
 	b := &fakeBackend{
@@ -477,7 +462,7 @@ func TestInvoiceLeavesIncomePanelAloneAndLandsInTheBudget(t *testing.T) {
 	beforeTotal := beforeInvoice.TotalCents
 
 	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
-		{ClientID: 1, Number: "0001", IssueDate: date(2026, 8, 5), DueDate: date(2026, 8, 19), TotalCents: 500000},
+		{Number: "0001", IssueDate: date(2026, 7, 5), DueDate: date(2026, 7, 19), TotalCents: 500000},
 	})
 
 	// The work record is untouched by the invoice, in the covered month...
@@ -489,146 +474,26 @@ func TestInvoiceLeavesIncomePanelAloneAndLandsInTheBudget(t *testing.T) {
 		t.Errorf("July Income total = %d, want %d — unchanged by the invoice", july.TotalCents, beforeTotal)
 	}
 	if len(july.Invoiced) != 0 {
-		t.Errorf("July Invoiced = %+v, want none (not usable until September)", july.Invoiced)
+		t.Errorf("July Invoiced = %+v, want none (not usable until August)", july.Invoiced)
 	}
 
 	// ...and in the month the money actually arrives, where the invoice is
-	// listed but still never counted into the hours-based Income total.
-	september := trk.ComputeMonth(context.Background(), 2026, time.September)
-	if len(september.Invoiced) != 1 || september.Invoiced[0].AmountCents != 500000 {
-		t.Fatalf("September Invoiced = %+v, want one row of 500000", september.Invoiced)
+	// listed and IS the company income — the hours-based Income total is
+	// still untouched by it.
+	august := trk.ComputeMonth(context.Background(), 2026, time.August)
+	if len(august.Invoiced) != 1 || august.Invoiced[0].AmountCents != 500000 {
+		t.Fatalf("August Invoiced = %+v, want one row of 500000", august.Invoiced)
 	}
-	if september.Invoiced[0].Number != "0001" {
-		t.Errorf("September Invoiced[0].Number = %q, want 0001", september.Invoiced[0].Number)
+	if august.Invoiced[0].Number != "0001" {
+		t.Errorf("August Invoiced[0].Number = %q, want 0001", august.Invoiced[0].Number)
 	}
-	sepNoInvoice := *trk
-	sepNoInvoice.Invoiced = nil
-	if want := sepNoInvoice.ComputeMonth(context.Background(), 2026, time.September).TotalCents; september.TotalCents != want {
-		t.Errorf("September Income total = %d, want %d — the invoice must not inflate the hours-based total", september.TotalCents, want)
+	withoutInvoice := *trk
+	withoutInvoice.Invoiced = Tracker{}.Invoiced
+	if want := withoutInvoice.ComputeMonth(context.Background(), 2026, time.August).TotalCents; august.TotalCents != want {
+		t.Errorf("August Income total = %d, want %d — the invoice must not inflate the hours-based total", august.TotalCents, want)
 	}
-	// The money does reach the budget side, via the funding calc.
-	if september.FundingPersonal.CompanyIncomeCents < 500000 {
-		t.Errorf("September funding company income = %d, want at least the 500000 invoiced", september.FundingPersonal.CompanyIncomeCents)
-	}
-}
-
-// TestInvoiceSuppressesClientHoursInTheBudgetOnly covers the reason
-// suppression resolves by Toggl client rather than project: a client with
-// several Toggl projects is superseded as one unit once invoiced. That
-// substitution happens only on the budget side — the Income panel keeps
-// showing every tracked hour.
-func TestInvoiceSuppressesClientHoursInTheBudgetOnly(t *testing.T) {
-	rows := `[
-	  {"project_id":1,"hourly_rate_in_cents":7500,"billable_amount_in_cents":150000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"2026-07-10T09:00:00+00:00"}]},
-	  {"project_id":2,"hourly_rate_in_cents":8000,"billable_amount_in_cents":80000,"currency":"EUR","time_entries":[{"seconds":3600,"start":"2026-07-11T09:00:00+00:00"}]}
-	]`
-	b := &fakeBackend{
-		detailed: func(page int) (string, string, string) { return rows, "", "" },
-		projects: `[{"id":1,"name":"Alpha","client_id":42},{"id":2,"name":"Beta","client_id":42}]`,
-	}
-	client := b.transport()
-	newTrk := func() *Tracker {
-		return &Tracker{
-			Toggl:       &Toggl{WorkspaceID: "ws", HTTP: client},
-			Holidays:    &Holidays{HTTP: client},
-			HoursPerDay: 8,
-			Loc:         time.UTC,
-			Personal:    testLegislation(0.1892, 0.1378, 2112, 0.10),
-		}
-	}
-	invoiced := ComputeInvoiced([]InvoicedFact{
-		{ClientID: 42, Number: "0001", IssueDate: date(2026, 8, 5), DueDate: date(2026, 8, 19), TotalCents: 500000},
-	})
-
-	trk := newTrk()
-	trk.Invoiced = invoiced
-	july := trk.ComputeMonth(context.Background(), 2026, time.July)
-	if len(july.Tracked) != 2 {
-		t.Errorf("July Tracked = %+v, want both projects still listed — the Income panel is a work record", july.Tracked)
-	}
-
-	// September's funding month is July, whose hours the August invoice
-	// supersedes for BOTH of client 42's projects — so the budget side must
-	// not also count them on top of the invoice.
-	plain := newTrk()
-	withInvoice := newTrk()
-	withInvoice.Invoiced = invoiced
-	base := plain.ComputeMonth(context.Background(), 2026, time.September).FundingPersonal.CompanyIncomeCents
-	got := withInvoice.ComputeMonth(context.Background(), 2026, time.September).FundingPersonal.CompanyIncomeCents
-	if want := base - 230000 + 500000; got != want {
-		t.Errorf("September funding company income = %d, want %d (both projects' 2 300 replaced by the 5 000 invoice)", got, want)
-	}
-}
-
-// TestUnscopedInvoiceAddsIncomeWithoutSuppressingTrackedHours covers an
-// invoice for a recipient with no tracking_client_id (or Toggl not
-// configured at all): it must still count as income, but must never
-// suppress a real client's tracked hours since it isn't scoped to any one
-// client.
-func TestUnscopedInvoiceAddsIncomeWithoutSuppressingTrackedHours(t *testing.T) {
-	rows := `[{"project_id":1,"hourly_rate_in_cents":7500,"billable_amount_in_cents":150000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"2026-07-10T09:00:00+00:00"}]}]`
-	b := &fakeBackend{
-		detailed: func(page int) (string, string, string) { return rows, "", "" },
-		projects: `[{"id":1,"name":"Alpha","client_id":1}]`,
-	}
-	client := b.transport()
-	trk := &Tracker{
-		Toggl:       &Toggl{WorkspaceID: "ws", HTTP: client},
-		Holidays:    &Holidays{HTTP: client},
-		HoursPerDay: 8,
-		Loc:         time.UTC,
-		Personal:    testLegislation(0.1892, 0.1378, 2112, 0.10),
-	}
-	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
-		{ClientID: UnscopedClientID, Number: "0002", IssueDate: date(2026, 8, 5), DueDate: date(2026, 8, 19), TotalCents: 200000},
-	})
-
-	july := trk.ComputeMonth(context.Background(), 2026, time.July)
-	if len(july.Tracked) != 1 || july.Tracked[0].AmountCents != 150000 {
-		t.Errorf("July Tracked = %+v, want the real tracked hours untouched by the unscoped invoice", july.Tracked)
-	}
-
-	september := trk.ComputeMonth(context.Background(), 2026, time.September)
-	if len(september.Invoiced) != 1 || september.Invoiced[0].AmountCents != 200000 || september.Invoiced[0].Number != "0002" {
-		t.Fatalf("September Invoiced = %+v, want the unscoped invoice's 200000 under number 0002", september.Invoiced)
-	}
-}
-
-// TestComputeSpendableOnlySetWhenHasHours is a direct unit test (bypassing
-// ComputeMonth's real-wall-clock-dependent computeExpected) for the
-// hasHours gate: SpendableLabel/URL describe the hours-based portion of
-// Income specifically, and must stay empty for a period funded purely by
-// invoices.
-func TestComputeSpendableOnlySetWhenHasHours(t *testing.T) {
-	var withHours Figures
-	withHours.computeSpendable(1, 2026, date(2026, 7, 1), true)
-	if withHours.SpendableLabel == "" || withHours.SpendableURL == "" {
-		t.Errorf("hasHours=true: SpendableLabel/URL = %q/%q, want both set", withHours.SpendableLabel, withHours.SpendableURL)
-	}
-
-	var noHours Figures
-	noHours.computeSpendable(1, 2026, date(2026, 7, 1), false)
-	if noHours.SpendableLabel != "" || noHours.SpendableURL != "" {
-		t.Errorf("hasHours=false: SpendableLabel/URL = %q/%q, want both empty (pure-invoice period)", noHours.SpendableLabel, noHours.SpendableURL)
-	}
-}
-
-// TestYearViewIncomeCarriesNoShiftedPeriod: the two-month funding shift is
-// a fact about a month (May's income is spendable in July), not about a
-// year. A year's income is January through December of that year, so the
-// year view's Income row must not claim a shifted window such as
-// "March 2026 – February 2027".
-func TestYearViewIncomeCarriesNoShiftedPeriod(t *testing.T) {
-	var year Figures
-	year.computeSpendable(12, 2026, date(2026, 1, 1), true)
-	if year.SpendableLabel != "" || year.SpendableURL != "" {
-		t.Errorf("year view: SpendableLabel/URL = %q/%q, want both empty", year.SpendableLabel, year.SpendableURL)
-	}
-
-	var month Figures
-	month.computeSpendable(1, 2026, date(2026, 5, 1), true)
-	if month.SpendableLabel != "July 2026" || month.SpendableURL != "/2026/7" {
-		t.Errorf("month view: SpendableLabel/URL = %q/%q, want July 2026 at /2026/7", month.SpendableLabel, month.SpendableURL)
+	if august.FundingPersonal.CompanyIncomeCents != 500000 {
+		t.Errorf("August funding company income = %d, want exactly the 500000 invoiced", august.FundingPersonal.CompanyIncomeCents)
 	}
 }
 

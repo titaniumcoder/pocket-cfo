@@ -501,21 +501,13 @@ func TestComputeMonthWithBudget(t *testing.T) {
 	if f.PrivateTotalPlannedCents != want {
 		t.Errorf("PrivateTotalPlannedCents = %d, want %d", f.PrivateTotalPlannedCents, want)
 	}
-	// Balance now pairs March's expenses with January's funding income (the
-	// viewed month shifted back two calendar months — see
-	// fundingRangeForMonth), not March's own income (that's what
-	// f.Personal, unaffected by this test, still reports — see
-	// TestComputeMonthDeductsCompanyExpensesFromCompanyIncome). fullTracker's
-	// fake Toggl backend only has data dated 2026-03-02, so January 2026 has
-	// no tracked time, and January is far enough in the past (relative to
-	// whenever this test actually runs) that there's no "expected remaining
-	// work" projection for it either — so FundingPersonal.NetIncomeCents is
-	// exactly 0 here.
+	// The fixture has no invoices, so March's company income — what the
+	// month was paid the month before — is exactly 0.
 	if f.FundingPersonal.Err != "" {
 		t.Fatalf("FundingPersonal.Err = %q", f.FundingPersonal.Err)
 	}
 	if f.FundingPersonal.NetIncomeCents != 0 {
-		t.Errorf("FundingPersonal.NetIncomeCents = %d, want 0 (January has no fake Toggl data)", f.FundingPersonal.NetIncomeCents)
+		t.Errorf("FundingPersonal.NetIncomeCents = %d, want 0 (no invoices due February)", f.FundingPersonal.NetIncomeCents)
 	}
 	if want := -f.PrivateTotalPlannedCents; !f.ShowBalance || f.BalanceCents != want {
 		t.Errorf("ShowBalance/BalanceCents = %v/%d, want true/%d", f.ShowBalance, f.BalanceCents, want)
@@ -529,23 +521,26 @@ func TestComputeMonthWithBudget(t *testing.T) {
 func TestComputeMonthDeductsCompanyExpensesFromCompanyIncome(t *testing.T) {
 	trk := fullTracker()
 	trk.Budget = newTestBudget(t, map[string]string{"budget.json": testBudgetJSONWithCompany})
+	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
+		{Number: "0001", IssueDate: date(2026, 2, 5), DueDate: date(2026, 2, 19), TotalCents: 500000},
+	})
 
 	f := trk.ComputeMonth(context.Background(), 2026, time.March)
-	if f.BudgetErr != "" || f.Personal.Err != "" {
-		t.Fatalf("BudgetErr = %q, Personal.Err = %q", f.BudgetErr, f.Personal.Err)
+	if f.BudgetErr != "" || f.FundingPersonal.Err != "" {
+		t.Fatalf("BudgetErr = %q, FundingPersonal.Err = %q", f.BudgetErr, f.FundingPersonal.Err)
 	}
-	if want := eurToCents(200); f.Personal.CompanyExpensesCents != want {
-		t.Errorf("Personal.CompanyExpensesCents = %d, want %d", f.Personal.CompanyExpensesCents, want)
+	if want := eurToCents(200); f.FundingPersonal.CompanyExpensesCents != want {
+		t.Errorf("CompanyExpensesCents = %d, want %d", f.FundingPersonal.CompanyExpensesCents, want)
 	}
 	if want := eurToCents(1000); f.PrivateTotalPlannedCents != want {
 		t.Errorf("PrivateTotalPlannedCents = %d, want %d (company expenses shouldn't appear here)", f.PrivateTotalPlannedCents, want)
 	}
-	if len(f.Personal.CompanyGroups) != 1 || f.Personal.CompanyGroups[0].Name != "Office" {
-		t.Errorf("Personal.CompanyGroups = %+v, want just Office", f.Personal.CompanyGroups)
+	if len(f.FundingPersonal.CompanyGroups) != 1 || f.FundingPersonal.CompanyGroups[0].Name != "Office" {
+		t.Errorf("CompanyGroups = %+v, want just Office", f.FundingPersonal.CompanyGroups)
 	}
-	direct := trk.Personal.breakdown(float64(f.TotalCents)/100, 200, 1, trk.Personal.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
-	if f.Personal.NetIncomeCents != direct.NetIncomeCents {
-		t.Errorf("NetIncomeCents = %d, want %d (company income minus 200 company expenses, same cascade as breakdown(_, 200, 1))", f.Personal.NetIncomeCents, direct.NetIncomeCents)
+	direct := trk.Personal.breakdown(5000, 200, 1, trk.Personal.rulesFor(testMonth), SalaryDecision{Mode: SalaryFull}, companyStock{})
+	if f.FundingPersonal.NetIncomeCents != direct.NetIncomeCents {
+		t.Errorf("NetIncomeCents = %d, want %d (5 000 company income minus 200 company expenses, same cascade as breakdown(_, 200, 1))", f.FundingPersonal.NetIncomeCents, direct.NetIncomeCents)
 	}
 }
 
@@ -557,10 +552,6 @@ func TestComputeYearWithBudget(t *testing.T) {
 	if f.FundingPersonal.Err != "" {
 		t.Fatalf("FundingPersonal.Err = %q", f.FundingPersonal.Err)
 	}
-	// Balance pairs the year's expenses with the funding income range (the
-	// viewed year's expense range shifted back two months — see
-	// fundingRangeForYear), not f.Personal.NetIncomeCents (the year's own
-	// income) — see TestComputeMonthWithBudget for why the two now differ.
 	want := f.FundingPersonal.NetIncomeCents - f.PrivateTotalPlannedCents
 	if !f.ShowBalance || f.BalanceCents != want {
 		t.Errorf("ShowBalance/BalanceCents = %v/%d, want true/%d", f.ShowBalance, f.BalanceCents, want)

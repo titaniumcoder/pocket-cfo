@@ -133,10 +133,4 @@ func TestYearAggregationStartsAtTheStartMonth(t *testing.T) {
 	if got := privateExpenseStartMonth(2028, past, yearMonth{2026, time.April}); got != time.January {
 		t.Errorf("a later year starts at %v, want January", got)
 	}
-	// The funding range follows for free, which is the invariant funding.go
-	// says must never drift.
-	fs, _ := fundingRangeForYear(2026, past, yearMonth{2026, time.April})
-	if want := (yearMonth{2026, time.February}); fs != want {
-		t.Errorf("funding starts %v, want %v — two months before the expense range", fs, want)
-	}
 }

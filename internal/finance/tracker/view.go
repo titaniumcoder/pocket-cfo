@@ -25,7 +25,7 @@ type Tracker struct {
 	VacationDays int
 	RateCents    int
 	RateCurrency string
-	Invoiced     map[int]InvoicedClient
+	Invoiced     InvoicedClient
 	Minimal      bool
 
 	Start time.Time
@@ -134,9 +134,6 @@ type Figures struct {
 	TotalCents int
 	TotalErr   string
 
-	SpendableLabel string
-	SpendableURL   string
-
 	Holidays    []HolidayView
 	HolidaysErr string
 
@@ -241,7 +238,7 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 
 	result.computeVacation(vacationDays, today, start, herr, terr, holidaySet, yd)
 
-	trackedHours, trackedCents, monthlyCompanyCents := result.computeTrackedRows(t, projects, aggs, yd, terr, perr, year, start, end)
+	trackedHours, trackedCents := result.computeTrackedRows(t, projects, aggs, yd, terr, perr)
 
 	result.computeInvoicedRows(t, year, start, end)
 
@@ -250,10 +247,7 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 		result.Currency = CurrencySymbol(currency)
 	}
 
-	expectedNetHours, expectedNetCentsByMonth, expectedOK := result.computeExpected(t, year, start, end, today, todayTracked, herr, todayErr, holidaySet, rateCents)
-	for m, cents := range expectedNetCentsByMonth {
-		monthlyCompanyCents[m] += cents
-	}
+	expectedNetHours, _, expectedOK := result.computeExpected(t, year, start, end, today, todayTracked, herr, todayErr, holidaySet, rateCents)
 	result.ShowExpected = !today.After(end)
 
 	result.computeTotal(trackedHours, trackedCents, expectedNetHours, expectedOK, rateCents)
@@ -275,15 +269,11 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 	result.computeActuals(t, ctx, year, start, now, months, &bv)
 
 	viewed := yearMonth{year, start.Month()}
-	carried, snap, opened, accountsErr := t.carriedBalances(ctx, viewed, now, months, rateCents)
+	carried, snap, opened, accountsErr := t.carriedBalances(ctx, viewed, now, months)
 	result.AccountsErr = accountsErr
 	result.TargetNeedsBalanceNote = t.targetNeedsBalanceNote(viewed, months, carried)
 
-	result.computePersonal(t, ctx, year, months, viewed, monthlyCompanyCents, bv, carried.Company)
-
-	result.computeSpendable(months, year, start, trackedHours > 0 || expectedNetHours > 0)
-
-	result.computeFundingBalance(t, ctx, year, start, now, months, rateCents, bv, carried, snap, opened)
+	result.computeFundingBalance(t, ctx, year, start, now, months, bv, carried, snap, opened)
 
 	if at, stale := t.hours().Status(start, end); !at.IsZero() {
 		result.LastUpdated = at.In(t.Loc).Format("02 Jan 15:04")
@@ -325,20 +315,14 @@ func (f *Figures) computeVacation(vacationDays int, today, start time.Time, herr
 	}
 }
 
-func (f *Figures) computeTrackedRows(t *Tracker, projects map[int]Project, aggs []Aggregate, yd *YearData, terr, perr error, year int, start, end time.Time) (trackedHours float64, trackedCents int, monthlyCompanyCents map[time.Month]int) {
-	monthlyCompanyCents = map[time.Month]int{}
+func (f *Figures) computeTrackedRows(t *Tracker, projects map[int]Project, aggs []Aggregate, yd *YearData, terr, perr error) (trackedHours float64, trackedCents int) {
 	if terr != nil {
 		f.TrackedErr = terr.Error()
-		return 0, 0, monthlyCompanyCents
+		return 0, 0
 	}
 	if perr != nil {
 		f.TrackedErr = perr.Error()
-		return 0, 0, monthlyCompanyCents
-	}
-	for m := start.Month(); m <= end.Month(); m++ {
-		for _, a := range yd.Months[m] {
-			monthlyCompanyCents[m] += a.AmountCents
-		}
+		return 0, 0
 	}
 	sort.Slice(aggs, func(i, j int) bool { return aggs[i].Seconds > aggs[j].Seconds })
 	for _, a := range aggs {
@@ -356,7 +340,7 @@ func (f *Figures) computeTrackedRows(t *Tracker, projects map[int]Project, aggs 
 		trackedHours += hours
 		trackedCents += a.AmountCents
 	}
-	return trackedHours, trackedCents, monthlyCompanyCents
+	return trackedHours, trackedCents
 }
 
 func (f *Figures) computeInvoicedRows(t *Tracker, year int, start, end time.Time) {
@@ -464,55 +448,15 @@ func (f *Figures) computeBudget(t *Tracker, ctx context.Context, year int, start
 	return bv
 }
 
-func (f *Figures) computePersonal(t *Tracker, ctx context.Context, year, months int, viewed yearMonth, monthlyCompanyCents map[time.Month]int, bv BudgetView, company companyStock) {
-	if f.TotalErr != "" {
-		f.Personal = PersonalView{Err: "company income unavailable"}
-		return
-	}
+func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year int, start, now time.Time, months int, bv BudgetView, carried openings, snap AccountSnapshot, opened bool) {
+	var span []yearMonth
 	if months > 1 {
-		var monthlyCompanyExpenseCents map[time.Month]int
-		if t.Budget != nil && f.BudgetErr == "" {
-			if m, err := t.Budget.CompanyExpensesByMonth(ctx, year, t.Start); err != nil {
-				f.BudgetErr = err.Error()
-			} else {
-				monthlyCompanyExpenseCents = m
-			}
-		}
 		first, _ := yearMonthRange(year, t.startMonth())
-		start := time.Date(year, first, 1, 0, 0, 0, 0, t.Loc)
-		end := time.Date(year, time.December, 31, 0, 0, 0, 0, t.Loc)
-		f.Personal = t.Personal.breakdownMonths(
-			monthlyIncomeEUR(start, end, monthlyCompanyCents),
-			monthlyIncomeEUR(start, end, monthlyCompanyExpenseCents),
-			yearMonth{year, first},
-			companyStock{},
-		)
+		span = yearMonths(yearMonth{year, first}, yearMonth{year, time.December})
 	} else {
-		stock := t.Personal.targetStock(viewed, company)
-		rules := t.Personal.rulesFor(viewed)
-		f.Personal = t.Personal.breakdown(float64(f.TotalCents)/100, float64(bv.CompanyTotalPlannedCents)/100, 1,
-			rules, t.Personal.decide(viewed, stock), stock)
+		span = []yearMonth{{year, start.Month()}}
 	}
-	f.Personal.CompanyGroups = bv.CompanyGroups
-}
-
-func (f *Figures) computeSpendable(months, year int, start time.Time, hasHours bool) {
-	if f.TotalErr != "" || !hasHours || months > 1 {
-		return
-	}
-	spendStart, spendEnd := spendRangeForMonth(year, start.Month())
-	f.SpendableLabel = rangeLabel(spendStart, spendEnd)
-	f.SpendableURL = linkForRange(spendStart, spendEnd, spendStart.Year)
-}
-
-func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year int, start, now time.Time, months, rateCents int, bv BudgetView, carried openings, snap AccountSnapshot, opened bool) {
-	var fundingStart, fundingEnd yearMonth
-	if months > 1 {
-		fundingStart, fundingEnd = fundingRangeForYear(year, now, t.startMonth())
-	} else {
-		fundingStart, fundingEnd = fundingRangeForMonth(year, start.Month())
-	}
-	f.FundingPersonal = t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(bv.CompanyTotalPlannedCents)/100, bv.CompanyGroups, carried.Company)
+	f.FundingPersonal = t.fundingIncome(span, float64(bv.CompanyTotalPlannedCents)/100, bv.CompanyGroups, carried.Company)
 
 	if t.Budget == nil {
 		return
@@ -597,7 +541,7 @@ func (t *Tracker) targetNeedsBalanceNote(viewed yearMonth, months int, carried o
 // before the cascade rather than after it, because the company balance is one
 // of the cascade's inputs now — what a full salary can afford includes what the
 // company is already holding.
-func (t *Tracker) carriedBalances(ctx context.Context, viewed yearMonth, now time.Time, months, rateCents int) (openings, AccountSnapshot, bool, string) {
+func (t *Tracker) carriedBalances(ctx context.Context, viewed yearMonth, now time.Time, months int) (openings, AccountSnapshot, bool, string) {
 	if t.Accounts == nil || months != 1 {
 		return openings{}, AccountSnapshot{}, false, ""
 	}
@@ -609,7 +553,7 @@ func (t *Tracker) carriedBalances(ctx context.Context, viewed yearMonth, now tim
 	if !ok {
 		return openings{}, AccountSnapshot{}, false, ""
 	}
-	carried, err := t.rollForward(ctx, snap, viewed, now, rateCents)
+	carried, err := t.rollForward(ctx, snap, viewed, now)
 	if err != nil {
 		return openings{}, AccountSnapshot{}, false, err.Error()
 	}
@@ -632,8 +576,6 @@ func (f *Figures) publishAccountBalances(snap AccountSnapshot, carried openings,
 func (t *Tracker) EvictMonth(year int, month time.Month) {
 	start := time.Date(year, month, 1, 0, 0, 0, 0, t.Loc)
 	t.hours().EvictRange(start, start.AddDate(0, 1, -1))
-	fs, fe := fundingRangeForMonth(year, month)
-	t.evictFundingRange(fs, fe)
 	if t.Budget != nil {
 		t.Budget.Evict()
 	}
@@ -644,8 +586,6 @@ func (t *Tracker) EvictMonth(year int, month time.Month) {
 func (t *Tracker) EvictYear(year int) {
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, t.Loc)
 	t.hours().EvictRange(start, start.AddDate(1, 0, -1))
-	fs, fe := fundingRangeForYear(year, time.Now().In(t.Loc), t.startMonth())
-	t.evictFundingRange(fs, fe)
 	if t.Budget != nil {
 		t.Budget.Evict()
 	}
@@ -828,14 +768,6 @@ func sumMonthCents(values map[time.Month]int) int {
 		sum += cents
 	}
 	return sum
-}
-
-func monthlyIncomeEUR(start, end time.Time, monthlyCents map[time.Month]int) []float64 {
-	income := make([]float64, 0, int(end.Month()-start.Month())+1)
-	for m := start.Month(); m <= end.Month(); m++ {
-		income = append(income, float64(monthlyCents[m])/100)
-	}
-	return income
 }
 
 func firstErr(errs ...error) string {

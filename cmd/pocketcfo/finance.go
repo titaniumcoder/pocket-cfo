@@ -17,20 +17,9 @@ import (
 )
 
 func buildInvoicedFacts() ([]tracker.InvoicedFact, error) {
-	recipients, err := stats.LoadRecipients(recipientsDir)
-	if err != nil {
-		return nil, err
-	}
 	invoices, err := stats.LoadInvoices(invoicesDir)
 	if err != nil {
 		return nil, err
-	}
-
-	clientIDByRecipient := map[int]int{}
-	for _, r := range recipients {
-		if r.TrackingClientId != nil {
-			clientIDByRecipient[r.Number] = *r.TrackingClientId
-		}
 	}
 
 	var facts []tracker.InvoicedFact
@@ -38,16 +27,11 @@ func buildInvoicedFacts() ([]tracker.InvoicedFact, error) {
 		if inv.Status != invoice.InvoiceJsonStatusIssued {
 			continue
 		}
-		cid := tracker.UnscopedClientID
-		if mapped, ok := clientIDByRecipient[inv.Recipient.Number]; ok {
-			cid = mapped
-		}
 		totals, err := money.Compute(inv)
 		if err != nil {
 			continue
 		}
 		facts = append(facts, tracker.InvoicedFact{
-			ClientID:   cid,
 			Number:     inv.Number,
 			IssueDate:  inv.IssueDate.Time,
 			DueDate:    inv.DueDate.Time,

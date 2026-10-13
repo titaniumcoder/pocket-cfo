@@ -380,7 +380,7 @@ var templates = `
       {{if .TotalErr}}
       <div class="row"><span class="error">{{.TotalErr}}</span></div>
       {{else}}
-      <div class="row net"><span class="label">Income{{if .SpendableLabel}} <small>(for {{if .SpendableURL}}<a class="period-link" href="{{.SpendableURL}}">{{.SpendableLabel}}</a>{{else}}{{.SpendableLabel}}{{end}})</small>{{end}}</span><span class="mid">{{.TotalHours}} h &times; {{.TotalRate}}</span><span class="amt netamt">{{eur .TotalCents}}<span class="stack-m">({{.TotalHours}}h)</span></span></div>
+      <div class="row net"><span class="label">Income</span><span class="mid">{{.TotalHours}} h &times; {{.TotalRate}}</span><span class="amt netamt">{{eur .TotalCents}}<span class="stack-m">({{.TotalHours}}h)</span></span></div>
       {{end}}
       {{end}}
     </div>
@@ -402,7 +402,7 @@ var templates = `
       {{with .FundingPersonal}}
       {{if .Err}}<div class="row"><span class="error">{{.Err}}</span></div>
       {{else}}
-      <div class="row net{{if not $.Invoiced}} gap-below{{end}}"><span class="label">Company income{{if and .FundingLabel (not $.Invoiced)}} <small>(from {{if .FundingURL}}<a class="period-link" href="{{.FundingURL}}">{{.FundingLabel}}</a>{{else}}{{.FundingLabel}}{{end}})</small>{{end}}</span><span class="mid"></span><span class="amt goodamt">{{eur .CompanyIncomeCents}}</span></div>
+      <div class="row net{{if not $.Invoiced}} gap-below{{end}}"><span class="label">Company income</span><span class="mid"></span><span class="amt goodamt">{{eur .CompanyIncomeCents}}</span></div>
       {{range $.Invoiced}}<div class="row acct"><span class="label">{{if .URL}}<a href="{{.URL}}">{{.Number}}</a>{{else}}{{.Number}}{{end}} <span class="note">invoiced, usable this month</span></span><span class="mid"></span><span class="amt">{{eur .AmountCents}}</span></div>{{end}}
       {{if .ShowCompanyBalance}}
       <div class="row{{if lt .CompanyOpeningCents 0}} neg{{end}}"><span class="label">In the company</span><span class="mid"></span><span class="amt{{if lt .CompanyOpeningCents 0}} neg{{else}} goodamt{{end}}">{{eur .CompanyOpeningCents}}</span></div>

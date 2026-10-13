@@ -83,20 +83,16 @@ func TestBuildInvoicedFacts_LinkedRecipientProducesClientScopedFact(t *testing.T
 	if len(facts) != 1 {
 		t.Fatalf("facts = %+v, want exactly 1", facts)
 	}
-	if facts[0].ClientID != clientID {
-		t.Errorf("ClientID = %d, want %d", facts[0].ClientID, clientID)
-	}
 	if facts[0].Number != "INV-0000000001" {
 		t.Errorf("Number = %q, want INV-0000000001", facts[0].Number)
 	}
 }
 
-// TestBuildInvoicedFacts_UnlinkedRecipientStillProducesUnscopedFact is the
-// regression test for Bug A: an invoice for a recipient with no
-// tracking_client_id (or, identically, no matching recipient file at all —
-// covered here since the fixture has no recipients directory entries) must
-// still produce a fact, just scoped to tracker.UnscopedClientID, so it
-// still counts as income without silently vanishing.
+// TestBuildInvoicedFacts_UnlinkedRecipientStillProducesAFact: an invoice for
+// a recipient with no tracking_client_id (or, identically, no matching
+// recipient file at all — covered here since the fixture has no recipients
+// directory entries) must still produce a fact, so it still counts as income
+// without silently vanishing.
 func TestBuildInvoicedFacts_UnlinkedRecipientStillProducesUnscopedFact(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustMkdirAll(t, recipientsDir)
@@ -111,13 +107,10 @@ func TestBuildInvoicedFacts_UnlinkedRecipientStillProducesUnscopedFact(t *testin
 	if len(facts) != 1 {
 		t.Fatalf("facts = %+v, want exactly 1", facts)
 	}
-	if facts[0].ClientID != tracker.UnscopedClientID {
-		t.Errorf("ClientID = %d, want UnscopedClientID (%d)", facts[0].ClientID, tracker.UnscopedClientID)
-	}
 }
 
 // TestBuildInvoicedFacts_DraftInvoicesSkipped confirms drafts still never
-// become facts, unaffected by the ClientID/Number rewrite.
+// become facts.
 func TestBuildInvoicedFacts_DraftInvoicesSkipped(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustMkdirAll(t, recipientsDir)

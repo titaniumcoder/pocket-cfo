@@ -212,7 +212,7 @@ type openings struct {
 // at, carrying both pots at once. They cannot be walked separately: the
 // company balance is an input to the payroll cascade, and the private balance
 // is fed by what that cascade pays out.
-func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, viewed yearMonth, now time.Time, rateCents int) (openings, error) {
+func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, viewed yearMonth, now time.Time) (openings, error) {
 	from := walkStart(snap, viewed)
 	if elapsed := viewed.ordinal() - from.ordinal(); elapsed > maxRollForwardMonths {
 		return openings{}, fmt.Errorf("accounts: a reading is %d months before this month (%s) — check the dates in accounts.json, that looks like a typo",
@@ -244,7 +244,7 @@ func (t *Tracker) rollForward(ctx context.Context, snap AccountSnapshot, viewed 
 			open.Company = c
 		}
 
-		closed, err := t.monthClose(ctx, m, now, rateCents, open.Company)
+		closed, err := t.monthClose(ctx, m, now, open.Company)
 		if err != nil {
 			return openings{}, err
 		}
@@ -274,14 +274,13 @@ type monthClosing struct {
 	CompanyClosingCents int
 }
 
-func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, rateCents int, company companyStock) (monthClosing, error) {
+func (t *Tracker) monthClose(ctx context.Context, m yearMonth, now time.Time, company companyStock) (monthClosing, error) {
 	bv, err := t.Budget.ForMonth(ctx, m.Year, m.Month, now, t.Minimal)
 	if err != nil {
 		return monthClosing{}, fmt.Errorf("accounts: budget for %s: %w", m, err)
 	}
 	privateCents, companyCents, av := t.closingExpenses(ctx, m, bv)
-	fundingStart, fundingEnd := fundingRangeForMonth(m.Year, m.Month)
-	pv := t.fundingIncome(ctx, fundingStart, fundingEnd, now, rateCents, float64(companyCents)/100, bv.CompanyGroups, company)
+	pv := t.fundingIncome([]yearMonth{m}, float64(companyCents)/100, bv.CompanyGroups, company)
 	if pv.Err != "" {
 		return monthClosing{}, fmt.Errorf("accounts: income for %s: %s", m, pv.Err)
 	}

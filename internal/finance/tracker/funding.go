@@ -1,12 +1,9 @@
 package tracker
 
 import (
-	"context"
 	"fmt"
 	"time"
 )
-
-const fundingShiftMonths = -2
 
 type yearMonth struct {
 	Year  int
@@ -32,7 +29,7 @@ func (ym yearMonth) configForm() string {
 // the dated rules in the same spelling config.json states them.
 func (ym yearMonth) ConfigForm() string { return ym.configForm() }
 
-func monthsBetween(start, end yearMonth) []yearMonth {
+func yearMonths(start, end yearMonth) []yearMonth {
 	const safetyCap = 36
 	months := make([]yearMonth, 0, 12)
 	for m, i := start, 0; i < safetyCap; m, i = m.addMonths(1), i+1 {
@@ -44,158 +41,25 @@ func monthsBetween(start, end yearMonth) []yearMonth {
 	return months
 }
 
-func fundingRangeForMonth(year int, month time.Month) (start, end yearMonth) {
-	shifted := yearMonth{year, month}.addMonths(fundingShiftMonths)
-	return shifted, shifted
-}
-
-func fundingRangeForYear(year int, now time.Time, floor yearMonth) (start, end yearMonth) {
-	expenseStart := yearMonth{year, privateExpenseStartMonth(year, now, floor)}
-	expenseEnd := yearMonth{year, time.December}
-	return expenseStart.addMonths(fundingShiftMonths), expenseEnd.addMonths(fundingShiftMonths)
-}
-
-func spendRangeForMonth(year int, month time.Month) (start, end yearMonth) {
-	shifted := yearMonth{year, month}.addMonths(-fundingShiftMonths)
-	return shifted, shifted
-}
-
-func rangeLabel(start, end yearMonth) string {
-	if start == end {
-		return start.String()
+// fundingIncome is the cascade for the months a page covers, funded the way
+// the company is actually paid: an invoice is income in the month after it
+// was due, and nothing else is. The company's planned expenses for the same
+// months are what the salary has to leave behind.
+func (t *Tracker) fundingIncome(months []yearMonth, companyExpensesEUR float64, companyGroups []CategoryGroupView, opening companyStock) PersonalView {
+	if len(months) == 0 {
+		return PersonalView{}
 	}
-	return start.String() + " – " + end.String()
-}
-
-func linkForRange(start, end yearMonth, majorityYear int) string {
-	if start == end {
-		return fmt.Sprintf("/%d/%d", start.Year, int(start.Month))
+	incomeEUR := make([]float64, len(months))
+	for i, m := range months {
+		incomeEUR[i] = float64(t.invoicedCentsForMonth(m)) / 100
 	}
-	return fmt.Sprintf("/%d", majorityYear)
-}
-
-func (t *Tracker) fundingIncome(ctx context.Context, start, end yearMonth, now time.Time, rateCents int, companyExpensesEUR float64, companyGroups []CategoryGroupView, opening companyStock) PersonalView {
-	label := rangeLabel(start, end)
-	url := linkForRange(start, end, end.Year)
-	months := monthsBetween(start, end)
-	incomeEUR, err := t.fundingLaborIncomeEUR(ctx, months, now, rateCents)
-	if err != nil {
-		return PersonalView{Err: err.Error(), FundingLabel: label, FundingURL: url}
-	}
-
-	perMonthExpenseEUR := companyExpensesEUR / float64(len(incomeEUR))
-	expensesEUR := make([]float64, len(incomeEUR))
+	perMonthExpenseEUR := companyExpensesEUR / float64(len(months))
+	expensesEUR := make([]float64, len(months))
 	for i := range expensesEUR {
 		expensesEUR[i] = perMonthExpenseEUR
 	}
 
-	pv := t.Personal.breakdownMonths(incomeEUR, expensesEUR, start.addMonths(-fundingShiftMonths), opening)
+	pv := t.Personal.breakdownMonths(incomeEUR, expensesEUR, months[0], opening)
 	pv.CompanyGroups = companyGroups
-	pv.FundingLabel = label
-	pv.FundingURL = url
 	return pv
-}
-
-func (t *Tracker) fundingLaborIncomeEUR(ctx context.Context, months []yearMonth, now time.Time, rateCents int) ([]float64, error) {
-	if len(months) == 0 {
-		return nil, nil
-	}
-	years := distinctYears(months)
-
-	togglCtx, cancelToggl := waitBudget(ctx)
-	defer cancelToggl()
-
-	projects, err := t.hours().Projects(togglCtx)
-	if err != nil {
-		return nil, fmt.Errorf("funding: toggl projects: %w", err)
-	}
-	ydByYear, err := t.fetchYearDataByYear(togglCtx, years)
-	if err != nil {
-		return nil, err
-	}
-	holidaysByYear, err := t.fetchHolidaysByYear(ctx, years)
-	if err != nil {
-		return nil, err
-	}
-
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, t.Loc)
-
-	incomeEUR := make([]float64, len(months))
-	for i, ym := range months {
-		incomeEUR[i] = t.monthLaborIncome(ym, projects, ydByYear[ym.Year], holidaysByYear[ym.Year], today, rateCents)
-	}
-
-	return incomeEUR, nil
-}
-
-func (t *Tracker) fetchYearDataByYear(ctx context.Context, years []int) (map[int]*YearData, error) {
-	ydByYear := map[int]*YearData{}
-	for _, y := range years {
-		yd, err := t.hours().Year(ctx, y)
-		if err != nil {
-			return nil, fmt.Errorf("funding: toggl %d: %w", y, err)
-		}
-		ydByYear[y] = yd
-	}
-	return ydByYear, nil
-}
-
-func (t *Tracker) fetchHolidaysByYear(ctx context.Context, years []int) (map[int]map[string]bool, error) {
-	holidaysByYear := map[int]map[string]bool{}
-	for _, y := range years {
-		yearStart := time.Date(y, time.January, 1, 0, 0, 0, 0, t.Loc)
-		yearEnd := yearStart.AddDate(1, 0, -1)
-		hds, err := t.Holidays.Fetch(ctx, yearStart, yearEnd)
-		if err != nil {
-			return nil, fmt.Errorf("funding: holidays %d: %w", y, err)
-		}
-		set := map[string]bool{}
-		for _, hd := range hds {
-			set[hd.Date.Format("2006-01-02")] = true
-		}
-		holidaysByYear[y] = set
-	}
-	return holidaysByYear, nil
-}
-
-func (t *Tracker) monthLaborIncome(ym yearMonth, projects map[int]Project, yd *YearData, holidays map[string]bool, today time.Time, rateCents int) float64 {
-	monthStart := time.Date(ym.Year, ym.Month, 1, 0, 0, 0, 0, t.Loc)
-	monthEnd := monthStart.AddDate(0, 1, -1)
-
-	var trackedCents int
-	for _, a := range yd.Months[ym.Month] {
-		if t.invoiceSuppresses(projects[a.ProjectID].ClientID, ym) {
-			continue
-		}
-		trackedCents += a.AmountCents
-	}
-	trackedCents += t.invoicedCentsForMonth(ym.addMonths(-fundingShiftMonths))
-
-	remaining, todayIsWorkday := workdayInfo(monthStart, monthEnd, today, holidays)
-	days := remaining
-	todayTracked := yd.Days[today.Format("2006-01-02")]
-	if todayIsWorkday && !todayTracked {
-		days++
-	}
-	expectedCents := round(float64(days) * t.HoursPerDay * float64(rateCents))
-
-	return float64(trackedCents+expectedCents) / 100
-}
-
-func distinctYears(months []yearMonth) []int {
-	seen := map[int]bool{}
-	var years []int
-	for _, ym := range months {
-		if !seen[ym.Year] {
-			seen[ym.Year] = true
-			years = append(years, ym.Year)
-		}
-	}
-	return years
-}
-
-func (t *Tracker) evictFundingRange(start, end yearMonth) {
-	s := time.Date(start.Year, start.Month, 1, 0, 0, 0, 0, t.Loc)
-	e := time.Date(end.Year, end.Month, 1, 0, 0, 0, 0, t.Loc).AddDate(0, 1, -1)
-	t.hours().EvictRange(s, e)
 }

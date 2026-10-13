@@ -8,6 +8,9 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Changed
+- **Breaking: a month's company income is what its invoices brought in.** Company income for a month is the invoices that fell due the month before — no Toggl estimate, no two-month funding shift, and the "(from …)" and "Income (for …)" period links leave the dashboard. Toggl still tracks the hours themselves; it no longer prices the budget.
+
 ## [3.0.0] - 2026-10-13
 
 ### Removed

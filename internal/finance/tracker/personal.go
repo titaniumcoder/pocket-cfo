@@ -100,9 +100,6 @@ type PersonalView struct {
 
 	CompanyGroups []CategoryGroupView
 
-	FundingLabel string
-	FundingURL   string
-
 	EmployerRate  []RateLine
 	EmployeeRate  []RateLine
 	IncomeTaxRate []RateLine

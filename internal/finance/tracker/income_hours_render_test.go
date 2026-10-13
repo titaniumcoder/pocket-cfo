@@ -24,7 +24,6 @@ func TestRenderPageExpectedRowsIncludeHourUnit(t *testing.T) {
 		TotalHours:            "152",
 		TotalRate:             "75",
 		TotalCents:            1140000,
-		SpendableLabel:        "November 2026",
 		Personal:              PersonalView{},
 	}
 	rec := httptest.NewRecorder()

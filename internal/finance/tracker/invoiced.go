@@ -62,16 +62,20 @@ func (f InvoicedFact) coverageExtent() time.Time {
 	return time.Date(f.IssueDate.Year(), f.IssueDate.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, -1)
 }
 
-// covers says whether the client's invoices already reach a tracking day. A
-// client with no linked recipient is never covered: its hours cannot be
-// matched to an invoice, so they stay estimated and the work panel flags
-// them instead.
-func (c InvoicedClient) covers(clientID int, day time.Time) bool {
+// frontierFor is the client's coverage frontier — the last day its issued
+// invoices already reach — or the zero time when it has none. A client with
+// no linked recipient has no frontier: its hours cannot be matched to an
+// invoice, so they stay estimated and the work panel flags them instead.
+func (c InvoicedClient) frontierFor(clientID int) time.Time {
 	if clientID == UnscopedClientID {
-		return false
+		return time.Time{}
 	}
-	frontier, ok := c.Frontiers[clientID]
-	return ok && !day.After(frontier)
+	return c.Frontiers[clientID]
+}
+
+// covers says whether the client's invoices already reach a tracking day.
+func (c InvoicedClient) covers(clientID int, day time.Time) bool {
+	return !day.After(c.frontierFor(clientID))
 }
 
 // usableIn is the month an invoice counts as income. The default rule: the

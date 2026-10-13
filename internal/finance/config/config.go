@@ -13,11 +13,12 @@ import (
 )
 
 type FileConfig struct {
-	HoursPerDay        *float64 `json:"hoursPerDay"`
-	TogglProjectIDs    []int    `json:"togglProjectIds"`
-	Toggl2ProjectIDs   []int    `json:"toggl2ProjectIds"`
-	HolidayCountry     *string  `json:"holidayCountry"`
-	HolidaySubdivision *string  `json:"holidaySubdivision"`
+	HoursPerDay           *float64 `json:"hoursPerDay"`
+	TogglProjectIDs       []int    `json:"togglProjectIds"`
+	Toggl2ProjectIDs      []int    `json:"toggl2ProjectIds"`
+	TogglIgnoredClientIDs []int    `json:"togglIgnoredClientIds"`
+	HolidayCountry        *string  `json:"holidayCountry"`
+	HolidaySubdivision    *string  `json:"holidaySubdivision"`
 
 	HourlyRateCents *int    `json:"hourlyRateCents"`
 	Currency        *string `json:"currency"`
@@ -84,6 +85,8 @@ type Config struct {
 	TogglWorkspace string
 	TogglProjects  string
 
+	TogglIgnoredClientIDs []int
+
 	Toggl2Key          string
 	Toggl2Organization string
 	Toggl2Workspace    string
@@ -110,6 +113,8 @@ func Load(fc FileConfig) Config {
 		TogglToken:     os.Getenv("TOGGL_API_TOKEN"),
 		TogglWorkspace: os.Getenv("TOGGL_WORKSPACE_ID"),
 		TogglProjects:  joinIDs(fc.TogglProjectIDs),
+
+		TogglIgnoredClientIDs: fc.TogglIgnoredClientIDs,
 
 		Toggl2Key:          os.Getenv("TOGGL2_API_KEY"),
 		Toggl2Organization: os.Getenv("TOGGL2_ORGANIZATION_ID"),

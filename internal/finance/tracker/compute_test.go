@@ -186,6 +186,11 @@ func TestComputeYearIncomeUsesMonthlyBreakdowns(t *testing.T) {
 	p := params()
 	trk := fullTracker()
 	trk.Personal = p
+	// The estimate pass reads the worked months through Toggl; this test pins
+	// the invoice rule alone, so it feeds Toggl an empty year.
+	empty := &fakeBackend{projects: `[]`, holidays: `[]`}
+	trk.Toggl = &Toggl{WorkspaceID: "ws", HTTP: empty.transport()}
+	trk.Holidays = &Holidays{HTTP: empty.transport()}
 	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
 		{Number: "0001", IssueDate: date(2025, 5, 2), DueDate: date(2025, 6, 2), TotalCents: 100000},
 		{Number: "0002", IssueDate: date(2025, 6, 2), DueDate: date(2025, 7, 2), TotalCents: 300000},

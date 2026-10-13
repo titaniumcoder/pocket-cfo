@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"context"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -45,11 +46,11 @@ func TestFundingIncomeIsTheMonthAfterDue(t *testing.T) {
 		{Number: "0001", IssueDate: date(2026, 7, 5), DueDate: date(2026, 7, 19), TotalCents: 500000},
 	})
 
-	august := trk.fundingIncome([]yearMonth{{2026, time.August}}, 0, nil)
+	august, _ := trk.fundingIncome(context.Background(), []yearMonth{{2026, time.August}}, date(2026, 8, 15), 0, nil)
 	if august.CompanyIncomeCents != 500000 {
 		t.Errorf("August company income = %d, want the 5 000 invoiced in July", august.CompanyIncomeCents)
 	}
-	july := trk.fundingIncome([]yearMonth{{2026, time.July}}, 0, nil)
+	july, _ := trk.fundingIncome(context.Background(), []yearMonth{{2026, time.July}}, date(2026, 8, 15), 0, nil)
 	if july.CompanyIncomeCents != 0 {
 		t.Errorf("July company income = %d, want 0 — the invoice is not due until July", july.CompanyIncomeCents)
 	}
@@ -61,7 +62,7 @@ func TestFundingIncomeIsTheMonthAfterDue(t *testing.T) {
 func TestFundingIncomeSplitsCompanyExpensesAcrossTheMonths(t *testing.T) {
 	trk := &Tracker{Personal: testParams()}
 	months := []yearMonth{{2026, time.January}, {2026, time.February}, {2026, time.March}}
-	pv := trk.fundingIncome(months, 3000, nil)
+	pv, _ := trk.fundingIncome(context.Background(), months, date(2026, 8, 15), 3000, nil)
 	if pv.CompanyExpensesCents != 300000 {
 		t.Errorf("CompanyExpensesCents = %d, want 3 × 1 000", pv.CompanyExpensesCents)
 	}
@@ -180,5 +181,169 @@ func TestRenderPageTwoPanelsAndLinks(t *testing.T) {
 	}
 	if strings.Contains(expensesPanel, `class="period-link"`) {
 		t.Errorf("expenses panel still carries a funding-period link: %s", expensesPanel)
+	}
+}
+
+// estimateTracker feeds the funding tests a Toggl whose one tracked hour sits
+// on monthDay (YYYY-MM-DD) under project 1, priced by the given projects
+// fixture. Everything else is empty: no holidays, no other projects.
+func estimateTracker(monthDay, projectsJSON string) *Tracker {
+	row := fmt.Sprintf(`[{"project_id":1,"hourly_rate_in_cents":7500,"billable_amount_in_cents":150000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"%sT09:00:00+00:00"}]}]`, monthDay)
+	b := &fakeBackend{
+		detailed: func(int) (string, string, string) { return row, "", "" },
+		projects: projectsJSON,
+		holidays: `[]`,
+	}
+	client := b.transport()
+	return &Tracker{
+		Toggl:       &Toggl{WorkspaceID: "ws", HTTP: client},
+		Holidays:    &Holidays{HTTP: client},
+		HoursPerDay: 8,
+		Loc:         time.UTC,
+		RateCents:   7500,
+		Personal:    testParams(),
+	}
+}
+
+// TestUninvoicedTrackedMonthIsIncomeTwoMonthsLater: October's tracked hours
+// have no invoice yet, so December — two months after the work, where the
+// invoice will land — carries their estimate: the tracked amount plus the
+// workdays still unbilled at the standard rate.
+func TestUninvoicedTrackedMonthIsIncomeTwoMonthsLater(t *testing.T) {
+	trk := estimateTracker("2026-10-05", `[{"id":1,"name":"Alpha"}]`)
+	trk.Invoiced = ComputeInvoiced(nil)
+
+	pv, estimates := trk.fundingIncome(context.Background(), []yearMonth{{2026, time.December}}, date(2026, 10, 13), 0, nil)
+	if pv.Err != "" {
+		t.Fatalf("FundingPersonal.Err = %q", pv.Err)
+	}
+	// 13 workdays remain in October after the 13th, plus the untracked
+	// workday today: 14 days × 8 h × 75 = 8 400, on top of the tracked 1 500.
+	if pv.CompanyIncomeCents != 990000 {
+		t.Errorf("December company income = %d, want the tracked 1 500 plus the 8 400 estimate", pv.CompanyIncomeCents)
+	}
+	if len(estimates[yearMonth{2026, time.December}]) != 1 {
+		t.Fatalf("estimates = %+v, want one estimate for December", estimates)
+	}
+	if got := estimates[yearMonth{2026, time.December}][0]; got.WorkedMonth != (yearMonth{2026, time.October}) || got.Cents != 990000 {
+		t.Errorf("estimate = %+v, want October 2026 at 990000", got)
+	}
+}
+
+// TestAnInvoiceIssuedInOrBeforeTheWorkedMonthSupersedesItsEstimate: an
+// invoice issued in October covers October's work, so nothing of it is
+// estimated any more.
+func TestAnInvoiceIssuedInOrBeforeTheWorkedMonthSupersedesItsEstimate(t *testing.T) {
+	trk := estimateTracker("2026-10-05", `[{"id":1,"name":"Alpha","client_id":7}]`)
+	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
+		{Number: "0001", ClientID: 7, IssueDate: date(2026, 10, 30), DueDate: date(2026, 10, 31), TotalCents: 500000},
+	})
+
+	pv, estimates := trk.fundingIncome(context.Background(), []yearMonth{{2026, time.December}}, date(2026, 10, 13), 0, nil)
+	if pv.Err != "" {
+		t.Fatalf("FundingPersonal.Err = %q", pv.Err)
+	}
+	if pv.CompanyIncomeCents != 0 {
+		t.Errorf("December company income = %d, want 0 — the invoice (income November) covers October's work", pv.CompanyIncomeCents)
+	}
+	if len(estimates) != 0 {
+		t.Errorf("estimates = %+v, want none", estimates)
+	}
+}
+
+// TestTrackingUntilExtendsCoverageToTheDayItNames: an invoice issued in
+// September whose tracking_until names October 15 covers October's work only
+// through that day — the estimate keeps the workdays after it.
+func TestTrackingUntilExtendsCoverageToTheDayItNames(t *testing.T) {
+	trk := estimateTracker("2026-10-05", `[{"id":1,"name":"Alpha","client_id":7}]`)
+	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
+		{Number: "0001", ClientID: 7, IssueDate: date(2026, 9, 30), DueDate: date(2026, 10, 31), TotalCents: 500000, TrackingUntil: date(2026, 10, 15)},
+	})
+
+	_, estimates := trk.fundingIncome(context.Background(), []yearMonth{{2026, time.December}}, date(2026, 10, 13), 0, nil)
+	// The 11 workdays from the 16th through the 31st, priced by day.
+	if got := estimates[yearMonth{2026, time.December}][0].Cents; got != 660000 {
+		t.Errorf("estimate = %d, want 660000 — the workdays after tracking_until, not the tracked month", got)
+	}
+}
+
+// TestATrackingUntilInsideTheIssueMonthLimitsCoverage: an invoice issued in
+// October with tracking_until October 10 does not cover the whole month —
+// the estimate keeps the fifteen workdays from the 11th on.
+func TestATrackingUntilInsideTheIssueMonthLimitsCoverage(t *testing.T) {
+	trk := estimateTracker("2026-10-05", `[{"id":1,"name":"Alpha","client_id":7}]`)
+	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
+		{Number: "0001", ClientID: 7, IssueDate: date(2026, 10, 30), DueDate: date(2026, 11, 30), TotalCents: 500000, TrackingUntil: date(2026, 10, 10)},
+	})
+
+	_, estimates := trk.fundingIncome(context.Background(), []yearMonth{{2026, time.December}}, date(2026, 10, 13), 0, nil)
+	if got := estimates[yearMonth{2026, time.December}][0].Cents; got != 900000 {
+		t.Errorf("estimate = %d, want 900000 — the workdays from the 11th through the 31st", got)
+	}
+}
+
+// TestFutureMonthsAreEstimatedFromExpectedWorkdays: a worked month with no
+// tracking at all is all expectation — its workdays at the standard rate,
+// landing as income two months later.
+func TestFutureMonthsAreEstimatedFromExpectedWorkdays(t *testing.T) {
+	b := &fakeBackend{}
+	client := b.transport()
+	trk := &Tracker{
+		Toggl:       &Toggl{WorkspaceID: "ws", HTTP: client},
+		Holidays:    &Holidays{HTTP: client},
+		HoursPerDay: 8,
+		Loc:         time.UTC,
+		RateCents:   7500,
+		Personal:    testParams(),
+	}
+
+	_, estimates := trk.fundingIncome(context.Background(), []yearMonth{{2027, time.February}}, date(2026, 10, 13), 0, nil)
+	// December 2026 holds 23 workdays.
+	if got := estimates[yearMonth{2027, time.February}][0].Cents; got != 1380000 {
+		t.Errorf("estimate = %d, want 1380000 — December's 23 workdays at 8 h × 75", got)
+	}
+}
+
+// TestIgnoredClientHoursNeverBecomeEstimates: the own company's client is on
+// the ignore list, so its tracked hours price nothing — the month's estimate
+// is the expected workdays alone, never the ignored amounts.
+func TestIgnoredClientHoursNeverBecomeEstimates(t *testing.T) {
+	trk := estimateTracker("2026-10-05", `[{"id":1,"name":"Alpha","client_id":5}]`)
+	trk.IgnoredClientIDs = map[int]bool{5: true}
+	trk.Invoiced = ComputeInvoiced(nil)
+
+	_, estimates := trk.fundingIncome(context.Background(), []yearMonth{{2026, time.December}}, date(2026, 10, 13), 0, nil)
+	if got := estimates[yearMonth{2026, time.December}][0].Cents; got != 840000 {
+		t.Errorf("estimate = %d, want 840000 — the expected workdays without the ignored 1 500", got)
+	}
+}
+
+// TestATogglFailureKeepsInvoicedIncomeAndDropsEstimates: when Toggl cannot
+// answer, the cascade falls back to the real invoices and says so instead of
+// showing a wrong number.
+func TestATogglFailureKeepsInvoicedIncomeAndDropsEstimates(t *testing.T) {
+	b := &fakeBackend{failDetailed: 500, projects: `[{"id":1,"name":"Alpha"}]`}
+	client := b.transport()
+	trk := &Tracker{
+		Toggl:       &Toggl{WorkspaceID: "ws", HTTP: client},
+		Holidays:    &Holidays{HTTP: client},
+		HoursPerDay: 8,
+		Loc:         time.UTC,
+		RateCents:   7500,
+		Personal:    testParams(),
+		Invoiced: ComputeInvoiced([]InvoicedFact{
+			{Number: "0001", IssueDate: date(2026, 9, 30), DueDate: date(2026, 10, 31), TotalCents: 500000},
+		}),
+	}
+
+	pv, estimates := trk.fundingIncome(context.Background(), []yearMonth{{2026, time.November}}, date(2026, 10, 13), 0, nil)
+	if pv.Err == "" {
+		t.Fatal("FundingPersonal.Err is empty — a Toggl failure must say so")
+	}
+	if pv.CompanyIncomeCents != 500000 {
+		t.Errorf("company income = %d, want the invoice's 5 000 alone", pv.CompanyIncomeCents)
+	}
+	if len(estimates) != 0 {
+		t.Errorf("estimates = %+v, want none", estimates)
 	}
 }

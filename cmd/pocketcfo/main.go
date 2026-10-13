@@ -95,19 +95,31 @@ func selectHours(mode string, track, focus *tracker.Toggl) tracker.HoursSource {
 
 func buildTracker(cfg financeconfig.Config, hours tracker.HoursSource, httpClient *http.Client, budgetDir string) *tracker.Tracker {
 	return &tracker.Tracker{
-		Toggl:        hours,
-		Holidays:     &tracker.Holidays{Country: cfg.Country, Subdivision: cfg.Subdivision, HTTP: httpClient},
-		Budget:       &tracker.Budget{FS: os.DirFS(budgetDir)},
-		Accounts:     &tracker.Accounts{FS: os.DirFS(budgetDir)},
-		Actuals:      &tracker.Actuals{FS: os.DirFS(budgetDir)},
-		HoursPerDay:  cfg.HoursPerDay,
-		Loc:          time.Local,
-		VacationDays: cfg.AnnualVacationDays,
-		RateCents:    cfg.HourlyRateCents,
-		RateCurrency: cfg.Currency,
-		Personal:     tracker.PersonalParams{Legislation: cfg.Legislation, Salary: cfg.Salary},
-		Start:        cfg.StartMonth,
+		Toggl:            hours,
+		Holidays:         &tracker.Holidays{Country: cfg.Country, Subdivision: cfg.Subdivision, HTTP: httpClient},
+		Budget:           &tracker.Budget{FS: os.DirFS(budgetDir)},
+		Accounts:         &tracker.Accounts{FS: os.DirFS(budgetDir)},
+		Actuals:          &tracker.Actuals{FS: os.DirFS(budgetDir)},
+		HoursPerDay:      cfg.HoursPerDay,
+		Loc:              time.Local,
+		VacationDays:     cfg.AnnualVacationDays,
+		RateCents:        cfg.HourlyRateCents,
+		RateCurrency:     cfg.Currency,
+		Personal:         tracker.PersonalParams{Legislation: cfg.Legislation, Salary: cfg.Salary},
+		IgnoredClientIDs: ignoredClientIDs(cfg.TogglIgnoredClientIDs),
+		Start:            cfg.StartMonth,
 	}
+}
+
+func ignoredClientIDs(ids []int) map[int]bool {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make(map[int]bool, len(ids))
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out
 }
 
 const togglTimeout = 60 * time.Second

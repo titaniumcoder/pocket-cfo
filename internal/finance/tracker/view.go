@@ -28,6 +28,8 @@ type Tracker struct {
 	Invoiced     InvoicedClient
 	Minimal      bool
 
+	IgnoredClientIDs map[int]bool
+
 	Start time.Time
 }
 
@@ -112,6 +114,8 @@ type Figures struct {
 
 	Invoiced      []InvoicedRow
 	InvoicedCents int
+
+	Estimated map[yearMonth][]EstimatedInvoice
 
 	ShowExpected     bool
 	ExpectedRange    string
@@ -448,7 +452,7 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 	} else {
 		span = []yearMonth{{year, start.Month()}}
 	}
-	f.FundingPersonal = t.fundingIncome(span, float64(bv.CompanyTotalPlannedCents)/100, bv.CompanyGroups)
+	f.FundingPersonal, f.Estimated = t.fundingIncome(ctx, span, now, float64(bv.CompanyTotalPlannedCents)/100, bv.CompanyGroups)
 
 	if t.Budget == nil {
 		return

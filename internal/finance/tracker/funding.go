@@ -1,9 +1,12 @@
 package tracker
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
+
+const estimateLagMonths = 2
 
 type yearMonth struct {
 	Year  int
@@ -41,25 +44,233 @@ func yearMonths(start, end yearMonth) []yearMonth {
 	return months
 }
 
+type EstimatedInvoice struct {
+	WorkedMonth yearMonth
+	Cents       int
+}
+
 // fundingIncome is the cascade for the months a page covers, funded the way
 // the company is actually paid: an invoice is income in the month after it
-// was due, and nothing else is. The company's planned expenses for the same
-// months are what the salary has to leave behind.
-func (t *Tracker) fundingIncome(months []yearMonth, companyExpensesEUR float64, companyGroups []CategoryGroupView) PersonalView {
+// was due, and a worked month whose invoice does not exist yet contributes
+// the estimate for it — income two months after the work, where the invoice
+// will land once the hours are in.
+func (t *Tracker) fundingIncome(ctx context.Context, months []yearMonth, now time.Time, companyExpensesEUR float64, companyGroups []CategoryGroupView) (PersonalView, map[yearMonth][]EstimatedInvoice) {
 	if len(months) == 0 {
-		return PersonalView{}
+		return PersonalView{}, nil
 	}
+
+	estimates, err := t.estimatedInvoices(ctx, months, now)
+	if err != nil {
+		pv := t.breakdownFunding(t.invoiceOnlyIncome(months), companyExpensesEUR, companyGroups, months[0])
+		pv.Err = err.Error()
+		return pv, nil
+	}
+
 	incomeEUR := make([]float64, len(months))
 	for i, m := range months {
-		incomeEUR[i] = float64(t.invoicedCentsForMonth(m)) / 100
+		incomeEUR[i] = float64(t.invoicedCentsForMonth(m)+estimateCents(estimates, m)) / 100
 	}
-	perMonthExpenseEUR := companyExpensesEUR / float64(len(months))
-	expensesEUR := make([]float64, len(months))
+	return t.breakdownFunding(incomeEUR, companyExpensesEUR, companyGroups, months[0]), estimates
+}
+
+func (t *Tracker) breakdownFunding(incomeEUR []float64, companyExpensesEUR float64, companyGroups []CategoryGroupView, start yearMonth) PersonalView {
+	perMonthExpenseEUR := companyExpensesEUR / float64(len(incomeEUR))
+	expensesEUR := make([]float64, len(incomeEUR))
 	for i := range expensesEUR {
 		expensesEUR[i] = perMonthExpenseEUR
 	}
 
-	pv := t.Personal.breakdownMonths(incomeEUR, expensesEUR, months[0])
+	pv := t.Personal.breakdownMonths(incomeEUR, expensesEUR, start)
 	pv.CompanyGroups = companyGroups
 	return pv
+}
+
+func (t *Tracker) invoiceOnlyIncome(months []yearMonth) []float64 {
+	incomeEUR := make([]float64, len(months))
+	for i, m := range months {
+		incomeEUR[i] = float64(t.invoicedCentsForMonth(m)) / 100
+	}
+	return incomeEUR
+}
+
+// estimatedInvoices prices, for every income month the page covers, the
+// worked month two earlier — the invoice that does not exist yet. A month
+// whose work the issued invoices already cover contributes nothing.
+func (t *Tracker) estimatedInvoices(ctx context.Context, incomeMonths []yearMonth, now time.Time) (map[yearMonth][]EstimatedInvoice, error) {
+	if t.Toggl == nil {
+		return nil, nil
+	}
+	worked := make([]yearMonth, len(incomeMonths))
+	for i, im := range incomeMonths {
+		worked[i] = im.addMonths(-estimateLagMonths)
+	}
+	years := distinctYears(worked)
+
+	togglCtx, cancelToggl := waitBudget(ctx)
+	defer cancelToggl()
+
+	projects, err := t.hours().Projects(togglCtx)
+	if err != nil {
+		return nil, fmt.Errorf("funding: toggl projects: %w", err)
+	}
+	ydByYear, err := t.fetchYearDataByYear(togglCtx, years)
+	if err != nil {
+		return nil, err
+	}
+	holidaysByYear, err := t.fetchHolidaysByYear(ctx, years)
+	if err != nil {
+		return nil, err
+	}
+
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, t.Loc)
+
+	out := map[yearMonth][]EstimatedInvoice{}
+	for i, im := range incomeMonths {
+		wm := worked[i]
+		cents := t.monthEstimateCents(wm, projects, ydByYear[wm.Year], holidaysByYear[wm.Year], today)
+		if cents != 0 {
+			out[im] = append(out[im], EstimatedInvoice{WorkedMonth: wm, Cents: cents})
+		}
+	}
+	return out, nil
+}
+
+func (t *Tracker) fetchYearDataByYear(ctx context.Context, years []int) (map[int]*YearData, error) {
+	ydByYear := map[int]*YearData{}
+	for _, y := range years {
+		yd, err := t.hours().Year(ctx, y)
+		if err != nil {
+			return nil, fmt.Errorf("funding: toggl %d: %w", y, err)
+		}
+		ydByYear[y] = yd
+	}
+	return ydByYear, nil
+}
+
+func (t *Tracker) fetchHolidaysByYear(ctx context.Context, years []int) (map[int]map[string]bool, error) {
+	holidaysByYear := map[int]map[string]bool{}
+	for _, y := range years {
+		yearStart := time.Date(y, time.January, 1, 0, 0, 0, 0, t.Loc)
+		yearEnd := yearStart.AddDate(1, 0, -1)
+		hds, err := t.Holidays.Fetch(ctx, yearStart, yearEnd)
+		if err != nil {
+			return nil, fmt.Errorf("funding: holidays %d: %w", y, err)
+		}
+		set := map[string]bool{}
+		for _, hd := range hds {
+			set[hd.Date.Format("2006-01-02")] = true
+		}
+		holidaysByYear[y] = set
+	}
+	return holidaysByYear, nil
+}
+
+func distinctYears(months []yearMonth) []int {
+	seen := map[int]bool{}
+	var years []int
+	for _, ym := range months {
+		if !seen[ym.Year] {
+			seen[ym.Year] = true
+			years = append(years, ym.Year)
+		}
+	}
+	return years
+}
+
+// monthEstimateCents prices a worked month as the invoice that does not
+// exist yet: the tracked hours the client's coverage frontier does not
+// already reach, plus the workdays still unbilled after it. The frontier is
+// the latest coverage extent among the month's billable clients — written-
+// down tracking_until where an invoice names a day, the end of the issue
+// month where none does.
+func (t *Tracker) monthEstimateCents(ym yearMonth, projects map[int]Project, yd *YearData, holidays map[string]bool, today time.Time) int {
+	if yd == nil {
+		return 0
+	}
+	monthStart := time.Date(ym.Year, ym.Month, 1, 0, 0, 0, 0, t.Loc)
+	monthEnd := monthStart.AddDate(0, 1, -1)
+	frontier := t.coverageFrontier(yd.Months[ym.Month], projects)
+
+	var trackedCents int
+	for _, a := range yd.Months[ym.Month] {
+		clientID := projects[a.ProjectID].ClientID
+		if t.ignoresClient(clientID) {
+			continue
+		}
+		f := t.Invoiced.frontierFor(clientID)
+		if !f.IsZero() && !f.Before(monthEnd) {
+			continue
+		}
+		if !f.IsZero() && !f.Before(monthStart) {
+			continue
+		}
+		trackedCents += a.AmountCents
+	}
+
+	if !frontier.IsZero() && !frontier.Before(monthEnd) {
+		return trackedCents
+	}
+
+	rateCents := t.RateCents
+	if frontierInsideMonth(frontier, monthStart, monthEnd) {
+		// The monthly aggregates cannot price individual days, so the
+		// unbilled remainder after the frontier is priced by day: every
+		// workday it holds is work the next invoice will carry, whether
+		// its hours are tracked yet or not.
+		days := countWorkdays(frontier.AddDate(0, 0, 1), monthEnd, holidays)
+		return trackedCents + round(float64(days)*t.HoursPerDay*float64(rateCents))
+	}
+
+	remaining, todayIsWorkday := workdayInfo(monthStart, monthEnd, today, holidays)
+	days := remaining
+	todayTracked := yd.Days[today.Format("2006-01-02")]
+	if todayIsWorkday && !todayTracked {
+		days++
+	}
+	return trackedCents + round(float64(days)*t.HoursPerDay*float64(rateCents))
+}
+
+func frontierInsideMonth(frontier, monthStart, monthEnd time.Time) bool {
+	return !frontier.IsZero() && !frontier.Before(monthStart) && frontier.Before(monthEnd)
+}
+
+// coverageFrontier is the latest frontier among the month's billable
+// clients. Zero when no issued invoice reaches into the month.
+func (t *Tracker) coverageFrontier(aggs []Aggregate, projects map[int]Project) time.Time {
+	var frontier time.Time
+	for _, a := range aggs {
+		if t.ignoresClient(projects[a.ProjectID].ClientID) {
+			continue
+		}
+		if f := t.Invoiced.frontierFor(projects[a.ProjectID].ClientID); f.After(frontier) {
+			frontier = f
+		}
+	}
+	return frontier
+}
+
+func (t *Tracker) ignoresClient(clientID int) bool {
+	return t.IgnoredClientIDs[clientID]
+}
+
+func countWorkdays(start, end time.Time, holidays map[string]bool) int {
+	days := 0
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+			continue
+		}
+		if holidays[d.Format("2006-01-02")] {
+			continue
+		}
+		days++
+	}
+	return days
+}
+
+func estimateCents(estimates map[yearMonth][]EstimatedInvoice, ym yearMonth) int {
+	var total int
+	for _, e := range estimates[ym] {
+		total += e.Cents
+	}
+	return total
 }

@@ -8,6 +8,9 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Changed
+- The invoicing page's Recipients table column "Total (frame)" is labelled just "Total".
+
 ## [4.6.0] - 2026-10-13
 
 ### Added

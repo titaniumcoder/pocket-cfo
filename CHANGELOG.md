@@ -8,7 +8,9 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
-### Changed
+## [4.6.1] - 2026-10-19
+
+### Fixed
 - The invoicing page's Recipients table column "Total (frame)" is labelled just "Total".
 
 ## [4.6.0] - 2026-10-13
@@ -624,7 +626,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.6.0...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.6.1...HEAD
+[4.6.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.6.0...v4.6.1
 [4.6.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.5.0...v4.6.0
 [4.5.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.4.1...v4.5.0
 [4.4.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.4.0...v4.4.1

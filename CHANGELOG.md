@@ -8,6 +8,10 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Added
+- A client logging in with their own email address lands directly on their portal: recipient addresses may request a login link like listed users, and the callback sends them to the portal the passkey link opens. A client who also carries `users.json` parts keeps them — same session, only the landing page differs.
+
+
 ## [4.10.0] - 2026-10-20
 
 ### Added

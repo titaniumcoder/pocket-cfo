@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
+	"github.com/titaniumcoder/pocket-cfo/internal/schema/recipient"
 )
 
 func TestPermissionTiers(t *testing.T) {
@@ -307,5 +308,94 @@ func TestHandleEmailLoginCallbackRejectsNoLongerAllowlistedEmail(t *testing.T) {
 
 	if w.Header().Get("Location") != "/auth/email?error=1" {
 		t.Fatalf("want redirect to /auth/email?error=1, got %q", w.Header().Get("Location"))
+	}
+}
+
+// newClientPortalServer is newTestServer with a recipient whose own email
+// address can log in: recipient 0001 with a passkey, and the link secret
+// that turns passkey into portal URL.
+func newClientPortalServer(t *testing.T, usersJSON string) *server {
+	t.Helper()
+	s := newTestServer(t)
+	if usersJSON != "" {
+		mustWriteFile(t, usersFile, usersJSON)
+	}
+	mustMkdirAll(t, recipientsDir)
+	writeJSON(t, recipientsDir+"/0001.json", recipient.RecipientJson{
+		Number: 1, LegalName: "Portal Client", Email: "client@example.com", IsBusiness: true,
+		Language:      recipient.RecipientJsonLanguageDe,
+		Address:       recipient.Address{Line1: "Weg 1", PostalCode: "1000", City: "Wien", CountryCode: "AT"},
+		AccessPasskey: strp("portal-passkey"),
+	})
+	s.cfg.clientLinkSecret = "portal-link-secret"
+	return s
+}
+
+// TestAClientLoginLandsOnItsPortal: a recipient logging in with the address
+// the recipient data carries is sent straight to the portal their passkey
+// link opens — no users.json entry needed.
+func TestAClientLoginLandsOnItsPortal(t *testing.T) {
+	s := newClientPortalServer(t, "")
+
+	token, err := auth.GenerateLoginToken(s.cfg.otpLinkSecret, "client@example.com", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/auth/email/callback?token="+token, nil)
+	w := httptest.NewRecorder()
+	s.handleEmailLoginCallback(w, r)
+
+	want := "/invoicing/client/" + computeToken(1, "portal-passkey", "portal-link-secret")
+	if w.Code != http.StatusFound || w.Header().Get("Location") != want {
+		t.Fatalf("want redirect to the portal, got %d %q", w.Code, w.Header().Get("Location"))
+	}
+}
+
+// TestAClientWithPartsLandsOnItsPortalAndKeepsItsParts: a client who also
+// carries parts gets the portal as the landing page, and the session keeps
+// the parts — the access is not narrowed by the portal redirect.
+func TestAClientWithPartsLandsOnItsPortalAndKeepsItsParts(t *testing.T) {
+	s := newClientPortalServer(t, `{"users":[{"email":"client@example.com","parts":["finance"]}]}`)
+
+	token, err := auth.GenerateLoginToken(s.cfg.otpLinkSecret, "client@example.com", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/auth/email/callback?token="+token, nil)
+	w := httptest.NewRecorder()
+	s.handleEmailLoginCallback(w, r)
+
+	want := "/invoicing/client/" + computeToken(1, "portal-passkey", "portal-link-secret")
+	if w.Code != http.StatusFound || w.Header().Get("Location") != want {
+		t.Fatalf("want redirect to the portal, got %d %q", w.Code, w.Header().Get("Location"))
+	}
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != sessionCookie {
+		t.Fatalf("want a %s cookie to be set, got %+v", sessionCookie, cookies)
+	}
+	sess, err := auth.Decode(s.cfg.sessionSecret, cookies[0].Value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sess.HasPart("finance") {
+		t.Errorf("session parts = %v, want finance kept beside the portal", sess.Parts)
+	}
+}
+
+// TestAClientLoginRequestIsAnsweredLikeAnyOther: a recipient address may
+// request a login link, and the response is the same generic page whether
+// the address is known or not.
+func TestAClientLoginRequestIsAnsweredLikeAnyOther(t *testing.T) {
+	s := newClientPortalServer(t, "")
+
+	for _, email := range []string{"client@example.com", "stranger@example.com"} {
+		form := url.Values{"email": {email}}
+		r := httptest.NewRequest(http.MethodPost, "/auth/email", nil)
+		r.PostForm = form
+		w := httptest.NewRecorder()
+		s.handleEmailLoginRequest(w, r)
+		if w.Code != http.StatusOK {
+			t.Errorf("login request for %s = %d, want the generic 200", email, w.Code)
+		}
 	}
 }

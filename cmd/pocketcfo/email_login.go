@@ -12,6 +12,7 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 	"github.com/titaniumcoder/pocket-cfo/internal/mail"
+	"github.com/titaniumcoder/pocket-cfo/internal/stats"
 	"github.com/titaniumcoder/pocket-cfo/internal/users"
 )
 
@@ -32,6 +33,8 @@ func (s *server) handleEmailLoginRequest(w http.ResponseWriter, r *http.Request)
 	email := normalizeEmail(r.FormValue("email"))
 	if validEmail(email) && s.allowEmailRequest(r, email) {
 		if _, allowed := s.emailParts(email); allowed {
+			s.sendLoginLink(email)
+		} else if _, isClient := s.recipientPortalFor(email); isClient {
 			s.sendLoginLink(email)
 		}
 	}
@@ -63,12 +66,15 @@ func (s *server) handleEmailLoginCallback(w http.ResponseWriter, r *http.Request
 		http.Redirect(w, r, "/auth/email?error=1", http.StatusFound)
 		return
 	}
-	parts, allowed := s.emailParts(email)
-	if !allowed {
+	parts, hasParts := s.emailParts(email)
+	portalURL, isClient := s.recipientPortalFor(email)
+	if !hasParts && !isClient {
 		http.Redirect(w, r, "/auth/email?error=1", http.StatusFound)
 		return
 	}
-	s.logins().record(email, time.Now())
+	if hasParts {
+		s.logins().record(email, time.Now())
+	}
 
 	sess := auth.NewReadOnlySession(email, parts, auth.ReadOnlyTTL)
 	encoded, err := auth.Encode(s.cfg.sessionSecret, sess)
@@ -85,7 +91,38 @@ func (s *server) handleEmailLoginCallback(w http.ResponseWriter, r *http.Request
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(auth.ReadOnlyTTL),
 	})
+	if isClient {
+		http.Redirect(w, r, portalURL, http.StatusFound)
+		return
+	}
 	http.Redirect(w, r, s.destinationAfterLogin(w, r), http.StatusFound)
+}
+
+// recipientPortalFor matches a login address against the recipients' own
+// email addresses. A client logging in this way is sent straight to the
+// portal the passkey link would have opened; a client who also carries
+// parts keeps them — the session is the same, only the landing page differs.
+// No match, or no passkey or link secret to build the portal URL from, and
+// this is simply not a client login.
+func (s *server) recipientPortalFor(email string) (string, bool) {
+	if s.cfg.clientLinkSecret == "" {
+		return "", false
+	}
+	recipients, err := stats.LoadRecipients(recipientsDir)
+	if err != nil {
+		return "", false
+	}
+	for _, r := range recipients {
+		if r.AccessPasskey == nil || *r.AccessPasskey == "" {
+			continue
+		}
+		if normalizeEmail(r.Email) != email {
+			continue
+		}
+		token := computeToken(r.Number, *r.AccessPasskey, s.cfg.clientLinkSecret)
+		return s.cfg.baseURL + "/invoicing/client/" + token, true
+	}
+	return "", false
 }
 
 func (s *server) emailLoginAvailable() bool {

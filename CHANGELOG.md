@@ -12,6 +12,7 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ### Added
 - The info page lists every user from the login list with when they last logged in and whether a session is still active — persisted in STATE_DIR so it survives restarts, in memory only without one.
+- A new `accounting` part for `users.json` logins: the accountant sees the finance page's business half — company income and expenses, the salary cascade, social contributions and tax, the income panel — plus the invoicing page, but none of the private spending: no private expense ledger, no mistimed notes naming private categories, no Summary balance, and the spending page stays owner-only.
 
 ## [4.8.0] - 2026-10-20
 

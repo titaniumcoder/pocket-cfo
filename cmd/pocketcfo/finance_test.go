@@ -1004,3 +1004,84 @@ func TestTheSpendingDetailPageStaysOwnerOnly(t *testing.T) {
 		t.Errorf("spending page for a viewer = %d, want 403", w.Code)
 	}
 }
+
+// TestTheAccountantSeesTheBusinessButNotThePrivate: the accounting part
+// grants the finance page in business view — company income, the salary
+// cascade, tax — while the private expense ledger, the mistimed notes that
+// name private categories and the Summary balance stay off the page. The
+// owner still sees everything.
+func TestTheAccountantSeesTheBusinessButNotThePrivate(t *testing.T) {
+	s := newFinanceTestServer(t)
+
+	figures := tracker.Figures{Mode: "month", Currency: "€"}
+	figures.ShowActuals = true
+	figures.ShowSummary = true
+	figures.BalanceCents = 500
+	figures.SpendingDetailURL = ""
+	figures.PrivateGroups = []tracker.CategoryGroupView{{
+		Name: "Living",
+		Rows: []tracker.CategoryRow{{Name: "Rent", CategoryID: "rent"}},
+	}}
+	figures.FundingPersonal.CompanyGroups = []tracker.CategoryGroupView{{
+		Name: "Company costs",
+		Rows: []tracker.CategoryRow{{Name: "Accounting software", CategoryID: "software"}},
+	}}
+	figures.Mistimed = []tracker.MistimedRow{{Name: "Rent", Note: "dated next month"}}
+
+	render := func(sess auth.Session) string {
+		w := httptest.NewRecorder()
+		s.renderFinancePage(w, sess, figures)
+		return w.Body.String()
+	}
+
+	accountant := auth.NewReadOnlySession("accountant@example.com", []string{users.PartAccounting}, time.Hour)
+	body := render(accountant)
+	for _, want := range []string{"Company income", "Employer social", "Gross salary", "Income tax", "Accounting software"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the accountant's page is missing %q", want)
+		}
+	}
+	for _, banned := range []string{"Rent", "Living", "Balance", "mistimed-note"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("the accountant's page leaks private detail %q:\n%s", banned, body)
+		}
+	}
+
+	owner := render(auth.NewSession("owner", "admin", time.Hour))
+	for _, want := range []string{"Rent", "Balance", "Accounting software"} {
+		if !strings.Contains(owner, want) {
+			t.Errorf("the owner's page is missing %q", want)
+		}
+	}
+}
+
+// TestAnAccountantSessionReachesTheFinancePageButNotTheSpending: the
+// accounting part opens the finance routes and stays locked out of the
+// spending detail page.
+func TestAnAccountantSessionReachesTheFinancePageButNotTheSpending(t *testing.T) {
+	s := newLoginTestServer(t)
+	writeUsersList(t, `{"users":[{"email":"accountant@example.com","parts":["accounting","invoicing"]}]}`)
+
+	encoded, err := auth.Encode(s.cfg.sessionSecret, auth.NewReadOnlySession("accountant@example.com", []string{users.PartAccounting, users.PartInvoicing}, time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/2026/10", nil)
+	r.AddCookie(&http.Cookie{Name: sessionCookie, Value: encoded})
+	w := httptest.NewRecorder()
+	sess, ok := s.financeSession(w, r)
+	if !ok {
+		t.Fatalf("financeSession for an accountant = %d, want ok", w.Code)
+	}
+	if !sess.HasPart(users.PartAccounting) {
+		t.Errorf("parts = %v, want accounting kept", sess.Parts)
+	}
+
+	sp := httptest.NewRecorder()
+	spReq := httptest.NewRequest(http.MethodGet, "/2026/10/spending", nil)
+	spReq.AddCookie(&http.Cookie{Name: sessionCookie, Value: encoded})
+	s.routes().ServeHTTP(sp, spReq)
+	if sp.Code != http.StatusForbidden {
+		t.Errorf("spending page for an accountant = %d, want 403", sp.Code)
+	}
+}

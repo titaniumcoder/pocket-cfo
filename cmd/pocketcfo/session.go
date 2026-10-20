@@ -69,7 +69,7 @@ func (s *server) header(sess auth.Session, active string, period webui.Period) w
 	return webui.Header{
 		Login:         sess.Login,
 		Active:        active,
-		ShowFinance:   sess.HasPart(users.PartFinance),
+		ShowFinance:   sess.HasPart(users.PartFinance) || sess.HasPart(users.PartAccounting),
 		ShowSpending:  s.showSpending(sess),
 		ShowInvoicing: sess.HasPart(users.PartInvoicing),
 		ShowInfo:      s.authorized(sess),

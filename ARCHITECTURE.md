@@ -745,9 +745,14 @@ self-expiring token (`internal/auth/otp.go`) emailed via Amazon SES
 session cookie, but with `Permission = "readonly"` and a 7-day TTL
 (`auth.ReadOnlyTTL`) instead of 10 minutes — re-doing an email round trip
 every 10 minutes would be unusable, and there's no GitHub-side permission to
-re-check anyway. `readonly` sessions see the same dashboard as `push`/`admin`
-ones (`authenticated()` gates `/` and `/invoices/{file}`), *except* the
-client-portal links (`portalLinks()`), which stay exclusive to `authorized()`
+re-check anyway. A `readonly` session is scoped by the `parts` its `users.json`
+entry grants: `finance` sees the finance pages whole but no spending detail
+(the spending page and every link into it stay `authorized()`-only),
+`accounting` sees the finance page in business view — company expenses, the
+salary cascade, tax, the income panel — with the private expense ledger, the
+mistimed notes and the Summary balance removed, and `invoicing` opens the
+invoicing page (an accountant is listed as `["accounting", "invoicing"]`).
+The client-portal links (`portalLinks()`) stay exclusive to `authorized()`
 — those are bearer secrets for the separate, even-lower-trust `/client/{token}`
 tier and shouldn't leak to this one.
 

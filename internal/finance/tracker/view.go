@@ -176,6 +176,12 @@ type Figures struct {
 
 	ShowSpendingLink bool
 
+	// HidePrivate removes the private half of the page — the private
+	// expense ledger, the private part of the actuals and the Summary
+	// balance that subtracts them — for the accountant's login, which sees
+	// the business side only.
+	HidePrivate bool
+
 	FundingPersonal PersonalView
 
 	ShowSummary  bool

@@ -304,7 +304,7 @@ var templates = `
 </head>
 <body>
 <main>
-  <h1 class="print-title">Pocket CFO — Finance {{.Month}}{{if .UntrackedCount}} &bull;{{end}}</h1>
+  <h1 class="print-title">Pocket CFO — Finance {{.Month}}{{if and (not .HidePrivate) .UntrackedCount}} &bull;{{end}}</h1>
   {{template "sitehead" .Header}}
 
   <div class="layout">
@@ -426,12 +426,12 @@ var templates = `
       {{end}}
     </div>
 
-    {{if .Mistimed}}<div class="ledger">
+    {{if and (not .HidePrivate) .Mistimed}}<div class="ledger">
       {{range .Mistimed}}<div class="row"><span class="mistimed-note">{{mark "mistimed"}}{{.Name}} &mdash; {{eur .Cents}}, {{.Note}}. Fix the date in budget.json.</span></div>
       {{end}}
     </div>{{end}}
 
-    <div class="ledger{{if .ShowActuals}} with-actuals{{end}}">
+    {{if not .HidePrivate}}<div class="ledger{{if .ShowActuals}} with-actuals{{end}}">
       {{if .BudgetErr}}<div class="row"><span class="error">{{.BudgetErr}}</span></div>
       {{else}}
       {{if .ActualsErr}}<div class="row"><span class="error">{{.ActualsErr}}</span></div>{{end}}
@@ -442,11 +442,11 @@ var templates = `
       <div class="row"><span class="label">Not in this month&rsquo;s plan</span><span class="mid"></span><span class="amt unbudgeted">{{eur .PrivateUnmatchedCents}}</span></div>
       {{end}}{{end}}
       {{end}}
-    </div>
+    </div>{{end}}
 
   </section>
 
-  {{if .ShowSummary}}
+  {{if and (not .HidePrivate) .ShowSummary}}
   <section class="panel summary-panel">
     <h2 class="panel-title">Summary</h2>
     <div class="ledger{{if .ShowActuals}} with-actuals{{end}}">

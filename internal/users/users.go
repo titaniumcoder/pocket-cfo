@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	PartFinance   = "finance"
-	PartInvoicing = "invoicing"
+	PartFinance    = "finance"
+	PartInvoicing  = "invoicing"
+	PartAccounting = "accounting"
 )
 
 func Load(path string) (schemausers.UsersJson, error) {

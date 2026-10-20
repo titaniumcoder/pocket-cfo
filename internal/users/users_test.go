@@ -3,6 +3,7 @@ package users
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -39,9 +40,21 @@ func TestLoadMissingFile(t *testing.T) {
 }
 
 func TestLoadRejectsUnknownPart(t *testing.T) {
-	path := writeUsersFile(t, `{"users": [{"email": "a@example.com", "parts": ["accounting"]}]}`)
+	path := writeUsersFile(t, `{"users": [{"email": "a@example.com", "parts": ["bookkeeping"]}]}`)
 	if _, err := Load(path); err == nil {
 		t.Fatal("expected an error for an unrecognized part, got nil")
+	}
+}
+
+func TestLoadAcceptsAccountingPart(t *testing.T) {
+	path := writeUsersFile(t, `{"users": [{"email": "a@example.com", "parts": ["accounting", "invoicing"]}]}`)
+	u, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	parts, ok := PartsFor(u, "a@example.com")
+	if !ok || !slices.Contains(parts, "accounting") {
+		t.Errorf("parts = %v (ok %v), want accounting", parts, ok)
 	}
 }
 

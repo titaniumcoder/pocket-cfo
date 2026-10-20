@@ -23,7 +23,7 @@
         "email": { "type": "string", "format": "email" },
         "parts": {
           "type": "array",
-          "items": { "type": "string", "enum": ["finance", "invoicing"] },
+          "items": { "type": "string", "enum": ["finance", "invoicing", "accounting"] },
           "minItems": 1,
           "uniqueItems": true
         }

@@ -96,7 +96,7 @@ func (s *server) financeSession(w http.ResponseWriter, r *http.Request) (auth.Se
 		tracker.RenderLogin(w, "", s.emailLoginAvailable())
 		return sess, false
 	}
-	if s.authenticatedForPart(sess, users.PartFinance) {
+	if s.authenticatedForPart(sess, users.PartFinance) || s.authenticatedForPart(sess, users.PartAccounting) {
 		return sess, true
 	}
 	if sess.HasPart(users.PartInvoicing) {
@@ -125,6 +125,9 @@ func (s *server) renderFinancePage(w http.ResponseWriter, sess auth.Session, f t
 	f.ShowInvoicingLink = sess.HasPart(users.PartInvoicing)
 	f.ShowInfoLink = s.authorized(sess)
 	f.ShowUploadsLink = s.admin(sess)
+	// The accountant's view: everything business — company expenses, the
+	// salary cascade, tax — but none of the private spending it funds.
+	f.HidePrivate = !s.authorized(sess) && !sess.HasPart(users.PartFinance)
 	f.SpendingDetailURL = ""
 	if s.showSpending(sess) {
 		f.ShowSpendingLink = true

@@ -8,6 +8,8 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [4.7.0] - 2026-10-20
+
 ### Changed
 - The finance panel closes on a summary box instead of "Available to spend": Net income, Total private expenses, and a Balance (green when positive, red when negative). A closed month's balance subtracts the private expenses actually imported; the current and future months subtract the plan.
 - The bank's own readings from accounts.json no longer appear on the finance page at all — account name, figure and read date live on the spending page only.
@@ -636,7 +638,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.6.1...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.7.0...HEAD
+[4.7.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.6.1...v4.7.0
 [4.6.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.6.0...v4.6.1
 [4.6.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.5.0...v4.6.0
 [4.5.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.4.1...v4.5.0

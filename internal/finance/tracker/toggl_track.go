@@ -116,6 +116,7 @@ func (a trackAPI) fetchRange(ctx context.Context, start, end time.Time) (*YearDa
 		amount := derefInt(r.BillableAmountInCents)
 		sec := 0
 		earliest := ""
+		daySeconds := map[string]int{}
 		for _, te := range r.TimeEntries {
 			sec += te.Seconds
 			if te.Seconds <= 0 || len(te.Start) < 10 {
@@ -123,6 +124,7 @@ func (a trackAPI) fetchRange(ctx context.Context, start, end time.Time) (*YearDa
 			}
 			d := te.Start[:10]
 			days[d] = true
+			daySeconds[d] += te.Seconds
 			if earliest == "" || d < earliest {
 				earliest = d
 			}
@@ -132,7 +134,7 @@ func (a trackAPI) fetchRange(ctx context.Context, start, end time.Time) (*YearDa
 			month = tm.Month()
 		}
 		k := key{pid, rate, month}
-		acc[k] = addAggregate(acc[k], pid, rate, r.Currency, amount, sec)
+		acc[k] = addAggregate(acc[k], pid, rate, r.Currency, amount, sec, daySeconds)
 	})
 	if err != nil {
 		return nil, err
@@ -145,12 +147,18 @@ func (a trackAPI) fetchRange(ctx context.Context, start, end time.Time) (*YearDa
 	return yd, nil
 }
 
-func addAggregate(a *Aggregate, pid, rate int, currency string, amountCents, seconds int) *Aggregate {
+func addAggregate(a *Aggregate, pid, rate int, currency string, amountCents, seconds int, daySeconds map[string]int) *Aggregate {
 	if a == nil {
 		a = &Aggregate{ProjectID: pid, RateCents: rate, Currency: currency}
 	}
 	a.AmountCents += amountCents
 	a.Seconds += seconds
+	for d, s := range daySeconds {
+		if a.DaySeconds == nil {
+			a.DaySeconds = map[string]int{}
+		}
+		a.DaySeconds[d] += s
+	}
 	return a
 }
 

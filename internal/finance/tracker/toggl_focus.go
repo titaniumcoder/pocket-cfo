@@ -213,7 +213,7 @@ func (a *focusAPI) fetchRange(ctx context.Context, start, end time.Time) (*YearD
 			month = tm.Month()
 		}
 		k := key{pid, rate, month}
-		acc[k] = addAggregate(acc[k], pid, rate, currency, entryAmountCents(sec, rate), sec)
+		acc[k] = addAggregate(acc[k], pid, rate, currency, entryAmountCents(sec, rate), sec, map[string]int{day: sec})
 	}
 
 	yd := &YearData{Months: map[time.Month][]Aggregate{}, Days: days}

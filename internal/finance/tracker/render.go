@@ -359,21 +359,26 @@ var templates = `
       <div class="row"><span class="stale-note">Fetching tracked hours from Toggl — this page refreshes itself in a moment.</span></div>
       {{else}}
       {{if .TogglStaleNote}}<div class="row"><span class="stale-note">{{.TogglStaleNote}}</span></div>{{end}}
-      {{if or .TrackedErr .Tracked}}
-      <h2>Tracked</h2>
+      {{if or .TrackedErr .Tracked .Covered}}
       {{if .TrackedErr}}<div class="row"><span class="error">{{.TrackedErr}}</span></div>
-      {{else}}{{range .Tracked}}<div class="row"><span class="label">{{.Project}}{{if .Unlinked}} <span class="note" title="No recipient in the data repo links this Toggl client to an invoice — link it or add the client to togglIgnoredClientIds">no recipient linked</span>{{else if .Ignored}} <span class="note">not invoiced</span>{{end}}</span><span class="mid">{{.Hours}} h &times; {{.Rate}}</span><span class="amt">{{eur .AmountCents}}<span class="stack-m">({{.Hours}}h)</span></span></div>{{end}}{{end}}
+      {{else}}
+      {{if .Covered}}<h2>Invoiced</h2>{{range .Covered}}<div class="row struck"><span class="label">{{.Project}}{{if .Note}} <span class="note">{{.Note}}</span>{{end}}</span><span class="mid">{{.Hours}} h &times; {{.Rate}}</span><span class="amt">{{eur .AmountCents}}<span class="stack-m">({{.Hours}}h)</span></span></div>{{end}}{{end}}
+      {{if .Tracked}}<h2>Tracked</h2>{{range .Tracked}}<div class="row"><span class="label">{{.Project}}{{if .Unlinked}} <span class="note" title="No recipient in the data repo links this Toggl client to an invoice — link it or add the client to togglIgnoredClientIds">no recipient linked</span>{{else if .Ignored}} <span class="note">not invoiced</span>{{else if .Note}} <span class="note">{{.Note}}</span>{{end}}</span><span class="mid">{{.Hours}} h &times; {{.Rate}}</span><span class="amt">{{eur .AmountCents}}<span class="stack-m">({{.Hours}}h)</span></span></div>{{end}}{{end}}
+      {{end}}
       {{end}}
 
-      {{if or .ShowExpected .ExpectedErr}}
+      {{if or .ShowExpected .ExpectedErr .ExpectedEstimates}}
       <h2>Expected</h2>
       {{if .ExpectedErr}}<div class="row"><span class="error">{{.ExpectedErr}}</span></div>
       {{else}}
+      {{if .ShowExpected}}
       <div class="row"><span class="label">{{.ExpectedRange}}</span><span class="mid">{{.ExpectedHours}} h &times; {{.ExpectedRate}}</span><span class="amt">{{eur .ExpectedCents}}<span class="stack-m">({{.ExpectedHours}}h)</span></span></div>
       {{if .ShowVacation}}
       <div class="row"><span class="label">Vacation</span><span class="mid">{{.VacationHoursDeducted}} h &times; {{.ExpectedRate}}</span><span class="amt neg">&minus;{{eur .VacationCentsDeducted}}<span class="stack-m">({{.VacationHoursDeducted}}h)</span></span></div>
       <div class="row sub"><span class="label">Expected total</span><span class="mid">{{.ExpectedNetHours}} h &times; {{.ExpectedRate}}</span><span class="amt goodamt">{{eur .ExpectedNetCents}}<span class="stack-m">({{.ExpectedNetHours}}h)</span></span></div>
       {{end}}
+      {{end}}
+      {{range .ExpectedEstimates}}<div class="row acct estimate"><span class="label">estimate for {{.WorkedMonth}} <span class="note">income this month, until the invoice arrives</span></span><span class="mid"></span><span class="amt estimate">{{eur .AmountCents}}</span></div>{{end}}
       {{end}}
       {{end}}
 

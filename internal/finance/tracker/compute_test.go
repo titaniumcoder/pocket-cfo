@@ -437,13 +437,12 @@ func TestRenderLogin(t *testing.T) {
 	}
 }
 
-// TestInvoiceLeavesIncomePanelAloneAndLandsInTheBudget pins the division of
-// labour between the two panels. The Income panel is a record of work: an
-// invoice doesn't un-work those hours, so July's tracked row stays exactly
-// as it was and no invoice ever appears there. The Rolling budget panel is
-// where the money question lives — that's where the invoice is the income,
-// in the month after it was due.
-func TestInvoiceLeavesIncomePanelAloneAndLandsInTheBudget(t *testing.T) {
+// TestAnInvoicedMonthStrikesOutInTheIncomePanel pins the division of labour
+// between the panels. The Income panel records work by billing state: July's
+// invoiced hours strike out under Invoiced and leave the Income total — the
+// money side of them is the invoice, in the Rolling budget panel, in the
+// month after it was due.
+func TestAnInvoicedMonthStrikesOutInTheIncomePanel(t *testing.T) {
 	rows := `[{"project_id":1,"hourly_rate_in_cents":7500,"billable_amount_in_cents":150000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"2026-07-10T09:00:00+00:00"}]}]`
 	b := &fakeBackend{
 		detailed: func(page int) (string, string, string) { return rows, "", "" },
@@ -464,27 +463,32 @@ func TestInvoiceLeavesIncomePanelAloneAndLandsInTheBudget(t *testing.T) {
 	if len(beforeInvoice.Tracked) != 1 || beforeInvoice.Tracked[0].AmountCents != 150000 {
 		t.Fatalf("before invoicing: Tracked = %+v, want one row of 150000", beforeInvoice.Tracked)
 	}
-	beforeTotal := beforeInvoice.TotalCents
+	if len(beforeInvoice.Covered) != 0 {
+		t.Errorf("before invoicing: Covered = %+v, want none", beforeInvoice.Covered)
+	}
 
 	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
-		{Number: "0001", IssueDate: date(2026, 7, 5), DueDate: date(2026, 7, 19), TotalCents: 500000},
+		{Number: "0001", ClientID: 1, IssueDate: date(2026, 7, 5), DueDate: date(2026, 7, 19), TotalCents: 500000},
 	})
 
-	// The work record is untouched by the invoice, in the covered month...
+	// The covered hours strike out under Invoiced and leave the Income
+	// total: the invoice is where they are money now.
 	july := trk.ComputeMonth(context.Background(), 2026, time.July)
-	if len(july.Tracked) != 1 || july.Tracked[0].AmountCents != 150000 {
-		t.Errorf("July Tracked = %+v, want the real hours left alone by the invoice", july.Tracked)
+	if len(july.Covered) != 1 || july.Covered[0].AmountCents != 150000 {
+		t.Fatalf("July Covered = %+v, want one struck row of 150000", july.Covered)
 	}
-	if july.TotalCents != beforeTotal {
-		t.Errorf("July Income total = %d, want %d — unchanged by the invoice", july.TotalCents, beforeTotal)
+	if len(july.Tracked) != 0 {
+		t.Errorf("July Tracked = %+v, want none — the invoice reaches the whole month", july.Tracked)
+	}
+	if july.TotalCents != 0 {
+		t.Errorf("July Income total = %d, want 0 — the invoiced hours leave the total", july.TotalCents)
 	}
 	if len(july.Invoiced) != 0 {
 		t.Errorf("July Invoiced = %+v, want none (not usable until August)", july.Invoiced)
 	}
 
 	// ...and in the month the money actually arrives, where the invoice is
-	// listed and IS the company income — the hours-based Income total is
-	// still untouched by it.
+	// listed and IS the company income.
 	august := trk.ComputeMonth(context.Background(), 2026, time.August)
 	if len(august.Invoiced) != 1 || august.Invoiced[0].AmountCents != 500000 {
 		t.Fatalf("August Invoiced = %+v, want one row of 500000", august.Invoiced)
@@ -499,6 +503,48 @@ func TestInvoiceLeavesIncomePanelAloneAndLandsInTheBudget(t *testing.T) {
 	}
 	if august.FundingPersonal.CompanyIncomeCents != 500000 {
 		t.Errorf("August funding company income = %d, want exactly the 500000 invoiced", august.FundingPersonal.CompanyIncomeCents)
+	}
+}
+
+// TestAMidMonthFrontierSplitsTheTrackedRowInTwo: tracking_until September 10
+// puts the invoice's coverage inside the tracked month, so the row splits —
+// the covered half strikes out under Invoiced, the rest stays under Tracked,
+// and the Income total keeps only what no invoice reaches.
+func TestAMidMonthFrontierSplitsTheTrackedRowInTwo(t *testing.T) {
+	rows := `[{"project_id":1,"hourly_rate_in_cents":7500,"billable_amount_in_cents":300000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"2026-09-05T09:00:00+00:00"},{"seconds":7200,"start":"2026-09-20T09:00:00+00:00"}]}]`
+	b := &fakeBackend{
+		detailed: func(page int) (string, string, string) { return rows, "", "" },
+		projects: `[{"id":1,"name":"Alpha","client_id":1}]`,
+	}
+	client := b.transport()
+	trk := &Tracker{
+		Toggl:        &Toggl{WorkspaceID: "ws", HTTP: client},
+		Holidays:     &Holidays{HTTP: client},
+		HoursPerDay:  8,
+		Loc:          time.UTC,
+		RateCents:    7500,
+		RateCurrency: "EUR",
+		Personal:     testLegislation(0.1892, 0.1378, 2112, 0.10),
+	}
+	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
+		{Number: "0001", ClientID: 1, IssueDate: date(2026, 10, 2), DueDate: date(2026, 10, 16), TotalCents: 500000, TrackingUntil: date(2026, 9, 10)},
+	})
+
+	f := trk.ComputeMonth(context.Background(), 2026, time.September)
+	if len(f.Covered) != 1 || f.Covered[0].AmountCents != 150000 {
+		t.Fatalf("Covered = %+v, want one struck row of 150000", f.Covered)
+	}
+	if f.Covered[0].Note != "until 10.09." {
+		t.Errorf("Covered note = %q, want until 10.09.", f.Covered[0].Note)
+	}
+	if len(f.Tracked) != 1 || f.Tracked[0].AmountCents != 150000 {
+		t.Fatalf("Tracked = %+v, want one row of 150000", f.Tracked)
+	}
+	if f.Tracked[0].Note != "from 11.09." {
+		t.Errorf("Tracked note = %q, want from 11.09.", f.Tracked[0].Note)
+	}
+	if f.TotalCents != 150000 {
+		t.Errorf("Income total = %d, want 150000 — the covered half leaves with the invoice", f.TotalCents)
 	}
 }
 

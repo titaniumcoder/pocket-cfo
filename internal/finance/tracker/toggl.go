@@ -517,6 +517,12 @@ type Aggregate struct {
 	AmountCents int
 	Seconds     int
 	Currency    string
+
+	// DaySeconds holds the tracked seconds per day the aggregate spans,
+	// so a coverage frontier falling inside the month can split the work
+	// into the part an issued invoice already carries and the part it
+	// does not.
+	DaySeconds map[string]int
 }
 
 type Project struct {
@@ -704,7 +710,7 @@ func mergeYearData(parts ...*YearData) *YearData {
 				if acc[k] == nil {
 					order = append(order, k)
 				}
-				acc[k] = addAggregate(acc[k], agg.ProjectID, agg.RateCents, agg.Currency, agg.AmountCents, agg.Seconds)
+				acc[k] = addAggregate(acc[k], agg.ProjectID, agg.RateCents, agg.Currency, agg.AmountCents, agg.Seconds, agg.DaySeconds)
 			}
 		}
 		for day := range yd.Days {

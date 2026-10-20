@@ -194,6 +194,8 @@ button.minimal-toggle { background: none; border: 0; padding: 0; font: inherit; 
 .amt.goodamt { color: var(--good); }
 .amt.estimate { color: var(--muted); font-weight: 500; }
 .row.acct.estimate .label { opacity: .85; }
+.row.struck .label, .row.struck .mid, .row.struck .amt { text-decoration: line-through; opacity: .55; }
+.row.struck .note { text-decoration: none; opacity: 1; }
 /* The planned column is money out too, so it carries the same sign and the
    same colour — muted by .mid's own opacity rather than by a second rule. */
 .mid.neg { color: var(--danger); }

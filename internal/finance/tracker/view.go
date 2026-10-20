@@ -54,6 +54,7 @@ type TrackedRow struct {
 	AmountCents int
 	Unlinked    bool
 	Ignored     bool
+	Note        string
 }
 
 type InvoicedRow struct {
@@ -116,6 +117,10 @@ type Figures struct {
 	Tracked    []TrackedRow
 	TrackedErr string
 
+	// Covered holds the tracked rows an issued invoice already reaches —
+	// the Invoiced section above Tracked, struck through.
+	Covered []TrackedRow
+
 	Invoiced      []InvoicedRow
 	InvoicedCents int
 
@@ -129,6 +134,11 @@ type Figures struct {
 	ExpectedErr      string
 	ExpectedNetHours string
 	ExpectedNetCents int
+
+	// ExpectedEstimates are the estimated invoices whose income month the
+	// page covers — the same grey rows the funding cascade shows under
+	// Company income, listed here where the worked months' panel sits.
+	ExpectedEstimates []InvoicedRow
 
 	ShowVacation          bool
 	VacationTotal         int
@@ -320,23 +330,62 @@ func (f *Figures) computeTrackedRows(t *Tracker, projects map[int]Project, aggs 
 		if name == "" {
 			name = "(no project)"
 		}
-		hours := aggHours(a)
-		row := TrackedRow{
-			Project:     name,
-			Hours:       formatHM(hours),
-			Rate:        formatNum(float64(a.RateCents) / 100),
-			AmountCents: a.AmountCents,
+		row := func(seconds, cents int) TrackedRow {
+			r := TrackedRow{
+				Project:     name,
+				Hours:       formatHM(aggHours(Aggregate{Seconds: seconds})),
+				Rate:        formatNum(float64(a.RateCents) / 100),
+				AmountCents: cents,
+			}
+			if t.ignoresClient(clientID) {
+				r.Ignored = true
+			} else if !t.LinkedClientIDs[clientID] {
+				r.Unlinked = true
+			}
+			return r
 		}
-		if t.ignoresClient(clientID) {
-			row.Ignored = true
-		} else if !t.LinkedClientIDs[clientID] {
-			row.Unlinked = true
+		frontier := t.Invoiced.frontierFor(clientID)
+		coveredSeconds, coveredCents, split := coveredPart(a, frontier)
+		switch {
+		case !split:
+			f.Tracked = append(f.Tracked, row(a.Seconds, a.AmountCents))
+		case coveredSeconds == a.Seconds:
+			f.Covered = append(f.Covered, row(coveredSeconds, coveredCents))
+		default:
+			coveredRow := row(coveredSeconds, coveredCents)
+			coveredRow.Note = "until " + frontier.Format("02.01.")
+			f.Covered = append(f.Covered, coveredRow)
+			if rest := a.Seconds - coveredSeconds; rest > 0 {
+				restRow := row(rest, a.AmountCents-coveredCents)
+				restRow.Note = "from " + frontier.AddDate(0, 0, 1).Format("02.01.")
+				f.Tracked = append(f.Tracked, restRow)
+			}
 		}
-		f.Tracked = append(f.Tracked, row)
-		trackedHours += hours
+		trackedHours += aggHours(a)
 		trackedCents += a.AmountCents
 	}
 	return trackedHours, trackedCents
+}
+
+// coveredPart splits an aggregate at the client's coverage frontier: the
+// seconds and cents no issued invoice reaches yet stay tracked, the rest is
+// what the invoice already carries. split is false when the frontier reaches
+// no tracked day, or when the aggregate carries no per-day seconds to split
+// by — the whole aggregate stays tracked.
+func coveredPart(a Aggregate, frontier time.Time) (seconds, cents int, split bool) {
+	if frontier.IsZero() || len(a.DaySeconds) == 0 || a.Seconds == 0 {
+		return 0, 0, false
+	}
+	for d, s := range a.DaySeconds {
+		day, err := time.Parse("2006-01-02", d)
+		if err == nil && !day.After(frontier) {
+			seconds += s
+		}
+	}
+	if seconds == 0 {
+		return 0, 0, false
+	}
+	return seconds, round(float64(a.AmountCents) * float64(seconds) / float64(a.Seconds)), true
 }
 
 // computeUnbilled sums the tracked work that is not estimated income: the
@@ -352,11 +401,19 @@ func (f *Figures) computeUnbilled(t *Tracker, projects map[int]Project, yd *Year
 		monthEnd := time.Date(year, m, 1, 0, 0, 0, 0, t.Loc).AddDate(0, 1, -1)
 		for _, a := range yd.Months[m] {
 			clientID := projects[a.ProjectID].ClientID
-			if !t.ignoresClient(clientID) && !t.Invoiced.coversMonth(clientID, monthEnd) {
+			if t.ignoresClient(clientID) {
+				cents += a.AmountCents
+				seconds += a.Seconds
 				continue
 			}
-			cents += a.AmountCents
-			seconds += a.Seconds
+			if t.Invoiced.coversMonth(clientID, monthEnd) {
+				cents += a.AmountCents
+				seconds += a.Seconds
+				continue
+			}
+			covered, coveredCents, _ := coveredPart(a, t.Invoiced.frontierFor(clientID))
+			cents += coveredCents
+			seconds += covered
 		}
 	}
 	return cents, aggHours(Aggregate{Seconds: seconds})
@@ -371,6 +428,7 @@ func (f *Figures) computeInvoicedRows(t *Tracker, year int, start, end time.Time
 		}
 		for _, est := range f.Estimated[ym] {
 			f.Invoiced = append(f.Invoiced, InvoicedRow{AmountCents: est.Cents, Estimated: true, WorkedMonth: est.WorkedMonth.String()})
+			f.ExpectedEstimates = append(f.ExpectedEstimates, InvoicedRow{AmountCents: est.Cents, Estimated: true, WorkedMonth: est.WorkedMonth.String()})
 		}
 	}
 }
@@ -688,6 +746,12 @@ func aggregatesInRange(yd *YearData, start, end time.Time) []Aggregate {
 			}
 			cur.AmountCents += a.AmountCents
 			cur.Seconds += a.Seconds
+			for d, s := range a.DaySeconds {
+				if cur.DaySeconds == nil {
+					cur.DaySeconds = map[string]int{}
+				}
+				cur.DaySeconds[d] += s
+			}
 		}
 	}
 	out := make([]Aggregate, 0, len(order))

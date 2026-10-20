@@ -11,6 +11,7 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 ### Changed
 - The finance panel closes on a summary box instead of "Available to spend": Net income, Total private expenses, and a Balance (green when positive, red when negative). A closed month's balance subtracts the private expenses actually imported; the current and future months subtract the plan.
 - The bank's own readings from accounts.json no longer appear on the finance page at all — account name, figure and read date live on the spending page only.
+- The income panel reads top to bottom as billing state: **Invoiced** — tracked hours an issued invoice already covers, struck through, with a mid-month coverage frontier splitting the row into its covered and open halves — **Tracked** — what no invoice reaches yet — and **Expected** — the workdays projection plus the estimated invoices whose income month the page covers, which until now showed only in the funding cascade. The Income total keeps only what no invoice reaches.
 
 ### Fixed
 - An estimate no longer dies because one client's invoice covers the month whole: when a worked month's tracked hours split across clients and only some are invoiced through the month's end, the billed hours drop out but the still-unbilled workdays stay projected for the client that is not.

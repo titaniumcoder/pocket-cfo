@@ -66,6 +66,54 @@ func TestComputeTotalFormatsHoursCompactly(t *testing.T) {
 	}
 }
 
+// TestTheIncomePanelListsInvoicedTrackedAndExpected: the income panel reads
+// top to bottom as billing state — the covered rows strike out under
+// Invoiced, the rest stays under Tracked, and Expected holds the projection
+// plus the estimated invoices whose income month the page covers.
+func TestTheIncomePanelListsInvoicedTrackedAndExpected(t *testing.T) {
+	f := Figures{
+		Mode:     "month",
+		Currency: "€",
+		Covered: []TrackedRow{
+			{Project: "WMC Sinterstar", Hours: "8:00", Rate: "75", AmountCents: 600000, Note: "until 10.10."},
+		},
+		Tracked: []TrackedRow{
+			{Project: "Sowemo", Hours: "2:00", Rate: "75", AmountCents: 150000, Note: "from 11.10."},
+		},
+		ShowExpected:     true,
+		ExpectedRange:    "21.10. - 31.10.26",
+		ExpectedHours:    "80",
+		ExpectedRate:     "75",
+		ExpectedCents:    600000,
+		ExpectedNetHours: "80",
+		ExpectedNetCents: 600000,
+		ExpectedEstimates: []InvoicedRow{
+			{Estimated: true, WorkedMonth: "October 2026", AmountCents: 990000},
+		},
+		TotalHours: "90:00",
+		TotalRate:  "75",
+		TotalCents: 750000,
+	}
+
+	rec := httptest.NewRecorder()
+	RenderPage(rec, f)
+	body := rec.Body.String()
+
+	for _, want := range []string{"<h2>Invoiced</h2>", `class="row struck"`, "until 10.10.", "<h2>Tracked</h2>", "from 11.10.", "<h2>Expected</h2>", "estimate for October 2026"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the income panel is missing %q", want)
+		}
+	}
+	invoiced := body[strings.Index(body, "<h2>Invoiced</h2>"):strings.Index(body, "<h2>Tracked</h2>")]
+	if !strings.Contains(invoiced, "WMC Sinterstar") || strings.Contains(invoiced, "Sowemo") {
+		t.Errorf("the Invoiced section holds the wrong rows:\n%s", invoiced)
+	}
+	expected := body[strings.Index(body, "<h2>Expected</h2>"):]
+	if !strings.Contains(expected, "21.10.") || !strings.Contains(expected, "estimate for October 2026") {
+		t.Errorf("the Expected section holds neither the projection nor the estimate:\n%s", expected)
+	}
+}
+
 // TestAnEstimateRendersAsAnEstimateNotAnInvoice: an estimated invoice shows
 // as the grey estimate for its worked month with no PDF link, while a real
 // invoice keeps its number and its link.

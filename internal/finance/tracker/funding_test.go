@@ -459,28 +459,34 @@ func TestCoveredHoursDropOutOfTheEstimatedIncomeTotal(t *testing.T) {
 func TestARealInvoiceReplacesTheEstimateRowInItsIncomeMonth(t *testing.T) {
 	ctx := context.Background()
 
-	rows := func(trk *Tracker) []InvoicedRow {
+	rows := func(trk *Tracker) (realAndEstimated, estimates []InvoicedRow) {
 		f := &Figures{}
 		f.FundingPersonal, f.Estimated = trk.fundingIncome(ctx, []yearMonth{{2026, time.December}}, date(2026, 10, 13), 0, nil)
 		f.computeInvoicedRows(trk, 2026, date(2026, 12, 1), date(2026, 12, 31))
-		return f.Invoiced
+		return f.Invoiced, f.ExpectedEstimates
 	}
 
-	uninvoiced := rows(estimateTracker("2026-10-05", `[{"id":1,"name":"Alpha"}]`))
+	uninvoiced, estimates := rows(estimateTracker("2026-10-05", `[{"id":1,"name":"Alpha"}]`))
 	if len(uninvoiced) != 1 || !uninvoiced[0].Estimated || uninvoiced[0].WorkedMonth != "October 2026" {
 		t.Fatalf("rows = %+v, want one estimate for October 2026", uninvoiced)
+	}
+	if len(estimates) != 1 || estimates[0].WorkedMonth != "October 2026" {
+		t.Errorf("ExpectedEstimates = %+v, want the same estimate listed under Expected", estimates)
 	}
 
 	invoicedTrk := estimateTracker("2026-10-05", `[{"id":1,"name":"Alpha","client_id":7}]`)
 	invoicedTrk.Invoiced = ComputeInvoiced([]InvoicedFact{
 		{Number: "0001", ClientID: 7, IssueDate: date(2026, 10, 30), DueDate: date(2026, 11, 30), TotalCents: 500000},
 	})
-	invoiced := rows(invoicedTrk)
+	invoiced, estimates := rows(invoicedTrk)
 	if len(invoiced) != 1 {
 		t.Fatalf("rows = %+v, want exactly the real invoice", invoiced)
 	}
 	if invoiced[0].Estimated || invoiced[0].Number != "0001" {
 		t.Errorf("row = %+v, want the real invoice 0001 with no estimate beside it", invoiced[0])
+	}
+	if len(estimates) != 0 {
+		t.Errorf("ExpectedEstimates = %+v, want none — the worked month is invoiced", estimates)
 	}
 }
 

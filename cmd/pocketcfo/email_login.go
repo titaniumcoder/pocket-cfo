@@ -12,6 +12,7 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/auth"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/tracker"
 	"github.com/titaniumcoder/pocket-cfo/internal/mail"
+	"github.com/titaniumcoder/pocket-cfo/internal/schema/recipient"
 	"github.com/titaniumcoder/pocket-cfo/internal/stats"
 	"github.com/titaniumcoder/pocket-cfo/internal/users"
 )
@@ -34,7 +35,7 @@ func (s *server) handleEmailLoginRequest(w http.ResponseWriter, r *http.Request)
 	if validEmail(email) && s.allowEmailRequest(r, email) {
 		if _, allowed := s.emailParts(email); allowed {
 			s.sendLoginLink(email)
-		} else if _, isClient := s.recipientPortalFor(email); isClient {
+		} else if _, isClient := s.recipientByEmail(email); isClient {
 			s.sendLoginLink(email)
 		}
 	}
@@ -67,7 +68,7 @@ func (s *server) handleEmailLoginCallback(w http.ResponseWriter, r *http.Request
 		return
 	}
 	parts, hasParts := s.emailParts(email)
-	portalURL, isClient := s.recipientPortalFor(email)
+	_, isClient := s.recipientByEmail(email)
 	if !hasParts && !isClient {
 		http.Redirect(w, r, "/auth/email?error=1", http.StatusFound)
 		return
@@ -92,37 +93,28 @@ func (s *server) handleEmailLoginCallback(w http.ResponseWriter, r *http.Request
 		Expires:  time.Now().Add(auth.ReadOnlyTTL),
 	})
 	if isClient {
-		http.Redirect(w, r, portalURL, http.StatusFound)
+		http.Redirect(w, r, "/invoicing/client", http.StatusFound)
 		return
 	}
 	http.Redirect(w, r, s.destinationAfterLogin(w, r), http.StatusFound)
 }
 
-// recipientPortalFor matches a login address against the recipients' own
-// email addresses. A client logging in this way is sent straight to the
-// portal the passkey link would have opened; a client who also carries
-// parts keeps them — the session is the same, only the landing page differs.
-// No match, or no passkey or link secret to build the portal URL from, and
-// this is simply not a client login.
-func (s *server) recipientPortalFor(email string) (string, bool) {
-	if s.cfg.clientLinkSecret == "" {
-		return "", false
-	}
+// recipientByEmail matches a login address against the recipients' own
+// email addresses. A client logging in this way is verified by the one-time
+// login mail alone — no passkey involved — and is sent to the portal the
+// session opens; a client who also carries parts keeps them, the session is
+// the same and only the landing page differs.
+func (s *server) recipientByEmail(email string) (recipient.RecipientJson, bool) {
 	recipients, err := stats.LoadRecipients(recipientsDir)
 	if err != nil {
-		return "", false
+		return recipient.RecipientJson{}, false
 	}
 	for _, r := range recipients {
-		if r.AccessPasskey == nil || *r.AccessPasskey == "" {
-			continue
+		if normalizeEmail(r.Email) == normalizeEmail(email) {
+			return r, true
 		}
-		if normalizeEmail(r.Email) != email {
-			continue
-		}
-		token := computeToken(r.Number, *r.AccessPasskey, s.cfg.clientLinkSecret)
-		return s.cfg.baseURL + "/invoicing/client/" + token, true
 	}
-	return "", false
+	return recipient.RecipientJson{}, false
 }
 
 func (s *server) emailLoginAvailable() bool {

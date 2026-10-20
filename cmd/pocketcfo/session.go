@@ -37,9 +37,16 @@ func (s *server) currentSession(r *http.Request) (auth.Session, bool) {
 		if u, err := users.Load(usersFile); err == nil {
 			parts, allowed := users.PartsFor(u, sess.Login)
 			if !allowed {
-				return auth.Session{}, false
+				// Not listed: the login may still be a client's own address,
+				// verified by the one-time login mail. Such a session carries
+				// no parts — it opens the client portal and nothing else.
+				if _, isClient := s.recipientByEmail(sess.Login); !isClient {
+					return auth.Session{}, false
+				}
+				sess.Parts = nil
+			} else {
+				sess.Parts = parts
 			}
-			sess.Parts = parts
 			s.logins().touch(sess.Login, time.Now())
 		}
 	}

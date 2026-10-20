@@ -345,8 +345,7 @@ func TestAClientLoginLandsOnItsPortal(t *testing.T) {
 	w := httptest.NewRecorder()
 	s.handleEmailLoginCallback(w, r)
 
-	want := "/invoicing/client/" + computeToken(1, "portal-passkey", "portal-link-secret")
-	if w.Code != http.StatusFound || w.Header().Get("Location") != want {
+	if w.Code != http.StatusFound || w.Header().Get("Location") != "/invoicing/client" {
 		t.Fatalf("want redirect to the portal, got %d %q", w.Code, w.Header().Get("Location"))
 	}
 }
@@ -365,8 +364,7 @@ func TestAClientWithPartsLandsOnItsPortalAndKeepsItsParts(t *testing.T) {
 	w := httptest.NewRecorder()
 	s.handleEmailLoginCallback(w, r)
 
-	want := "/invoicing/client/" + computeToken(1, "portal-passkey", "portal-link-secret")
-	if w.Code != http.StatusFound || w.Header().Get("Location") != want {
+	if w.Code != http.StatusFound || w.Header().Get("Location") != "/invoicing/client" {
 		t.Fatalf("want redirect to the portal, got %d %q", w.Code, w.Header().Get("Location"))
 	}
 	cookies := w.Result().Cookies()
@@ -398,4 +396,78 @@ func TestAClientLoginRequestIsAnsweredLikeAnyOther(t *testing.T) {
 			t.Errorf("login request for %s = %d, want the generic 200", email, w.Code)
 		}
 	}
+}
+
+// TestAPureClientSessionOpensItsPortal: after the email login, the session
+// itself opens the portal — no passkey, no token in any URL — while the
+// finance and invoicing pages stay closed to a parts-less client.
+func TestAPureClientSessionOpensItsPortal(t *testing.T) {
+	s := newTestClientServer(t)
+	s.cfg.sessionSecret = "test-session-secret"
+	t.Chdir(t.TempDir())
+	mustMkdirAll(t, recipientsDir)
+	mustMkdirAll(t, invoicesDir)
+	writeJSON(t, recipientsDir+"/0001.json", recipient.RecipientJson{
+		Number: 1, LegalName: "Portal Client", Email: "client@example.com", IsBusiness: true,
+		Language: recipient.RecipientJsonLanguageDe,
+		Address:  recipient.Address{Line1: "Weg 1", PostalCode: "1000", City: "Wien", CountryCode: "AT"},
+	})
+
+	encoded, err := auth.Encode(s.cfg.sessionSecret, auth.NewReadOnlySession("client@example.com", nil, time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionRequest := func(path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		r.AddCookie(&http.Cookie{Name: sessionCookie, Value: encoded})
+		w := httptest.NewRecorder()
+		s.routes().ServeHTTP(w, r)
+		return w
+	}
+
+	portal := sessionRequest("/invoicing/client")
+	if portal.Code != http.StatusOK {
+		t.Fatalf("portal via session = %d, want 200:\n%s", portal.Code, portal.Body.String())
+	}
+	if !strings.Contains(portal.Body.String(), "Portal Client") {
+		t.Errorf("the session portal shows the wrong client:\n%s", portal.Body.String())
+	}
+	if strings.Contains(portal.Body.String(), "/invoicing/client//invoices/") {
+		t.Error("the session portal must not build PDF links from an empty token")
+	}
+
+	finance := sessionRequest("/2026/10")
+	if finance.Code == http.StatusOK {
+		t.Errorf("a parts-less client session reached the finance page (%d), want it refused", finance.Code)
+	}
+}
+
+// TestAPasskeyLinkKeepsWorkingBesideTheSession: the owner-shared link still
+// opens the portal without any session, and garbage tokens stay a 404.
+func TestAPasskeyLinkKeepsWorkingBesideTheSession(t *testing.T) {
+	s := newTestClientServer(t)
+	t.Chdir(t.TempDir())
+	mustMkdirAll(t, recipientsDir)
+	mustMkdirAll(t, invoicesDir)
+	writeJSON(t, recipientsDir+"/0001.json", recipient.RecipientJson{
+		Number: 1, LegalName: "Portal Client", Email: "client@example.com", IsBusiness: true,
+		Language:      recipient.RecipientJsonLanguageDe,
+		Address:       recipient.Address{Line1: "Weg 1", PostalCode: "1000", City: "Wien", CountryCode: "AT"},
+		AccessPasskey: strp("portal-passkey"),
+	})
+
+	good := "/invoicing/client/" + computeToken(1, "portal-passkey", "secret")
+	if w := s.serveGet(good); w.Code != http.StatusOK {
+		t.Errorf("passkey link = %d, want 200", w.Code)
+	}
+	if w := s.serveGet("/invoicing/client/garbage"); w.Code != http.StatusNotFound {
+		t.Errorf("garbage token without a session = %d, want 404", w.Code)
+	}
+}
+
+func (s *server) serveGet(path string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(http.MethodGet, path, nil)
+	w := httptest.NewRecorder()
+	s.routes().ServeHTTP(w, r)
+	return w
 }

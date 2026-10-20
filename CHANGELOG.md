@@ -11,7 +11,7 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 ## [4.11.0] - 2026-10-21
 
 ### Added
-- A client logging in with their own email address lands directly on their portal: recipient addresses may request a login link like listed users, and the callback sends them to the portal the passkey link opens. A client who also carries `users.json` parts keeps them — same session, only the landing page differs.
+- The email login *is* the client's verification: a recipient logging in with their own address lands on `/invoicing/client`, which the session itself opens — no passkey in any URL, and recipients without a passkey get their portal through the login alone. The passkey link keeps working unchanged beside it, and a client who also carries `users.json` parts keeps them — same session, only the landing page differs.
 
 ## [4.10.0] - 2026-10-20
 

@@ -764,6 +764,16 @@ generic "check your email" response is shown whether or not the submitted
 address is allowlisted, so the form can't be used to enumerate valid
 addresses.
 
+**The portal's second door.** A recipient whose `recipients/NNNN.json` email
+matches may also request a login link, and the callback sends them to
+`/invoicing/client` — the portal resolves the recipient from the session
+itself, so the email-verified login *is* the credential and no passkey
+appears in any URL. The passkey link keeps working unchanged beside it (and
+still serves a logged-in client whose link was rotated out from under
+them); a parts-less client session opens the portal and nothing else — every
+other route parts-checks them out. A client who also carries `users.json`
+parts keeps them; only the landing page differs.
+
 | Method | Path |
 |---|---|
 | GET | `/` — dashboard |

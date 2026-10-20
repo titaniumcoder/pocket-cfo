@@ -70,8 +70,19 @@ func (s *server) handleClientPortal(w http.ResponseWriter, r *http.Request) {
 	}
 	found, ok := findRecipientByToken(token, recipients, s.cfg.clientLinkSecret)
 	if !ok {
+		// The passkey link is one door; the email-verified session is the
+		// other. A client who logged in with their own address reaches the
+		// portal without ever holding a passkey — and still reaches it when
+		// following an old link whose passkey has since been rotated.
+		found, ok = s.recipientForSession(r, recipients)
+	}
+	if !ok {
 		http.NotFound(w, r)
 		return
+	}
+	pdfPrefix := "/invoicing/client/invoices/"
+	if token != "" {
+		pdfPrefix = "/invoicing/client/" + token + "/invoices/"
 	}
 
 	invoices, err := stats.LoadInvoices(invoicesDir)
@@ -108,7 +119,7 @@ func (s *server) handleClientPortal(w http.ResponseWriter, r *http.Request) {
 			DueDate:    render.FormatDate(inv.DueDate),
 			Paid:       isPaid,
 			GrandTotal: totals.GrandTotal,
-			PDFPath:    "/invoicing/client/" + token + "/invoices/" + pdfPath,
+			PDFPath:    pdfPrefix + pdfPath,
 		})
 	}
 
@@ -137,6 +148,9 @@ func (s *server) handleClientInvoicePDF(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	found, ok := findRecipientByToken(token, recipients, s.cfg.clientLinkSecret)
+	if !ok {
+		found, ok = s.recipientForSession(r, recipients)
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -181,4 +195,21 @@ func (s *server) handleClientInvoicePDF(w http.ResponseWriter, r *http.Request) 
 func (s *server) handleRobots(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	fmt.Fprint(w, "User-agent: *\nDisallow: /invoicing/client/\n")
+}
+
+// recipientForSession resolves the portal's recipient from the session
+// itself: a read-only login whose address is the recipient's own email is
+// verified by the one-time login mail, so it opens the portal without any
+// passkey — that is the whole point of the email login.
+func (s *server) recipientForSession(r *http.Request, recipients []recipient.RecipientJson) (recipient.RecipientJson, bool) {
+	sess, ok := s.currentSession(r)
+	if !ok || !s.readOnly(sess) {
+		return recipient.RecipientJson{}, false
+	}
+	for _, r := range recipients {
+		if normalizeEmail(r.Email) == normalizeEmail(sess.Login) {
+			return r, true
+		}
+	}
+	return recipient.RecipientJson{}, false
 }

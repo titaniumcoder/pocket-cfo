@@ -182,7 +182,9 @@ func mustPageTemplate(path string) *template.Template {
 }
 
 var templateFuncs = template.FuncMap{
-	"money": render.FormatMoney,
+	// The dashboard's amounts carry no currency symbol: every figure shown
+	// is euro, while the invoice PDF keeps its own currency field.
+	"money": render.FormatAmount,
 	"date":  render.FormatDate,
 	"dateptr": func(d *types.SerializableDate) string {
 		if d == nil {

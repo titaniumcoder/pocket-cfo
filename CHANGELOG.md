@@ -12,6 +12,7 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 - Viewer logins (read-only, finance part) keep seeing the finance page's categories but nothing clicks through to the transaction detail: the spending page stays owner-only and the page renders no detail links for them.
 - The month's bottom line — Net income, Total private expenses, Balance — sits in its own card titled Summary, after the Rolling budget panel instead of at its foot.
 - On the invoicing page the Recipients column is just "Tracked" now, and the Invoices table rations its width properly: the four date columns are alike, while the invoice, recipient and total columns share what is left.
+- Amounts on the web pages carry no currency symbol any more — every figure shown is euro, and an invoice's own currency stays in the PDF where it belongs — so a future invoice in GBP, CHF or USD needs no € on the dashboard either.
 
 ## [4.7.0] - 2026-10-20
 

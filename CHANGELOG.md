@@ -8,6 +8,8 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [4.9.0] - 2026-10-20
+
 ### Added
 - The info page lists every user from the login list with when they last logged in and whether a session is still active — persisted in STATE_DIR so it survives restarts, in memory only without one.
 
@@ -649,7 +651,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.8.0...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.9.0...HEAD
+[4.9.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.8.0...v4.9.0
 [4.8.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.7.0...v4.8.0
 [4.7.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.6.1...v4.7.0
 [4.6.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.6.0...v4.6.1

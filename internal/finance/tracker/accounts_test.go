@@ -423,7 +423,7 @@ func TestNegativeBalanceRendersRed(t *testing.T) {
 	}
 	recPos := httptest.NewRecorder()
 	RenderPage(recPos, positive)
-	posRow := regexp.MustCompile(`<div class="row net gap-above([^"]*)"><span class="label">Balance</span>`).FindStringSubmatch(recPos.Body.String())
+	posRow := regexp.MustCompile(`<div class="row net([^"]*)"><span class="label">Balance</span>`).FindStringSubmatch(recPos.Body.String())
 	if posRow == nil {
 		t.Fatal("no Balance row on the page")
 	}
@@ -442,7 +442,7 @@ func TestNegativeBalanceRendersRed(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	RenderPage(rec, overdrawn)
-	negRow := regexp.MustCompile(`<div class="row net gap-above([^"]*)"><span class="label">Balance</span>`).FindStringSubmatch(rec.Body.String())
+	negRow := regexp.MustCompile(`<div class="row net([^"]*)"><span class="label">Balance</span>`).FindStringSubmatch(rec.Body.String())
 	if negRow == nil {
 		t.Fatal("no Balance row on the page")
 	}

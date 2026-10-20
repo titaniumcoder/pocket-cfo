@@ -519,7 +519,7 @@ func TestTheSummaryBoxReachesThePage(t *testing.T) {
 	RenderPage(rec, f)
 	body := rec.Body.String()
 
-	summary := regexp.MustCompile(`<div class="row net gap-above[^"]*"><span class="label">Balance</span>(.*?)</div>`).FindStringSubmatch(body)
+	summary := regexp.MustCompile(`<div class="row net[^"]*"><span class="label">Balance</span>(.*?)</div>`).FindStringSubmatch(body)
 	if summary == nil {
 		t.Fatalf("no Balance row on the page:\n%s", body)
 	}

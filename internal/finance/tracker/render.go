@@ -444,15 +444,18 @@ var templates = `
       {{end}}
     </div>
 
-    {{if .ShowSummary}}
+  </section>
+
+  {{if .ShowSummary}}
+  <section class="panel summary-panel">
+    <h2 class="panel-title">Summary</h2>
     <div class="ledger{{if .ShowActuals}} with-actuals{{end}}">
       <div class="row net{{if lt .FundingPersonal.NetIncomeCents 0}} neg{{end}}"><span class="label">Net income</span><span class="mid"></span><span class="amt netamt">{{eur .FundingPersonal.NetIncomeCents}}</span></div>
       <div class="row net neg"><span class="label">Total private expenses</span>{{if .ShowActuals}}<span class="mid{{outClass .PrivateTotalPlannedCents}}">{{out .PrivateTotalPlannedCents}}</span><span class="amt{{outClass .PrivateActualCents}}">{{out .PrivateActualCents}}<span class="stack-m">of {{out .PrivateTotalPlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .PrivateTotalPlannedCents}}</span>{{end}}</div>
-      <div class="row net gap-above{{if lt .BalanceCents 0}} neg{{end}}"><span class="label">Balance</span><span class="mid"></span><span class="amt netamt">{{eur .BalanceCents}}</span></div>
+      <div class="row net{{if lt .BalanceCents 0}} neg{{end}}"><span class="label">Balance</span><span class="mid"></span><span class="amt netamt">{{eur .BalanceCents}}</span></div>
     </div>
-    {{end}}
-
   </section>
+  {{end}}
 
   </div>
 

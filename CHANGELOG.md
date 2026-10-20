@@ -10,6 +10,7 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ### Changed
 - Viewer logins (read-only, finance part) keep seeing the finance page's categories but nothing clicks through to the transaction detail: the spending page stays owner-only and the page renders no detail links for them.
+- The month's bottom line — Net income, Total private expenses, Balance — sits in its own card titled Summary, after the Rolling budget panel instead of at its foot.
 
 ## [4.7.0] - 2026-10-20
 

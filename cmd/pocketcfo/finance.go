@@ -125,6 +125,7 @@ func (s *server) renderFinancePage(w http.ResponseWriter, sess auth.Session, f t
 	f.ShowInvoicingLink = sess.HasPart(users.PartInvoicing)
 	f.ShowInfoLink = s.authorized(sess)
 	f.ShowUploadsLink = s.admin(sess)
+	f.SpendingDetailURL = ""
 	if s.showSpending(sess) {
 		f.ShowSpendingLink = true
 		if f.ShowActuals && f.Mode == "month" {

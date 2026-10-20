@@ -951,3 +951,56 @@ func TestBuildInvoicedFacts_CarriesTheUsableOverride(t *testing.T) {
 		t.Fatalf("facts = %+v, want the override month carried", facts)
 	}
 }
+
+// TestAViewerSeesTheCategoriesButNeverTheDetails: a read-only finance login
+// sees the finance page exactly as the owner does, except that nothing
+// clicks through to the transaction-level detail — the spending page
+// answers 403 and the page renders no detail links — while the same page
+// for an owner session carries them.
+func TestAViewerSeesTheCategoriesButNeverTheDetails(t *testing.T) {
+	s := newFinanceTestServer(t)
+
+	figures := tracker.Figures{Mode: "month", Currency: "€"}
+	figures.ShowActuals = true
+	figures.SpendingDetailURL = "/finance/2026/10/spending"
+	figures.PrivateGroups = []tracker.CategoryGroupView{{
+		Name: "Living", PlannedCents: 100000,
+		Rows: []tracker.CategoryRow{{
+			Name: "Rent", CategoryID: "rent", PlannedCents: 100000, HasActual: true, ActualCents: 95000,
+		}},
+	}}
+	render := func(sess auth.Session) string {
+		w := httptest.NewRecorder()
+		s.renderFinancePage(w, sess, figures)
+		return w.Body.String()
+	}
+
+	viewerBody := render(auth.NewReadOnlySession("someone@example.com", []string{users.PartFinance}, time.Hour))
+	if !strings.Contains(viewerBody, "Rent") {
+		t.Errorf("the viewer must still see the category rows; got:\n%s", viewerBody)
+	}
+	if strings.Contains(viewerBody, `class="act-link"`) || strings.Contains(viewerBody, "act-link") {
+		t.Errorf("the viewer must not get a detail link on the actual amounts:\n%s", viewerBody)
+	}
+	if strings.Contains(viewerBody, "/spending") {
+		t.Errorf("the viewer must not see the spending detail URL anywhere:\n%s", viewerBody)
+	}
+
+	ownerBody := render(auth.NewSession("owner", "admin", time.Hour))
+	if !strings.Contains(ownerBody, `class="act-link"`) {
+		t.Errorf("the owner's actual amounts must link into the detail page:\n%s", ownerBody)
+	}
+}
+
+// TestTheSpendingDetailPageStaysOwnerOnly: a read-only finance login gets 403
+// on the spending page — seeing the categories on the finance page must not
+// grow into reading the transactions behind them.
+func TestTheSpendingDetailPageStaysOwnerOnly(t *testing.T) {
+	s := newFinanceTestServer(t)
+
+	w := httptest.NewRecorder()
+	s.routes().ServeHTTP(w, readOnlyRequest(t, s, "/2026/10/spending", []string{users.PartFinance}))
+	if w.Code != http.StatusForbidden {
+		t.Errorf("spending page for a viewer = %d, want 403", w.Code)
+	}
+}

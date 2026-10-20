@@ -82,6 +82,7 @@ func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
 			{Name: "Avatar URL", Value: orUnset(view.Header.AvatarURL())},
 		},
 	})
+	view.ConfigGroups = append(view.ConfigGroups, configGroup{Name: "Logins", Rows: s.loginRows()})
 
 	view.Rules = tracker.RulesTimeline(s.tracker.Personal, s.tracker.Start, time.Now())
 	if s.uploads != nil {

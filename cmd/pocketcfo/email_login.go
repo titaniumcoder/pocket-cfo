@@ -68,6 +68,7 @@ func (s *server) handleEmailLoginCallback(w http.ResponseWriter, r *http.Request
 		http.Redirect(w, r, "/auth/email?error=1", http.StatusFound)
 		return
 	}
+	s.logins().record(email, time.Now())
 
 	sess := auth.NewReadOnlySession(email, parts, auth.ReadOnlyTTL)
 	encoded, err := auth.Encode(s.cfg.sessionSecret, sess)

@@ -8,6 +8,9 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Added
+- The info page lists every user from the login list with when they last logged in and whether a session is still active — persisted in STATE_DIR so it survives restarts, in memory only without one.
+
 ## [4.8.0] - 2026-10-20
 
 ### Changed

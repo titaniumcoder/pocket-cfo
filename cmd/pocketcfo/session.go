@@ -40,6 +40,7 @@ func (s *server) currentSession(r *http.Request) (auth.Session, bool) {
 				return auth.Session{}, false
 			}
 			sess.Parts = parts
+			s.logins().touch(sess.Login, time.Now())
 		}
 	}
 	return sess, true

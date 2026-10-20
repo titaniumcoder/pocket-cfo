@@ -49,6 +49,9 @@ type server struct {
 	emailRequestedAt map[string]time.Time
 	emailPerIP       hourlyLimiter
 	emailGlobal      hourlyLimiter
+
+	loginOnce      sync.Once
+	loginStoreData *loginStore
 }
 
 func buildTogglClients(cfg financeconfig.Config, httpClient *http.Client, cacheDir string) (track, focus *tracker.Toggl) {

@@ -318,23 +318,25 @@ table.data tr.row-draft a { color: var(--muted); }
 
 a.paid-link { color: var(--good-strong); font-size: .8rem; margin-left: .4rem; }
 
-/* An invoice line stays one line. Fixed table layout gives every other
-   column a definite width, so the invoice column gets a definite width too
-   — which is what lets the title inside it shrink and ellipsize instead of
-   pushing the amount off the right edge. The full text stays on the link's
-   title attribute, so nothing is actually lost. */
+/* An invoice line stays one line. Fixed table layout gives the fixed-width
+   columns definite widths, so the invoice column gets what is left — which
+   is what lets the title inside it shrink and ellipsize instead of pushing
+   the amount off the right edge. The full text stays on the link's title
+   attribute, so nothing is actually lost. */
 /* Percentages, not rem: fixed widths in absolute units over-allocate on a
    narrow screen, squeezing the invoice column until its contents spill over
-   the next one. These always sum to less than the table. */
-table.invoices { table-layout: fixed; min-width: 52rem; }
+   the next one. The four date columns are alike; invoice, recipient and
+   total share what remains, the invoice column taking the leftover. */
+table.invoices { table-layout: fixed; min-width: 56rem; }
 /* Cells clip rather than spill: with fixed layout a column can end up
    narrower than its content, and unclipped that draws over its neighbour. */
 table.invoices th, table.invoices td { overflow: hidden; }
-table.invoices th:nth-child(2), table.invoices td:nth-child(2) { width: 14%; }
+table.invoices th:nth-child(2), table.invoices td:nth-child(2) { width: 15%; }
 table.invoices th:nth-child(3), table.invoices td:nth-child(3),
 table.invoices th:nth-child(4), table.invoices td:nth-child(4),
-table.invoices th:nth-child(5), table.invoices td:nth-child(5) { width: 11%; }
-table.invoices th:nth-child(6), table.invoices td:nth-child(6) { width: 13%; }
+table.invoices th:nth-child(5), table.invoices td:nth-child(5),
+table.invoices th:nth-child(6), table.invoices td:nth-child(6) { width: 11%; }
+table.invoices th:nth-child(7), table.invoices td:nth-child(7) { width: 12%; }
 .invoice-line { display: flex; align-items: baseline; gap: .4rem; min-width: 0; }
 .invoice-line > .badge, .invoice-line > .pdf-status, .invoice-line > .paid-link { flex: 0 0 auto; }
 .invoice-link { display: flex; min-width: 0; white-space: nowrap; }

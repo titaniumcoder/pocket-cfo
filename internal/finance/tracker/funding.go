@@ -178,28 +178,36 @@ func distinctYears(months []yearMonth) []int {
 }
 
 // monthEstimateCents prices a worked month as the invoice that does not
-// exist yet: the tracked hours the client's coverage frontier does not
-// already reach, plus the workdays still unbilled after it. The frontier is
-// the latest coverage extent among the month's billable clients — written-
-// down tracking_until where an invoice names a day, the end of the issue
-// month where none does.
+// exist yet: the tracked hours no issued invoice already reaches, plus the
+// workdays still unbilled after that. Coverage is per client — written-down
+// tracking_until where an invoice names a day, the end of the issue month
+// where none does — and the workdays stop being projected only when every
+// billable client that tracked work in the month is already invoiced
+// through its end: with one client billed whole and another not, the
+// untracked days belong to whoever is still unbilled.
 func (t *Tracker) monthEstimateCents(ym yearMonth, projects map[int]Project, yd *YearData, holidays map[string]bool, today time.Time) int {
 	if yd == nil {
 		return 0
 	}
 	monthStart := time.Date(ym.Year, ym.Month, 1, 0, 0, 0, 0, t.Loc)
 	monthEnd := monthStart.AddDate(0, 1, -1)
-	frontier := t.coverageFrontier(yd.Months[ym.Month], projects)
 
 	var trackedCents int
+	var projected time.Time
+	fullyBilled, sawBillable := true, false
 	for _, a := range yd.Months[ym.Month] {
 		clientID := projects[a.ProjectID].ClientID
 		if t.ignoresClient(clientID) {
 			continue
 		}
+		sawBillable = true
 		f := t.Invoiced.frontierFor(clientID)
 		if !f.IsZero() && !f.Before(monthEnd) {
 			continue
+		}
+		fullyBilled = false
+		if f.After(projected) {
+			projected = f
 		}
 		if !f.IsZero() && !f.Before(monthStart) {
 			continue
@@ -207,17 +215,17 @@ func (t *Tracker) monthEstimateCents(ym yearMonth, projects map[int]Project, yd 
 		trackedCents += a.AmountCents
 	}
 
-	if !frontier.IsZero() && !frontier.Before(monthEnd) {
+	if sawBillable && fullyBilled {
 		return trackedCents
 	}
 
 	rateCents := t.RateCents
-	if frontierInsideMonth(frontier, monthStart, monthEnd) {
+	if frontierInsideMonth(projected, monthStart, monthEnd) {
 		// The monthly aggregates cannot price individual days, so the
 		// unbilled remainder after the frontier is priced by day: every
 		// workday it holds is work the next invoice will carry, whether
 		// its hours are tracked yet or not.
-		days := countWorkdays(frontier.AddDate(0, 0, 1), monthEnd, holidays)
+		days := countWorkdays(projected.AddDate(0, 0, 1), monthEnd, holidays)
 		return trackedCents + round(float64(days)*t.HoursPerDay*float64(rateCents))
 	}
 
@@ -232,21 +240,6 @@ func (t *Tracker) monthEstimateCents(ym yearMonth, projects map[int]Project, yd 
 
 func frontierInsideMonth(frontier, monthStart, monthEnd time.Time) bool {
 	return !frontier.IsZero() && !frontier.Before(monthStart) && frontier.Before(monthEnd)
-}
-
-// coverageFrontier is the latest frontier among the month's billable
-// clients. Zero when no issued invoice reaches into the month.
-func (t *Tracker) coverageFrontier(aggs []Aggregate, projects map[int]Project) time.Time {
-	var frontier time.Time
-	for _, a := range aggs {
-		if t.ignoresClient(projects[a.ProjectID].ClientID) {
-			continue
-		}
-		if f := t.Invoiced.frontierFor(projects[a.ProjectID].ClientID); f.After(frontier) {
-			frontier = f
-		}
-	}
-	return frontier
 }
 
 func (t *Tracker) ignoresClient(clientID int) bool {

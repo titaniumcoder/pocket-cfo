@@ -12,6 +12,9 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 - The finance panel closes on a summary box instead of "Available to spend": Net income, Total private expenses, and a Balance (green when positive, red when negative). A closed month's balance subtracts the private expenses actually imported; the current and future months subtract the plan.
 - The bank's own readings from accounts.json no longer appear on the finance page at all — account name, figure and read date live on the spending page only.
 
+### Fixed
+- An estimate no longer dies because one client's invoice covers the month whole: when a worked month's tracked hours split across clients and only some are invoiced through the month's end, the billed hours drop out but the still-unbilled workdays stay projected for the client that is not.
+
 ## [4.6.1] - 2026-10-19
 
 ### Fixed

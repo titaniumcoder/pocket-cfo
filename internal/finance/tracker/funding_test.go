@@ -267,6 +267,50 @@ func TestTrackingUntilExtendsCoverageToTheDayItNames(t *testing.T) {
 	}
 }
 
+// TestBilledHoursDropOutButTheProjectionStays: one client's October work is
+// invoiced whole while the other's has no invoice at all. The billed client's
+// tracked hours drop out of December's estimate, and the workdays still
+// unbilled keep being projected for the client that is — with one client
+// billed and one not, the untracked days belong to whoever is still unbilled,
+// so the estimate keeps the same tracked-plus-expected arithmetic the work
+// record panel prices.
+func TestBilledHoursDropOutButTheProjectionStays(t *testing.T) {
+	rows := `[{"project_id":1,"hourly_rate_in_cents":7500,"billable_amount_in_cents":150000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"2026-10-05T09:00:00+00:00"}]},
+		{"project_id":2,"hourly_rate_in_cents":7500,"billable_amount_in_cents":300000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"2026-10-06T09:00:00+00:00"}]}]`
+	trk := estimateTrackerRows(rows, `[{"id":1,"name":"Unbilled","client_id":7},{"id":2,"name":"Billed","client_id":8}]`)
+	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
+		{Number: "0001", ClientID: 8, IssueDate: date(2026, 10, 19), DueDate: date(2026, 11, 2), TotalCents: 500000, TrackingUntil: date(2026, 10, 31)},
+	})
+
+	pv, estimates := trk.fundingIncome(context.Background(), []yearMonth{{2026, time.December}}, date(2026, 10, 13), 0, nil)
+	if pv.Err != "" {
+		t.Fatalf("FundingPersonal.Err = %q", pv.Err)
+	}
+	// The billed client's 3 000 is out; the unbilled client's 1 500 stays,
+	// plus the same 14 workdays × 8 h × 75 = 8 400 projection.
+	if got := estimates[yearMonth{2026, time.December}][0].Cents; got != 990000 {
+		t.Errorf("estimate = %d, want 990000 — the unbilled 1 500 plus the projection, without the billed 3 000", got)
+	}
+}
+
+// TestTheProjectionDiesOnlyWhenEveryBilledClientCoversTheMonth: with every
+// billable client invoiced through the month's end, the untracked days are
+// all billed — nothing is projected any more.
+func TestTheProjectionDiesOnlyWhenEveryBilledClientCoversTheMonth(t *testing.T) {
+	rows := `[{"project_id":1,"hourly_rate_in_cents":7500,"billable_amount_in_cents":150000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"2026-10-05T09:00:00+00:00"}]},
+		{"project_id":2,"hourly_rate_in_cents":7500,"billable_amount_in_cents":300000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"2026-10-06T09:00:00+00:00"}]}]`
+	trk := estimateTrackerRows(rows, `[{"id":1,"name":"Alpha","client_id":7},{"id":2,"name":"Beta","client_id":8}]`)
+	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
+		{Number: "0001", ClientID: 7, IssueDate: date(2026, 10, 19), DueDate: date(2026, 11, 2), TotalCents: 500000, TrackingUntil: date(2026, 10, 31)},
+		{Number: "0002", ClientID: 8, IssueDate: date(2026, 10, 19), DueDate: date(2026, 11, 2), TotalCents: 500000, TrackingUntil: date(2026, 10, 31)},
+	})
+
+	_, estimates := trk.fundingIncome(context.Background(), []yearMonth{{2026, time.December}}, date(2026, 10, 13), 0, nil)
+	if len(estimates) != 0 {
+		t.Errorf("estimates = %+v, want none — both clients are invoiced through October's end", estimates)
+	}
+}
+
 // TestATrackingUntilInsideTheIssueMonthLimitsCoverage: an invoice issued in
 // October with tracking_until October 10 does not cover the whole month —
 // the estimate keeps the fifteen workdays from the 11th on.

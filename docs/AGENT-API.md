@@ -70,7 +70,8 @@ the invoice documents themselves live under `data/invoices/`.
 
 `accounts.json` readings carry an `as_of` that **is the last day of a month, and nothing
 else.** It is that month's *closing* balance — `2026-07-31` is the money left when July
-ended, and it is the figure July's page shows beside its Available to spend. A mid-month
+ended, and it is the figure July's page on the spending side shows beside the account's
+name. A mid-month
 date is refused wherever the data is validated, hand edit or not: half a month is not a
 closing figure, and a month that has not ended cannot have one at all.
 

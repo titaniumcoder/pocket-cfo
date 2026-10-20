@@ -8,7 +8,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/titaniumcoder/pocket-cfo/internal/finance/accountsdata"
 	"github.com/titaniumcoder/pocket-cfo/internal/finance/budgetdata"
 	"github.com/titaniumcoder/pocket-cfo/internal/webui"
 )
@@ -169,17 +168,8 @@ type Figures struct {
 
 	FundingPersonal PersonalView
 
-	ShowAvailable  bool
-	AvailableCents int
-
-	// BankReadingCents is the month's own private reading — the balance the
-	// bank says the account holds at this month's end — shown beside the
-	// planned Available to spend. Nothing carries; each month reads its own.
-	ShowBankReading  bool
-	BankReadingCents int
-	PrivateAccounts  []AccountRow
-
-	AccountsErr string
+	ShowSummary  bool
+	BalanceCents int
 }
 
 func (f Figures) Header() webui.Header {
@@ -270,10 +260,7 @@ func (t *Tracker) compute(ctx context.Context, year int, start, end time.Time, l
 
 	result.computeActuals(t, ctx, year, start, now, months, &bv)
 
-	viewed := yearMonth{year, start.Month()}
-	snap, opened, accountsErr := t.carriedBalances(ctx, viewed, months)
-	result.AccountsErr = accountsErr
-	result.computeFundingBalance(t, ctx, year, start, now, months, bv, snap, opened)
+	result.computeFundingBalance(t, ctx, year, start, now, months, bv)
 
 	result.computeInvoicedRows(t, year, start, end)
 
@@ -483,7 +470,7 @@ func (f *Figures) computeBudget(t *Tracker, ctx context.Context, year int, start
 	return bv
 }
 
-func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year int, start, now time.Time, months int, bv BudgetView, snap AccountSnapshot, opened bool) {
+func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year int, start, now time.Time, months int, bv BudgetView) {
 	var span []yearMonth
 	if months > 1 {
 		first, _ := yearMonthRange(year, t.startMonth())
@@ -501,51 +488,24 @@ func (f *Figures) computeFundingBalance(t *Tracker, ctx context.Context, year in
 		f.PrivateTotalPlannedCents = bv.TotalPlannedCents
 	}
 
-	if opened {
-		f.publishAccountBalances(snap, yearMonth{year, start.Month()})
-	}
-
 	if f.BudgetErr == "" && f.FundingPersonal.Err == "" {
-		f.ShowAvailable = true
-		f.AvailableCents = f.FundingPersonal.NetIncomeCents - f.PrivateTotalPlannedCents
+		f.ShowSummary = true
+		f.BalanceCents = f.FundingPersonal.NetIncomeCents - f.privateExpenseCents(start, now, months)
 	}
 }
 
-// carriedBalances reads the accounts file for the month being looked at: the
-// readings in force and the account rows. Nothing is carried; each month
-// stands on its own figures.
-func (t *Tracker) carriedBalances(ctx context.Context, viewed yearMonth, months int) (AccountSnapshot, bool, string) {
-	if t.Accounts == nil || months != 1 {
-		return AccountSnapshot{}, false, ""
-	}
-	af, err := t.Accounts.File(ctx)
-	if err != nil {
-		return AccountSnapshot{}, false, err.Error()
-	}
-	snap, ok := snapshotFor(af, viewed)
-	if ok {
-		if elapsed := viewed.ordinal() - snap.OpensMonth.ordinal(); elapsed > maxStaleReadMonths {
-			return AccountSnapshot{}, false, fmt.Sprintf(
-				"accounts: a reading is %d months before this month (%s) — check the dates in accounts.json, that looks like a typo",
-				elapsed, snap.OpensMonth)
-		}
-	}
-	return snap, ok, ""
+// pastPeriod says whether the period viewed has finished: its end sits before
+// today. A finished period is weighed by what was actually spent; the current
+// one and any future one by the plan.
+func pastPeriod(start, now time.Time, months int) bool {
+	return start.AddDate(0, months, 0).AddDate(0, 0, -1).Before(now)
 }
 
-const maxStaleReadMonths = 120
-
-func (f *Figures) publishAccountBalances(snap AccountSnapshot, viewed yearMonth) {
-	if f.BudgetErr != "" || f.FundingPersonal.Err != "" {
-		return
+func (f *Figures) privateExpenseCents(start, now time.Time, months int) int {
+	if pastPeriod(start, now, months) && f.ShowActuals {
+		return f.PrivateActualCents
 	}
-	if snap.Found {
-		f.ShowBankReading = true
-		f.BankReadingCents = snap.PrivateCents
-		if viewed == snap.OpensMonth {
-			f.PrivateAccounts = snap.rowsOfKind(accountsdata.AccountKindPrivate)
-		}
-	}
+	return f.PrivateTotalPlannedCents
 }
 
 func (t *Tracker) EvictMonth(year int, month time.Month) {

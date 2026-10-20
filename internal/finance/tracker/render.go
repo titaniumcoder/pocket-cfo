@@ -419,11 +419,6 @@ var templates = `
       <div class="row net{{if lt .NetIncomeCents 0}} neg{{end}}"><span class="label">Net income</span><span class="mid"></span><span class="amt netamt">{{eur .NetIncomeCents}}</span></div>
       {{end}}
       {{end}}
-      {{if .AccountsErr}}<div class="row"><span class="error">{{.AccountsErr}}</span></div>{{end}}
-      {{if $.ShowAvailable}}
-      <div class="row net gap-above{{if lt .AvailableCents 0}} neg{{end}}"><span class="label">Available to spend</span>{{if $.ShowBankReading}}<span class="mid"></span><span class="amt{{if lt $.BankReadingCents 0}} neg{{else}} netamt{{end}}">{{eur $.BankReadingCents}}<span class="stack-m">planned {{eur .AvailableCents}}</span></span>{{else}}<span class="mid"></span><span class="amt netamt">{{eur .AvailableCents}}</span>{{end}}</div>
-      {{range .PrivateAccounts}}<div class="row acct"><span class="label">{{.Name}}</span><span class="mid"></span><span class="amt">{{eur .Cents}}</span></div>{{end}}
-      {{end}}
     </div>
 
     {{if .Mistimed}}<div class="ledger">
@@ -444,9 +439,11 @@ var templates = `
       {{end}}
     </div>
 
-    {{if .ShowAvailable}}
-    <div class="ledger">
+    {{if .ShowSummary}}
+    <div class="ledger{{if .ShowActuals}} with-actuals{{end}}">
+      <div class="row net{{if lt .FundingPersonal.NetIncomeCents 0}} neg{{end}}"><span class="label">Net income</span><span class="mid"></span><span class="amt netamt">{{eur .FundingPersonal.NetIncomeCents}}</span></div>
       <div class="row net neg"><span class="label">Total private expenses</span>{{if .ShowActuals}}<span class="mid{{outClass .PrivateTotalPlannedCents}}">{{out .PrivateTotalPlannedCents}}</span><span class="amt{{outClass .PrivateActualCents}}">{{out .PrivateActualCents}}<span class="stack-m">of {{out .PrivateTotalPlannedCents}}</span></span>{{else}}<span class="mid"></span><span class="amt neg">&minus;{{eur .PrivateTotalPlannedCents}}</span>{{end}}</div>
+      <div class="row net gap-above{{if lt .BalanceCents 0}} neg{{end}}"><span class="label">Balance</span><span class="mid"></span><span class="amt netamt">{{eur .BalanceCents}}</span></div>
     </div>
     {{end}}
 

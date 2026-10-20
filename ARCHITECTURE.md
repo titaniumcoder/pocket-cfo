@@ -1015,12 +1015,12 @@ decision like that, not a special mechanism.
 `balance` and one `as_of` per account, so re-reading the bank wrote over the previous
 figure — lossy in the one direction that matters, since the reason to read again is that
 the carried figure has drifted. Readings live in a `balances` array now, and the one in
-force for a month is the newest dated before it, and that is the figure the month shows
-beside its Available to spend. A month before every reading has no reading to show;
-nothing is carried, so a month nobody has read simply says what the plan says and nothing
-about the bank. A later reading replaces the figure for every month after it without
-rewriting what was true before, so paging back shows what was true then rather than a
-number read a year later.
+force for a month is the newest dated before it — the figure the **spending page** shows
+with the account's name. The finance page reads none of it: its balance is derived from
+net income and private expenses, never from the bank's own figure, so a reading feeds
+reconciliation and nothing else. A later reading replaces the figure for every month
+after it without rewriting what was true before, so paging back shows what was true then
+rather than a number read a year later.
 
 Two rules the schema cannot state are refused rather than guessed: two accounts sharing a
 name — now two histories for one account, with nothing to merge them by, where the old file
@@ -1028,15 +1028,13 @@ silently summed them — and two readings in one month, which would be two candi
 for the month. A rejected file also says so on the page; switching the readings off in
 silence is indistinguishable from having no `accounts.json` at all.
 
-**Where a reading is explained, and where it is not.** The dashboard shows an account as a
-name and a figure, nothing else. It is a page of arithmetic, and every clause that
-accumulated around those rows — the read date, the free-text note, why the company is
-overdrawn, how long since the bank was checked — was prose competing with the numbers it
-annotated. The read date is real context, so it lives on the **spending page**, next to
-Coverage: that is the page you are on while reconciling against a statement, and so the
-page where learning the bank was last read six weeks ago actually changes what you do.
-The `note` on a reading is documentation for whoever edits `accounts.json` and renders
-nowhere.
+**Where a reading is explained, and where it is not.** The finance page shows no account
+rows at all — it is a page of derived arithmetic, and a bank figure read off a file is
+not derived from anything. An account appears on the **spending page**, name, figure and
+read date together, next to Coverage: that is the page you are on while reconciling
+against a statement, and so the page where learning the bank was last read six weeks ago
+actually changes what you do. The `note` on a reading is documentation for whoever edits
+`accounts.json` and renders nowhere.
 
 **`targetBalance` used to exist and does not any more.** It held a month at the statutory
 minimum until the company's carried balance reached a figure the config named — a floor
@@ -1112,9 +1110,12 @@ opens the month the price moves.
 the plan and the statements answer different questions — what the month was meant to
 spend, and what it actually spent. Both are shown, in the Planned-against-Actual columns
 the ledger already uses. Mid-month that gap is most of the month; in a closed month it is
-the overspend or the underspend. Available to spend stays the plan either way; the bank's
-own reading for the month stands beside it, read off accounts.json rather than derived
-from a mixture of the two.
+the overspend or the underspend. The panel closes on its summary, and the summary says
+which side of that line the month is on: a closed month's balance weighs what was
+actually spent, while the month in progress and every future one weigh the plan — half
+a month of statements is not a month of spending, and the plan is the whole month's
+intent. The bank's own reading for the month is on the spending page, not blended into
+a figure that mixes the two.
 
 Every statement line carries exactly one disposition: a budget category, an `ignored`
 reason, an `untracked` note for money not yet decided, or `splits` when one line paid for
@@ -1127,7 +1128,7 @@ company-worth figure, the `targetBalance` blocks, and the carried balances (roll
 opening figures, the company balance as a cascade input) are all removed. The tracker
 models the simple thing: plannable company income (invoices due the month before) and
 company expenses define the earner's income, the private budget spends it, and the bank's
-per-month readings stand beside the figures. A deployment upgrading from a version that
+per-month readings live on the spending page. A deployment upgrading from a version that
 had any of this must first drop the `dividends` array from `budget.json`, any `movement`
 fields from its actuals, the `director_loan` block from `accounts.json`, the
 `companyProfitTax` and `dividendTax` entries and any `targetBalance` block from

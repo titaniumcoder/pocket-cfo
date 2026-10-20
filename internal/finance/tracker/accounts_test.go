@@ -228,33 +228,26 @@ func TestABrokenAccountsFileIsSaidOutLoud(t *testing.T) {
 		{"name":"Checking","kind":"private","balances":[{"as_of":"2026-06-30","balance":50}]},
 		{"name":"Checking","kind":"private","balances":[{"as_of":"2026-07-31","balance":250}]}
 	]}`)
-	f := trk.ComputeMonth(context.Background(), 2026, time.August)
-	if f.AccountsErr == "" {
-		t.Error("a rejected accounts.json produced no error on the page")
-	}
-	if f.ShowBankReading {
-		t.Error("a rejected accounts.json still rendered a bank reading")
+	v := trk.ComputeSpending(context.Background(), 2026, time.August)
+	if v.BalancesErr == "" {
+		t.Error("a rejected accounts.json produced no error on the spending page")
 	}
 }
 
-// TestAMidMonthReadingStopsThePageRatherThanBeingUsed: the balance layer is
-// the one place a wrong figure spreads — an anchor carries forward into every
-// month after it — so a reading that does not close its month takes the whole
-// layer down with a message instead of quietly anchoring the month on a
-// figure that was only half the month's spending.
-func TestAMidMonthReadingStopsThePageRatherThanBeingUsed(t *testing.T) {
+// TestAMidMonthReadingStopsTheLayerRatherThanBeingUsed: a reading that does
+// not close its month could anchor every month after it on a figure that was
+// only half the month's spending, so the loader refuses it with a message
+// instead of quietly using it.
+func TestAMidMonthReadingStopsTheLayerRatherThanBeingUsed(t *testing.T) {
 	trk := accountsTracker(t, `{"accounts":[
 		{"name":"Checking","kind":"private","balances":[{"as_of":"2026-07-14","balance":250}]}
 	]}`)
-	f := trk.ComputeMonth(context.Background(), 2026, time.August)
-	if f.AccountsErr == "" {
-		t.Fatal("a mid-month reading produced no error on the page")
+	v := trk.ComputeSpending(context.Background(), 2026, time.August)
+	if v.BalancesErr == "" {
+		t.Fatal("a mid-month reading produced no error on the spending page")
 	}
-	if !strings.Contains(f.AccountsErr, "2026-07-31") {
-		t.Errorf("AccountsErr = %q, want the date the reading should have carried", f.AccountsErr)
-	}
-	if f.ShowBankReading {
-		t.Error("the month still read a figure the loader refused")
+	if !strings.Contains(v.BalancesErr, "2026-07-31") {
+		t.Errorf("BalancesErr = %q, want the date the reading should have carried", v.BalancesErr)
 	}
 }
 
@@ -331,26 +324,6 @@ func TestAPrivateOnlyFileLeavesTheCompanyLayerOff(t *testing.T) {
 	}
 }
 
-// TestThePrivateOpeningListsOnlyPrivateAccounts: the rows under a figure are
-// read as the figure's parts, so listing a company account beside a private
-// opening that excludes it reads as arithmetic that does not add up.
-func TestThePrivateOpeningListsOnlyPrivateAccounts(t *testing.T) {
-	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Private","kind":"private","balances":[{"as_of":"2026-07-31","balance":2000}]},
-		{"name":"Company","kind":"company","balances":[{"as_of":"2026-07-31","balance":5000}]}
-	]}`)
-	f := trk.ComputeMonth(context.Background(), 2026, time.August)
-	if f.AccountsErr != "" {
-		t.Fatalf("AccountsErr = %q", f.AccountsErr)
-	}
-	if f.BankReadingCents != 200000 {
-		t.Errorf("bank reading = %d, want 200000 — the company balance is not private money", f.BankReadingCents)
-	}
-	if len(f.PrivateAccounts) != 1 || f.PrivateAccounts[0].Name != "Private" {
-		t.Errorf("PrivateAccounts = %+v, want just the private account", f.PrivateAccounts)
-	}
-}
-
 // TestAnAccountWithoutAKindIsRefused: which pot the money is in decides which
 // side of the payroll cascade it lands on, so a default would move real money
 // silently. budget.json's groups take the same line.
@@ -417,179 +390,97 @@ func accountsTracker(t *testing.T, accountsJSON string) *Tracker {
 		Personal: testLegislation(0.1892, 0.1378, 2112, 0.10),
 	}
 }
-func TestAvailableIsOpeningPlusNetIncome(t *testing.T) {
+
+// TestBalanceIgnoresTheAccountsLayer: the balance is derived, not read —
+// however many readings accounts.json holds, none of them moves a figure on
+// the finance page.
+func TestBalanceIgnoresTheAccountsLayer(t *testing.T) {
 	trk := accountsTracker(t, `{"accounts":[
 		{"name":"Private","kind":"private","balances":[{"as_of":"2026-07-31","balance":2000}]}
 	]}`)
 	f := trk.ComputeMonth(context.Background(), 2026, time.August)
 
-	if !f.ShowAvailable {
-		t.Fatal("expected an Available to spend row")
+	if !f.ShowSummary {
+		t.Fatal("expected the summary box at the end of the panel")
 	}
-	if want := f.FundingPersonal.NetIncomeCents - f.PrivateTotalPlannedCents; f.AvailableCents != want {
-		t.Errorf("AvailableCents = %d, want %d (net income - private expenses)", f.AvailableCents, want)
-	}
-	if !f.ShowBankReading || f.BankReadingCents != 200000 {
-		t.Errorf("bank reading = %d (shown %v), want the month's own 200000 reading",
-			f.BankReadingCents, f.ShowBankReading)
+	if want := f.FundingPersonal.NetIncomeCents - f.PrivateTotalPlannedCents; f.BalanceCents != want {
+		t.Errorf("BalanceCents = %d, want %d (net income - private expenses)", f.BalanceCents, want)
 	}
 }
 
-// TestNegativeBalancesRenderRed guards the money rows that are allowed to
-// go negative and used to be painted green regardless — an overdraft
-// carried in from last month reading as good news is exactly backwards.
-func TestNegativeBalancesRenderRed(t *testing.T) {
-	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Private","kind":"private","balances":[{"as_of":"2026-07-31","balance":2000}]}
-	]}`)
+// TestNegativeBalanceRendersRed guards the one row left that is allowed to
+// go negative and used to be painted green regardless — an overdrawn month
+// reading as good news is exactly backwards.
+func TestNegativeBalanceRendersRed(t *testing.T) {
+	trk := accountsTracker(t, `{"accounts":[]}`)
+	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
+		{Number: "0001", IssueDate: date(2026, 7, 5), DueDate: date(2026, 7, 19), TotalCents: 500000},
+	})
 
 	positive := trk.ComputeMonth(context.Background(), 2026, time.August)
-	if positive.BankReadingCents <= 0 {
-		t.Fatalf("August reading = %d, want positive for the control case", positive.BankReadingCents)
+	if positive.BalanceCents <= 0 {
+		t.Fatalf("Balance = %d, want positive for the control case", positive.BalanceCents)
 	}
 	recPos := httptest.NewRecorder()
 	RenderPage(recPos, positive)
-	posRow := regexp.MustCompile(`<div class="row net gap-above[^"]*"><span class="label">Available to spend</span>(.*?)</div>`).FindString(recPos.Body.String())
-	if posRow == "" {
-		t.Fatal("no Available to spend row on the page")
+	posRow := regexp.MustCompile(`<div class="row net gap-above([^"]*)"><span class="label">Balance</span>`).FindStringSubmatch(recPos.Body.String())
+	if posRow == nil {
+		t.Fatal("no Balance row on the page")
 	}
-	if strings.Contains(posRow, `class="amt neg"`) {
-		t.Errorf("a positive reading must not render as negative: %s", posRow)
+	if strings.Contains(posRow[1], "neg") {
+		t.Errorf("a positive balance must not render as negative: %s", posRow[0])
 	}
 
-	overdrawn := accountsTracker(t, `{"accounts":[
-		{"name":"Private","kind":"private","balances":[{"as_of":"2026-07-31","balance":-500}]}
-	]}`)
-	negative := overdrawn.ComputeMonth(context.Background(), 2026, time.August)
-	if negative.BankReadingCents >= 0 {
-		t.Fatalf("August reading = %d, want negative for this test to mean anything", negative.BankReadingCents)
+	spendthrift := accountsTracker(t, `{"accounts":[]}`)
+	spendthrift.Budget = newTestBudget(t, map[string]string{"budget.json": `{"groups":[
+		{"name":"Housing","kind":"private","categories":[{"id":"00000000-0000-4000-8000-000000000001","name":"Rent","amount":10000}]}
+	]}`})
+	spendthrift.Invoiced = trk.Invoiced
+	overdrawn := spendthrift.ComputeMonth(context.Background(), 2026, time.August)
+	if overdrawn.BalanceCents >= 0 {
+		t.Fatalf("Balance = %d, want negative for this test to mean anything", overdrawn.BalanceCents)
 	}
 	rec := httptest.NewRecorder()
-	RenderPage(rec, negative)
-	negRow := regexp.MustCompile(`<div class="row net gap-above[^"]*"><span class="label">Available to spend</span>(.*?)</div>`).FindString(rec.Body.String())
-	if negRow == "" {
-		t.Fatal("no Available to spend row on the page")
+	RenderPage(rec, overdrawn)
+	negRow := regexp.MustCompile(`<div class="row net gap-above([^"]*)"><span class="label">Balance</span>`).FindStringSubmatch(rec.Body.String())
+	if negRow == nil {
+		t.Fatal("no Balance row on the page")
 	}
-	if !strings.Contains(negRow, `class="amt neg"`) {
-		t.Errorf("a negative reading should carry the neg class, got: %s", negRow)
+	if !strings.Contains(negRow[1], "neg") {
+		t.Errorf("a negative balance should carry the neg class, got: %s", negRow[0])
 	}
 }
 
-// TestAvailableIsMonthLocalWithoutAccounts: Available no longer depends on a
-// balance layer at all — it is the month's net income less the private budget.
-// With no accounts.json there is simply no bank reading to put beside it.
-func TestAvailableIsMonthLocalWithoutAccounts(t *testing.T) {
+// TestBalanceNeedsNoAccounts: the balance never depended on a balance layer
+// — it is the month's net income less its private expenses, with or without
+// accounts.json.
+func TestBalanceNeedsNoAccounts(t *testing.T) {
 	trk := accountsTracker(t, `{"accounts":[]}`)
 	f := trk.ComputeMonth(context.Background(), 2026, time.August)
-	if f.ShowBankReading {
-		t.Fatal("no accounts configured — expected no bank reading")
-	}
-	if !f.ShowAvailable || f.AvailableCents != f.FundingPersonal.NetIncomeCents-f.PrivateTotalPlannedCents {
-		t.Errorf("Available = %d/%v, want net income - private expenses", f.AvailableCents, f.ShowAvailable)
+	if !f.ShowSummary || f.BalanceCents != f.FundingPersonal.NetIncomeCents-f.PrivateTotalPlannedCents {
+		t.Errorf("Balance = %d/%v, want net income - private expenses", f.BalanceCents, f.ShowSummary)
 	}
 
 	rec := httptest.NewRecorder()
 	RenderPage(rec, f)
-	if !strings.Contains(rec.Body.String(), "Available to spend") {
-		t.Error("Available row should render without an accounts layer")
+	if !strings.Contains(rec.Body.String(), "Balance") {
+		t.Error("the balance row should render without an accounts layer")
 	}
 }
 
-// TestVeryStaleBalanceStillComputes is the point of the whole layer: going
-// a long time without reading your bank makes the figure *nag*, never makes
-// it disappear. A balance last read years ago is still carried forward and
-// still shown.
-func TestVeryStaleBalanceStillComputes(t *testing.T) {
-	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Neglected","kind":"private","balances":[{"as_of":"2024-01-31","balance":2000}]}
-	]}`)
-	f := trk.ComputeMonth(context.Background(), 2026, time.August)
-
-	if f.AccountsErr != "" {
-		t.Fatalf("AccountsErr = %q — a stale reading must still be shown, not withheld", f.AccountsErr)
-	}
-	if !f.ShowBankReading {
-		t.Error("expected the bank reading to still render for a long-stale snapshot")
-	}
-}
-
-// TestTheDashboardAccountRowsAreNameAndFigureOnly pins what the ledger
-// deliberately does not say. An account row is a part of the figure above it,
-// and every extra clause — when it was read, what the note in accounts.json
-// says, why the company is overdrawn, how long since the bank was checked —
-// was prose on a page whose job is arithmetic. The read date moved to the
-// spending page, which is where it is acted on; the rest is in the file.
-func TestTheDashboardAccountRowsAreNameAndFigureOnly(t *testing.T) {
-	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Revolut Private","kind":"private","balances":[
-			{"as_of":"2026-07-31","balance":2000,"note":"Not yet funded — placeholder until the main part lands"}
-		]},
-		{"name":"Revolut Business","kind":"company","balances":[
-			{"as_of":"2026-07-31","balance":-10,"note":"Overdrawn by the June Revolut Business Fee"}
-		]}
-	]}`)
-	trk.Personal = bulgariaBands()
-	fixed := 2500.0
-	plan, err := ParseSalaryPlan([]SalaryEntry{{From: "2026-01", Mode: "fixed", Amount: &fixed}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	trk.Personal.Salary = plan
-
+// TestTheDashboardShowsNoAccountRows: accounts.json feeds the spending page.
+// No account name or figure from it may reach the finance page — including
+// the label of the row this layer used to sit under.
+func TestTheDashboardShowsNoAccountRows(t *testing.T) {
+	trk := accountsTracker(t, testAccountsJSON)
 	f := trk.ComputeMonth(context.Background(), 2026, time.August)
 	rec := httptest.NewRecorder()
 	RenderPage(rec, f)
 	body := rec.Body.String()
-
-	for _, unwanted := range []string{
-		"as of ",
-		"as read end of",
-		"carried from",
-		"Not yet funded",
-		"Overdrawn by the June",
-		"overdrawn — it paid out",
-		"go check your bank",
-		`class="basis"`,
-	} {
+	for _, unwanted := range []string{"Private Checking", "Available to spend", "AvailableCents"} {
 		if strings.Contains(body, unwanted) {
 			t.Errorf("the dashboard still says %q", unwanted)
 		}
-	}
-	// The figures themselves stay, with their names.
-	for _, want := range []string{"Revolut Private", "Available to spend"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("the dashboard lost %q", want)
-		}
-	}
-}
-
-// TestImplausibleAsOfDateErrors covers the one case that still refuses: a
-// mistyped year, which would otherwise fan out into an external API call
-// per calendar year spanned.
-func TestImplausibleAsOfDateErrors(t *testing.T) {
-	trk := accountsTracker(t, `{"accounts":[
-		{"name":"Typo","kind":"private","balances":[{"as_of":"1999-01-31","balance":2000}]}
-	]}`)
-	f := trk.ComputeMonth(context.Background(), 2026, time.August)
-	if f.AccountsErr == "" {
-		t.Error("expected an error for an as_of date decades in the past")
-	}
-	if f.ShowBankReading {
-		t.Error("an implausible date must not still render a bank reading")
-	}
-}
-
-// TestNoAccountsLayerLeavesAvailableUnchanged is the backward-compatibility
-// guard: without accounts.json Available reads exactly as it did before the
-// feature existed.
-func TestNoAccountsLayerLeavesAvailableUnchanged(t *testing.T) {
-	trk := accountsTracker(t, `{"accounts":[]}`)
-	f := trk.ComputeMonth(context.Background(), 2026, time.August)
-	if f.ShowBankReading {
-		t.Error("an empty accounts file must show no bank reading")
-	}
-	if f.AvailableCents != f.FundingPersonal.NetIncomeCents-f.PrivateTotalPlannedCents {
-		t.Errorf("Available = %d, want net income - private expenses with no accounts layer", f.AvailableCents)
 	}
 }
 

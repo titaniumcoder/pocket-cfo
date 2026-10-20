@@ -8,6 +8,11 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [4.10.0] - 2026-10-20
+
+### Added
+- A new `accounting` part for `users.json` logins: the accountant sees the finance page's business half — company income and expenses, the salary cascade, social contributions and tax, the income panel — plus the invoicing page, but none of the private spending: no private expense ledger, no mistimed notes naming private categories, no Summary balance, and the spending page stays owner-only.
+
 ## [4.9.0] - 2026-10-20
 
 ### Added
@@ -652,7 +657,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.9.0...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.10.0...HEAD
+[4.10.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.9.0...v4.10.0
 [4.9.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.8.0...v4.9.0
 [4.8.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.7.0...v4.8.0
 [4.7.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.6.1...v4.7.0

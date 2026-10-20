@@ -312,6 +312,9 @@ func (s *server) loadInvoicingView(r *http.Request, sess auth.Session) (any, err
 // dash — the figure fills in with the next refresh. The tracker is used on a
 // copy so the shared one is never mutated mid-request.
 func fillTrackedUninvoiced(recipients []recipient.RecipientJson, rows []stats.RecipientRow, shared *tracker.Tracker) {
+	if shared == nil {
+		return
+	}
 	clientIDByRecipient := map[int]int{}
 	for _, r := range recipients {
 		if r.TrackingClientId != nil {

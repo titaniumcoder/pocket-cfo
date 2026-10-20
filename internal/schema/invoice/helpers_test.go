@@ -3,6 +3,7 @@ package invoice
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func strp(v string) *string { return &v }
@@ -129,6 +130,25 @@ func TestValidateLocalizationReportsEveryGap(t *testing.T) {
 	for _, want := range []string{"line 1", "line 2", "discount 1", "tax note"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %q, want it to also report %q", err, want)
+		}
+	}
+}
+
+func TestCoverageEndBillsTheMonthBeforeAMidMonthIssue(t *testing.T) {
+	cases := []struct {
+		name     string
+		issue    time.Time
+		tracking time.Time
+		want     time.Time
+	}{
+		{"mid-month issue bills the month before", time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC), time.Time{}, time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)},
+		{"last-day issue bills its own month", time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC), time.Time{}, time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)},
+		{"february's last day is february's", time.Date(2027, 2, 28, 0, 0, 0, 0, time.UTC), time.Time{}, time.Date(2027, 2, 28, 0, 0, 0, 0, time.UTC)},
+		{"a written-down tracking_until wins", time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC)},
+	}
+	for _, c := range cases {
+		if got := CoverageEnd(c.issue, c.tracking); !got.Equal(c.want) {
+			t.Errorf("%s: CoverageEnd = %s, want %s", c.name, got.Format("2006-01-02"), c.want.Format("2006-01-02"))
 		}
 	}
 }

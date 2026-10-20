@@ -966,11 +966,14 @@ renders it as a grey row beside the real invoices, and the Income panel's total 
 only what no invoice exists for yet.
 
 What the invoices already cover is decided per client by a **coverage frontier**: the
-latest extent over the client's issued invoices, where an invoice without further
-specification covers through the end of the month it was issued in, and the optional
-`tracking_until` field on an invoice names the exact day its coverage ends, up to and
-including it — the clean separation for clients charged more often than monthly. A
-month the frontier covers whole contributes nothing; a month the frontier ends inside
+latest extent over the client's issued invoices. The extent of one invoice — the rule
+lives in `invoice.CoverageEnd` next to the schema, where the invoicing page reads it
+for display too — is the written-down `tracking_until` day when the invoice names one;
+without one, an invoice issued on a month's last day covers that month, and an invoice
+issued mid-month covers through the end of the month before it, since it is written
+after the work month ended — the clean separation for the owner's habit of invoicing
+on the first days of the following month. A month the frontier covers whole
+contributes nothing; a month the frontier ends inside
 contributes the workdays after it, priced by day, since the monthly aggregates cannot
 price individual days. A worked month whose Toggl client no recipient links
 (`tracking_client_id`, §3.2) is estimated anyway — and flagged on the work record panel

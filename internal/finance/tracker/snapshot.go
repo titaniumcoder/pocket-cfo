@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	snapshotVersion = 1
+	snapshotVersion = 2
 	versionMarker   = "VERSION"
 )
 

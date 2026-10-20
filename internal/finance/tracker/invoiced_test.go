@@ -126,15 +126,27 @@ func TestTheDefaultRuleStillAppliesWithoutAnOverride(t *testing.T) {
 	}
 }
 
-func TestAnInvoiceWithoutTrackingUntilCoversThroughItsIssueMonth(t *testing.T) {
+func TestAnInvoiceIssuedOnTheMonthsLastDayCoversThatMonth(t *testing.T) {
 	got := ComputeInvoiced([]InvoicedFact{
 		{Number: "0001", ClientID: 7, IssueDate: date(2026, 9, 30), DueDate: date(2026, 10, 31), TotalCents: 500000},
 	})
 	if !got.covers(7, date(2026, 9, 30)) {
-		t.Error("September 30 must be covered by an invoice issued in September")
+		t.Error("September 30 must be covered by an invoice issued on September's last day")
 	}
 	if got.covers(7, date(2026, 10, 1)) {
 		t.Error("October 1 must stay uncovered — the estimate for October stands")
+	}
+}
+
+func TestAnInvoiceIssuedMidMonthCoversThroughTheMonthBeforeIt(t *testing.T) {
+	got := ComputeInvoiced([]InvoicedFact{
+		{Number: "0001", ClientID: 7, IssueDate: date(2026, 11, 3), DueDate: date(2026, 11, 17), TotalCents: 500000},
+	})
+	if !got.covers(7, date(2026, 10, 31)) {
+		t.Error("October 31 must be covered — a November invoice bills October's work")
+	}
+	if got.covers(7, date(2026, 11, 1)) {
+		t.Error("November 1 must stay uncovered — the invoice was written after the work month ended")
 	}
 }
 

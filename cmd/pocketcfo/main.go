@@ -23,6 +23,7 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/money"
 	"github.com/titaniumcoder/pocket-cfo/internal/render"
 	"github.com/titaniumcoder/pocket-cfo/internal/schema/invoice"
+	"github.com/titaniumcoder/pocket-cfo/internal/schema/recipient"
 	"github.com/titaniumcoder/pocket-cfo/internal/stats"
 	"github.com/titaniumcoder/pocket-cfo/internal/users"
 	"github.com/titaniumcoder/pocket-cfo/internal/webui"
@@ -279,6 +280,7 @@ func (s *server) loadInvoicingView(r *http.Request, sess auth.Session) (any, err
 			return nil, err
 		}
 	}
+	fillTrackedUninvoiced(recipients, recipientRows, s.tracker)
 
 	var portalLinks map[int]string
 	if s.authorized(sess) {
@@ -302,6 +304,32 @@ func (s *server) loadInvoicingView(r *http.Request, sess auth.Session) (any, err
 		PortalLinks:  portalLinks,
 		PDFCurrent:   pdfCurrentMap(invoices),
 	}, nil
+}
+
+// fillTrackedUninvoiced puts each recipient's tracked-but-not-yet-invoiced
+// money into its row. The Toggl answer is best-effort: when the tracker or
+// its data is unavailable the rows simply carry zero and the column shows a
+// dash — the figure fills in with the next refresh. The tracker is used on a
+// copy so the shared one is never mutated mid-request.
+func fillTrackedUninvoiced(recipients []recipient.RecipientJson, rows []stats.RecipientRow, shared *tracker.Tracker) {
+	clientIDByRecipient := map[int]int{}
+	for _, r := range recipients {
+		if r.TrackingClientId != nil {
+			clientIDByRecipient[r.Number] = *r.TrackingClientId
+		}
+	}
+	facts, _, err := buildInvoicedFacts()
+	if err != nil {
+		return
+	}
+	trk := *shared
+	trk.Invoiced = tracker.ComputeInvoiced(facts)
+	uninvoiced := trk.UninvoicedTrackedCents(context.Background())
+	for i := range rows {
+		if cid, ok := clientIDByRecipient[rows[i].Number]; ok {
+			rows[i].TrackedUninvoiced = int64(uninvoiced[cid])
+		}
+	}
 }
 
 func pdfCurrentMap(invoices []*invoice.InvoiceJson) map[string]bool {

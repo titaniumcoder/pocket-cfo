@@ -16,7 +16,7 @@ import (
 	"github.com/titaniumcoder/pocket-cfo/internal/webui"
 )
 
-func buildInvoicedFacts() ([]tracker.InvoicedFact, map[int]bool, error) {
+func buildInvoicedFacts() ([]tracker.InvoicedFact, map[int]int, error) {
 	recipients, err := stats.LoadRecipients(recipientsDir)
 	if err != nil {
 		return nil, nil, err
@@ -61,20 +61,20 @@ func buildInvoicedFacts() ([]tracker.InvoicedFact, map[int]bool, error) {
 		}
 		facts = append(facts, fact)
 	}
-	linked := map[int]bool{}
-	for _, cid := range clientIDByRecipient {
-		linked[cid] = true
-	}
-	return facts, linked, nil
+	return facts, clientIDByRecipient, nil
 }
 
 func (s *server) trackerForRequest() (tracker.Tracker, error) {
 	trk := *s.tracker
-	facts, linked, err := buildInvoicedFacts()
+	facts, clientIDByRecipient, err := buildInvoicedFacts()
 	if err != nil {
 		return trk, err
 	}
 	trk.Invoiced = tracker.ComputeInvoiced(facts)
+	linked := map[int]bool{}
+	for _, cid := range clientIDByRecipient {
+		linked[cid] = true
+	}
 	trk.LinkedClientIDs = linked
 	return trk, nil
 }

@@ -161,11 +161,11 @@ func TestAnotherCacheVersionWipesTheDirectoryOnStart(t *testing.T) {
 		}
 	}
 	marker, err := os.ReadFile(filepath.Join(dir, versionMarker))
-	if err != nil || strings.TrimSpace(string(marker)) != "1" {
+	if err != nil || strings.TrimSpace(string(marker)) != "2" {
 		t.Errorf("marker = %q, %v; want the current version", marker, err)
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "detailed_.json"))
-	if err != nil || !strings.Contains(string(raw), `"version":1`) {
+	if err != nil || !strings.Contains(string(raw), `"version":2`) {
 		t.Errorf("a fresh snapshot was not written after the wipe: %v", err)
 	}
 }

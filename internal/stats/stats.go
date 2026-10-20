@@ -71,6 +71,11 @@ type RecipientRow struct {
 	Email        string
 	TotalInFrame int64
 	Outstanding  int64
+
+	// TrackedUninvoiced is the money of Toggl-tracked work the issued
+	// invoices do not reach yet — filled in by the caller, which owns the
+	// Toggl connection. Zero means nothing open or nothing fetched.
+	TrackedUninvoiced int64
 }
 
 type InvoiceRow struct {
@@ -82,6 +87,19 @@ type InvoiceRow struct {
 	Paid          *types.SerializableDate
 	GrandTotal    int64
 	State         string
+
+	// TracksUntil is the day the invoice's coverage of Toggl trackings
+	// ends — the written-down tracking_until, or the one the coverage rule
+	// computes when none is written down.
+	TracksUntil string
+}
+
+func coverageEnd(inv *invoice.InvoiceJson) time.Time {
+	var until time.Time
+	if inv.TrackingUntil != nil {
+		until = inv.TrackingUntil.Time
+	}
+	return invoice.CoverageEnd(inv.IssueDate.Time, until)
 }
 
 func deriveState(inv *invoice.InvoiceJson, paidOn *types.SerializableDate, today time.Time) string {
@@ -223,6 +241,7 @@ func aggregateInvoiceRows(all []computedInvoice, inFrame func(computedInvoice) b
 			Paid:          c.paidOn,
 			GrandTotal:    c.total,
 			State:         c.state,
+			TracksUntil:   coverageEnd(c.inv).Format("02.01.2006"),
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool {

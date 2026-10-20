@@ -388,6 +388,57 @@ func coveredPart(a Aggregate, frontier time.Time) (seconds, cents int, split boo
 	return seconds, round(float64(a.AmountCents) * float64(seconds) / float64(a.Seconds)), true
 }
 
+// UninvoicedTrackedCents prices, per Toggl client, the tracked work no issued
+// invoice reaches: from the tracker's start month through today, every
+// aggregate keeps the part of its amount the client's coverage frontier does
+// not already carry. Ignored clients and unlinked projects are left out.
+// Toggl answers are taken from the cache when the fetch cannot finish in the
+// usual patience — the figure fills in once the background warm-up lands.
+func (t *Tracker) UninvoicedTrackedCents(ctx context.Context) map[int]int {
+	if t.Toggl == nil {
+		return nil
+	}
+	togglCtx, cancel := waitBudget(ctx)
+	defer cancel()
+
+	projects, err := t.hours().Projects(togglCtx)
+	if err != nil {
+		return nil
+	}
+	now := time.Now().In(t.location())
+	firstYear := now.Year()
+	if !t.Start.IsZero() {
+		firstYear = t.Start.In(t.location()).Year()
+	}
+
+	out := map[int]int{}
+	for year := firstYear; year <= now.Year(); year++ {
+		yd, err := t.hours().Year(togglCtx, year)
+		if err != nil || yd == nil {
+			continue
+		}
+		for m, aggs := range yd.Months {
+			monthEnd := time.Date(year, m, 1, 0, 0, 0, 0, t.location()).AddDate(0, 1, -1)
+			for _, a := range aggs {
+				clientID := projects[a.ProjectID].ClientID
+				if t.ignoresClient(clientID) || clientID == UnscopedClientID {
+					continue
+				}
+				if t.Invoiced.coversMonth(clientID, monthEnd) {
+					continue
+				}
+				_, coveredCents, split := coveredPart(a, t.Invoiced.frontierFor(clientID))
+				if split {
+					out[clientID] += a.AmountCents - coveredCents
+					continue
+				}
+				out[clientID] += a.AmountCents
+			}
+		}
+	}
+	return out
+}
+
 // computeUnbilled sums the tracked work that is not estimated income: the
 // hours an issued invoice already covers, and the hours of ignored clients.
 // The panel's Income total keeps only what no invoice exists for yet.

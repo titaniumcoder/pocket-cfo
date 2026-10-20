@@ -468,7 +468,7 @@ func TestAnInvoicedMonthStrikesOutInTheIncomePanel(t *testing.T) {
 	}
 
 	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
-		{Number: "0001", ClientID: 1, IssueDate: date(2026, 7, 5), DueDate: date(2026, 7, 19), TotalCents: 500000},
+		{Number: "0001", ClientID: 1, IssueDate: date(2026, 7, 31), DueDate: date(2026, 7, 19), TotalCents: 500000},
 	})
 
 	// The covered hours strike out under Invoiced and leave the Income

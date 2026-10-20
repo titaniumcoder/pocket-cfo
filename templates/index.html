@@ -32,6 +32,7 @@
           <th class="email">Email</th>
           <th class="num col-wide">Total</th>
           <th class="num col-wide">Outstanding</th>
+          <th class="num col-wide" title="Toggl-tracked work the issued invoices do not reach yet, at the tracked rates">Tracked, not invoiced</th>
           <th class="num money-stack">Total</th>
           <th><span class="col-secondary">Portal</span></th>
         </tr>
@@ -44,6 +45,7 @@
           <td class="email"><a href="mailto:{{.Email}}" title="{{.Email}}">{{.Email}}</a></td>
           <td class="num col-wide">{{money .TotalInFrame}}</td>
           <td class="num col-wide{{if ne .Outstanding 0}} outstanding-nonzero{{end}}">{{money .Outstanding}}</td>
+          <td class="num col-secondary">{{if .TrackedUninvoiced}}{{money .TrackedUninvoiced}}{{else}}&mdash;{{end}}</td>
           <td class="num money-stack">
             <div>{{money .TotalInFrame}}</div>
             <div{{if ne .Outstanding 0}} class="outstanding-nonzero"{{end}}>{{money .Outstanding}}</div>
@@ -66,6 +68,7 @@
           <th class="col-secondary">Recipient</th>
           <th class="col-secondary">Issue date</th>
           <th class="col-secondary">Due date</th>
+          <th class="col-secondary" title="The day the invoice's coverage of Toggl trackings ends — written down on the invoice, or the one the coverage rule computes">Tracks until</th>
           <th class="col-secondary">Paid</th>
           <th class="num">Total</th>
         </tr>
@@ -94,6 +97,7 @@
           <td class="col-secondary">{{.RecipientName}}</td>
           <td class="col-secondary">{{date .IssueDate}}</td>
           <td class="col-secondary">{{date .DueDate}}</td>
+          <td class="col-secondary">{{.TracksUntil}}</td>
           <td class="col-secondary">{{dateptr .Paid}}</td>
           <td class="num">{{money .GrandTotal}}</td>
         </tr>

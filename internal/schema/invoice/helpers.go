@@ -3,7 +3,25 @@ package invoice
 import (
 	"errors"
 	"fmt"
+	"time"
 )
+
+// CoverageEnd is the last day an invoice's coverage of Toggl trackings
+// reaches, up to and including it. A written-down tracking_until names it
+// exactly. Without one, the invoice bills the month before it was issued —
+// it is written after the work month ended — unless it is issued on that
+// month's last day, when it bills the month it is issued in.
+func CoverageEnd(issueDate, trackingUntil time.Time) time.Time {
+	if !trackingUntil.IsZero() {
+		return trackingUntil
+	}
+	issue := issueDate.In(time.UTC)
+	monthEnd := time.Date(issue.Year(), issue.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, -1)
+	if issue.Day() == monthEnd.Day() {
+		return monthEnd
+	}
+	return time.Date(issue.Year(), issue.Month(), 0, 0, 0, 0, 0, time.UTC)
+}
 
 func (ls LocalizedString) Get(lang InvoiceJsonLanguage) (string, bool) {
 	var p *string

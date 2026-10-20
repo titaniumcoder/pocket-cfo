@@ -157,8 +157,18 @@ func TestAggregate(t *testing.T) {
 	if len(invoiceRows) != 4 {
 		t.Fatalf("len(invoiceRows) = %d, want 4 (draft included in the list)", len(invoiceRows))
 	}
+	byNumber := map[string]InvoiceRow{}
 	for _, row := range invoiceRows {
 		states[row.Number] = row.State
+		byNumber[row.Number] = row
+	}
+	// A mid-month issue bills the month before it; a written-down
+	// tracking_until names the day exactly.
+	if got := byNumber["INV-A1"].TracksUntil; got != "31.01.2025" {
+		t.Errorf("INV-A1 TracksUntil = %q, want 31.01.2025 (issued February 1)", got)
+	}
+	if got := byNumber["INV-A3"].TracksUntil; got != "31.05.2026" {
+		t.Errorf("INV-A3 TracksUntil = %q, want 31.05.2026 (issued June 1)", got)
 	}
 	wantStates := map[string]string{"INV-A1": "paid", "INV-A2": "overdue", "INV-A3": "issued", "INV-A4": "draft"}
 	for number, want := range wantStates {

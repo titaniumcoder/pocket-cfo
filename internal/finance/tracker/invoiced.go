@@ -3,6 +3,8 @@ package tracker
 import (
 	"sort"
 	"time"
+
+	"github.com/titaniumcoder/pocket-cfo/internal/schema/invoice"
 )
 
 const UnscopedClientID = 0
@@ -52,14 +54,10 @@ func ComputeInvoiced(facts []InvoicedFact) InvoicedClient {
 	return InvoicedClient{Usable: usable, Frontiers: frontiers}
 }
 
-// coverageExtent is the last day the invoice covers. A written-down
-// tracking_until names it exactly; an invoice without one covers through the
-// end of the month it was issued in.
+// coverageExtent is the last day the invoice covers. The rule lives with
+// the invoice schema, where the invoicing page reads it for display too.
 func (f InvoicedFact) coverageExtent() time.Time {
-	if !f.TrackingUntil.IsZero() {
-		return f.TrackingUntil
-	}
-	return time.Date(f.IssueDate.Year(), f.IssueDate.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, -1)
+	return invoice.CoverageEnd(f.IssueDate, f.TrackingUntil)
 }
 
 // frontierFor is the client's coverage frontier — the last day its issued

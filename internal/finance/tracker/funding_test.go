@@ -236,7 +236,7 @@ func TestUninvoicedTrackedMonthIsIncomeTwoMonthsLater(t *testing.T) {
 func TestAnInvoiceIssuedInOrBeforeTheWorkedMonthSupersedesItsEstimate(t *testing.T) {
 	trk := estimateTracker("2026-10-05", `[{"id":1,"name":"Alpha","client_id":7}]`)
 	trk.Invoiced = ComputeInvoiced([]InvoicedFact{
-		{Number: "0001", ClientID: 7, IssueDate: date(2026, 10, 30), DueDate: date(2026, 10, 31), TotalCents: 500000},
+		{Number: "0001", ClientID: 7, IssueDate: date(2026, 10, 31), DueDate: date(2026, 10, 31), TotalCents: 500000},
 	})
 
 	pv, estimates := trk.fundingIncome(context.Background(), []yearMonth{{2026, time.December}}, date(2026, 10, 13), 0, nil)
@@ -441,7 +441,7 @@ func TestCoveredHoursDropOutOfTheEstimatedIncomeTotal(t *testing.T) {
 	}
 
 	covered := figure(newTracker([]InvoicedFact{
-		{Number: "0001", ClientID: 7, IssueDate: date(2026, 10, 30), DueDate: date(2026, 11, 30), TotalCents: 500000},
+		{Number: "0001", ClientID: 7, IssueDate: date(2026, 10, 31), DueDate: date(2026, 11, 30), TotalCents: 500000},
 	}))
 	if covered.TotalCents != 0 {
 		t.Errorf("Income total = %d, want 0 — October's 1 500 is already invoiced", covered.TotalCents)
@@ -476,7 +476,7 @@ func TestARealInvoiceReplacesTheEstimateRowInItsIncomeMonth(t *testing.T) {
 
 	invoicedTrk := estimateTracker("2026-10-05", `[{"id":1,"name":"Alpha","client_id":7}]`)
 	invoicedTrk.Invoiced = ComputeInvoiced([]InvoicedFact{
-		{Number: "0001", ClientID: 7, IssueDate: date(2026, 10, 30), DueDate: date(2026, 11, 30), TotalCents: 500000},
+		{Number: "0001", ClientID: 7, IssueDate: date(2026, 10, 31), DueDate: date(2026, 11, 30), TotalCents: 500000},
 	})
 	invoiced, estimates := rows(invoicedTrk)
 	if len(invoiced) != 1 {
@@ -487,6 +487,35 @@ func TestARealInvoiceReplacesTheEstimateRowInItsIncomeMonth(t *testing.T) {
 	}
 	if len(estimates) != 0 {
 		t.Errorf("ExpectedEstimates = %+v, want none — the worked month is invoiced", estimates)
+	}
+}
+
+// TestUninvoicedTrackedCentsKeepsOnlyWhatNoInvoiceReaches: the client list's
+// open-work figure is the tracked amount the coverage frontier does not
+// already carry — a frontier inside the tracked month leaves the open half,
+// one covering the month whole leaves nothing.
+func TestUninvoicedTrackedCentsKeepsOnlyWhatNoInvoiceReaches(t *testing.T) {
+	rows := `[{"project_id":1,"hourly_rate_in_cents":7500,"billable_amount_in_cents":300000,"currency":"EUR","time_entries":[{"seconds":7200,"start":"2026-10-05T09:00:00+00:00"},{"seconds":7200,"start":"2026-10-20T09:00:00+00:00"}]}]`
+	projects := `[{"id":1,"name":"Alpha","client_id":7}]`
+
+	figure := func(facts []InvoicedFact) map[int]int {
+		trk := estimateTrackerRows(rows, projects)
+		trk.Invoiced = ComputeInvoiced(facts)
+		return trk.UninvoicedTrackedCents(context.Background())
+	}
+
+	got := figure([]InvoicedFact{
+		{Number: "0001", ClientID: 7, IssueDate: date(2026, 10, 15), DueDate: date(2026, 10, 16), TotalCents: 500000, TrackingUntil: date(2026, 10, 10)},
+	})
+	if got[7] != 150000 {
+		t.Errorf("uninvoiced = %d, want 150000 — the days until 10.10. drop out with the invoice", got[7])
+	}
+
+	all := figure([]InvoicedFact{
+		{Number: "0001", ClientID: 7, IssueDate: date(2026, 10, 15), DueDate: date(2026, 10, 16), TotalCents: 500000, TrackingUntil: date(2026, 10, 31)},
+	})
+	if all[7] != 0 {
+		t.Errorf("uninvoiced = %d, want 0 — the invoice reaches the whole month", all[7])
 	}
 }
 

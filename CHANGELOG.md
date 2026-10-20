@@ -8,9 +8,10 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [4.11.0] - 2026-10-21
+
 ### Added
 - A client logging in with their own email address lands directly on their portal: recipient addresses may request a login link like listed users, and the callback sends them to the portal the passkey link opens. A client who also carries `users.json` parts keeps them — same session, only the landing page differs.
-
 
 ## [4.10.0] - 2026-10-20
 
@@ -661,7 +662,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.10.0...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.0...HEAD
+[4.11.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.10.0...v4.11.0
 [4.10.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.9.0...v4.10.0
 [4.9.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.8.0...v4.9.0
 [4.8.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.7.0...v4.8.0

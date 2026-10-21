@@ -8,6 +8,13 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Changed
+- State-changing requests marked cross-site by `Sec-Fetch-Site`/`Origin` are no longer refused: the guard rejected legitimate same-site Reload clicks behind the deployment's proxy topology, and SameSite=Lax alone is the documented CSRF posture again.
+- The income panel's estimate rows and the funding cascade's invoice/estimate rows no longer carry the "income this month" notes — when invoiced work lands as money is client-dependent, and a fixed sentence cannot say it truthfully.
+
+### Fixed
+- Reload worked for nobody, not even the owner: the cross-site guard refused the POST outright (above).
+
 ## [4.11.2] - 2026-10-21
 
 ### Changed

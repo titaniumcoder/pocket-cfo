@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -225,4 +226,63 @@ func TestRunValidate_InvoicesWithoutACatalogAreReported(t *testing.T) {
 	if code := runValidate(nil); code == 0 {
 		t.Error("runValidate = 0, want a nonzero exit when there are invoices but no catalog")
 	}
+}
+
+// TestRunValidate_RequiresDistinctRecipientEmails: the email login resolves
+// the portal by the recipient's own address, so an address must exist and
+// must belong to exactly one recipient.
+func TestRunValidate_RequiresDistinctRecipientEmails(t *testing.T) {
+	newFixture := func(t *testing.T) {
+		t.Helper()
+		t.Chdir(t.TempDir())
+		mustMkdirAll(t, "data/recipients")
+		mustMkdirAll(t, "data/invoices")
+		writeUsers := func() {
+			writeJSON(t, "data/users.json", map[string]any{
+				"users": []map[string]any{{"email": "a@example.com", "parts": []string{"finance"}}},
+			})
+		}
+		writeBudget := func() {
+			writeJSON(t, "data/budget.json", map[string]any{
+				"groups": []map[string]any{
+					{"name": "Housing", "kind": "private", "categories": []map[string]any{
+						{"id": "00000000-0000-4000-8000-000000000001", "name": "Rent", "amount": 900},
+					}},
+				},
+			})
+		}
+		writeUsers()
+		writeBudget()
+	}
+	writeRecipient := func(number int, email string) {
+		writeJSON(t, fmt.Sprintf("data/recipients/%04d.json", number), map[string]any{
+			"number": number, "legal_name": "Client", "email": email,
+			"is_business": true, "language": "de", "payment_terms_days": 14,
+			"address": map[string]any{"line1": "Street 1", "postal_code": "1000", "city": "Vienna", "country_code": "AT"},
+		})
+	}
+
+	t.Run("duplicates fail", func(t *testing.T) {
+		newFixture(t)
+		writeRecipient(1, "same@example.com")
+		writeRecipient(2, "Same@Example.com ")
+		if code := runValidate(nil); code == 0 {
+			t.Error("runValidate = 0, want a problem for two recipients sharing an address")
+		}
+	})
+	t.Run("missing email fails", func(t *testing.T) {
+		newFixture(t)
+		writeRecipient(1, "")
+		if code := runValidate(nil); code == 0 {
+			t.Error("runValidate = 0, want a problem for a recipient without an email address")
+		}
+	})
+	t.Run("distinct addresses pass", func(t *testing.T) {
+		newFixture(t)
+		writeRecipient(1, "one@example.com")
+		writeRecipient(2, "two@example.com")
+		if code := runValidate(nil); code != 0 {
+			t.Errorf("runValidate = %d, want 0 for distinct recipient addresses", code)
+		}
+	})
 }

@@ -6,6 +6,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -461,7 +462,40 @@ func (s *server) routes() http.Handler {
 	s.registerAPI(mux)
 	s.registerUploads(mux)
 
-	return securityHeaders(mux)
+	return securityHeaders(sameOriginMutations(mux))
+}
+
+// sameOriginMutations refuses state-changing requests the browser itself
+// marks as cross-site. SameSite=Lax already withholds the session cookie on
+// cross-site POSTs, but Chrome grants fresh cookies a two-minute
+// cross-site grace window — Sec-Fetch-Site closes it, the Origin header
+// backs it up for browsers that do not send the fetch metadata. Stdlib
+// only, no token to thread through forms.
+func sameOriginMutations(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+			site := r.Header.Get("Sec-Fetch-Site")
+			switch site {
+			case "", "same-origin", "none":
+				if origin := r.Header.Get("Origin"); origin != "" && originHost(origin) != r.Host {
+					http.Error(w, "cross-site request refused", http.StatusForbidden)
+					return
+				}
+			default:
+				http.Error(w, "cross-site request refused", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func originHost(origin string) string {
+	if u, err := url.Parse(origin); err == nil {
+		return u.Host
+	}
+	return origin
 }
 
 func securityHeaders(next http.Handler) http.Handler {

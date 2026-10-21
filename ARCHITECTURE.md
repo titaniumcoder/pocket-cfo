@@ -734,8 +734,12 @@ carries its own data.
 
 Auth: GitHub OAuth App, scopes `read:user repo`. On callback,
 `GET /repos/{owner}/{repo}/collaborators/{login}/permission`; require `push` or `admin`.
-Cache in an encrypted session cookie, 10-minute TTL. Everything behind auth — there is no
-public route.
+Cache in an encrypted session cookie, **30-day TTL** — deliberately, not the
+10 minutes first sketched: a monthly re-login is the price a 30-day
+revocation window buys, and the owner accepted that trade-off (a revoked
+collaborator keeps access for at most 30 days, since the permission baked
+into the cookie is not re-checked against GitHub before expiry). Everything
+behind auth — there is no public route.
 
 **Second, lesser-trust path: email login.** Anyone listed in the private data
 repo's `$DATA_DIR/users.json` (see `internal/users`, `schemas/users.json`)
@@ -776,17 +780,31 @@ parts keeps them; only the landing page differs.
 
 | Method | Path |
 |---|---|
-| GET | `/` — dashboard |
-| GET | `/invoices` — list, filter by state / client / period |
-| GET | `/invoices/{number}` |
-| GET | `/invoices/{number}.pdf` |
-| GET | `/invoices/{number}-paid.pdf` — 404 until the invoice is listed in `paid-invoices.json` |
-| GET | `/recipients`, `/recipients/{n}` |
-| GET | `/reports/vies?period=2026-07` |
-| GET | `/auth/login`, `/auth/callback` |
+| GET | `/{$}` — dashboard, current month |
+| GET | `/{year}` — year view |
+| GET | `/{year}/{month}` — month view |
+| GET | `/{year}/{month}/spending` — spending detail (owner only) |
+| GET | `/invoicing` — invoicing dashboard (invoicing part or owner) |
+| GET | `/invoicing/invoices/{file}` — invoice/paid PDFs (invoicing part or owner) |
+| GET | `/invoicing/client`, `/invoicing/client/{token}` — client portal (session email match or passkey link) |
+| GET | `/invoicing/client/invoices/{file}`, `/invoicing/client/{token}/invoices/{file}` — the client's own issued invoice PDFs |
+| GET | `/auth/login`, `/auth/callback` — GitHub OAuth |
+| GET+POST | `/auth/logout` |
 | GET | `/auth/email` — email-entry form |
 | POST | `/auth/email` — request a login link |
 | GET | `/auth/email/callback?token=...` — verify and log in (readonly) |
+| POST | `/refresh` — evict the Toggl cache for a month/year (finance/accounting/owner) |
+| POST | `/minimal` — toggle the minimal month view |
+| POST | `/toggl/reset` — wipe the Toggl cache (owner) |
+| GET | `/info` — configuration view (owner) |
+| GET+POST | `/uploads`, `/uploads/{id}/(category\|confirm\|parse\|delete)`, `/uploads/purge`, `/uploads/status` — admin only |
+| GET | `/api/...`, `/mcp` — the agent-facing surface, bearer token only, sessions irrelevant |
+| GET | `/static/{file}`, `/robots.txt` — public, no data |
+
+Mutating methods are additionally guarded by the `Sec-Fetch-Site`/`Origin`
+same-origin check (`sameOriginMutations`), so a browser cannot be talked
+into a cross-site POST even inside SameSite=Lax's fresh-cookie grace
+window.
 
 **IAM permissions for SES.** The credentials in `AWS_ACCESS_KEY_ID`/
 `AWS_SECRET_ACCESS_KEY` need exactly one action, scoped to the verified

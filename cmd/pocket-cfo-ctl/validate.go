@@ -33,6 +33,7 @@ func runValidate(args []string) int {
 
 	problems := 0
 	knownRecipients := map[int]bool{}
+	recipientEmails := map[string]int{}
 	problems += validateDir(filepath.Join(dataDir, "recipients"), func(b []byte) error {
 		if err := schemas.Validate(schemas.Recipient, b); err != nil {
 			return err
@@ -41,6 +42,14 @@ func runValidate(args []string) int {
 		if err := json.Unmarshal(b, &r); err != nil {
 			return err
 		}
+		if strings.TrimSpace(r.Email) == "" {
+			return fmt.Errorf("recipient %d has no email address — the client's email login needs one", r.Number)
+		}
+		normalized := strings.ToLower(strings.TrimSpace(r.Email))
+		if prev, taken := recipientEmails[normalized]; taken {
+			return fmt.Errorf("recipient %d repeats %s, already used by recipient %d — a client's email login could not tell their portals apart", r.Number, r.Email, prev)
+		}
+		recipientEmails[normalized] = r.Number
 		knownRecipients[r.Number] = true
 		return nil
 	})

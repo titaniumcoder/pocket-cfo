@@ -10,6 +10,10 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [4.11.0] - 2026-10-21
 
+### Changed
+- State-changing requests (POST/PUT/PATCH/DELETE) are refused when the browser marks them cross-site — `Sec-Fetch-Site`, with the `Origin` header as fallback — closing SameSite=Lax's fresh-cookie grace window for `/refresh`, the uploads actions and `/toggl/reset`.
+- `pocket-cfo-ctl validate` requires every recipient to carry an email address, and that no two recipients share one: the client's email login resolves their portal by that address.
+
 ### Fixed
 - **Invoice PDF URLs now require the invoicing part.** `/invoicing/invoices/{file}` checked only that a session was authenticated, so a parts-less client login or a finance/accounting-only viewer could fetch any recipient's invoice PDF by typing the URL — found by the Kimi K3 security review, now gated and pinned by tests.
 - The finance page's month selector no longer marks untracked-cash months for the accountant's login (the private-cash hint was the one spot the HidePrivate gate missed).

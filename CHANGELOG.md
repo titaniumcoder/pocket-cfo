@@ -8,6 +8,8 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [4.11.3] - 2026-10-21
+
 ### Changed
 - State-changing requests marked cross-site by `Sec-Fetch-Site`/`Origin` are no longer refused: the guard rejected legitimate same-site Reload clicks behind the deployment's proxy topology, and SameSite=Lax alone is the documented CSRF posture again.
 - The income panel's estimate rows and the funding cascade's invoice/estimate rows no longer carry the "income this month" notes — when invoiced work lands as money is client-dependent, and a fixed sentence cannot say it truthfully.
@@ -693,7 +695,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.2...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.3...HEAD
+[4.11.3]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.2...v4.11.3
 [4.11.2]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.1...v4.11.2
 [4.11.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.0...v4.11.1
 [4.11.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.10.0...v4.11.0

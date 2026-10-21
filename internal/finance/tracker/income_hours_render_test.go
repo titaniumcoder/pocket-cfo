@@ -68,8 +68,9 @@ func TestComputeTotalFormatsHoursCompactly(t *testing.T) {
 
 // TestTheIncomePanelListsInvoicedTrackedAndExpected: the income panel reads
 // top to bottom as billing state — the covered rows strike out under
-// Invoiced, the rest stays under Tracked, and Expected holds the projection
-// plus the estimated invoices whose income month the page covers.
+// Invoiced, the rest stays under Tracked, and Expected holds only the hour
+// projection; the estimated invoices for the page's income months render in
+// the rolling budget's Company income rows, never here.
 func TestTheIncomePanelListsInvoicedTrackedAndExpected(t *testing.T) {
 	f := Figures{
 		Mode:     "month",
@@ -87,30 +88,30 @@ func TestTheIncomePanelListsInvoicedTrackedAndExpected(t *testing.T) {
 		ExpectedCents:    600000,
 		ExpectedNetHours: "80",
 		ExpectedNetCents: 600000,
-		ExpectedEstimates: []InvoicedRow{
-			{Estimated: true, WorkedMonth: "October 2026", AmountCents: 990000},
-		},
-		TotalHours: "90:00",
-		TotalRate:  "75",
-		TotalCents: 750000,
+		TotalHours:       "90:00",
+		TotalRate:        "75",
+		TotalCents:       750000,
 	}
 
 	rec := httptest.NewRecorder()
 	RenderPage(rec, f)
 	body := rec.Body.String()
 
-	for _, want := range []string{"<h2>Invoiced</h2>", `class="row struck"`, "until 10.10.", "<h2>Tracked</h2>", "from 11.10.", "<h2>Expected</h2>", "estimate for October 2026"} {
+	for _, want := range []string{"<h2>Invoiced</h2>", `class="row struck"`, "until 10.10.", "<h2>Tracked</h2>", "from 11.10.", "<h2>Expected</h2>"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the income panel is missing %q", want)
 		}
+	}
+	if strings.Contains(body, "estimate for October 2026") {
+		t.Errorf("the income panel carries an estimate row — estimates belong to the rolling budget's Company income:\n%s", body)
 	}
 	invoiced := body[strings.Index(body, "<h2>Invoiced</h2>"):strings.Index(body, "<h2>Tracked</h2>")]
 	if !strings.Contains(invoiced, "WMC Sinterstar") || strings.Contains(invoiced, "Sowemo") {
 		t.Errorf("the Invoiced section holds the wrong rows:\n%s", invoiced)
 	}
 	expected := body[strings.Index(body, "<h2>Expected</h2>"):]
-	if !strings.Contains(expected, "21.10.") || !strings.Contains(expected, "estimate for October 2026") {
-		t.Errorf("the Expected section holds neither the projection nor the estimate:\n%s", expected)
+	if !strings.Contains(expected, "21.10.") {
+		t.Errorf("the Expected section does not hold the projection:\n%s", expected)
 	}
 }
 
@@ -148,6 +149,13 @@ func TestAnEstimateRendersAsAnEstimateNotAnInvoice(t *testing.T) {
 	estimate = estimate[:strings.Index(estimate, "</div>")]
 	if strings.Contains(estimate, `href=`) {
 		t.Errorf("the estimate row carries a link: %s", estimate)
+	}
+	income, budget := body[:strings.Index(body, "budget-panel")], body[strings.Index(body, "budget-panel"):]
+	if strings.Contains(income, "estimate for October 2026") {
+		t.Errorf("the income panel carries the estimate — it belongs under Company income in the rolling budget:\n%s", income)
+	}
+	if !strings.Contains(budget, "estimate for October 2026") {
+		t.Errorf("the rolling budget lost the estimate row:\n%s", budget)
 	}
 	if !strings.Contains(body, `href="/invoicing/invoices/INV-0000000001.pdf"`) {
 		t.Error("the real invoice row lost its PDF link")

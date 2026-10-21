@@ -136,11 +136,6 @@ type Figures struct {
 	ExpectedNetHours string
 	ExpectedNetCents int
 
-	// ExpectedEstimates are the estimated invoices whose income month the
-	// page covers — the same grey rows the funding cascade shows under
-	// Company income, listed here where the worked months' panel sits.
-	ExpectedEstimates []InvoicedRow
-
 	ShowVacation          bool
 	VacationTotal         int
 	VacationTaken         int
@@ -486,7 +481,6 @@ func (f *Figures) computeInvoicedRows(t *Tracker, year int, start, end time.Time
 		}
 		for _, est := range f.Estimated[ym] {
 			f.Invoiced = append(f.Invoiced, InvoicedRow{AmountCents: est.Cents, Estimated: true, WorkedMonth: est.WorkedMonth.String()})
-			f.ExpectedEstimates = append(f.ExpectedEstimates, InvoicedRow{AmountCents: est.Cents, Estimated: true, WorkedMonth: est.WorkedMonth.String()})
 		}
 	}
 }

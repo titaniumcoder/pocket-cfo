@@ -367,7 +367,7 @@ var templates = `
       {{end}}
       {{end}}
 
-      {{if or .ShowExpected .ExpectedErr .ExpectedEstimates}}
+      {{if or .ShowExpected .ExpectedErr}}
       <h2>Expected</h2>
       {{if .ExpectedErr}}<div class="row"><span class="error">{{.ExpectedErr}}</span></div>
       {{else}}
@@ -378,7 +378,6 @@ var templates = `
       <div class="row sub"><span class="label">Expected total</span><span class="mid">{{.ExpectedNetHours}} h &times; {{.ExpectedRate}}</span><span class="amt goodamt">{{eur .ExpectedNetCents}}<span class="stack-m">({{.ExpectedNetHours}}h)</span></span></div>
       {{end}}
       {{end}}
-      {{range .ExpectedEstimates}}<div class="row acct estimate"><span class="label">estimate for {{.WorkedMonth}}</span><span class="mid"></span><span class="amt estimate">{{eur .AmountCents}}</span></div>{{end}}
       {{end}}
       {{end}}
 

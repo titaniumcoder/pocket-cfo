@@ -8,6 +8,11 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [4.11.2] - 2026-10-21
+
+### Changed
+- `/refresh` (the Reload button and cache eviction) is the owner's now: every read-only login gets 403, since each eviction burns the Toggl quota everyone shares. The Reload button disappears from their pages too.
+
 ## [4.11.1] - 2026-10-21
 
 ### Changed
@@ -681,7 +686,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.1...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.2...HEAD
+[4.11.2]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.1...v4.11.2
 [4.11.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.0...v4.11.1
 [4.11.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.10.0...v4.11.0
 [4.10.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.9.0...v4.10.0

@@ -365,6 +365,13 @@ func (s *server) handleInvoicePDF(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/auth/login", http.StatusFound)
 		return
 	}
+	// Invoice PDFs are invoicing-part material: a read-only login without
+	// the part — finance or accounting viewers, parts-less clients — gets
+	// no PDF links anywhere and must not reach the files by URL either.
+	if !sess.HasPart(users.PartInvoicing) {
+		http.Error(w, "you don't have access to invoicing", http.StatusForbidden)
+		return
+	}
 
 	file := r.PathValue("file")
 	if !strings.HasSuffix(file, ".pdf") || strings.Contains(file, "/") || strings.Contains(file, "..") {

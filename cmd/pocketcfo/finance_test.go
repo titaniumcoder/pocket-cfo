@@ -1027,6 +1027,7 @@ func TestTheAccountantSeesTheBusinessButNotThePrivate(t *testing.T) {
 		Rows: []tracker.CategoryRow{{Name: "Accounting software", CategoryID: "software"}},
 	}}
 	figures.Mistimed = []tracker.MistimedRow{{Name: "Rent", Note: "dated next month"}}
+	figures.Months = []tracker.MonthOption{{Num: 10, Name: "October", Untracked: true}}
 
 	render := func(sess auth.Session) string {
 		w := httptest.NewRecorder()
@@ -1041,7 +1042,7 @@ func TestTheAccountantSeesTheBusinessButNotThePrivate(t *testing.T) {
 			t.Errorf("the accountant's page is missing %q", want)
 		}
 	}
-	for _, banned := range []string{"Rent", "Living", "Balance", "mistimed-note"} {
+	for _, banned := range []string{"Rent", "Living", "Balance", "mistimed-note", "&bull;"} {
 		if strings.Contains(body, banned) {
 			t.Errorf("the accountant's page leaks private detail %q:\n%s", banned, body)
 		}
@@ -1083,5 +1084,60 @@ func TestAnAccountantSessionReachesTheFinancePageButNotTheSpending(t *testing.T)
 	s.routes().ServeHTTP(sp, spReq)
 	if sp.Code != http.StatusForbidden {
 		t.Errorf("spending page for an accountant = %d, want 403", sp.Code)
+	}
+}
+
+// TestInvoicePDFsNeedTheInvoicingPart: the PDF files carry every recipient's
+// letterhead — the URL must not become a side door around the parts model.
+// A parts-less client session that authenticates (its email is a recipient's),
+// a finance-only and an accounting-only login are refused; the invoicing part
+// and the owner pass.
+func TestInvoicePDFsNeedTheInvoicingPart(t *testing.T) {
+	s := newLoginTestServer(t)
+	writeUsersList(t, `{"users":[
+		{"email":"finance@example.com","parts":["finance"]},
+		{"email":"accounting@example.com","parts":["accounting"]},
+		{"email":"invoicing@example.com","parts":["invoicing"]}
+	]}`)
+	writeJSON(t, recipientsDir+"/0001.json", recipient.RecipientJson{
+		Number: 1, LegalName: "Portal Client", Email: "client@example.com", IsBusiness: true,
+		Language: recipient.RecipientJsonLanguageDe,
+		Address:  recipient.Address{Line1: "Weg 1", PostalCode: "1000", City: "Wien", CountryCode: "AT"},
+	})
+
+	attempts := []struct {
+		email string
+		parts []string
+		want  int
+	}{
+		{"client@example.com", nil, http.StatusForbidden},
+		{"finance@example.com", []string{"finance"}, http.StatusForbidden},
+		{"accounting@example.com", []string{"accounting"}, http.StatusForbidden},
+		{"invoicing@example.com", []string{"invoicing"}, http.StatusNotFound}, // past auth; no such PDF file
+	}
+	for _, a := range attempts {
+		encoded, err := auth.Encode(s.cfg.sessionSecret, auth.NewReadOnlySession(a.email, a.parts, time.Hour))
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest(http.MethodGet, "/invoicing/invoices/INV-0000000001.pdf", nil)
+		r.AddCookie(&http.Cookie{Name: sessionCookie, Value: encoded})
+		w := httptest.NewRecorder()
+		s.routes().ServeHTTP(w, r)
+		if w.Code != a.want {
+			t.Errorf("invoice PDF for %v = %d, want %d", a.parts, w.Code, a.want)
+		}
+	}
+
+	owner := httptest.NewRequest(http.MethodGet, "/invoicing/invoices/INV-0000000001.pdf", nil)
+	ownerEncoded, err := auth.Encode(s.cfg.sessionSecret, auth.NewSession("owner", "admin", time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner.AddCookie(&http.Cookie{Name: sessionCookie, Value: ownerEncoded})
+	ow := httptest.NewRecorder()
+	s.routes().ServeHTTP(ow, owner)
+	if ow.Code != http.StatusNotFound {
+		t.Errorf("owner invoice PDF = %d, want 404 (past the part gate; the file itself does not exist here)", ow.Code)
 	}
 }

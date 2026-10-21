@@ -330,7 +330,7 @@ var templates = `
       </select>
       {{else}}
       <select id="msel" data-nav="month" aria-label="Month">
-        {{range .Months}}<option value="{{.Num}}"{{if eq .Num $.MonthNum}} selected{{end}}>{{.Name}}{{if .Untracked}} &bull;{{end}}</option>{{end}}
+        {{range .Months}}<option value="{{.Num}}"{{if eq .Num $.MonthNum}} selected{{end}}>{{.Name}}{{if and (not $.HidePrivate) .Untracked}} &bull;{{end}}</option>{{end}}
       </select>
       <select id="ysel" data-nav="month" aria-label="Year">
         {{range .Years}}<option value="{{.}}"{{if eq . $.Year}} selected{{end}}>{{.}}</option>{{end}}

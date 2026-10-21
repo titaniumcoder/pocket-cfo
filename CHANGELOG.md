@@ -10,6 +10,10 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [4.11.0] - 2026-10-21
 
+### Fixed
+- **Invoice PDF URLs now require the invoicing part.** `/invoicing/invoices/{file}` checked only that a session was authenticated, so a parts-less client login or a finance/accounting-only viewer could fetch any recipient's invoice PDF by typing the URL — found by the Kimi K3 security review, now gated and pinned by tests.
+- The finance page's month selector no longer marks untracked-cash months for the accountant's login (the private-cash hint was the one spot the HidePrivate gate missed).
+
 ### Added
 - The email login *is* the client's verification: a recipient logging in with their own address lands on `/invoicing/client`, which the session itself opens — no passkey in any URL, and recipients without a passkey get their portal through the login alone. The passkey link keeps working unchanged beside it, and a client who also carries `users.json` parts keeps them — same session, only the landing page differs.
 

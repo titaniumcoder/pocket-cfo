@@ -378,7 +378,7 @@ var templates = `
       <div class="row sub"><span class="label">Expected total</span><span class="mid">{{.ExpectedNetHours}} h &times; {{.ExpectedRate}}</span><span class="amt goodamt">{{eur .ExpectedNetCents}}<span class="stack-m">({{.ExpectedNetHours}}h)</span></span></div>
       {{end}}
       {{end}}
-      {{range .ExpectedEstimates}}<div class="row acct estimate"><span class="label">estimate for {{.WorkedMonth}} <span class="note">income this month, until the invoice arrives</span></span><span class="mid"></span><span class="amt estimate">{{eur .AmountCents}}</span></div>{{end}}
+      {{range .ExpectedEstimates}}<div class="row acct estimate"><span class="label">estimate for {{.WorkedMonth}}</span><span class="mid"></span><span class="amt estimate">{{eur .AmountCents}}</span></div>{{end}}
       {{end}}
       {{end}}
 
@@ -408,7 +408,7 @@ var templates = `
       {{if .Err}}<div class="row"><span class="error">{{.Err}}</span></div>
       {{else}}
       <div class="row net{{if not $.Invoiced}} gap-below{{end}}"><span class="label">Company income</span><span class="mid"></span><span class="amt goodamt">{{eur .CompanyIncomeCents}}</span></div>
-      {{range $.Invoiced}}{{if .Estimated}}<div class="row acct estimate"><span class="label">estimate for {{.WorkedMonth}} <span class="note">income this month, until the invoice arrives</span></span><span class="mid"></span><span class="amt estimate">{{eur .AmountCents}}</span></div>{{else}}<div class="row acct"><span class="label">{{if .URL}}<a href="{{.URL}}">{{.Number}}</a>{{else}}{{.Number}}{{end}} <span class="note">due {{.Day}}, income this month</span></span><span class="mid"></span><span class="amt">{{eur .AmountCents}}</span></div>{{end}}{{end}}
+      {{range $.Invoiced}}{{if .Estimated}}<div class="row acct estimate"><span class="label">estimate for {{.WorkedMonth}}</span><span class="mid"></span><span class="amt estimate">{{eur .AmountCents}}</span></div>{{else}}<div class="row acct"><span class="label">{{if .URL}}<a href="{{.URL}}">{{.Number}}</a>{{else}}{{.Number}}{{end}}</span><span class="mid"></span><span class="amt">{{eur .AmountCents}}</span></div>{{end}}{{end}}
       {{if $.Invoiced}}<div class="row gap-below"></div>{{end}}
       {{if $.ShowActuals}}<div class="row colhead"><span class="label"></span><span class="mid">Planned</span><span class="amt">Actual</span></div>{{end}}
       {{template "categoryGroups" $.CompanyLedger}}

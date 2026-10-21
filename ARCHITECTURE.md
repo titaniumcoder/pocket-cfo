@@ -801,10 +801,11 @@ parts keeps them; only the landing page differs.
 | GET | `/api/...`, `/mcp` — the agent-facing surface, bearer token only, sessions irrelevant |
 | GET | `/static/{file}`, `/robots.txt` — public, no data |
 
-Mutating methods are additionally guarded by the `Sec-Fetch-Site`/`Origin`
-same-origin check (`sameOriginMutations`), so a browser cannot be talked
-into a cross-site POST even inside SameSite=Lax's fresh-cookie grace
-window.
+Mutating routes rely on `SameSite=Lax` withholding the session cookie on
+cross-site POSTs; an added `Sec-Fetch-Site`/`Origin` guard turned out to
+refuse legitimate same-site Reload clicks behind the deployment's proxy
+topology and was reverted — the CSRF posture is SameSite=Lax alone, as it
+was for the whole production life of this app.
 
 **IAM permissions for SES.** The credentials in `AWS_ACCESS_KEY_ID`/
 `AWS_SECRET_ACCESS_KEY` need exactly one action, scoped to the verified

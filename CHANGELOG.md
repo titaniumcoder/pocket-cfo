@@ -11,6 +11,7 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 ## [4.11.1] - 2026-10-21
 
 ### Changed
+- `/refresh` (the Reload button and cache eviction) is the owner's now: every read-only login gets 403, since each eviction burns the Toggl quota everyone shares. The Reload button disappears from their pages too.
 - State-changing requests (POST/PUT/PATCH/DELETE) are refused when the browser marks them cross-site — `Sec-Fetch-Site`, with the `Origin` header as fallback — closing SameSite=Lax's fresh-cookie grace window for `/refresh`, the uploads actions and `/toggl/reset`.
 - `pocket-cfo-ctl validate` requires every recipient to carry an email address, and that no two recipients share one: the client's email login resolves their portal by that address.
 

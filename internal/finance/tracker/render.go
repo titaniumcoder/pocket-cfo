@@ -203,7 +203,7 @@ var templates = `
 
     <div class="periodnav-right">
       <a class="link" href="{{.Nav.TodayURL}}">Today</a>
-      <form class="inline-form" method="post" action="{{.RefreshURL}}"><button class="link" type="submit">Reload</button></form>
+      {{if .ShowRefresh}}<form class="inline-form" method="post" action="{{.RefreshURL}}"><button class="link" type="submit">Reload</button></form>{{end}}
     </div>
   </nav>
 
@@ -346,7 +346,7 @@ var templates = `
     <div class="periodnav-right">
       {{if and .UntrackedCount .SpendingDetailURL}}<a class="link untracked-mark" href="{{.SpendingDetailURL}}" title="cash not yet placed">{{untracked .UntrackedCount}}untracked</a>{{end}}
       <a class="link" href="{{.TodayURL}}">Today</a>
-      <form class="inline-form" method="post" action="{{.RefreshURL}}"><button class="link" type="submit">Reload</button></form>
+      {{if .ShowRefresh}}<form class="inline-form" method="post" action="{{.RefreshURL}}"><button class="link" type="submit">Reload</button></form>{{end}}
     </div>
   </nav>
 

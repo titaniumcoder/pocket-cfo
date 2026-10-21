@@ -85,6 +85,7 @@ type Figures struct {
 
 	Login             string
 	ReadOnly          bool
+	ShowRefresh       bool
 	ShowInvoicingLink bool
 	ShowInfoLink      bool
 	ShowUploadsLink   bool

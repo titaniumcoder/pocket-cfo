@@ -1141,3 +1141,40 @@ func TestInvoicePDFsNeedTheInvoicingPart(t *testing.T) {
 		t.Errorf("owner invoice PDF = %d, want 404 (past the part gate; the file itself does not exist here)", ow.Code)
 	}
 }
+
+// TestRefreshIsTheOwners: cache eviction burns the shared Toggl quota, so
+// the POST answers 403 for every read-only login — clients, finance and
+// accounting viewers — and only the owner's session evicts.
+func TestRefreshIsTheOwners(t *testing.T) {
+	s := newLoginTestServer(t)
+	writeUsersList(t, `{"users":[
+		{"email":"accountant@example.com","parts":["accounting"]}
+	]}`)
+
+	owner, err := auth.Encode(s.cfg.sessionSecret, auth.NewSession("owner", "admin", time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	post := func(email string, parts []string, cookie string) int {
+		r := httptest.NewRequest(http.MethodPost, "/refresh", nil)
+		if email != "" {
+			encoded, err := auth.Encode(s.cfg.sessionSecret, auth.NewReadOnlySession(email, parts, time.Hour))
+			if err != nil {
+				t.Fatal(err)
+			}
+			cookie = encoded
+		}
+		r.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		w := httptest.NewRecorder()
+		s.routes().ServeHTTP(w, r)
+		return w.Code
+	}
+
+	if got := post("accountant@example.com", []string{"accounting"}, ""); got != http.StatusForbidden {
+		t.Errorf("accounting viewer refresh = %d, want 403", got)
+	}
+	if got := post("", nil, owner); got == http.StatusForbidden {
+		t.Errorf("owner refresh = %d, want it to pass the gate", got)
+	}
+}

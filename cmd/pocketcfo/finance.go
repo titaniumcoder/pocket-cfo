@@ -122,6 +122,7 @@ func fillInvoiceLinks(invoiced []tracker.InvoicedRow, showInvoicingLink bool) {
 func (s *server) renderFinancePage(w http.ResponseWriter, sess auth.Session, f tracker.Figures) {
 	f.Login = sess.Login
 	f.ReadOnly = sess.Permission == "readonly"
+	f.ShowRefresh = s.authorized(sess)
 	f.ShowInvoicingLink = sess.HasPart(users.PartInvoicing)
 	f.ShowInfoLink = s.authorized(sess)
 	f.ShowUploadsLink = s.admin(sess)
@@ -242,11 +243,16 @@ func (s *server) handleMinimalToggle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleRefresh(w http.ResponseWriter, r *http.Request) {
-	sess, ok := s.financeSession(w, r)
-	if !ok {
+	sess, ok := s.currentSession(r)
+	if !ok || !s.authenticated(sess) {
+		s.rememberDestination(w, r)
+		tracker.RenderLogin(w, "", s.emailLoginAvailable())
 		return
 	}
-	_ = sess
+	if !s.authorized(sess) {
+		http.Error(w, "cache refresh is the owner's", http.StatusForbidden)
+		return
+	}
 	trk, err := s.trackerForView(r)
 	if err != nil {
 		serverError(w, r, "loading data", err)

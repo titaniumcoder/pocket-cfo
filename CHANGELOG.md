@@ -8,6 +8,8 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [4.11.4] - 2026-10-21
+
 ### Fixed
 - The finance page's Income panel no longer lists the estimated invoices for the months it covers — a worked month's estimate (October's work showing on December's page) already appears as a grey row under Company income in the rolling budget, so the Income panel keeps to hour tracking alone: covered, tracked and expected hours.
 
@@ -698,7 +700,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.3...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.4...HEAD
+[4.11.4]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.3...v4.11.4
 [4.11.3]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.2...v4.11.3
 [4.11.2]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.1...v4.11.2
 [4.11.1]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.0...v4.11.1

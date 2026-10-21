@@ -203,7 +203,7 @@ var templates = `
 
     <div class="periodnav-right">
       <a class="link" href="{{.Nav.TodayURL}}">Today</a>
-      {{if .ShowRefresh}}<form class="inline-form" method="post" action="{{.RefreshURL}}"><button class="link" type="submit">Reload</button></form>{{end}}
+      <form class="inline-form" method="post" action="{{.RefreshURL}}"><button class="link" type="submit">Reload</button></form>
     </div>
   </nav>
 

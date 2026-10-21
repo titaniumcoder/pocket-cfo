@@ -2,6 +2,21 @@
 
 [![Build](https://github.com/titaniumcoder/pocket-cfo/actions/workflows/build.yml/badge.svg)](https://github.com/titaniumcoder/pocket-cfo/actions/workflows/build.yml)
 
+> **This repository is frozen and archived.**
+>
+> This is a purely vibecoded project: written end to end in conversation with coding
+> agents, never restructured by hand. By my own rule, a vibecoded codebase stops being
+> worth maintaining after roughly six months — this one has been running in production
+> for four of them, and every feature that mattered is now in it. Rather than keep
+> patching a codebase I would soon retire anyway, I am writing a second version from
+> scratch, taking the learnings from this one and building it as a real SaaS:
+>
+> **➡️ [`titaniumcoder/freelancer-pocket-cfo`](https://github.com/titaniumcoder/freelancer-pocket-cfo)**
+>
+> This repo stays up read-only — the code, the releases, the design documents and the
+> archived issues remain available. There will be no further commits, releases or
+> support here.
+
 A freelancer's finance tracker and invoicing tool in one Go binary, MIT licensed.
 
 - **Finance tracker** (`/`) — income predicted from an hourly rate, optionally from real

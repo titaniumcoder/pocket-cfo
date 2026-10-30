@@ -1,123 +1,121 @@
 package render
 
 import (
+	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-const fakeChromium = `#!/bin/sh
-for arg in "$@"; do
-	case "$arg" in
-		--print-to-pdf=*)
-			out="${arg#--print-to-pdf=}"
-			printf '%%PDF-fake\n' > "$out"
-			;;
-		file://*)
-			cat "${arg#file://}" > "$(dirname "$0")/last-input.txt"
-			;;
-	esac
-done
-`
-
-func writeFakeChromium(t *testing.T, body string) string {
+// A test binary that exits immediately, so every failure path that depends on
+// chromium dying is cheap and network-free.
+func writeDeadChromium(t *testing.T, stderrLine string) string {
 	t.Helper()
 	dir := t.TempDir()
-	// Named "chromium" so NewChromium's empty-bin LookPath fallback finds it.
 	path := filepath.Join(dir, "chromium")
-	script := fakeChromium + body
+	script := "#!/bin/sh\n" + stderrLine + "\nexit 1\n"
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return path
 }
 
-func TestChromium_RendersPDFThroughTheBinary(t *testing.T) {
-	bin := writeFakeChromium(t, "")
+func testRenderer(t *testing.T) *Chromium {
+	t.Helper()
+	bin := os.Getenv("CHROMIUM_BIN")
+	if bin == "" {
+		for _, name := range chromiumNames {
+			if path, err := exec.LookPath(name); err == nil {
+				bin = path
+				break
+			}
+		}
+	}
+	if bin == "" {
+		t.Skip("no chrome-family browser on this machine; the CDP round trip needs a real one")
+	}
 	c, err := NewChromium(bin)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return c
+}
 
-	pdf, err := c.Render(context.Background(), []byte("<html>hello</html>"))
+func TestChromium_RendersHTMLToPDF(t *testing.T) {
+	c := testRenderer(t)
+
+	pdf, err := c.Render(context.Background(), []byte("<html><body><h1>Rechnung ФАКТУРА</h1></body></html>"))
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	if !strings.HasPrefix(string(pdf), "%PDF-") {
-		t.Errorf("rendered %q, want a PDF", pdf)
+	if !bytes.HasPrefix(pdf, []byte("%PDF-")) {
+		t.Errorf("output is not a PDF: %q", pdf[:8])
 	}
-
-	lastInput, err := os.ReadFile(filepath.Join(filepath.Dir(bin), "last-input.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(lastInput), "<html>hello</html>") {
-		t.Errorf("the html did not reach the browser input file: %s", lastInput)
+	if len(pdf) < 1000 {
+		t.Errorf("rendered only %d bytes — a blank page, not the document", len(pdf))
 	}
 }
 
-func TestChromium_RetriesWhenTheBrowserCrashes(t *testing.T) {
-	dir := t.TempDir()
-	counter := filepath.Join(dir, "runs")
-	bin := filepath.Join(dir, "fake-chromium")
-	script := `#!/bin/sh
-echo x >> ` + counter + `
-if [ "$(wc -l < ` + counter + `)" -lt 2 ]; then
-	echo "crashed" >&2
-	exit 1
-fi
-for arg in "$@"; do
-	case "$arg" in
-		--print-to-pdf=*) printf '%%PDF-fake\n' > "${arg#--print-to-pdf=}" ;;
-	esac
-done
-`
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+func TestChromium_WaitsForPagedJSBeforePrinting(t *testing.T) {
+	c := testRenderer(t)
 
-	c, err := NewChromium(bin)
-	if err != nil {
-		t.Fatal(err)
+	// Three screens of text through the real paged.js pipeline: printing at
+	// page load, the way the CLI flags do it, captures one blank page — the
+	// polyfill parks the body in a <template> until it has laid the pages out.
+	var body strings.Builder
+	for i := 0; i < 200; i++ {
+		body.WriteString("<p>Zeile der Rechnung ФАКТУРА строка</p>")
 	}
-	if _, err := c.Render(context.Background(), []byte("<html/>")); err != nil {
-		t.Fatalf("second attempt should have succeeded: %v", err)
+	html := `<html><head>
+<link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=block" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/pagedjs@0.4.3/dist/paged.polyfill.js" crossorigin="anonymous"></script>
+<style>@page{size:A4;margin:20mm}</style>
+</head><body>` + body.String() + `</body></html>`
+
+	pdf, err := c.Render(context.Background(), []byte(html))
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if pages := pdfPageCount(pdf); pages < 2 {
+		t.Errorf("rendered %d page(s); the paged.js layout pass did not run", pages)
 	}
 }
 
-func TestChromium_RefusesOutputThatIsNotAPDF(t *testing.T) {
-	bin := writeFakeChromium(t, `printf 'not a pdf\n' > "$out"`)
-	c, err := NewChromium(bin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := c.Render(context.Background(), []byte("<html/>")); err == nil {
-		t.Error("non-PDF output passed the prefix check")
-	}
+func pdfPageCount(pdf []byte) int {
+	return bytes.Count(pdf, []byte("/Type /Page")) - bytes.Count(pdf, []byte("/Type /Pages"))
 }
 
-func TestChromium_ReportsTheBrowserStderr(t *testing.T) {
-	bin := writeFakeChromium(t, `echo "fonts blew up" >&2
-exit 3`)
+func TestChromium_CarriesTheBrowserStderrOnFailure(t *testing.T) {
+	bin := writeDeadChromium(t, `echo "no display" >&2`)
 	c, err := NewChromium(bin)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = c.Render(context.Background(), []byte("<html/>"))
 	if err == nil {
-		t.Fatal("a failing browser must fail the render")
+		t.Fatal("a dying browser must fail the render")
 	}
-	if !strings.Contains(err.Error(), "fonts blew up") {
+	if !strings.Contains(err.Error(), "no display") {
 		t.Errorf("error does not carry the browser stderr: %v", err)
 	}
 }
 
+func TestChromium_RespectsACancelledContext(t *testing.T) {
+	c := testRenderer(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := c.Render(ctx, []byte("<html/>")); err == nil {
+		t.Error("a cancelled context must abort the render")
+	}
+}
+
 func TestChromium_FindsAChromiumOnThePath(t *testing.T) {
-	bin := writeFakeChromium(t, "")
-	dir := filepath.Dir(bin)
-	t.Setenv("PATH", dir)
+	bin := writeDeadChromium(t, "")
+	t.Setenv("PATH", filepath.Dir(bin))
 
 	c, err := NewChromium("")
 	if err != nil {
@@ -134,3 +132,36 @@ func TestChromium_RefusesToStartWithoutABrowser(t *testing.T) {
 		t.Error("no browser on PATH must refuse to build a renderer")
 	}
 }
+
+func TestPipeConn_FramesOnNULAndReportsProtocolErrors(t *testing.T) {
+	conn := newPipeConn(strings.NewReader(
+		`{"id":1,"result":{}}`+"\x00"+
+			`{"id":2,"error":{"message":"not allowed"}}`+"\x00"),
+		nilWriter{})
+
+	if _, err := conn.call("X.test", nil); err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	_, err := conn.call("X.test", nil)
+	if err == nil || err.Error() != "not allowed" {
+		t.Errorf("second call: got %v, want the protocol error", err)
+	}
+}
+
+type nilWriter struct{}
+
+func (nilWriter) Write(p []byte) (int, error) { return len(p), nil }
+
+func TestChromium_RetryExhaustionMentionsTheAttempts(t *testing.T) {
+	bin := writeDeadChromium(t, "true")
+	c, err := NewChromium(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Render(context.Background(), []byte("<html/>"))
+	if err == nil || !strings.Contains(err.Error(), "3 attempts") {
+		t.Errorf("want retry exhaustion, got %v", err)
+	}
+}
+
+var _ Renderer = (*Chromium)(nil)

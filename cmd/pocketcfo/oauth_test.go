@@ -110,7 +110,7 @@ func TestHandleCallback_MissingCode(t *testing.T) {
 
 // oauthRoundTripFunc adapts a func to http.RoundTripper - the same idiomatic
 // per-package fake-transport pattern used elsewhere in this repo (see
-// internal/auth/github_test.go, internal/render/api2pdf_test.go); kept
+// internal/auth/github_test.go); kept
 // package-local rather than shared, same as those.
 type oauthRoundTripFunc func(*http.Request) (*http.Response, error)
 

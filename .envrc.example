@@ -10,8 +10,9 @@ export ENV=development
 export DATA_UPDATED_AT=
 export DATA_COMMIT=
 
-# Only pocket-cfo-ctl render reads this; the web app does not need it.
-export API2PDF_KEY=
+# pocket-cfo-ctl render renders through the local headless chromium found on
+# the PATH (or any chrome-family binary you name here). Nothing else reads it.
+# export CHROMIUM_BIN=
 # Shared bearer token for the agent API. Unset means /api/ is never
 # registered at all — the endpoints do not exist rather than returning 401.
 export AGENT_API_TOKEN=

@@ -8,6 +8,14 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Changed
+
+- Invoice PDFs render through a local headless Chromium instead of the api2pdf
+  cloud service: invoice data no longer leaves the machine (or sits in a
+  third-party file store) on its way to PDF. The container image ships
+  chromium; `pocket-cfo-ctl render` finds it on the PATH, overridable with
+  `CHROMIUM_BIN`. The `API2PDF_KEY` setting is gone.
+
 ## [4.11.4] - 2026-10-21
 
 ### Fixed

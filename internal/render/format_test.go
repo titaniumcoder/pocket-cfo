@@ -36,7 +36,7 @@ func TestFormatMoney(t *testing.T) {
 }
 
 // TestFormatAmount covers the euro-less variant used for figures that
-// aren't in euros (the api2pdf balance on /info) — same grouping and
+// aren't in euros — same grouping and
 // decimal-comma, no currency suffix.
 func TestFormatAmount(t *testing.T) {
 	nbsp := " "

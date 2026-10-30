@@ -60,12 +60,12 @@ func runRender(args []string) int {
 
 	var renderer render.Renderer
 	if !*dryRun {
-		apiKey := os.Getenv("API2PDF_KEY")
-		if apiKey == "" {
-			fmt.Fprintln(os.Stderr, "pocket-cfo-ctl render: API2PDF_KEY is not set (see .envrc.example)")
+		var err error
+		renderer, err = render.NewChromium(os.Getenv("CHROMIUM_BIN"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "pocket-cfo-ctl render:", err)
 			return 1
 		}
-		renderer = render.NewAPI2PDF(apiKey)
 	}
 
 	manifest := render.Manifest{}

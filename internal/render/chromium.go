@@ -132,14 +132,25 @@ func (c *Chromium) print(ctx context.Context, html []byte) (pdf []byte, retryabl
 
 	session, conn, err := openPage(stdout, stdin, "file://"+input)
 	if err != nil {
-		return nil, true, fmt.Errorf("chromium: %w (%s)", err, cmd.Stderr.(*bytes.Buffer).String())
+		return nil, true, fmt.Errorf("chromium: %w (%s)", err, stoppedStderr(cmd))
 	}
 
 	pdfData, err := printWhenSettled(ctx, conn, session)
 	if err != nil {
-		return nil, true, fmt.Errorf("chromium: %w (%s)", err, cmd.Stderr.(*bytes.Buffer).String())
+		return nil, true, fmt.Errorf("chromium: %w (%s)", err, stoppedStderr(cmd))
 	}
 	return pdfData, false, nil
+}
+
+// stoppedStderr reaps the browser before its stderr is read: exec copies the
+// child's stderr on Wait, so an error surfaced before the process is reaped
+// would otherwise report an empty buffer — a race the CI runners lost.
+func stoppedStderr(cmd *exec.Cmd) string {
+	if cmd.Process != nil {
+		_ = cmd.Process.Kill()
+	}
+	_ = cmd.Wait()
+	return cmd.Stderr.(*bytes.Buffer).String()
 }
 
 // debugPipes wires the two os.Pipe pairs chrome's --remote-debugging-pipe

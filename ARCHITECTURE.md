@@ -57,7 +57,7 @@ internal/
   schema/            generated types for the invoicing documents
   tax/               which VAT regime an invoice falls under (§4)
   money/             totals, discounts, VAT grouping — integer minor units (§3.4)
-  render/            invoice HTML → api2pdf → PDF (§6)
+  render/            invoice HTML → local headless chromium → PDF (§6)
   stats/             derived state: which invoices are draft, issued, overdue, paid
   translate/         DeepL, for the Bulgarian half of an invoice
   auth/              sessions, GitHub OAuth, the email login token (§8)
@@ -572,7 +572,7 @@ already the simpler path.
 Failure isolation: one bad render must not block indexing the rest. Collect errors,
 publish what succeeded, fail the job at the end with a summary.
 
-Secrets: `API2PDF_KEY`, `DEEPL_API_KEY`. Local runs use the same values from a `.env`;
+Secrets: `DEEPL_API_KEY`. Local runs use the same values from a `.env`;
 there is no CI-only step.
 
 Translation stays a separate manual-dispatch workflow that opens a PR. Machine
@@ -589,18 +589,32 @@ type Renderer interface { Render(ctx context.Context, html []byte) ([]byte, erro
 
 **HTML** — Go `html/template`, one canonical layout matching the reference PDFs.
 
-**PDF — api2pdf.** `POST https://v2.api2pdf.com/chrome/pdf/html`, key in the
-`Authorization` header. Use the **Chrome** endpoint, not wkhtmltopdf — Cyrillic shaping
-is where wkhtmltopdf falls over. Retry with backoff on 5xx.
+**PDF — local headless chromium.** The renderer execs the browser found on
+the PATH (`chromium`, `chromium-browser`, `google-chrome`, `google-chrome-stable`, in
+that order) or whatever `CHROMIUM_BIN` names, and drives it over
+`--remote-debugging-pipe` — CDP as NUL-framed JSON over fds 3 and 4, hand-rolled in
+`internal/render/chromium.go` rather than through a websocket library, for the same
+reason the MCP server holds its SDK at arm's length: the protocol is external and
+moving, and a hand-rolled client is three calls (`Target.createTarget`,
+`Runtime.evaluate`, `Page.printToPDF`) plus a poll loop. Invoice data — names, addresses,
+VAT IDs, IBANs — therefore never leaves the machine on its way to PDF, which is why
+api2pdf is gone: its response envelope carried a `FileUrl` into a 24-hour third-party
+file store behind a link that was its own bearer token.
 
-`outputBinary: true` is sent, and **api2pdf ignores it on this endpoint** — it answers with
-its usual JSON envelope carrying a `FileUrl`, so the document does sit in their 24-hour
-file store behind a link that is its own bearer token (the URL is fetched with no
-Authorization header, because sending the key to a host api2pdf named would be worse).
-Both response shapes are therefore handled: bytes inline if they ever arrive, the file
-store otherwise. v0.26.0 required the inline form and every render failed on first contact
-with the real service — if you are tempted to tighten this again, mock the *envelope*,
-which is what the service actually returns.
+**Why not `--print-to-pdf` with flags.** The obvious one-liner — `chromium --headless
+--print-to-pdf file.html` — prints at page *load*, and paged.js runs after load: the
+CLI flags capture a blank page. `--virtual-time-budget` fast-forwards the virtual
+clock instead, but under it paged.js's layout pass never settles — the clock races
+through the budget while the polyfill is still measuring, and the print is blank
+again. There is no flag for "wait until the polyfill has laid the pages out", which is
+what api2pdf's `delay` option (a puppeteer script) actually bought. So the renderer
+polls `Runtime.evaluate` for the laid-out page count every 250ms and prints only once
+the count has held steady across two polls — the local, deterministic equivalent of
+that delay. `Page.printToPDF` runs with `preferCSSPageSize` and `printBackground` so
+the `@page` rules and the stamps print as designed. The whole invocation is bounded
+by a 60s deadline; if the polyfill never shows up (CDN unreachable) the poll prints
+the un-paginated page after 5s, which is the native-Chrome degradation below; a
+failing invocation is retried twice with backoff, standing in for the old 5xx retry.
 
 **Fonts — Google Fonts, with two required settings.**
 
@@ -616,14 +630,12 @@ reason.
 - `display=block`, not `swap`. With `swap` Chrome paints fallback text immediately and
   substitutes later; capture in between and you get the fallback font, or tofu where it
   has no Cyrillic.
-- Set `delay` on the api2pdf request (`printDelay`, 3000ms). Their Chrome is a fresh
-  serverless container per call, so the font is fetched cold every time — the cache
-  you're thinking of is your browser's, not theirs. The delay now has to cover the font
-  *and* the paged.js pagination pass below, which needs about a second for a long
-  invoice; capturing mid-pagination prints an empty document.
-
-If you ever see boxes in the Bulgarian column, this is the cause, and base64-inlining a
-subset is the fix.
+- The rendering chrome waits for the fonts itself — the poll loop above does not print
+  until paged.js has finished, and paged.js starts only once the fonts are in, so the
+  old api2pdf `delay` (3000ms to cover a cold font fetch on their serverless chrome) is
+  gone. If you ever see boxes in the Bulgarian column, the CDN is answering slowly and
+  the poll's stability check has printed before the fonts landed — the fix is
+  base64-inlining a subset, which removes the CDN wait entirely.
 
 **Pagination — paged.js.** Chrome prints `position: fixed` on every page but offers
 nothing else from paged media: no running headers, no way to keep one element off page 1.
@@ -845,7 +857,7 @@ what keeps the edit small — one entry appended, never a rewrite of an issued i
 ## 9. Testing
 
 - **Golden tests on the HTML, not the PDF.** Both references as fixtures. Byte-comparing
-  PDFs breaks the day api2pdf upgrades Chrome, reddening CI for reasons unrelated to
+  PDFs breaks the day the local chrome moves a major version, reddening CI for reasons unrelated to
   your code.
 - Table tests on `tax.Resolve` — CH, AT, DE, BG, GB, US, EU-consumer.
 - **Computation tests first**: both references must total 4.600,00 € and 10.200,00 €.
@@ -863,7 +875,9 @@ what keeps the edit small — one entry appended, never a rewrite of an issued i
   listing an invoice in `paid-invoices.json` renders only `-paid.pdf`; deleting `INV-….pdf` renders exactly that
   one; a shallow clone fails loudly rather than silently re-rendering everything.
 - `stats` tests: paid before and after the due date.
-- Nothing in the test job hits api2pdf.
+- Nothing in the test job talks to a paid third-party API. The chromium render tests
+  need a browser on the PATH (skipped when there is none) and the two CDNs the
+  template itself loads.
 
 The shallow-clone case deserves a real test, and it has one — though the symptom is not
 the one predicted here. A `--depth 1` clone does not return empty timestamps: it
@@ -1249,7 +1263,7 @@ what only a human's phone could capture.
 
 Steps 1–8 of the original build order are done and released: schema and `money`,
 `tax.Resolve` and the §4.3 validators, the template against both reference invoices,
-`pocket-cfo-ctl render` through api2pdf, `build.yml`, the index and the web app, and
+`pocket-cfo-ctl render` through local chromium, `build.yml`, the index and the web app, and
 payment in `data/paid-invoices.json`. The finance tracker was added alongside them and
 has its own conventions inline in `internal/finance`.
 

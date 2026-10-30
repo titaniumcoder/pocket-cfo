@@ -8,13 +8,20 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-10-30
+
 ### Changed
 
 - Invoice PDFs render through a local headless Chromium instead of the api2pdf
   cloud service: invoice data no longer leaves the machine (or sits in a
   third-party file store) on its way to PDF. The container image ships
   chromium; `pocket-cfo-ctl render` finds it on the PATH, overridable with
-  `CHROMIUM_BIN`. The `API2PDF_KEY` setting is gone.
+  `CHROMIUM_BIN`.
+
+### Removed
+
+- **Breaking:** the `API2PDF_KEY` setting is no longer read — rendering needs
+  a local chromium, which the image ships.
 
 ## [4.11.4] - 2026-10-21
 
@@ -708,7 +715,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.4...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.4...v5.0.0
 [4.11.4]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.3...v4.11.4
 [4.11.3]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.2...v4.11.3
 [4.11.2]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.1...v4.11.2

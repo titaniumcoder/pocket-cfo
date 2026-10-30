@@ -14,7 +14,11 @@ RUN go build -ldflags "-X github.com/titaniumcoder/pocket-cfo/internal/buildinfo
 RUN go build -o /out/pocket-cfo-ctl ./cmd/pocket-cfo-ctl
 
 FROM debian:bookworm as runtime
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+# chromium renders the invoice PDFs locally (§6): pocket-cfo-ctl render drives
+# it over the debug pipe, so nothing about an invoice leaves the container —
+# the reason api2pdf is gone. The package pulls the fonts and libraries its
+# sandbox needs; fontconfig is among them.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates chromium \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

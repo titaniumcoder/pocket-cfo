@@ -8,6 +8,8 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+## [5.1.0] - 2026-11-22
+
 ### Removed
 
 - The Tracked column in the invoicing page's Recipients table (Toggl work not yet invoiced) — the finance tracker already shows that work as estimated income.
@@ -719,7 +721,8 @@ Re-tag of 0.3.0 with no changes.
 - A zero-month recurring category previews its next occurrence.
 - Leftover Invoicer branding and the `GITHUB_REPO` bug from the merge; the finance tracker's GitHub login link pointed at a nonexistent route.
 
-[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v5.0.0...HEAD
+[Unreleased]: https://github.com/titaniumcoder/pocket-cfo/compare/v5.1.0...HEAD
+[5.1.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v5.0.0...v5.1.0
 [5.0.0]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.4...v5.0.0
 [4.11.4]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.3...v4.11.4
 [4.11.3]: https://github.com/titaniumcoder/pocket-cfo/compare/v4.11.2...v4.11.3

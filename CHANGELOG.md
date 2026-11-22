@@ -8,6 +8,10 @@ Before 1.0.0 a minor bump was used for breaking changes as well; those are marke
 
 ## [Unreleased]
 
+### Removed
+
+- The Tracked column in the invoicing page's Recipients table (Toggl work not yet invoiced) — the finance tracker already shows that work as estimated income.
+
 ## [5.0.0] - 2026-10-30
 
 ### Changed

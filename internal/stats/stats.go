@@ -71,11 +71,6 @@ type RecipientRow struct {
 	Email        string
 	TotalInFrame int64
 	Outstanding  int64
-
-	// TrackedUninvoiced is the money of Toggl-tracked work the issued
-	// invoices do not reach yet — filled in by the caller, which owns the
-	// Toggl connection. Zero means nothing open or nothing fetched.
-	TrackedUninvoiced int64
 }
 
 type InvoiceRow struct {

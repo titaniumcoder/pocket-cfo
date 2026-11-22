@@ -32,7 +32,6 @@
           <th class="email">Email</th>
           <th class="num col-wide">Total</th>
           <th class="num col-wide">Outstanding</th>
-          <th class="num col-wide" title="Toggl-tracked work the issued invoices do not reach yet, at the tracked rates">Tracked</th>
           <th class="num money-stack">Total</th>
           <th><span class="col-secondary">Portal</span></th>
         </tr>
@@ -45,7 +44,6 @@
           <td class="email"><a href="mailto:{{.Email}}" title="{{.Email}}">{{.Email}}</a></td>
           <td class="num col-wide">{{money .TotalInFrame}}</td>
           <td class="num col-wide{{if ne .Outstanding 0}} outstanding-nonzero{{end}}">{{money .Outstanding}}</td>
-          <td class="num col-secondary">{{if .TrackedUninvoiced}}{{money .TrackedUninvoiced}}{{else}}&mdash;{{end}}</td>
           <td class="num money-stack">
             <div>{{money .TotalInFrame}}</div>
             <div{{if ne .Outstanding 0}} class="outstanding-nonzero"{{end}}>{{money .Outstanding}}</div>
